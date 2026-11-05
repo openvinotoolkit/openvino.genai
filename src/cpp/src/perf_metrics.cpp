@@ -21,12 +21,12 @@ ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSecon
         });
     mean /= durations.size();
     
-    double sum_square_durations = std::accumulate(durations.begin(), durations.end(), 0.0,
-        [](const double& acc, const ov::genai::MicroSeconds& duration) -> double {
-            auto d = duration.count() / 1000.0;
-            return acc + d * d;
+    const double sum_squared_deviations = std::accumulate(durations.begin(), durations.end(), 0.0,
+        [mean](const double& acc, const ov::genai::MicroSeconds& duration) -> double {
+            const double deviation = duration.count() / 1000.0 - mean;
+            return acc + deviation * deviation;
         });
-    double std = std::sqrt(sum_square_durations / durations.size() - mean * mean);
+    const double std = std::sqrt(sum_squared_deviations / durations.size());
     return {static_cast<float>(mean), static_cast<float>(std)};
 }
 
@@ -181,7 +181,11 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     sampling_duration = calc_mean_and_std(raw_metrics.m_sampling_durations);
 
     // tokens per second
-    throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
+    if (tpot.mean > 0.0f) {
+        throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
+    } else {
+        throughput = {-1.0f, -1.0f};
+    }
     m_evaluated = true;
 }
 

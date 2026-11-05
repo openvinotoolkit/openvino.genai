@@ -15,6 +15,7 @@ from llm_bench_utils.tts_utils import (
     SPEECHT5_SPEAKER_EMB_SHAPE,
     KOKORO_SPEAKER_EMB_SHAPE,
     is_kokoro_model_id,
+    get_qwen3_tts_variant,
 )
 from urllib.parse import urlparse
 
@@ -173,7 +174,6 @@ def analyze_args(args):
     model_args['torch_compile_options'] = args.torch_compile_options
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
-    model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
     model_args["static_reshape"] = args.static_reshape
     model_args["num_frames"] = args.num_frames
     model_args["frame_rate"] = args.frame_rate
@@ -182,6 +182,9 @@ def analyze_args(args):
     model_args["task"] = args.task
     model_args["speech_language"] = args.speech_language
     model_args["speech_voice"] = args.speech_voice
+    model_args["speech_instruct"] = args.speech_instruct
+    model_args["speech_ref_audio"] = args.speech_ref_audio
+    model_args["speech_ref_text"] = args.speech_ref_text
     model_args["strength"] = args.strength
     model_args["emb_pooling_type"] = args.embedding_pooling
     model_args["emb_normalize"] = args.embedding_normalize
@@ -247,6 +250,10 @@ def analyze_args(args):
     model_args["model_type"] = model_type
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
     model_args["is_omni_model"] = isinstance(model_type, str) and model_type.startswith("qwen3-omni")
+    model_args["qwen3_tts_variant"] = get_qwen3_tts_variant(model_path) if use_case.task == "text_to_speech" else None
+    model_args["is_qwen3_tts_model"] = (
+        use_case.task == "text_to_speech" and isinstance(model_type, str) and model_type.startswith("qwen3-tts")
+    )
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}
@@ -259,13 +266,19 @@ def analyze_args(args):
             model_args["config"] = config
     if model_framework == "ov":
         set_default_param_for_ov_config(model_args["config"])
-        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
+        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device.upper() != "NPU":
             if use_case.task in ["text_gen", "text_gen_chat", "visual_text_gen", "visual_text_gen_chat"]:
                 model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
     model_args['model_name'] = model_name
+
+    model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
+    # prompt_permutation is designed to bypass the prefix-caching optimization in PA mode
+    # NPU does not support PA
+    if args.device.upper() == "NPU":
+        model_args["disable_prompt_permutation"] = True
 
     cb_config = None
     if args.cb_config:

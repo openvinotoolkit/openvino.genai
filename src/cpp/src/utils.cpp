@@ -21,7 +21,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
-#include "gguf_utils/gguf_modeling.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 
 
 #include "sampling/sampler.hpp"
@@ -109,7 +109,6 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
     rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
-    rename_key(config, "WHISPER_DECOMPOSE_SDPA", "NPUW_WHISPER_DECOMPOSE_SDPA");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
@@ -495,13 +494,10 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
+    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
+    const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
-#ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), enable_save_ov_model);
-#else
-        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
-#endif
+        return gguf_utils::read_gguf_model(model_dir, gguf_props);
     } else {
         std::filesystem::path model_path = model_dir;
 
@@ -538,6 +534,9 @@ CacheTypes get_cache_types(const ov::Model& model) {
     // "ReadValue" node is cache representation in stateful model
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
     CacheTypes cache_types;
+    if (gguf_utils::has_gguf_recurrent_states(model)) {
+        cache_types.add_linear();
+    }
 
     for (const auto& op : model.get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
@@ -799,7 +798,8 @@ void get_npu_text_rerank_config(ov::AnyMap& properties,
                                 const TextRerankPipeline::Config& text_rerank_config) {
     const auto max_length = static_cast<uint32_t>(text_rerank_config.max_length.value_or(1024u));
     kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(max_length);
-    kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+    // A reranker only prefills, so it needs no response window.
+    kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(0u);
     update_npu_config(properties, kv_pos, kv_desc);
     update_config(properties, {"NPUW_TEXT_RERANK", "YES"});
 }
@@ -983,6 +983,7 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "multi_modal_projector",
         "audio_encoder",
         "language_model",
+        "ngram_embeddings",
     };
     const auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {
@@ -1306,11 +1307,9 @@ ov::genai::GenerationConfig get_multinomial_config() {
     return multinomial_config;
 }
 
-void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
-    std::string chat_template = tokenizer.get_chat_template();
+std::string patch_chat_template_multiline_strings(const std::string& chat_template) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
-    chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
-    tokenizer.set_chat_template(chat_template);
+    return std::regex_replace(chat_template, multiline_string_concatenation, "");
 }
 
 }  // namespace utils

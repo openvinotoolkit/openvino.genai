@@ -12,6 +12,7 @@ from test_cli_image import get_similarity
 VLM_MODEL = "optimum-intel-internal-testing/tiny-random-gemma4"
 FUNASR_MODEL = "optimum-intel-internal-testing/tiny-random-fun-asr"
 FUNASR_LANGUAGE = "en"
+QWEN3_ASR_MODEL = "optimum-intel-internal-testing/tiny-random-qwen3-asr"
 
 
 def _common_args(gt_file):
@@ -56,10 +57,36 @@ def funasr_ground_truth(tmp_path_factory):
     return gt_file
 
 
-def test_asr_funasr_optimum(tmp_path, funasr_ground_truth):
-    common = [*_common_args(funasr_ground_truth), "--speech-language", FUNASR_LANGUAGE, "--max_new_tokens", "16"]
+@pytest.fixture(scope="module")
+def qwen3_asr_ground_truth(tmp_path_factory):
+    gt_file = tmp_path_factory.mktemp("qwen3_asr_ground_truth") / "gt.csv"
+    run_wwb(
+        [
+            "--base-model",
+            QWEN3_ASR_MODEL,
+            *_common_args(gt_file),
+            "--hf",
+            "--max_new_tokens",
+            "16",
+        ]
+    )
+    return gt_file
 
-    model_path = convert_model(FUNASR_MODEL)
+
+@pytest.mark.parametrize(
+    "model_id, ground_truth_fixture, language",
+    [
+        pytest.param(FUNASR_MODEL, "funasr_ground_truth", FUNASR_LANGUAGE, id="funasr"),
+        pytest.param(QWEN3_ASR_MODEL, "qwen3_asr_ground_truth", "", id="qwen3_asr"),
+    ],
+)
+def test_asr_optimum(tmp_path, request, model_id, ground_truth_fixture, language):
+    gt_file = request.getfixturevalue(ground_truth_fixture)
+    common = [*_common_args(gt_file), "--max_new_tokens", "16"]
+    if language:
+        common += ["--speech-language", language]
+
+    model_path = convert_model(model_id)
     optimum_similarity = get_similarity(run_wwb(["--target-model", model_path, *common, "--output", tmp_path]))
     reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 

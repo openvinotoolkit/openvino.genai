@@ -119,7 +119,7 @@ void MultimodalEmbeddingPipelineImpl::init_multimodal(const std::filesystem::pat
             utils::get_model_properties(properties_copy, "language_model", device);
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_copy);
-        m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_prompt_formatting(PromptFormatting::Raw);
         std::shared_ptr<ov::Model> language_model =
             utils::singleton_core().read_model(models_path / "openvino_language_model.xml");
         language_model = utils::apply_postprocessing(language_model, m_config);
@@ -280,6 +280,19 @@ EmbedResult MultimodalEmbeddingPipelineImpl::multimodal_embed(
         for (const auto& [name, tensor] : lm_extra_inputs) {
             if (name == "token_type_ids") {
                 // token_type_ids LM input is set above via batched_token_type_ids
+                continue;
+            }
+            if (name == "visual_pos_masks" && encoded_images.empty() && encoded_videos.empty() &&
+                has_lm_input(name)) {
+                // Text-only batch: the mask must cover the whole padded batch [batch_size, max_seq_length],
+                // the per-item dummy mask only matches a single unpadded sequence.
+                const auto mask_type = m_compiled_language_model.input(name).get_element_type();
+                OPENVINO_ASSERT(mask_type == ov::element::boolean,
+                                "visual_pos_masks must have element type boolean, got ",
+                                mask_type);
+                ov::Tensor batched_visual_pos_masks(mask_type, {batch_size, max_seq_length});
+                std::fill_n(batched_visual_pos_masks.data<bool>(), batched_visual_pos_masks.get_size(), false);
+                m_language_model_request.set_tensor(name, batched_visual_pos_masks);
                 continue;
             }
             if (has_lm_input(name) && tensor.get_size() > 0) {

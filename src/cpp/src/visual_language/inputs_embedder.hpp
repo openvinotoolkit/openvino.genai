@@ -27,6 +27,13 @@ const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 const static std::regex UNIVERSAL_VIDEO_PATTERN{R"(<ov_genai_video_(\d+)>)"};
 const static std::regex UNIVERSAL_AUDIO_PATTERN{R"(<ov_genai_audio_(\d+)>)"};
 
+// Explicit add_special_tokens settings override these defaults.
+enum class PromptFormatting {
+    Raw,              // Skip templating; add special tokens by default outside chat.
+    NeedsTemplate,    // Apply the template; omit extra special tokens by default.
+    AlreadyTemplated  // Skip templating and extra special tokens by default.
+};
+
 struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
@@ -63,10 +70,20 @@ public:
                                  const std::vector<size_t>& videos_sequence = {},
                                  const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
+    // Returns cached text embeddings used to prepare Eagle3 speculative-decoding inputs.
+    // Returns an empty tensor when no cached text embeddings are available.
+    ov::Tensor get_cached_text_embeds() const;
+
+    void set_cached_text_embeds_enabled(bool enabled);
+
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
     // returns per-layer embeddings callback, or nullptr if not available
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
+    
+    // returns ngram embeddings callback, or nullptr if not available
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+    get_ngram_embeddings_callback();
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -112,8 +129,7 @@ public:
     // gets last pruned prompt after vision token pruning
     std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
-    // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
-    void set_apply_chat_template_status(bool apply_chat_template);
+    void set_prompt_formatting(PromptFormatting prompt_formatting);
 
     // finishes chat and clears a chat history
     void finish_chat();
@@ -174,9 +190,7 @@ private:
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
-        // Chat history
-        // True if chat template should be applied for non-chat scenario
-        bool m_apply_chat_template = true;
+        PromptFormatting m_prompt_formatting = PromptFormatting::NeedsTemplate;
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
@@ -190,6 +204,9 @@ private:
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
+        // Text-only embeddings cached for the speculative (Eagle3) draft path.
+        ov::Tensor m_cached_text_embeds;
+        bool m_cached_text_embeds_enabled = false;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -207,6 +224,11 @@ private:
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
         virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
+            return nullptr;
+        }
+
+        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+        get_ngram_embeddings_callback() {
             return nullptr;
         }
 
@@ -282,8 +304,8 @@ private:
             return m_cache_state;
         }
 
-        void set_apply_chat_template_status(bool apply_chat_template) {
-            m_apply_chat_template = apply_chat_template;
+        void set_prompt_formatting(PromptFormatting prompt_formatting) {
+            m_prompt_formatting = prompt_formatting;
         }
 
         /**
@@ -323,7 +345,38 @@ private:
             const std::vector<EncodedImage>& images,
             const std::vector<EncodedVideo>& videos) const;
 
+        virtual ov::Tensor get_cached_text_embeds() const {
+            return m_cached_text_embeds;
+        }
+
+        void set_cached_text_embeds_enabled(bool enabled) {
+            m_cached_text_embeds_enabled = enabled;
+            if (!enabled) {
+                m_cached_text_embeds = ov::Tensor();
+            }
+        }
+
+        void set_cached_text_embeds(const ov::Tensor& text_embeds) {
+            if (!m_cached_text_embeds_enabled) {
+                return;
+            }
+            OPENVINO_ASSERT(text_embeds, "Cannot cache an empty text embeddings tensor");
+            if (!m_cached_text_embeds || m_cached_text_embeds.get_element_type() != text_embeds.get_element_type() ||
+                m_cached_text_embeds.get_shape() != text_embeds.get_shape()) {
+                m_cached_text_embeds = ov::Tensor(text_embeds.get_element_type(), text_embeds.get_shape());
+            }
+            OPENVINO_ASSERT(m_cached_text_embeds.get_element_type() == text_embeds.get_element_type() &&
+                                m_cached_text_embeds.get_shape() == text_embeds.get_shape(),
+                            "Cached and source text embeddings must have matching element types and shapes");
+            text_embeds.copy_to(m_cached_text_embeds);
+        }
+
     protected:
+        IInputsEmbedder(
+            const VLMConfig& vlm_config,
+            const Tokenizer& tokenizer,
+            EmbeddingsModel::Ptr embedding);
+
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
@@ -415,6 +468,7 @@ private:
     std::shared_ptr<IInputsEmbedder> m_impl;
 
     friend class InputsEmbedderMiniCPM;
+    friend class InputsEmbedderMiniCPMV4_6;
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderNanoLLaVA;
     friend class InputsEmbedderLLaVANext;
@@ -426,6 +480,7 @@ private:
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderQwen3_5;
     friend class InputsEmbedderQwen3Omni;
+    friend class InputsEmbedderQwen3ASR;
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
@@ -433,6 +488,8 @@ private:
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
     friend class InputsEmbedderMiniCPMv4_7;
+    friend class InputsEmbedderMistral3;
+    friend class InputsEmbedderLFM3VL;
 };
 
 /// @brief Universal-tag pattern for a modality. A switch, not a ternary on IMAGE: a ternary would

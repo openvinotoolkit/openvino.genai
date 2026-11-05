@@ -147,10 +147,16 @@ class GenAIModelWrapper:
     A helper class to store additional attributes for GenAI models
     """
 
-    def __init__(self, model, model_dir, model_type):
+    def __init__(self, model, model_dir, model_type, gguf_file=None):
         self.model = model
         self.model_dir = model_dir
         self.model_type = model_type
+        self.config = None
+
+        # GGUF models have no HF config.json in the directory; the GenAI pipeline carries its
+        # own config from the .gguf, so skip the AutoConfig load (it would raise).
+        if gguf_file:
+            return
 
         if model_type in (
             "text",
@@ -257,7 +263,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         logger.info("Using OpenVINO GenAI LLMPipeline API")
         pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, **ov_config)
 
-    return GenAIModelWrapper(pipeline, model_dir, "text")
+    return GenAIModelWrapper(pipeline, model_dir, "text", gguf_file=kwargs.get("gguf_file"))
 
 
 def load_text_llamacpp_pipeline(model_dir, **kwargs):
@@ -602,6 +608,15 @@ def load_visual_text_model(
                 from transformers import AutoModelForImageTextToText
 
                 model_cls = AutoModelForImageTextToText
+
+            if config.model_type == "mistral3":
+                # Checkpoint weights are bf16 while the processor emits fp32 pixel_values.
+                if model_kwargs["torch_dtype"] not in (None, torch.float32):
+                    logger.warning(
+                        "Mistral3 uses float32 because pixel_values are float32. Ignoring %s arg.",
+                        model_kwargs["torch_dtype"],
+                    )
+                model_kwargs.update({"torch_dtype": torch.float32})
 
             model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
         except ValueError:

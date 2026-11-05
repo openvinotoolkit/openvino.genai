@@ -3,11 +3,13 @@
 
 #include "tokenizer/tokenizer_impl.hpp"
 
+#include <iostream>
 #include <utility>
 
 #include "add_second_input_pass.hpp"
-#include "sampling/structured_output/structured_output_controller.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "openvino/genai/version.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov {
 namespace genai {
@@ -51,6 +53,13 @@ std::string remap_template(const std::string& chat_template) {
         }
     }
     return chat_template;
+}
+
+// Single place defining transform order: common remap first, then model-specific patch.
+std::string remap_and_patch_template(const std::string& chat_template,
+                                     const std::function<std::string(const std::string&)>& patcher) {
+    std::string result = remap_template(chat_template);
+    return patcher ? patcher(result) : result;
 }
 
 void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
@@ -289,8 +298,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
 
     std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-    auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-    
+    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
+    const ov::AnyMap& filtered_properties = gguf_props.rest;
+
     if (ov::genai::is_gguf_model(models_path)) {
         std::map<std::string, GGUFMetaData> tokenizer_config{};
         std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
@@ -305,9 +315,19 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "eos_token_id")) {
             m_eos_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
         }
+        // SentencePiece decoding omits CONTROL pieces even when special-token filtering is
+        // disabled. Read their spelling from the vocabulary so chat templates receive BOS/EOS.
+        if (auto vocabulary = get_if_exist<std::vector<std::string>>(tokenizer_config, "tokens")) {
+            const auto piece = [&](int64_t id) {
+                return id >= 0 && static_cast<size_t>(id) < vocabulary->size() ? vocabulary->at(id) : std::string{};
+            };
+            m_pad_token = piece(m_pad_token_id);
+            m_bos_token = piece(m_bos_token_id);
+            m_eos_token = piece(m_eos_token_id);
+        }
         if (auto val = get_if_exist<std::string>(tokenizer_config, "chat_template")) {
             m_chat_template = *val;
-        }         
+        }
         if (!m_chat_template.empty()) {
             m_original_chat_template = m_chat_template;
             m_chat_template = patch_gguf_chat_template(m_chat_template);
@@ -315,7 +335,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
         ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
-        if (enable_save_ov_model){
+        if (gguf_props.enable_save_ov_model){
             std::filesystem::path gguf_model_path(models_path);
             std::filesystem::path save_ov_tokenizer_path = gguf_model_path.parent_path() / "openvino_tokenizer.xml";
             std::filesystem::path save_ov_detokenizer_path = gguf_model_path.parent_path() / "openvino_detokenizer.xml";
@@ -323,11 +343,17 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
             ov_tokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
             ov_tokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
             ov_tokenizer->set_rt_info(m_chat_template, "chat_template");
+            ov_tokenizer->set_rt_info(m_pad_token, "pad_token");
+            ov_tokenizer->set_rt_info(m_bos_token, "bos_token");
+            ov_tokenizer->set_rt_info(m_eos_token, "eos_token");
 
             ov_detokenizer->set_rt_info(m_pad_token_id, "pad_token_id");
             ov_detokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
             ov_detokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
             ov_detokenizer->set_rt_info(m_chat_template, "chat_template");
+            ov_detokenizer->set_rt_info(m_pad_token, "pad_token");
+            ov_detokenizer->set_rt_info(m_bos_token, "bos_token");
+            ov_detokenizer->set_rt_info(m_eos_token, "eos_token");
 
             ov::genai::utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
             ov::genai::utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
@@ -814,14 +840,27 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     bool add_generation_prompt,
     const std::string& chat_template,
     const std::optional<JsonContainer>& tools,
-    const std::optional<JsonContainer>& extra_context
+    const std::optional<JsonContainer>& extra_context,
+    const ov::AnyMap& properties
 ) const {
+    for (const auto& [name, value] : properties) {
+        OPENVINO_ASSERT(name == ov::genai::apply_polyfills.name(),
+                        "Unsupported apply_chat_template property: ", name);
+    }
+    minja::chat_template_options minja_options;
+    ov::genai::utils::read_anymap_param(properties, ov::genai::apply_polyfills.name(), minja_options.apply_polyfills);
+
     std::string chat_tpl;
     if (chat_template.empty()) {
         std::lock_guard<std::mutex> lock(m_chat_template_mutex);
         chat_tpl = m_chat_template;
     } else {
-        chat_tpl = remap_template(chat_template);
+        std::function<std::string(const std::string&)> patcher;
+        {
+            std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+            patcher = m_chat_template_patcher;
+        }
+        chat_tpl = remap_and_patch_template(chat_template, patcher);
     }
 
     auto resolved_tools = tools.value_or(history.get_tools());
@@ -847,10 +886,10 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     if (!resolved_extra_context.empty()) {
         minja_inputs.extra_context.update(resolved_extra_context);
     }
-    
+
     std::string result;
     try {
-        result = minja_template->apply(minja_inputs);
+        result = minja_template->apply(minja_inputs, minja_options);
     } catch (const std::exception& error) {
         OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
                         "* Provide a simplified chat template with set_chat_template().\n"
@@ -866,11 +905,16 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
 }
 
 void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
-    auto remapped_chat_template = remap_template(chat_template);
-
     std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+    m_chat_template = remap_and_patch_template(chat_template, m_chat_template_patcher);
     m_original_chat_template = chat_template;
-    m_chat_template = std::move(remapped_chat_template);
+    m_minja_chat_template_cache.clear();
+}
+
+void Tokenizer::TokenizerImpl::set_chat_template_patcher(std::function<std::string(const std::string&)> patcher) {
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+    m_chat_template_patcher = std::move(patcher);
+    m_chat_template = remap_and_patch_template(m_chat_template, m_chat_template_patcher);
     m_minja_chat_template_cache.clear();
 }
 
