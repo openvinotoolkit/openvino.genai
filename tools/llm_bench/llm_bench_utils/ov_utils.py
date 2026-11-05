@@ -197,6 +197,7 @@ def apply_taylorseer_config_genai(pipe, config_data=None):
 def get_scheduler_config_genai(config_data, config_name="CB config"):
     import openvino_genai
     user_config = copy.deepcopy(config_data)
+    offload_config = user_config.pop('cache_offload_config', None)
 
     scheduler_config = openvino_genai.SchedulerConfig()
     if user_config:
@@ -232,12 +233,21 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
         for param, value in user_config.items():
             setattr(scheduler_config, param, value)
 
+    if isinstance(offload_config, dict):
+        scheduler_config.cache_offload_config = openvino_genai.CacheOffloadConfig(**offload_config)
+
     return scheduler_config
 
 
 def cb_pipeline_required(args):
-    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and args.get("cb_config") is not None and\
-        (args["cb_config"].get("cache_eviction_config") is not None or args["cb_config"].get("sparse_attention_config") is not None)
+    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and (
+        (args.get("cb_config") is not None and
+         (args["cb_config"].get("cache_eviction_config") is not None or
+          args["cb_config"].get("sparse_attention_config") is not None or
+          args["cb_config"].get("use_cache_offload", False))) or
+        args.get("session_snapshot_save") is not None or
+        args.get("session_snapshot_restore") is not None
+    )
 
 
 def setup_draft_model_for_sd(args, device, ov_config):
@@ -300,6 +310,13 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
     start = time.perf_counter()
     if cb_pipeline_required(kwargs):
         ov_config.pop("ATTENTION_BACKEND", None)
+        if kwargs.get("session_snapshot_save") is not None or kwargs.get("session_snapshot_restore") is not None:
+            # The snapshot keeps its cache blocks in the prefix-caching offload store.
+            if not (cb_config or {}).get("use_cache_offload", False) or not (cb_config or {}).get("enable_prefix_caching", True):
+                raise RuntimeError(
+                    "--session_snapshot_save/--session_snapshot_restore need --cb_config with "
+                    "enable_prefix_caching and use_cache_offload (plus cache_offload_config)"
+                )
         log.info("Pipeline will be initialized with ContinuousBatchingPipeline")
         llm_pipe = openvino_genai.ContinuousBatchingPipeline(model_path, device=device.upper(), properties=ov_config, **config)
     else:
@@ -933,8 +950,21 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
         try:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
         except Exception:
-            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            remote_code = True
+            try:
+                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+                remote_code = True
+            except Exception as exp:
+                if not kwargs.get("genai", True):
+                    raise
+                # OpenVINO GenAI pipelines (VLMPipeline) don't need a Transformers AutoConfig to run;
+                # fall back to a minimal shim built from config.json so newly released architectures that
+                # Transformers doesn't recognize yet (e.g. qwen3_5) can still be benchmarked via GenAI.
+                log.warning(
+                    f"AutoConfig.from_pretrained failed for `{model_path}`: {exp}. Falling back to a minimal "
+                    "config shim read from config.json since the GenAI pipeline does not require a Transformers AutoConfig."
+                )
+                config_json = json.loads((Path(model_path) / "config.json").read_text(encoding="utf-8"))
+                model_config = types.SimpleNamespace(model_type=config_json.get("model_type", "unknown"))
         if kwargs.get("genai", True):
             if not is_genai_available(log_msg=True):
                 raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")

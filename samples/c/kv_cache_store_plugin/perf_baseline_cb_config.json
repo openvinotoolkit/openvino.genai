@@ -1,0 +1,7 @@
+{
+  "num_kv_blocks": 120,
+  "max_num_batched_tokens": 4096,
+  "max_num_seqs": 1,
+  "dynamic_split_fuse": true,
+  "enable_prefix_caching": true
+}

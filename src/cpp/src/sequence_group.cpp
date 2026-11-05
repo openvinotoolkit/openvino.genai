@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <string_view>
+#include "content_hash.hpp"
 #include "sequence_group.hpp"
 
 namespace ov {
@@ -73,7 +74,11 @@ size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
     }
     const char* data = reinterpret_cast<const char*>(content.data());
     std::size_t size = content.size() * sizeof(content[0]);
-    return std::hash<std::string_view>{}(std::string_view(data, size));
+    // std::hash<string_view> is implementation-defined and not stable across STL/compiler
+    // versions or processes; use the documented, versioned ContentHash algorithm instead so
+    // that prefix-cache block hashes can eventually be persisted and reproduced elsewhere.
+    const ContentHash digest = compute_content_hash(data, size);
+    return static_cast<size_t>(digest.lo ^ digest.hi);
 }
 
 std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embedding) {

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdio>
 #include <functional>
 #include <limits>
 #include <list>
@@ -22,7 +23,11 @@
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "continuous_batching/cache/linear_attention_offload_cache.hpp"
+#include "continuous_batching/cache/store_registry.hpp"
+#include "content_hash.hpp"
 #include "logger.hpp"
 
 namespace ov::genai {
@@ -155,6 +160,12 @@ public:
 
     CacheOrchestrator() = default;
 
+    ~CacheOrchestrator() {
+        // The offload caches are registered as observers on their block managers, so detach before either is gone.
+        detach_kv_offload_cache();
+        detach_la_offload_cache();
+    }
+
     /**
      * @brief Detect model cache types, create managers and block managers, normalize config,
      *        and return a fully populated CacheOrchestrator.
@@ -164,14 +175,19 @@ public:
      *                              cache_size when it is zero.
      * @param get_available_memory  Returns available device memory in bytes given the device
      *                              string and number of cache tensors across all cache types.
+     * @param model_identity        Digest of the model's weights. When non-empty, the offload stores are
+     *                              opened under namespaces derived from it, so entries a persistent store
+     *                              plugin keeps for one model are never served to another.
      */
     static std::shared_ptr<CacheOrchestrator> create(
             ov::InferRequest& infer_request,
             SchedulerConfig& config,
-            std::function<size_t(const std::string&, size_t)> get_available_memory) {
+            std::function<size_t(const std::string&, size_t)> get_available_memory,
+            const std::string& model_identity = {}) {
         config.validate();
 
         auto orchestrator = std::make_shared<CacheOrchestrator>();
+        orchestrator->m_model_identity = model_identity;
 
         auto [kv_mgr, la_mgr] = detect_cache_managers(infer_request, config);
 
@@ -192,6 +208,16 @@ public:
         config.num_kv_blocks = num_kv_blocks;
         config.num_linear_attention_blocks = num_la_blocks;
 
+        GENAI_INFO("[KV_TRACE] orchestrator kv_cache=%s linear_cache=%s cache_tensors=%zu device=%s kv_blocks=%zu linear_blocks=%zu cache_interval=%zu prefix=%s",
+               kv_mgr ? "true" : "false",
+               la_mgr ? "true" : "false",
+               num_cache_tensors,
+               allocation_device.c_str(),
+               num_kv_blocks,
+               num_la_blocks,
+               cache_interval,
+               config.enable_prefix_caching ? "true" : "false");
+
         if (kv_mgr) {
             orchestrator->register_kv_cache(std::move(kv_mgr), config);
         }
@@ -202,7 +228,108 @@ public:
 
         OPENVINO_ASSERT(orchestrator->has_registered_types(), "No supported cache types detected in the model");
 
+        if (config.use_cache_offload) {
+            orchestrator->enable_kv_cache_offload(config.cache_offload_config, allocation_device);
+            if (config.cache_offload_config.linear_attention_capacity_bytes > 0 &&
+                orchestrator->m_cache_managers.count(CacheType::LINEAR_ATTENTION_CACHE) > 0) {
+                orchestrator->enable_linear_attention_cache_offload(config.cache_offload_config, allocation_device);
+            }
+        }
+
         return orchestrator;
+    }
+
+    /**
+     * @brief Creates the disk offload cache for KV blocks and attaches it to the KV block manager.
+     */
+    void enable_kv_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
+        auto cache_mgr_it = m_cache_managers.find(CacheType::KV_CACHE);
+        OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
+                        "KV cache offload requires a model with KV cache inputs");
+
+        auto& kv_manager = static_cast<KVCacheManager&>(*cache_mgr_it->second);
+        m_offload_plugin_requested = offload_config.allow_untrusted_store_plugin && !offload_config.store_library_path.empty();
+        const size_t kv_block_tokens = m_block_managers.at(CacheType::KV_CACHE)->get_block_size();
+        auto store = open_kv_cache_store(kv_manager.get_block_layout(),
+                                         offload_config,
+                                         device,
+                                         offload_group_name("kv", kv_manager.get_block_layout(), kv_block_tokens, device),
+                                         kv_block_tokens);
+        GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
+                   store->get_block_size(),
+                   store->get_capacity_blocks());
+
+        m_kv_offload_cache = std::make_unique<KVCacheOffloadCache>(kv_manager,
+                                                                   std::move(store),
+                                                                   offload_config.buffer_slots);
+        m_block_managers.at(CacheType::KV_CACHE)->set_overwritten_block_observer(m_kv_offload_cache.get());
+    }
+
+    /// @return The KV disk offload cache, or nullptr when offload is disabled.
+    KVCacheOffloadCache* get_kv_offload_cache() const {
+        return m_kv_offload_cache.get();
+    }
+
+    /// Whether the configuration asked for a third-party store plugin, which the stores may not honour if it failed to load.
+    bool offload_plugin_requested() const {
+        return m_offload_plugin_requested;
+    }
+
+    /**
+     * @brief Namespace the offload store of one cache type is opened under.
+     *
+     * Without a model identity this is just `base` ("kv" / "la"). With one, the namespace also carries a digest of
+     * the identity and the cache layout, so a persistent plugin keeps entries of different models, devices and
+     * layouts apart.
+     */
+    std::string offload_group_name(const std::string& base,
+                                   const KVCacheDiskLayout& layout,
+                                   size_t block_tokens,
+                                   const std::string& device) const {
+        if (m_model_identity.empty()) {
+            return base;
+        }
+        const std::string key = m_model_identity + '|' + device + '|' + std::to_string(layout.get_slot_size()) + '|' +
+                                std::to_string(layout.get_num_layers()) + '|' + std::to_string(block_tokens);
+        const ContentHash digest = compute_content_hash(key.data(), key.size());
+        char hex[33];
+        std::snprintf(hex, sizeof(hex), "%016llx%016llx", static_cast<unsigned long long>(digest.hi),
+                      static_cast<unsigned long long>(digest.lo));
+        return base + ':' + hex;
+    }
+
+    /**
+     * @brief Creates the disk offload cache for linear attention state blocks and attaches it to the
+     * linear attention block manager. Separate file/cache from the KV one, since the slot sizes differ.
+     */
+    void enable_linear_attention_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
+        auto cache_mgr_it = m_cache_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
+                        "Linear attention cache offload requires a model with linear attention cache inputs");
+
+        auto& la_manager = static_cast<LinearAttentionCacheManager&>(*cache_mgr_it->second);
+        CacheOffloadConfig la_backend_config = offload_config;
+        la_backend_config.capacity_bytes = offload_config.linear_attention_capacity_bytes;
+        // The LA block manager's block size is the checkpoint interval in tokens.
+        const size_t la_interval = m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_size();
+        auto store = open_kv_cache_store(la_manager.get_block_layout(),
+                                         la_backend_config,
+                                         device,
+                                         offload_group_name("la", la_manager.get_block_layout(), la_interval, device),
+                                         la_interval);
+        GENAI_INFO("[KV_TRACE] la_cache_offload slot_bytes=%zu capacity_blocks=%zu",
+                   store->get_block_size(),
+                   store->get_capacity_blocks());
+
+        m_la_offload_cache = std::make_unique<LinearAttentionOffloadCache>(la_manager,
+                                                                           std::move(store),
+                                                                           offload_config.buffer_slots);
+        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->set_overwritten_block_observer(m_la_offload_cache.get());
+    }
+
+    /// @return The linear attention disk offload cache, or nullptr when offload is disabled.
+    LinearAttentionOffloadCache* get_la_offload_cache() const {
+        return m_la_offload_cache.get();
     }
 
     /**
@@ -240,7 +367,14 @@ public:
 
     void allocate_cache_if_needed() {
         for (auto& [type, block_mgr] : m_block_managers) {
-            m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_block_count());
+            const size_t requested_blocks = block_mgr->get_total_block_count();
+            if (m_cache_managers.at(type)->get_num_allocated_blocks() < requested_blocks) {
+                GENAI_INFO("[KV_TRACE] allocate_cache_if_needed type=%d blocks=%zu free_blocks=%zu",
+                           static_cast<int>(type),
+                           requested_blocks,
+                           block_mgr->num_free_blocks());
+                m_cache_managers.at(type)->allocate_cache_if_needed(requested_blocks);
+            }
         }
         for (auto& [type, block_indices] : m_pending_zero_blocks) {
             m_cache_managers.at(type)->zero_blocks(block_indices);
@@ -250,6 +384,9 @@ public:
 
     void copy_blocks(const std::map<CacheType, std::map<size_t, std::list<size_t>>>& per_type_copy_map) {
         for (const auto& [type, copy_map] : per_type_copy_map) {
+            GENAI_INFO("[KV_TRACE] copy_blocks type=%d source_blocks=%zu",
+                       static_cast<int>(type),
+                       copy_map.size());
             m_cache_managers.at(type)->copy_blocks(copy_map);
         }
     }
@@ -411,6 +548,21 @@ public:
         OPENVINO_ASSERT(m_block_managers.size() == (kv_it != m_block_managers.end()) +
                               (la_it != m_block_managers.end()),
                 "Prefix restore supports only KV and linear-attention caches");
+
+        // Refill the in-memory prefix cache from disk first, so the restore below sees those blocks as cached.
+        if (m_kv_offload_cache != nullptr || m_la_offload_cache != nullptr) {
+            // Warming writes into physical blocks, which a pipeline that has not scheduled anything yet has not allocated.
+            allocate_cache_if_needed();
+        }
+        if (m_kv_offload_cache != nullptr && kv_it != m_block_managers.end()) {
+            KVCacheOffloadCache::ScopedReclamationPause keep_entries(*m_kv_offload_cache);
+            kv_it->second->warm_prefix_cache(sequence_group, *m_kv_offload_cache);
+        }
+        if (m_la_offload_cache != nullptr && la_it != m_block_managers.end()) {
+            LinearAttentionOffloadCache::ScopedReclamationPause keep_entries(*m_la_offload_cache);
+            la_it->second->warm_prefix_cache(sequence_group, *m_la_offload_cache);
+        }
+
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
             auto& kv_block_mgr = *kv_it->second;
             auto& la_block_mgr = *la_it->second;
@@ -810,6 +962,10 @@ public:
     // -----------------------------------------------------------------------
 
     const ICacheManager& get_cache_manager(CacheType type) const {
+        return *m_cache_managers.at(type);
+    }
+
+    ICacheManager& get_cache_manager(CacheType type) {
         return *m_cache_managers.at(type);
     }
 
@@ -1298,8 +1454,34 @@ private:
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
+    std::unique_ptr<KVCacheOffloadCache> m_kv_offload_cache;
+    std::unique_ptr<LinearAttentionOffloadCache> m_la_offload_cache;
+    std::string m_model_identity;
+    bool m_offload_plugin_requested = false;
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
+
+    void detach_kv_offload_cache() {
+        if (m_kv_offload_cache == nullptr) {
+            return;
+        }
+        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        if (it != m_block_managers.end()) {
+            it->second->set_overwritten_block_observer(nullptr);
+        }
+        m_kv_offload_cache.reset();
+    }
+
+    void detach_la_offload_cache() {
+        if (m_la_offload_cache == nullptr) {
+            return;
+        }
+        auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        if (it != m_block_managers.end()) {
+            it->second->set_overwritten_block_observer(nullptr);
+        }
+        m_la_offload_cache.reset();
+    }
 
     // Linear-attention pool footprint high-water mark.
     size_t m_linear_attention_pool_blocks_high_water = 0;
