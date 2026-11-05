@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <optional>
-
 #include <openvino/runtime/core.hpp>
 
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
@@ -17,10 +15,9 @@ namespace ov::genai {
 
 class Qwen3ASRDecoder {
 public:
-    Qwen3ASRDecoder(const std::filesystem::path& models_path,
-                    const std::string& device,
-                    const ov::AnyMap& properties,
-                    const std::optional<size_t> npuw_qwen3_asr_max_encoder_len = std::nullopt);
+    Qwen3ASRDecoder(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
+
+    virtual ~Qwen3ASRDecoder() = default;
 
     EncodedResults generate(const ov::Tensor& input_ids,
                             const ov::Tensor& encoder_hidden_state,
@@ -31,8 +28,15 @@ public:
 
     void set_seed(size_t seed);
 
-private:
+protected:
+    Qwen3ASRDecoder() = default;
+
+    static std::shared_ptr<ov::Model> read_model(const std::filesystem::path& models_path,
+                                                 const ov::AnyMap& properties);
+
     InferRequest m_request;
+
+private:
     Sampler m_sampler;
 };
 

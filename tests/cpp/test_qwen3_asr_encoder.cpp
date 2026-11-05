@@ -7,11 +7,13 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/encoder.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/npu/encoder.hpp"
 #include "openvino/op/ops.hpp"
 #include "openvino/openvino.hpp"
 
@@ -86,10 +88,11 @@ TEST_P(Qwen3ASRStaticEncoderTest, FullPartialAndRepeatedChunksMatchCPU) {
     const auto frames = GetParam();
     const auto features = make_features(frames);
     ov::genai::Qwen3ASREncoder cpu(m_model_dir, "CPU", {});
-    ov::genai::Qwen3ASREncoder npu(m_model_dir, "NPU", cpu_fallback());
+    std::unique_ptr<ov::genai::Qwen3ASREncoder> npu =
+        std::make_unique<ov::genai::Qwen3ASREncoderNPU>(m_model_dir, cpu_fallback());
     const auto expected = cpu.encode(features);
-    const auto first = npu.encode(features);
-    const auto repeated = npu.encode(features);
+    const auto first = npu->encode(features);
+    const auto repeated = npu->encode(features);
 
     const ov::Shape expected_shape{1, (frames + 3) / 4, 1};
     ASSERT_EQ(expected.get_shape(), expected_shape);
@@ -102,7 +105,7 @@ TEST_P(Qwen3ASRStaticEncoderTest, FullPartialAndRepeatedChunksMatchCPU) {
 }
 
 TEST_F(Qwen3ASRStaticEncoderTest, EncoderCapacityIncludesBoundarySearchMargin) {
-    ov::genai::Qwen3ASREncoder encoder(m_model_dir, "NPU", cpu_fallback());
+    ov::genai::Qwen3ASREncoderNPU encoder(m_model_dir, cpu_fallback());
     constexpr size_t sampling_rate = 16000;
     constexpr size_t hop_length = 160;
     std::vector<float> audio(66 * sampling_rate, 0.01f);
@@ -110,10 +113,9 @@ TEST_F(Qwen3ASRStaticEncoderTest, EncoderCapacityIncludesBoundarySearchMargin) {
     const auto chunks = ov::genai::split_audio_into_chunks({audio}, sampling_rate, 60);
     ASSERT_EQ(chunks.size(), 2u);
     ASSERT_GT(chunks.front().wav.size(), 60 * sampling_rate);
-    const auto capacity = encoder.get_npuw_qwen3_asr_max_encoder_len(60 + ov::genai::CHUNK_BOUNDARY_SEARCH_SECONDS,
-                                                                     sampling_rate,
-                                                                     hop_length);
-    const auto nominal_capacity = encoder.get_npuw_qwen3_asr_max_encoder_len(60, sampling_rate, hop_length);
+    const auto capacity =
+        encoder.get_max_encoder_len(60 + ov::genai::CHUNK_BOUNDARY_SEARCH_SECONDS, sampling_rate, hop_length);
+    const auto nominal_capacity = encoder.get_max_encoder_len(60, sampling_rate, hop_length);
     EXPECT_EQ(capacity, 1625u);
     for (const auto& chunk : chunks) {
         ASSERT_LE(chunk.wav.size(), 65 * sampling_rate);
@@ -138,11 +140,13 @@ TEST_F(Qwen3ASRStaticEncoderTest, SharedDecoderOptionsDoNotEnableLLMModeForEncod
     properties["PREFILL_CONFIG"] = ov::AnyMap{};
     properties["BLOB_PATH"] = "decoder-only.blob";
     properties["EXPORT_BLOB"] = false;
-    ov::genai::Qwen3ASREncoder encoder(m_model_dir, "NPU", properties);
+    ov::genai::Qwen3ASREncoderNPU encoder(m_model_dir, properties);
     const auto output = encoder.encode(make_features(6));
     ASSERT_EQ(output.get_shape(), (ov::Shape{1, 2, 1}));
     EXPECT_FLOAT_EQ(output.data<const float>()[0], 2.5f);
     EXPECT_FLOAT_EQ(output.data<const float>()[1], 2.75f);
+    EXPECT_EQ(properties.at("NPUW_LLM").as<std::string>(), "YES");
+    EXPECT_EQ(properties.at("MAX_PROMPT_LEN").as<int>(), 4096);
 }
 
 INSTANTIATE_TEST_SUITE_P(ChunkLengths, Qwen3ASRStaticEncoderTest, ::testing::Values(1u, 4u, 6u, 8u));

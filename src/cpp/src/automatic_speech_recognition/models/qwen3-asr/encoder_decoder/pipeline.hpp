@@ -20,10 +20,13 @@ public:
                            const std::string& device,
                            const ov::AnyMap& properties);
 
-private:
+protected:
+    Qwen3EncoderDecoderASR(const std::filesystem::path& models_path, const ov::AnyMap& properties);
+
     std::unique_ptr<Qwen3ASREncoder> m_encoder;
     std::unique_ptr<Qwen3ASRDecoder> m_decoder;
 
+private:
     std::vector<std::string> infer(const std::vector<AudioChunk>& chunks,
                                    const ASRGenerationConfig& config,
                                    ASRPerfMetrics& perf_metrics,
