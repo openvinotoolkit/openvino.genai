@@ -26,6 +26,7 @@
 #include "openvino/frontend/extension/decoder_transformation.hpp"
 #include "openvino/frontend/extension/telemetry.hpp"
 #ifdef ENABLE_GGUF
+#    include "gguf_utils/gguf_tokenizer.hpp"
 #    include "openvino/frontend/gguf/extension/architecture.hpp"
 #    include "openvino/frontend/gguf/extension/genai.hpp"
 #endif
@@ -1111,20 +1112,42 @@ ExtensionList extract_extensions_to_core(ov::AnyMap& properties) {
 
 ExtensionList extract_extensions_to_core(ov::AnyMap& properties, bool gguf_frontend_registers_extensions_separately) {
     ExtensionList extensions = extract_extensions(properties);
+#ifdef ENABLE_GGUF
+    if (gguf_frontend_registers_extensions_separately) {
+        ExtensionList resolved_extensions;
+        for (const auto& extension : extensions) {
+            if (const auto* path = std::get_if<std::filesystem::path>(&extension)) {
+                auto library = load_shared_object(*path);
+                using CreateExtensions = void (*)(std::vector<std::shared_ptr<ov::Extension>>&);
+                std::vector<std::shared_ptr<ov::Extension>> objects;
+                reinterpret_cast<CreateExtensions>(get_symbol(library, "create_extensions"))(objects);
+                for (const auto& object : objects) {
+                    auto owner =
+                        std::make_shared<std::pair<std::shared_ptr<void>, std::shared_ptr<ov::Extension>>>(library,
+                                                                                                            object);
+                    resolved_extensions.emplace_back(std::shared_ptr<ov::Extension>(owner, object.get()));
+                }
+            } else {
+                resolved_extensions.push_back(extension);
+            }
+        }
+        extensions = std::move(resolved_extensions);
+
+        for (const auto& extension : extensions) {
+            if (const auto* object = std::get_if<std::shared_ptr<ov::Extension>>(&extension)) {
+                OPENVINO_ASSERT(!std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(*object),
+                                "A GenAIExtension cannot be passed through the 'extensions' property because GenAI "
+                                "registers its own GGUF GenAIExtension.");
+            }
+        }
+    }
+#endif
+
     for (const auto& extension : extensions) {
         if (std::holds_alternative<std::filesystem::path>(extension)) {
             singleton_core().add_extension(std::get<std::filesystem::path>(extension));
         } else {
             const auto& object = std::get<std::shared_ptr<ov::Extension>>(extension);
-#ifdef ENABLE_GGUF
-            const bool is_gguf_genai_extension =
-                std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(object) != nullptr;
-            if (gguf_frontend_registers_extensions_separately) {
-                OPENVINO_ASSERT(!is_gguf_genai_extension,
-                                "A GenAIExtension cannot be passed through the 'extensions' property because GenAI "
-                                "registers its own GGUF GenAIExtension.");
-            }
-#endif
             bool is_frontend_extension =
                 std::dynamic_pointer_cast<ov::frontend::ConversionExtensionBase>(object) ||
                 std::dynamic_pointer_cast<ov::frontend::DecoderTransformationExtension>(object) ||

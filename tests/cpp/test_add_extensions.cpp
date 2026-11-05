@@ -147,4 +147,11 @@ TEST(TestAddExtensions, GGUFFrontendRejectsSuppliedGenAIExtensionBeforeCoreRegis
     EXPECT_THROW(extract_extensions_to_core(properties, true), ov::Exception);
     EXPECT_TRUE(retained.expired());
 }
+
+TEST(TestAddExtensions, GGUFFrontendRejectsGenAIExtensionLibraryBeforeCoreRegistration) {
+    ov::AnyMap properties = {
+        ov::genai::extensions(std::vector<std::filesystem::path>{TEST_GGUF_GENAI_EXTENSION_PATH})};
+
+    EXPECT_THROW(extract_extensions_to_core(properties, true), ov::Exception);
+}
 #endif

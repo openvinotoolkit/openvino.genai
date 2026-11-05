@@ -187,9 +187,7 @@ def _raise_on_gguf_conversion(_):
             id="llm-pipeline-with-tokenizer",
         ),
         pytest.param(
-            lambda path, properties: genai.ContinuousBatchingPipeline(
-                path, genai.SchedulerConfig(), "CPU", properties
-            ),
+            lambda path, properties: genai.ContinuousBatchingPipeline(path, genai.SchedulerConfig(), "CPU", properties),
             id="continuous-batching-without-tokenizer",
         ),
         pytest.param(
@@ -223,21 +221,17 @@ def test_gguf_frontend_extensions(gguf_extension_model, build_pipeline, make_ext
     "build_pipeline, generate",
     [
         pytest.param(
-            lambda path, properties: genai.LLMPipeline(
-                path, "CPU", **properties, ATTENTION_BACKEND="SDPA"
-            ),
+            lambda path, properties: genai.LLMPipeline(path, "CPU", **properties, ATTENTION_BACKEND="SDPA"),
             lambda pipeline, config: pipeline.generate(
                 pipeline.get_tokenizer().encode("Hello").input_ids, config
             ).tokens[0],
             id="llm-pipeline-sdpa",
         ),
         pytest.param(
-            lambda path, properties: genai.ContinuousBatchingPipeline(
-                path, genai.SchedulerConfig(), "CPU", properties
-            ),
-            lambda pipeline, config: pipeline.generate(
-                [pipeline.get_tokenizer().encode("Hello").input_ids], [config]
-            )[0].m_generation_ids[0],
+            lambda path, properties: genai.ContinuousBatchingPipeline(path, genai.SchedulerConfig(), "CPU", properties),
+            lambda pipeline, config: pipeline.generate([pipeline.get_tokenizer().encode("Hello").input_ids], [config])[
+                0
+            ].m_generation_ids[0],
             id="continuous-batching-pipeline-pa",
         ),
     ],

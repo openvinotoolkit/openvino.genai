@@ -36,6 +36,9 @@ add_subdirectory(custom_op)
 
 if(ENABLE_GGUF)
     target_compile_definitions(${TEST_TARGET_NAME} PRIVATE ENABLE_GGUF)
+    target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
+        TEST_GGUF_GENAI_EXTENSION_PATH="$<TARGET_FILE:openvino_gguf_genai_extension>")
+    add_dependencies(${TEST_TARGET_NAME} openvino_gguf_genai_extension)
 endif()
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> gtest_main gmock_main)
