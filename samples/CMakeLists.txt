@@ -10,6 +10,7 @@ if(ENABLE_SAMPLES)
     add_subdirectory(cpp/automatic_speech_recognition)
     add_subdirectory(cpp/omni)
     add_subdirectory(cpp/rag)
+    add_subdirectory(cpp/classification)
     add_subdirectory(c/text_generation)
     add_subdirectory(c/whisper_speech_recognition)
     add_subdirectory(c/speech_generation)
@@ -35,6 +36,7 @@ install(DIRECTORY
             cpp/automatic_speech_recognition
             cpp/omni
             cpp/rag
+            cpp/classification
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
@@ -46,6 +48,7 @@ install(DIRECTORY
             python/automatic_speech_recognition
             python/omni
             python/rag
+            python/classification
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
 

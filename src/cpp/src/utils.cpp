@@ -7,17 +7,22 @@
 #include <algorithm>
 #include <variant>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <regex>
 
 #include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/constant.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/slice.hpp"
+#include "openvino/op/squeeze.hpp"
+#include "openvino/op/subtract.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -371,6 +376,29 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
         }
     }
     return std::make_tuple(matmul, slice_gather_dim);
+}
+
+std::shared_ptr<ov::Node> last_token_pooling(const ov::Output<ov::Node>& hidden_states,
+                                             const ov::Output<ov::Node>& attention_mask,
+                                             bool left_padding) {
+    auto axis_1 = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+
+    // shortcut for left padding. We can slice last token directly
+    if (left_padding) {
+        auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+        auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64,
+                                                           ov::Shape{1},
+                                                           std::vector<int64_t>{std::numeric_limits<int64_t>::max()});
+        auto step = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto slice = std::make_shared<ov::op::v8::Slice>(hidden_states, start, stop, step, axis_1);
+        return std::make_shared<ov::op::v15::Squeeze>(slice, axis_1);
+    }
+
+    auto reduce_sum = std::make_shared<ov::op::v1::ReduceSum>(attention_mask, axis_1);
+    auto subtract_1 = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+    auto subtract = std::make_shared<ov::op::v1::Subtract>(reduce_sum, subtract_1);
+
+    return std::make_shared<ov::op::v8::Gather>(hidden_states, subtract, axis_1, 1);
 }
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
