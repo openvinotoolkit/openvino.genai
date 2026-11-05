@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/qwen4_exp/classes.hpp"
+#include "logger.hpp"
 
 #include <algorithm>
 #include <numeric>
@@ -67,10 +68,16 @@ void InputsEmbedderQwen4_Exp::init_ngram_embeddings_model(
         "Qwen4Exp ngram_history input shape must match text_config.ngram_size - 1.");
     m_ngram_context_length = static_cast<size_t>(ngram_history_input_pshape[1].get_length());
 
+    // Exact 64-bit hash function for ngram embeddings is properly calculated only on CPU
+    const std::string model_supported_device = "CPU";
+    if (device != model_supported_device) {
+        GENAI_INFO("Ngram embeddings model will be executed on CPU. "
+            "Provided device (", device, ") is not currently supported.");
+    }
     auto compiled_model = utils::singleton_core().compile_model(
         model,
-        device,
-        utils::get_model_properties(device_config, "ngram_embeddings", device)
+        model_supported_device,
+        utils::get_model_properties(device_config, "ngram_embeddings", model_supported_device)
     );
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM ngram embeddings model");
