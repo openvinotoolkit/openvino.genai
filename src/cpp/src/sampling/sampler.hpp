@@ -40,6 +40,7 @@ float sampling_probability(const Logits& logits, int64_t token_id);
 // processor selected them, dense otherwise. With d2t (EAGLE), draft id i is recorded as target id i + d2t[i].
 DraftProposal make_draft_proposal(const Logits& logits, const int64_t* d2t = nullptr);
 
+// Checks that a proposal is a distribution, without allocating, so it does not check that sparse ids are distinct.
 void validate_draft_proposal(const DraftProposal& proposal);
 float proposal_probability(const DraftProposal& proposal, int64_t token_id);
 
@@ -215,6 +216,9 @@ class Sampler {
 
     ThreadPool m_thread_pool;
     std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
+    // Whether m_d2t_mapping sends the draft tokens to distinct non-negative target ids, which recording proposals
+    // in target ids requires.
+    bool m_d2t_mapping_is_one_to_one = false;
     bool m_collect_draft_proposals = false;
 public:
     Sampler(const Sampler& rhs) = delete;
@@ -246,9 +250,7 @@ public:
     std::pair<std::map<std::string, float>, std::vector<float>> get_structured_output_times();
     void clear_structured_output_compile_times();
 
-    void set_d2t_for_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t) {
-        m_d2t_mapping = d2t;
-    };
+    void set_d2t_for_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t);
 
     // A draft pipeline's sampler records the distribution q(.) of each multinomially sampled token, which the main
     // pipeline needs to verify it.

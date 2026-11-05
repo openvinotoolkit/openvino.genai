@@ -182,7 +182,6 @@ TEST(RejectionSampling, DrawsTheDenseTailItsProposalRecords) {
 }
 
 TEST(RejectionSampling, RejectsInvalidDistributions) {
-    EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{0, 0}, {0.5f, 0.5f}}), ov::Exception);
     EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{0}, {0.75f}}), ov::Exception);
     EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{-1}, {1.0f}}), ov::Exception);
     EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{}), ov::Exception);
@@ -277,6 +276,10 @@ Sequence::Ptr sample_one_top_k_token(Sampler& sampler) {
     sampler.sample({group}, logits_tensor(logits, 1));
     return group->get_sequences().front();
 }
+
+std::shared_ptr<ov::op::v0::Constant> d2t_mapping(const std::vector<int64_t>& d2t) {
+    return std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{d2t.size()}, d2t);
+}
 }  // namespace
 
 // Regular generation keeps no proposals; a draft keeps a sparse q(.) over the candidates surviving top_k.
@@ -298,10 +301,8 @@ TEST(RejectionSampling, RecordsSparseProposalsOnlyForDraftPipelines) {
 // An EAGLE draft samples over its own vocabulary, where draft id i is target id i + d2t[i]. It records q(.) by
 // target ids, the space of the emitted token and of the main model's p(.).
 TEST(RejectionSampling, RecordsEagleDraftProposalsInTargetVocabulary) {
-    const std::vector<int64_t> d2t = {0, 2, 3, 5};  // draft ids 0..3 -> target ids 0, 3, 5, 8
     Sampler draft_sampler;
-    draft_sampler.set_d2t_for_decoding(
-        std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{d2t.size()}, d2t));
+    draft_sampler.set_d2t_for_decoding(d2t_mapping({0, 2, 3, 5}));  // draft ids 0..3 -> target ids 0, 3, 5, 8
     draft_sampler.set_collect_draft_proposals(true);
     const auto sequence = sample_one_top_k_token(draft_sampler);
 
@@ -312,6 +313,35 @@ TEST(RejectionSampling, RecordsEagleDraftProposalsInTargetVocabulary) {
     EXPECT_NEAR(detail::proposal_probability(proposal, 8), q8, 1e-6f);
     EXPECT_NEAR(detail::proposal_probability(proposal, 5), 1.0f - q8, 1e-6f);
     EXPECT_FLOAT_EQ(detail::proposal_probability(proposal, 3), 0.0f);
+}
+
+// Every draft logit is read as a draft id and mapped through d2t.
+TEST(RejectionSampling, RejectsDraftLogitsWiderThanTheEagleMapping) {
+    Sampler draft_sampler;
+    draft_sampler.set_d2t_for_decoding(d2t_mapping({0, 2, 3}));
+    EXPECT_THROW(sample_one_top_k_token(draft_sampler), ov::Exception);
+}
+
+// A proposal holds one probability per target id, so sampled drafting needs d2t to keep the draft tokens apart.
+// Greedy drafting records no proposal and maps tokens as before.
+TEST(RejectionSampling, RejectsSampledEagleDraftingWhenDraftTokensShareATargetId) {
+    const auto shared_target = d2t_mapping({0, 2, 1, 5});  // draft ids 0..3 -> target ids 0, 3, 3, 8
+    Sampler sampled_draft_sampler;
+    sampled_draft_sampler.set_d2t_for_decoding(shared_target);
+    sampled_draft_sampler.set_collect_draft_proposals(true);
+    EXPECT_THROW(sample_one_top_k_token(sampled_draft_sampler), ov::Exception);
+
+    GenerationConfig config;
+    config.max_new_tokens = 10;
+    auto group = std::make_shared<SequenceGroup>(0, TokenIds{7}, config);
+    group->update_processed_tokens_num(1);
+    group->schedule_tokens(1);
+    std::vector<float> logits = {0.0f, 1.0f, 2.0f, 3.0f};
+    Sampler greedy_draft_sampler;
+    greedy_draft_sampler.set_d2t_for_decoding(shared_target);
+    greedy_draft_sampler.set_collect_draft_proposals(true);
+    greedy_draft_sampler.sample({group}, logits_tensor(logits, 1));
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids().back(), 8);
 }
 
 TEST(RejectionSampling, RejectsSampledSpeculationWithoutCompleteProposalRows) {

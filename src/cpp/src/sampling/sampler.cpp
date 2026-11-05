@@ -1534,11 +1534,8 @@ void detail::validate_draft_proposal(const DraftProposal& proposal) {
     if (!proposal.is_dense()) {
         OPENVINO_ASSERT(proposal.token_ids.size() == proposal.probabilities.size(),
                         "Sparse draft proposal IDs and probabilities must stay aligned.");
-        std::unordered_set<int64_t> unique_token_ids;
         for (const auto token_id : proposal.token_ids) {
             OPENVINO_ASSERT(token_id >= 0, "Sparse draft proposal contains a negative token ID.");
-            OPENVINO_ASSERT(unique_token_ids.insert(token_id).second,
-                            "Sparse draft proposal contains duplicate token IDs.");
         }
     }
 
@@ -1693,6 +1690,9 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             is_validation_mode_enabled && sampling_params.do_sample && !sampling_params.is_prompt_lookup();
         const bool is_draft_proposal_needed = m_collect_draft_proposals && sampling_params.is_multinomial();
         const int64_t* d2t = m_d2t_mapping ? m_d2t_mapping->get_data_ptr<int64_t>() : nullptr;
+        OPENVINO_ASSERT(!is_draft_proposal_needed || !d2t || m_d2t_mapping_is_one_to_one,
+                        "Sampled drafting requires a draft-to-target token mapping that sends the draft tokens to "
+                        "distinct target tokens.");
         for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
             auto& running_sequence = running_sequences[running_sequence_id];
             bool is_validation_passed = true;
@@ -1950,6 +1950,12 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
     size_t vocab_size = logits_shape[2];
+    OPENVINO_ASSERT(!m_d2t_mapping || ov::shape_size(m_d2t_mapping->get_shape()) >= vocab_size,
+                    "The draft-to-target token mapping has ",
+                    ov::shape_size(m_d2t_mapping->get_shape()),
+                    " entries, fewer than the ",
+                    vocab_size,
+                    " draft logits.");
 
     SamplerOutput sampler_output;
     std::unordered_map<uint64_t, std::future<SequenceGroupSamplingInfo>> sg_sampling_future_map;
@@ -2104,6 +2110,21 @@ void Sampler::clear_request_info(uint64_t request_id) {
         m_tree_search_info.erase(request_id);
     }
     m_request_contexts.erase(request_id);
+}
+
+void Sampler::set_d2t_for_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t) {
+    m_d2t_mapping = d2t;
+    m_d2t_mapping_is_one_to_one = false;
+    if (d2t) {
+        const int64_t* offsets = d2t->get_data_ptr<int64_t>();
+        std::vector<int64_t> target_ids(ov::shape_size(d2t->get_shape()));
+        for (size_t draft_id = 0; draft_id < target_ids.size(); ++draft_id) {
+            target_ids[draft_id] = static_cast<int64_t>(draft_id) + offsets[draft_id];
+        }
+        std::sort(target_ids.begin(), target_ids.end());
+        m_d2t_mapping_is_one_to_one = (target_ids.empty() || target_ids.front() >= 0) &&
+                                      std::adjacent_find(target_ids.begin(), target_ids.end()) == target_ids.end();
+    }
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
