@@ -329,10 +329,12 @@
     # Selects the DFlash, DFlash-2 (qwen3-dflash2), DeepSpec and DSpark pairs, test_dflash.py and
     # test_dflash_acceptance.py. Their drafts need the export from optimum-intel main, which exports Qwen3.5 only with
     # transformers>=5.15 and exports DFlash-2 drafts since https://github.com/huggingface/optimum-intel/pull/2098.
-    # The MiniCPM-V 4.7 pairs need transformers 5.18 and run in their own job.
+    # The drafts with a pruned draft vocabulary also need https://github.com/huggingface/optimum-intel/pull/2099,
+    # which builds on main, so its head commit is installed.
+    # The MiniCPM-V 4.7 and MiniCPM-OCR pairs need transformers 5.18 and 5.21 and run in their own jobs.
     python -m pip install transformers==5.15.1
-    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@7995031fbf29285441ec7c222ef9afa80aaedbb2"
-    python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "(dflash or deepspec or dspark) and not minicpmv47"
+    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@c5221a2b13e3733edce07785bd121d421ab92149"
+    python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "(dflash or deepspec or dspark) and not minicpm"
   timeout: 90
   components:
     - speculative_decoding
@@ -345,6 +347,18 @@
     python -m pip install -U --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f09a56ace88149cd341233ddfa2bc018bff7c079"
     python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "minicpmv47"
   timeout: 90
+  components:
+    - speculative_decoding
+
+- name: DSpark speculative decoding tests (MiniCPM-OCR)
+  cmd: |-
+    # The MiniCPM-OCR target needs transformers 5.21. Its DSpark draft has a pruned draft vocabulary, whose export
+    # needs https://github.com/huggingface/optimum-intel/pull/2099, here its head commit, which declares
+    # transformers<5.16, so it is installed without dependencies.
+    python -m pip install "transformers==5.21.*"
+    python -m pip install -U --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@c5221a2b13e3733edce07785bd121d421ab92149"
+    python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "minicpm-ocr"
+  timeout: 30
   components:
     - speculative_decoding
 
