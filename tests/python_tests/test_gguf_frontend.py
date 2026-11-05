@@ -644,6 +644,7 @@ def test_gguf_llava_preformatted_prompt(tiny_gguf_vlm_model, add_eos):
         )
     )
     tokenizer = AutoTokenizer.from_pretrained(source)
+    tokenizer.add_bos_token = True
     tokenizer.add_eos_token = add_eos
     config = json.loads((Path(source) / "config.json").read_text(encoding="utf-8"))
     prefix, suffix = "USER: ", "\nDescribe. ASSISTANT:"
