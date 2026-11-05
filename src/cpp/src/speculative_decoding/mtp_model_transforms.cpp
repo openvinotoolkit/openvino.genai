@@ -29,7 +29,7 @@ ov::Output<ov::Node> find_result_source(const std::shared_ptr<ov::Model>& model,
     return {};
 }
 
-// Clone into the MTP model without sharing source-model constants.
+// Keep graph nodes independent while sharing immutable Constant storage.
 std::shared_ptr<ov::Node> clone_subgraph(const std::shared_ptr<ov::Node>& node,
                                          std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) {
     const auto it = cloned_nodes.find(node.get());
@@ -39,9 +39,7 @@ std::shared_ptr<ov::Node> clone_subgraph(const std::shared_ptr<ov::Node>& node,
 
     std::shared_ptr<ov::Node> cloned;
     if (auto constant = ov::as_type_ptr<ov::op::v0::Constant>(node)) {
-        cloned = std::make_shared<ov::op::v0::Constant>(constant->get_element_type(),
-                                                        constant->get_shape(),
-                                                        constant->get_data_ptr());
+        cloned = constant->clone_with_new_inputs({});
     } else {
         ov::OutputVector cloned_inputs;
         cloned_inputs.reserve(node->get_input_size());
@@ -53,6 +51,13 @@ std::shared_ptr<ov::Node> clone_subgraph(const std::shared_ptr<ov::Node>& node,
     }
 
     cloned->set_friendly_name(node->get_friendly_name() + "_mtp_lm_head");
+    cloned->get_rt_info() = node->get_rt_info();
+    for (const auto& output : node->outputs()) {
+        cloned->output(output.get_index()).get_tensor().clone_from(output.get_tensor());
+    }
+    for (const auto& input : node->inputs()) {
+        cloned->input(input.get_index()).get_rt_info() = input.get_rt_info();
+    }
     cloned_nodes[node.get()] = cloned;
     return cloned;
 }
