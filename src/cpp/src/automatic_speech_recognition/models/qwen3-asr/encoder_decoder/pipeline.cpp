@@ -12,21 +12,16 @@ namespace ov::genai {
 Qwen3EncoderDecoderASR::Qwen3EncoderDecoderASR(const std::filesystem::path& models_path,
                                                const std::string& device,
                                                const ov::AnyMap& properties)
-    : Qwen3ASRPipelineBase(models_path, properties) {
+    : Qwen3EncoderDecoderASR(models_path, properties) {
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
     m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties_copy);
-    size_t max_encoder_len = 0;
-    if (device == "NPU") {
-        m_max_asr_input_seconds = 60;
-        const auto max_chunk_seconds = m_max_asr_input_seconds + CHUNK_BOUNDARY_SEARCH_SECONDS;
-        max_encoder_len = m_encoder->get_npuw_qwen3_asr_max_encoder_len(max_chunk_seconds,
-                                                                      m_feature_extractor.sampling_rate,
-                                                                      m_feature_extractor.hop_length);
-    }
-    m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy, max_encoder_len);
+    m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy);
     m_decoder->set_seed(m_generation_config.rng_seed);
 }
+
+Qwen3EncoderDecoderASR::Qwen3EncoderDecoderASR(const std::filesystem::path& models_path, const ov::AnyMap& properties)
+    : Qwen3ASRPipelineBase(models_path, properties) {}
 
 std::string Qwen3EncoderDecoderASR::extend_audio_tokens(const std::string& prompt, size_t audio_length) const {
     static const std::string audio_token = "<|audio_pad|>";

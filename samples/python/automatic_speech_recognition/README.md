@@ -167,6 +167,8 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 
 The Qwen3-ASR encoder-decoder export also supports `ASRPipeline` on NPU. It uses nominal 60-second audio chunks;
 the static encoder-state capacity includes the additional five-second low-energy boundary search window.
+The NPU implementation processes fixed-size encoder windows sequentially, while CPU/GPU retain dynamic batched
+encoder inference. The device-specific decoders share the same prefill and text-generation loop.
 The split-export pipeline keeps its existing chunking behavior.
 
 Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.

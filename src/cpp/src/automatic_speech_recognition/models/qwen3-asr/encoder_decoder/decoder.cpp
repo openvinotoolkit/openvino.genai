@@ -10,41 +10,20 @@
 #include "sequence_group.hpp"
 #include "utils.hpp"
 
-namespace {
-
-constexpr size_t QWEN3_ASR_TEXT_TOKEN_BUDGET = 128;
-constexpr size_t QWEN3_ASR_PROMPT_LEN_ALIGNMENT = 64;
-
-size_t align_up(const size_t value, const size_t alignment) {
-    OPENVINO_ASSERT(alignment > 0, "alignment must be > 0");
-    return ((value + alignment - 1) / alignment) * alignment;
-}
-
-// Reshape encoder_hidden_states for NPU compilation.
-// Keep dim0 fixed to 1 and leave dim1 dynamic.
-void set_encoder_hidden_states_batch_dim_to_one(std::shared_ptr<ov::Model> model) {
-    if (!ov::genai::utils::has_input(model, "encoder_hidden_states")) {
-        return;
-    }
-    ov::PartialShape new_shape = model->input("encoder_hidden_states").get_partial_shape();
-    OPENVINO_ASSERT(new_shape.rank().is_static() && new_shape.rank().get_length() >= 2,
-                    "Unexpected rank for 'encoder_hidden_states' input.");
-
-    new_shape[0] = 1;
-    new_shape[1] = ov::Dimension::dynamic();
-    std::cout << "[INFO] Qwen3ASRDecoder: reshape encoder_hidden_states to [" << new_shape[0] << "," << new_shape[1]
-              << ",...]" << std::endl;
-    model->reshape({{"encoder_hidden_states", new_shape}});
-}
-
-}  // namespace
-
 namespace ov::genai {
 
 Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
                                  const std::string& device,
-                                 const ov::AnyMap& properties,
-                                 const std::optional<size_t> npuw_qwen3_asr_max_encoder_len) {
+                                 const ov::AnyMap& properties) {
+    ov::Core core = utils::singleton_core();
+    auto model = read_model(models_path, properties);
+    ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+    utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
+    m_request = compiled_model.create_infer_request();
+}
+
+std::shared_ptr<ov::Model> Qwen3ASRDecoder::read_model(const std::filesystem::path& models_path,
+                                                       const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
     const auto model_path = models_path / "openvino_decoder_model.xml";
     auto model = core.read_model(model_path, {}, properties);
@@ -55,35 +34,7 @@ Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
                     "Re-export with '--task automatic-speech-recognition-with-past' and without '--disable-stateful'. "
                     "Adding 'beam_idx' alone does not provide the missing KV cache.");
 
-    if (device == "NPU" && npuw_qwen3_asr_max_encoder_len.has_value()) {
-        const auto max_encoder_len = npuw_qwen3_asr_max_encoder_len.value();
-        ov::AnyMap npu_properties = properties;
-
-        auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
-
-        // Set batch dim from encoder compiled output; seq_len (dim 1) remains dynamic and is handled by NPUW.
-        set_encoder_hidden_states_batch_dim_to_one(model);
-
-        OPENVINO_ASSERT(max_encoder_len > 0,
-                        "NPUW_QWEN3_ASR_MAX_ENCODER_LEN must be > 0, got ",
-                        max_encoder_len);
-        npu_properties["NPUW_QWEN3_ASR_MAX_ENCODER_LEN"] = static_cast<int64_t>(max_encoder_len);
-        if (npu_properties.count("MAX_PROMPT_LEN") == 0) {
-            const size_t max_prompt_len =
-                align_up(max_encoder_len + QWEN3_ASR_TEXT_TOKEN_BUDGET, QWEN3_ASR_PROMPT_LEN_ALIGNMENT);
-            npu_properties["MAX_PROMPT_LEN"] = static_cast<int64_t>(max_prompt_len);
-        }
-
-        utils::KVDesc kv_desc;
-        ov::CompiledModel compiled_model;
-        std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu_qwen3_asr(model, npu_properties, kv_pos);
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
-        m_request = compiled_model.create_infer_request();
-    } else {
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
-        m_request = compiled_model.create_infer_request();
-    }
+    return model;
 }
 
 void Qwen3ASRDecoder::set_seed(size_t seed) {
