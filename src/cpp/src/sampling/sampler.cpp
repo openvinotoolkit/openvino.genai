@@ -1021,7 +1021,7 @@ static CandidateWeights candidate_weights(const Logits& logits) {
 }
 
 std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine) {
-    std::uniform_real_distribution<float> u(0.0f, 1.0f);
+    std::uniform_real_distribution<double> u(0.0, 1.0);
     std::vector<Token> out_tokens;
     out_tokens.reserve(num_tokens_per_sequence);
 
@@ -1487,7 +1487,7 @@ bool accept_draft_token(float target_probability, float draft_probability, std::
     if (target_probability >= draft_probability) {
         return true;
     }
-    std::uniform_real_distribution<float> uniform(0.0f, 1.0f);
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
     return uniform(rng_engine) * draft_probability < target_probability;
 }
 }  // namespace
