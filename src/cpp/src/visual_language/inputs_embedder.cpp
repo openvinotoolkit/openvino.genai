@@ -503,7 +503,7 @@ std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_p
     return m_impl->get_per_layer_embeddings_callback();
 }
 
-std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
 InputsEmbedder::get_ngram_embeddings_callback() {
     return m_impl->get_ngram_embeddings_callback();
 }
