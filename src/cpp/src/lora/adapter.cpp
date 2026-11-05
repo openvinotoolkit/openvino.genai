@@ -318,8 +318,7 @@ struct LoRAWeightGetterDefault {
         }
 
         std::cerr << "[ WARNING ] There unused LoRA tensors for tensor name prefix \"" << prefix
-                  << "\" (foreign prefix \"" << foreign_prefix
-                  << "\"). The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
+                  << "\". The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
 
         for(const auto& unused_name: unused) {
             std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
@@ -1586,7 +1585,7 @@ struct AdapterControllerImpl {
                     return (*const_getter_impl)(name);
                 };
             }
-            params_getter.weight_getter.push_back(LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or(""), config.get_foreign_tensor_name_prefix().value_or("")));
+            params_getter.weight_getter.push_back(LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or(""), config.foreign_tensor_name_prefix.value_or("")));
             if(params_getter.type != ov::element::f32) {
                 for(auto const& tensor : adapter_impl->get_tensors()) {
                     auto lora_tensor_type = tensor.second.A->get_output_element_type(0);
@@ -1811,7 +1810,7 @@ struct AdapterControllerImpl {
             weight_getters.emplace_back(
                 LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(),
                                                               config.get_tensor_name_prefix().value_or(std::string()),
-                                                              config.get_foreign_tensor_name_prefix().value_or(std::string())));
+                                                              config.foreign_tensor_name_prefix.value_or(std::string())));
         }
         return weight_getters;
     }
@@ -2007,7 +2006,7 @@ struct AdapterControllerImpl {
             weight_getters.emplace_back(
                 LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(),
                                                               current_config.get_tensor_name_prefix().value_or(""),
-                                                              current_config.get_foreign_tensor_name_prefix().value_or("")));
+                                                              current_config.foreign_tensor_name_prefix.value_or("")));
         }
 
         auto state = infer_request.query_state();

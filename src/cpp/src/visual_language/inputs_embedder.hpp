@@ -22,9 +22,10 @@
 
 namespace ov::genai {
 
-// Vision sub-models are exported from the `model.visual` submodule, so the part of a PEFT adapter that belongs to
-// them is nested under this prefix.
+// Vision sub-models of the Qwen-VL family are exported from the `model.visual` submodule, so the part of a PEFT
+// adapter that belongs to them is nested under this prefix.
 constexpr char VISION_LORA_TENSOR_NAME_PREFIX[] = "base_model.model.model.visual.";
+
 struct VLMPerfMetrics;
 
 const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};

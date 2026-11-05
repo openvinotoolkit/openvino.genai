@@ -67,5 +67,9 @@ std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, con
     return updated_adapters;
 }
 
+void set_foreign_tensor_name_prefix(AdapterConfig& config, const std::optional<std::string>& prefix) {
+    config.foreign_tensor_name_prefix = prefix;
+}
+
 }
 }

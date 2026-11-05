@@ -38,5 +38,9 @@ utils::SharedOptional<const AnyMap> update_adapters_in_properties(const AnyMap& 
 // Create a new AdapterConfig object with adapters modified by `action` function.
 std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, const AdapterAction& action);
 
+// Sets the GenAI-internal part of AdapterConfig: the prefix of the tensors that are nested under tensor_name_prefix
+// but are applied by another AdapterController of the same pipeline.
+void set_foreign_tensor_name_prefix(AdapterConfig& config, const std::optional<std::string>& prefix);
+
 }
 }

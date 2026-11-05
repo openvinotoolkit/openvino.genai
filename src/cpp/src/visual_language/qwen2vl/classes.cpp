@@ -1336,7 +1336,7 @@ void InputsEmbedderQwen2VL::set_adapters(const std::optional<AdapterConfig>& ada
     if (m_vision_adapters) {
         // The prefixes in the incoming config address the language model, the vision controller keeps its own ones.
         m_vision_adapters->set_tensor_name_prefix(std::nullopt);
-        m_vision_adapters->set_foreign_tensor_name_prefix(std::nullopt);
+        set_foreign_tensor_name_prefix(*m_vision_adapters, std::nullopt);
     }
 }
 

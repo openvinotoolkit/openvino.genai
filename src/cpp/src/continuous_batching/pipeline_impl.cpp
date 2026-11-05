@@ -169,12 +169,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
     const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
 
-    // apply LoRA. Adapters passed through the properties override the ones the pipeline was constructed with.
-    auto filtered_properties = extract_adapters_from_properties(language_model_properties);
-    update_adapters_from_properties(language_model_properties, m_generation_config.adapters);
+    // apply LoRA
+    auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
-        m_generation_config.adapters->set_foreign_tensor_name_prefix(VISION_LORA_TENSOR_NAME_PREFIX);
+        set_foreign_tensor_name_prefix(*m_generation_config.adapters, VISION_LORA_TENSOR_NAME_PREFIX);
         m_adapter_controller =
             AdapterController(model, *m_generation_config.adapters, device);  // TODO: Make the prefix name configurable
     }

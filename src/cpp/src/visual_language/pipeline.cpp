@@ -148,6 +148,9 @@ private:
         //     MODEL_PROPERTIES: { "language_model": {...}, "vision_embeddings": {...} }
         // }
         auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
+        // Adapters addressed to the language model role, resolved the same way continuous batching does.
+        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
+        lm_properties.erase(AdaptersProperty::name());
 
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
@@ -157,7 +160,7 @@ private:
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
-            m_generation_config.adapters->set_foreign_tensor_name_prefix(VISION_LORA_TENSOR_NAME_PREFIX);
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, VISION_LORA_TENSOR_NAME_PREFIX);
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
@@ -223,6 +226,10 @@ private:
             properties_copy[utils::FORWARDED_ADAPTERS_PROPERTY] = *m_generation_config.adapters;
         }
 
+        auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
+        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
+        lm_properties.erase(AdaptersProperty::name());
+
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
@@ -234,7 +241,7 @@ private:
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
-            m_generation_config.adapters->set_foreign_tensor_name_prefix(VISION_LORA_TENSOR_NAME_PREFIX);
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, VISION_LORA_TENSOR_NAME_PREFIX);
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
@@ -242,7 +249,6 @@ private:
         // After this transformation, default path returns logits with seq_len == 1,
         // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
         utils::apply_slice_before_matmul_transformation(language_model);
-        const auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
         m_language = utils::singleton_core().compile_model(
             language_model, device, lm_properties).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
