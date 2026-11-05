@@ -56,6 +56,7 @@ FULL_CHAT_MODEL_TYPES = {
     "minicpmv4_7",
     "qwen3_omni",
     "qwen3_omni_moe",
+    "qwen4_exp",
 }
 
 
