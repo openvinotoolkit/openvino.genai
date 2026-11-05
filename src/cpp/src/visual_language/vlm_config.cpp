@@ -29,6 +29,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_vl", VLMModelType::QWEN3_VL},
         {"qwen3_5", VLMModelType::QWEN3_5},
         {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
+        {"qwen4_exp", VLMModelType::QWEN4_EXP},
         {"gemma3", VLMModelType::GEMMA3},
         {"gemma3n", VLMModelType::GEMMA3N},
         {"gemma4", VLMModelType::GEMMA4},
@@ -40,6 +41,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
         {"minicpmv4_7", VLMModelType::MINICPMV4_7},
+        {"mistral3", VLMModelType::MISTRAL3},
         {"lfm3_vl", VLMModelType::LFM3_VL},
     };
 
@@ -89,6 +91,11 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+
+    // qwen4_exp
+    if (model_type == VLMModelType::QWEN4_EXP) {
+        read_json_param(parsed, "text_config.eos_token_id", text_config_eos_token_id);
+    }
 
     // gemma4
     read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
@@ -145,6 +152,8 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
         read_json_param(parsed, "thinker_config.image_token_id", image_token_id);
         read_json_param(parsed, "thinker_config.video_token_id", video_token_id);
         read_json_param(parsed, "talker_config.num_code_groups", talker_num_code_groups);
+        read_json_param(parsed, "code2wav_config.upsample_rates", code2wav_config_upsample_rates);
+        read_json_param(parsed, "code2wav_config.upsampling_ratios", code2wav_config_upsampling_ratios);
         read_json_param(parsed, "talker_config.codec_bos_id", talker_codec_bos_id);
         read_json_param(parsed, "talker_config.codec_eos_token_id", talker_codec_eos_token_id);
         read_json_param(parsed, "talker_config.codec_pad_id", talker_codec_pad_id);

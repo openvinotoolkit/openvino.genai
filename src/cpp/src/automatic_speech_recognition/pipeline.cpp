@@ -113,7 +113,18 @@ ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs,
                                         const std::optional<ASRGenerationConfig>& generation_config,
                                         StreamerVariant streamer) {
     const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer, m_impl->m_tokenizer);
-    return m_impl->generate(audio_inputs, generation_config, base_streamer);
+    const AudiosView audios = std::visit(
+        utils::overloaded{
+            [](const std::vector<float>& audio) {
+                return AudiosView{std::cref(audio)};
+            },
+            [](const std::vector<std::vector<float>>& audio_batch) {
+                OPENVINO_ASSERT(!audio_batch.empty(), "ASRPipeline::generate() requires a non-empty audio batch");
+                return AudiosView(audio_batch.begin(), audio_batch.end());
+            },
+        },
+        audio_inputs);
+    return m_impl->generate(audios, generation_config, base_streamer);
 }
 
 ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map) {
@@ -121,10 +132,7 @@ ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs, const o
     ASRGenerationConfig config = config_arg.has_value() ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
 
-    StreamerVariant streamer_variant = utils::get_streamer_from_map(config_map);
-    const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer_variant, m_impl->m_tokenizer);
-
-    return m_impl->generate(audio_inputs, config, base_streamer);
+    return generate(audio_inputs, config, utils::get_streamer_from_map(config_map));
 }
 
 Tokenizer ASRPipeline::get_tokenizer() {

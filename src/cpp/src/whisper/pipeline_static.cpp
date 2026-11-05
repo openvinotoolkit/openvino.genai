@@ -1062,6 +1062,9 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
                                                               const ov::AnyMap& properties)
     : WhisperPipelineImplBase{models_path}
     , m_sampler(m_tokenizer) {
+    GENAI_WARN("The use of \"StaticWhisperPipeline\" on NPU is deprecated and will be removed"
+               "in future major release. Use StatefulWhisperPipeline instead (used by default now).");
+
     ov::AnyMap properties_copy = properties;
     m_generation_config.update_generation_config(properties_copy);
     erase_whisper_generation_config_keys(properties_copy);

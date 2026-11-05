@@ -28,6 +28,7 @@ enum class VLMModelType {
     QWEN3_VL,
     QWEN3_5,
     QWEN3_5_MOE,
+    QWEN4_EXP,
     GEMMA3,
     GEMMA3N,
     GEMMA4,
@@ -38,6 +39,7 @@ enum class VLMModelType {
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
     MINICPMV4_7,
+    MISTRAL3,
     LFM3_VL,
 };
 
@@ -154,6 +156,10 @@ public:
     /// @brief DeepStack visual indexes for Qwen3-VL model.
     std::vector<size_t> vision_config_deepstack_visual_indexes;
 
+    // qwen4_exp specific config
+    /// @brief EOS token ID for qwen4_exp model.
+    int64_t text_config_eos_token_id = -1;
+
     // Qwen3-Omni specific config
     /// @brief Whether audio output (speech) is enabled.
     bool enable_audio_output = false;
@@ -165,6 +171,9 @@ public:
     size_t audio_config_n_window_infer = 200;
     /// @brief Talker: number of codec quantizer groups.
     size_t talker_num_code_groups = 16;
+    /// @brief Code2Wav: upsampling factors. Their product is the number of waveform samples per codec frame.
+    std::vector<size_t> code2wav_config_upsample_rates = {8, 5, 4, 3};
+    std::vector<size_t> code2wav_config_upsampling_ratios = {2, 2};
     // Codec special token IDs (model-specific; -1 until loaded from talker_config in config.json)
     int64_t talker_codec_bos_id = -1;
     int64_t talker_codec_eos_token_id = -1;

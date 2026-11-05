@@ -85,6 +85,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
 
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
+    std::weak_ptr<ChatHistoryInternalState> m_active_history;
     // It stores encoded images, videos and vision count in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
@@ -352,6 +353,7 @@ public:
     ) override {
         // Local mutable copy: setup_generation_config(...) and downstream callees mutate fields
         // (rng_seed, eos_token_id, ...). The public-base signature is const-ref by contract.
+        m_active_history.reset();
         GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
@@ -438,7 +440,8 @@ public:
                 vlm_utils::rebase_media_sequence(audio_sequence, m_audio_id);
             }
         } else {
-            m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
+            m_inputs_embedder->set_prompt_formatting(
+                generation_config.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         }
 
         auto finish_info = prepare_inputs_and_generate(
@@ -647,11 +650,16 @@ public:
                                processed_chat_data.audio_encoding_durations.begin(),
                                processed_chat_data.audio_encoding_durations.end());
 
-        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
+        const auto history_state = ChatHistoryInternalState::get_or_create(history, m_embeddings_registry);
+        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history ||
+                                m_active_history.lock() != history_state ||
+                                m_inputs_embedder->get_cache_state().get_state().empty();
+        m_active_history = history_state;
 
         if (use_full_history) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            m_inputs_embedder->get_cache_state().reset_state();
             m_inputs_embedder->start_chat("");
         }
 
@@ -779,6 +787,7 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
+        m_active_history.reset();
         m_is_chat_conversation = true;
         m_system_message = system_message;
         m_inputs_embedder->start_chat(m_system_message);
@@ -790,6 +799,7 @@ public:
     }
 
     void finish_chat() override {
+        m_active_history.reset();
         m_is_chat_conversation = false;
         m_image_id = 0;
         m_video_id = 0;
@@ -978,6 +988,7 @@ private:
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
         auto per_layer_callback = m_inputs_embedder->get_per_layer_embeddings_callback();
+        auto ngram_embeddings_callback = m_inputs_embedder->get_ngram_embeddings_callback();
 
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
@@ -1001,16 +1012,16 @@ private:
             max_kv_cache_size,
             use_intermediate_remote_tensor,
             lm_extra_inputs,
-            std::move(per_layer_callback)
+            std::move(per_layer_callback),
+            std::move(ngram_embeddings_callback)
         );
     }
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. Example:
-    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // Force models to use SDPA backend by default until PA is supported.
+    const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::QWEN4_EXP;
 }
 
 VLMPipeline::VLMPipeline(

@@ -424,7 +424,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
         PerfMetrics::emplace_duration(vlm_perf_metrics[0].raw_metrics.chat_template_durations, template_start);
 
-        m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_prompt_formatting(PromptFormatting::AlreadyTemplated);
 
         size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[0]);
 
@@ -478,7 +478,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
                 m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, m_audio_id, encoded_images, encoded_videos, encoded_audios);
 
-            m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
+            m_inputs_embedder->set_prompt_formatting(
+                sampling_params[i].apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
 
             size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[i]);
 
@@ -710,7 +711,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         );
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].raw_metrics.chat_template_durations, template_start);
 
-        m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_prompt_formatting(PromptFormatting::AlreadyTemplated);
 
         // Snapshot the embedder's token cache so the newly added prompt slice can be recovered
         // after tokenization (used by the Omni Talker via original_prompt_ids_list).
@@ -850,7 +851,8 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+        m_inputs_embedder->set_prompt_formatting(
+            sampling_params.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         
         const auto vision_encoding_start = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(images);
