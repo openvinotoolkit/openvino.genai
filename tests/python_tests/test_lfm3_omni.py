@@ -269,6 +269,13 @@ def test_text_mode_masks_speech_tokens(vlm_pipe: ov_genai.VLMPipeline, optimum_r
     assert collector.tokens == expected
 
 
+def test_rejects_beam_search(vlm_pipe: ov_genai.VLMPipeline) -> None:
+    config = _text_config(2)
+    config.num_beams = 2
+    with pytest.raises(RuntimeError, match="Beam search is not supported"):
+        vlm_pipe.generate(PROMPT, generation_config=config)
+
+
 def test_tagged_audio_matches_optimum(
     vlm_pipe: ov_genai.VLMPipeline, optimum_reference: OptimumReference, media: Media
 ) -> None:

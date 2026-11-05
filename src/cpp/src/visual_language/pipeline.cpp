@@ -893,6 +893,9 @@ private:
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
+        // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
+        OPENVINO_ASSERT(!generation_config.is_beam_search() || m_inputs_embedder->get_suppressed_token_ids().empty(),
+                        "Beam search is not supported for this model because it has suppressed token ids");
     }
 
     void validate_inputs_for_npu(
