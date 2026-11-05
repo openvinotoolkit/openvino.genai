@@ -22,9 +22,11 @@
 
 namespace ov::genai {
 
-// Vision sub-models of the Qwen-VL family are exported from the `model.visual` submodule, so the part of a PEFT
+// Qwen-VL vision sub-models are exported from the `model.visual` submodule, so the part of a PEFT
 // adapter that belongs to them is nested under this prefix.
-constexpr char VISION_LORA_TENSOR_NAME_PREFIX[] = "base_model.model.model.visual.";
+// TODO: keep it in the Qwen2VL embedder behind a virtual getter once every pipeline constructs the embedder before
+// the language model adapter controller.
+constexpr char QWEN_VL_VISION_LORA_TENSOR_NAME_PREFIX[] = "base_model.model.model.visual.";
 
 struct VLMPerfMetrics;
 

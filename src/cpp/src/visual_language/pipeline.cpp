@@ -160,7 +160,7 @@ private:
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
-            set_foreign_tensor_name_prefix(*m_generation_config.adapters, VISION_LORA_TENSOR_NAME_PREFIX);
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, QWEN_VL_VISION_LORA_TENSOR_NAME_PREFIX);
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
@@ -241,7 +241,7 @@ private:
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
-            set_foreign_tensor_name_prefix(*m_generation_config.adapters, VISION_LORA_TENSOR_NAME_PREFIX);
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, QWEN_VL_VISION_LORA_TENSOR_NAME_PREFIX);
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
