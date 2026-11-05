@@ -1416,6 +1416,39 @@ def test_eagle3_llm_generate_zero_assistant_tokens_matches_main_only(eagle3_mode
     assert sd_result.texts[0] == main_only_result.texts[0]
 
 
+def test_eagle3_sampled_streaming(eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+    sd_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+    )
+    generation_config = GenerationConfig(
+        do_sample=True,
+        temperature=0.8,
+        top_k=20,
+        top_p=0.95,
+        rng_seed=5,
+        max_new_tokens=32,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+    streamed = []
+
+    def streamer(subword):
+        streamed.append(subword)
+        return StreamingStatus.RUNNING
+
+    result = sd_cb_pipe.generate(["Explain why sunsets often appear orange."], [generation_config], streamer)[0]
+
+    assert result.m_generation_ids[0]
+    assert "".join(streamed) == result.m_generation_ids[0]
+    metrics = result.extended_perf_metrics
+    assert len(metrics.main_model_metrics.raw_metrics.m_durations) > 1
+    # A draft whose hidden states fall out of step with the target would have almost none accepted.
+    assert 0 < metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
+
+
 def test_eagle3_cb_add_request_mixed_batch_zero_assistant_tokens_matches_main_only(
     eagle3_model_paths: tuple[Path, Path],
 ):
