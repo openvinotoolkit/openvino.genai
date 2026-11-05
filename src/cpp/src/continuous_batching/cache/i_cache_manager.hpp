@@ -6,9 +6,9 @@
 #include <cstddef>
 #include <list>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
-#include <vector>
 
 namespace ov::genai {
 
@@ -60,11 +60,11 @@ public:
     /// @return The device on which the cache resides (e.g. "CPU", "GPU").
     virtual std::string get_device() const = 0;
 
-    /// @return Every device the cache is spread over. A cache living on one
-    ///         device answers with just that one; a tensor-parallel cache is
-    ///         split across several, and its memory budget is their sum.
-    virtual std::vector<std::string> get_devices() const {
-        return {get_device()};
+    /// @return Memory, in bytes, the cache can still take, when the manager knows it -- a cache the plugin
+    ///         manages may be spread over several devices only the plugin knows. std::nullopt: measure
+    ///         get_device().
+    virtual std::optional<size_t> get_available_memory() const {
+        return std::nullopt;
     }
 
     /// @return Size in bytes of a single block across all layers.
@@ -72,6 +72,15 @@ public:
 
     /// @return Number of blocks currently allocated in physical storage.
     virtual size_t get_num_allocated_blocks() const = 0;
+};
+
+/**
+ * @brief A paged-attention KV cache (key_cache.N / value_cache.N), whoever allocates it.
+ */
+class IKVCacheManager : public ICacheManager {
+public:
+    /// @return Head size of the value cache of a layer.
+    virtual size_t get_v_head_size(size_t layer_id) const = 0;
 };
 
 }  // namespace ov::genai

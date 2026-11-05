@@ -972,17 +972,18 @@ private:
             return grew_capacity;
         }
 
-        if (device.find("GPU") == std::string::npos) {
+        auto available_memory = m_cache_orchestrator->get_available_memory();
+        if (!available_memory && device.find("GPU") != std::string::npos) {
+            available_memory = utils::get_available_gpu_memory(device, m_cache_orchestrator->get_num_cache_tensors());
+        }
+        if (!available_memory) {
             grew_capacity = m_cache_orchestrator->grow_capacity_by_tokens(growth_tokens) || grew_capacity;
         } else {
-            const size_t available_gpu_memory = utils::get_available_gpu_memory(
-                m_cache_orchestrator->get_devices(),
-                m_cache_orchestrator->get_num_cache_tensors());
             size_t required_memory = m_cache_orchestrator->memory_cost_for_additional_tokens(growth_tokens);
-            if (required_memory <= available_gpu_memory) {
+            if (required_memory <= *available_memory) {
                 grew_capacity = m_cache_orchestrator->grow_capacity_by_tokens(growth_tokens) || grew_capacity;
             } else {
-                size_t possible_tokens = m_cache_orchestrator->max_additional_tokens_for_memory(available_gpu_memory);
+                size_t possible_tokens = m_cache_orchestrator->max_additional_tokens_for_memory(*available_memory);
                 if (possible_tokens > 0) {
                     grew_capacity = m_cache_orchestrator->grow_capacity_by_tokens(possible_tokens) || grew_capacity;
                 } else {
