@@ -149,7 +149,6 @@ if is_transformers_version("<", "5.0"):
     VIDEO_MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-llava-next-video",
-        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     ]
@@ -185,7 +184,6 @@ if is_transformers_version("<", "5.0"):
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
-        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-internvl2",
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
@@ -241,6 +239,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 
 VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
+    "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
@@ -1295,28 +1294,38 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
         )
 
 
+@pytest.mark.skipif(
+    is_transformers_version(">=", "5.0"),
+    reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059",
+)
+@pytest.mark.transformers_dependent(reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059")
 @pytest.mark.parametrize(
     "ov_pipe_model",
     [("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", backend) for backend in ATTENTION_BACKEND],
+    ids=lambda item: f"{item[0]}/{item[1]}",
     indirect=["ov_pipe_model"],
 )
 @pytest.mark.parametrize("frame_count", [1, 7])
+@pytest.mark.parametrize("video_first", [False, True])
 def test_minicpm_mixed_media_cached_history(
-    ov_pipe_model: VlmModelInfo, frame_count: int, request: pytest.FixtureRequest
+    ov_pipe_model: VlmModelInfo, frame_count: int, video_first: bool, request: pytest.FixtureRequest
 ):
     request.addfinalizer(lambda: finish_chat(ov_pipe_model))
     pipeline = ov_pipe_model.pipeline
     generator = np.random.default_rng(42)
-    image = openvino.Tensor(generator.integers(0, 256, (1, 350, 350, 3), dtype=np.uint8))
+    image = openvino.Tensor(generator.integers(0, 256, (1, 700, 700, 3), dtype=np.uint8))
     video = openvino.Tensor(generator.integers(0, 256, (frame_count, 32, 32, 3), dtype=np.uint8))
-    prompt = "Compare <ov_genai_image_0> with <ov_genai_video_0>."
+    prompt = "Compare <ov_genai_image_0> with <ov_genai_video_0>." if video_first else "Describe <ov_genai_image_0>."
+    first_media = {"videos": [video]} if video_first else {}
     config = _setup_generation_config(pipeline, max_new_tokens=5, do_sample=False, ignore_eos=True)
 
-    direct = pipeline.generate(prompt, images=[image], videos=[video], generation_config=config)
+    direct = pipeline.generate(prompt, images=[image], generation_config=config, **first_media)
     history = ChatHistory([{"role": "user", "content": prompt}])
-    first = pipeline.generate(history, images=[image], videos=[video], generation_config=config)
+    messages = history.get_messages()
+    first = pipeline.generate(history, images=[image], generation_config=config, **first_media)
+    assert history.get_messages() == messages
     history.append({"role": "assistant", "content": first.texts[0]})
-    history.append({"role": "user", "content": "Compare <ov_genai_image_1> with <ov_genai_video_1>."})
+    history.append({"role": "user", "content": f"Compare <ov_genai_image_1> with <ov_genai_video_{int(video_first)}> ."})
     cached = pipeline.generate(history, images=[image], videos=[video], generation_config=config)
 
     assert direct.texts == first.texts
@@ -2075,6 +2084,7 @@ if is_transformers_version("<", "5.0"):
     # minicpmv architectures are deprecating support for transformers >= v5 by optimum-intel
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", "PA"),
     ]
 else:
     MODELS_TO_TAG += [
@@ -2547,6 +2557,27 @@ def test_audio_rejected_by_non_audio_model():
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=20))
 
 
+def _prepare_minicpm_video_inputs(processor, prompt, image, video):
+    media = [] if image is None else [PIL.Image.fromarray(np.asarray(image))]
+    temporal_ids = [[-1]] if media else []
+    frames = [PIL.Image.fromarray(np.asarray(frame)) for frame in video]
+    media.extend(frames)
+    # MiniCPM-V-4.5 resamples at most six consecutive frames into one visual token group.
+    max_frames_per_group = 6
+    temporal_ids.extend(
+        list(range(start, min(start + max_frames_per_group, len(frames))))
+        for start in range(0, len(frames), max_frames_per_group)
+    )
+    prompt = processor.apply_chat_template(
+        [{"role": "user", "content": "(<image>./</image>)" * len(media) + "\n" + prompt}],
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    inputs = processor(prompt, media, temporal_ids=temporal_ids, max_slice_nums=1, use_image_id=False, return_tensors="pt")
+    inputs.pop("image_sizes", None)
+    return inputs
+
+
 def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=None):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
@@ -2642,17 +2673,20 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=N
             ):
                 processor.chat_template = tokenizer.chat_template
 
-        inputs = optimum_model.preprocess_inputs(
-            text=prompt,
-            image=image,
-            video=video,
-            audio=audio,
-            processor=processor,
-            tokenizer=tokenizer,
-            config=optimum_model.config,
-        )
+        if optimum_model.config.model_type == "minicpmv" and video is not None:
+            inputs = _prepare_minicpm_video_inputs(processor, prompt, image, video)
+        else:
+            inputs = optimum_model.preprocess_inputs(
+                text=prompt,
+                image=image,
+                video=video,
+                audio=audio,
+                processor=processor,
+                tokenizer=tokenizer,
+                config=optimum_model.config,
+            )
 
-    max_new_tokens = 20 if model_id == "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5" else 100
+    max_new_tokens = 100
     output_ids = optimum_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
     input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
     generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]

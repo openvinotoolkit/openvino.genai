@@ -53,6 +53,11 @@ public:
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
+    std::vector<int64_t> m_vision_token_ids;
+
+    void encode_vision_token_ids();
+
+    ov::Tensor resample_video_group(const EncodedVideo& video, size_t group_index, size_t pad_to_max);
 
 public:
     InputsEmbedderMiniCPM(

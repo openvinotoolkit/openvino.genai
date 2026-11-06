@@ -16,6 +16,27 @@ namespace {
 std::string NATIVE_TAG = "<image>./</image>";
 constexpr char VIDEO_GROUP_MARKER[] = "<ov_genai_minicpm_video_group>";
 
+struct VisionGroup {
+    bool is_video;
+    bool has_slices;
+};
+
+std::vector<VisionGroup> collect_vision_groups(const std::string& prompt, const VLMConfig& config) {
+    std::vector<VisionGroup> groups;
+    size_t position = prompt.find(config.im_start);
+    while (position != std::string::npos) {
+        const bool is_video = position >= sizeof(VIDEO_GROUP_MARKER) - 1 &&
+                              prompt.compare(position - (sizeof(VIDEO_GROUP_MARKER) - 1),
+                                             sizeof(VIDEO_GROUP_MARKER) - 1,
+                                             VIDEO_GROUP_MARKER) == 0;
+        const size_t next_position = prompt.find(config.im_start, position + config.im_start.size());
+        const size_t slice_position = prompt.find(config.slice_start, position + config.im_start.size());
+        groups.push_back({is_video, slice_position != std::string::npos && slice_position < next_position});
+        position = next_position;
+    }
+    return groups;
+}
+
 /**
  * @brief Represents the result of slicing an image into smaller patches.
  *
@@ -733,73 +754,42 @@ NormalizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prom
             std::move(video_sequence)};
 }
 
-ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-    std::string unk64;
-    ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
-
-    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
-    EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor inputs_embeds = get_text_embedding(req, encoded_input, metrics);
-
-    OPENVINO_ASSERT(
-        m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
-        "Unexpected embedding size"
-    );
-    auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor special_tokens = m_tokenizer.encode(
-        m_vlm_config.im_start
-        + m_vlm_config.im_end
-        + m_vlm_config.slice_start
-        + m_vlm_config.slice_end,
-        ov::genai::add_special_tokens(false)
-    ).input_ids;
-    auto end_tokenizer_time = std::chrono::steady_clock::now();
-    OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
-    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    OPENVINO_ASSERT(
-        4 == special_tokens.get_shape().at(1),
-        "Every special token must be represented with a single int."
-    );
-    int64_t im_start_id = special_tokens.data<int64_t>()[0];
-    int64_t im_end_id = special_tokens.data<int64_t>()[1];
-    int64_t slice_start_id = special_tokens.data<int64_t>()[2];
-    int64_t slice_end_id = special_tokens.data<int64_t>()[3];
-    int64_t im_start_pos = 0, slice_start_pos = 0;
-    int64_t* begin = encoded_input.data<int64_t>();
-    int64_t* ids = begin;
-    size_t encoded_input_size = encoded_input.get_size();
-    int64_t* end = ids + encoded_input_size;
-    float* inputs_embeds_data = inputs_embeds.data<float>();
-    for (size_t image_id : images_sequence) {
-        const EncodedImage& encoded_image = images.at(image_id);
-        const ov::Tensor& resampled_source = encoded_image.resampled_image.resampled_source;
-        auto emb = resampled_source.data<float>();
-        ids = std::find(ids, end, im_start_id);
-        OPENVINO_ASSERT(end != ids);
-        ++ids;
-        std::copy_n(emb, resampled_source.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
-        ids += m_vlm_config.query_num;
-        ov::Shape slices_shape = encoded_image.slices_shape;
-        if (slices_shape.size()) {
-            size_t token_idx = 0;
-            for (size_t i = 0; i < slices_shape.at(0); ++i) {
-                for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
-                    const ov::Tensor& vision_embed_tensor_i_j = encoded_image.resampled_image.vision_embed_tensors[i][ja];
-                    ids = std::find(ids, end, slice_start_id);
-                    OPENVINO_ASSERT(end != ids);
-                    ++ids;
-                    std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
-                    ids += m_vlm_config.query_num;
-                }
-            }
-        }
+void InputsEmbedderMiniCPM::encode_vision_token_ids() {
+    if (!m_vision_token_ids.empty()) {
+        return;
     }
+    const ov::Tensor tokens = m_tokenizer.encode(
+        m_vlm_config.im_start + m_vlm_config.im_end + m_vlm_config.slice_start + m_vlm_config.slice_end,
+        ov::genai::add_special_tokens(false)).input_ids;
+    OPENVINO_ASSERT(tokens.get_size() == 4,
+                    "Expected 4 MiniCPM vision boundary token IDs, got ", tokens.get_size(), ".");
+    m_vision_token_ids.assign(tokens.data<int64_t>(), tokens.data<int64_t>() + tokens.get_size());
+}
 
-    // inputs_embeds is bound to infer request that can be used by another thread after leaving this scope
-    // so we need to return a copy to make sure data does not get corrupted 
-    ov::Tensor inputs_embeds_copy(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
-    std::memcpy(inputs_embeds_copy.data(), inputs_embeds.data(), inputs_embeds.get_byte_size());
-    return inputs_embeds_copy;
+ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    return get_inputs_embeds(unified_prompt, images, {}, metrics, recalculate_merged_embeddings, images_sequence, {}, {});
+}
+
+ov::Tensor InputsEmbedderMiniCPM::resample_video_group(const EncodedVideo& video,
+                                                      size_t group_index,
+                                                      size_t pad_to_max) {
+    constexpr size_t max_frames_per_group = 6;
+    const size_t group_start = group_index * max_frames_per_group;
+    const size_t group_end = std::min(group_start + max_frames_per_group, video.frame_num);
+    const ov::Shape& feature_shape = video.video_features.get_shape();
+    ov::Tensor group_frames(video.video_features,
+                           {group_start, 0, 0},
+                           {group_end, feature_shape.at(1), feature_shape.at(2)});
+    std::vector<size_t> temporal_ids;
+    for (size_t frame_index = group_start; frame_index < group_end; ++frame_index) {
+        const VideoMetadata& metadata = video.metadata;
+        const size_t source_index = metadata.frames_indices.empty() ? frame_index : metadata.frames_indices.at(frame_index);
+        temporal_ids.push_back(metadata.fps > 0.0f
+                                   ? static_cast<size_t>(std::round(source_index / metadata.fps * 10.0f))
+                                   : source_index);
+    }
+    return std::static_pointer_cast<VisionEncoderMiniCPM>(m_vision_encoder)
+        ->resample(group_frames, video.resized_source_size, pad_to_max, temporal_ids);
 }
 
 ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
@@ -811,18 +801,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
     const std::vector<size_t>& images_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    std::vector<bool> video_groups;
-    size_t search_offset = 0;
-    size_t im_start_pos = unified_prompt.find(m_vlm_config.im_start, search_offset);
-    while (im_start_pos != std::string::npos) {
-        const bool is_video_group = im_start_pos >= sizeof(VIDEO_GROUP_MARKER) - 1 &&
-                                    unified_prompt.compare(im_start_pos - (sizeof(VIDEO_GROUP_MARKER) - 1),
-                                                           sizeof(VIDEO_GROUP_MARKER) - 1,
-                                                           VIDEO_GROUP_MARKER) == 0;
-        video_groups.push_back(is_video_group);
-        search_offset = im_start_pos + m_vlm_config.im_start.size();
-        im_start_pos = unified_prompt.find(m_vlm_config.im_start, search_offset);
-    }
+    std::vector<VisionGroup> vision_groups = collect_vision_groups(unified_prompt, m_vlm_config);
     // Needed for SDPA
     size_t current_video_groups = 0;
     for (const size_t video_id : videos_sequence) {
@@ -832,9 +811,9 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
         current_video_groups += encoded_video.num_video_tokens / m_vlm_config.query_num;
     }
     const size_t current_visual_groups = images_sequence.size() + current_video_groups;
-    OPENVINO_ASSERT(video_groups.size() >= current_visual_groups,
+    OPENVINO_ASSERT(vision_groups.size() >= current_visual_groups,
                     "MiniCPM prompt contains fewer visual groups than provided media.");
-    video_groups.erase(video_groups.begin(), video_groups.end() - current_visual_groups);
+    vision_groups.erase(vision_groups.begin(), vision_groups.end() - current_visual_groups);
 
     std::string prompt = unified_prompt;
     size_t marker_pos = prompt.find(VIDEO_GROUP_MARKER);
@@ -850,18 +829,9 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
 
     OPENVINO_ASSERT(m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
                     "Unexpected MiniCPM embedding size.");
-    const auto start_tokenizer_time = std::chrono::steady_clock::now();
-    const ov::Tensor special_tokens = m_tokenizer.encode(
-        m_vlm_config.im_start + m_vlm_config.im_end + m_vlm_config.slice_start + m_vlm_config.slice_end,
-        ov::genai::add_special_tokens(false)).input_ids;
-    const auto end_tokenizer_time = std::chrono::steady_clock::now();
-    OPENVINO_ASSERT(!metrics.raw_metrics.tokenization_durations.empty());
-    metrics.raw_metrics.tokenization_durations.back() += ov::genai::MicroSeconds(
-        PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    OPENVINO_ASSERT(special_tokens.get_shape().at(1) == 4,
-                    "Every MiniCPM vision boundary token must be represented with a single int.");
-    const int64_t im_start_id = special_tokens.data<int64_t>()[0];
-    const int64_t slice_start_id = special_tokens.data<int64_t>()[2];
+    encode_vision_token_ids();
+    const int64_t im_start_id = m_vision_token_ids[0];
+    const int64_t slice_start_id = m_vision_token_ids[2];
     int64_t* begin = encoded_input.data<int64_t>();
     int64_t* ids = begin;
     int64_t* end = ids + encoded_input.get_size();
@@ -870,12 +840,12 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
     size_t image_sequence_idx = 0;
     size_t video_sequence_idx = 0;
     size_t video_group_idx = 0;
-    for (const bool is_video_group : video_groups) {
+    for (const VisionGroup& group : vision_groups) {
         ids = std::find(ids, end, im_start_id);
         OPENVINO_ASSERT(ids != end, "Not enough MiniCPM vision placeholders for visual embeddings.");
         ++ids;
 
-        if (is_video_group) {
+        if (group.is_video) {
             OPENVINO_ASSERT(video_sequence_idx < videos_sequence.size(),
                             "MiniCPM prompt contains more video groups than provided videos.");
             const EncodedVideo& encoded_video = videos.at(videos_sequence[video_sequence_idx]);
@@ -887,27 +857,12 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
             OPENVINO_ASSERT(static_cast<size_t>(std::distance(ids, end)) >= m_vlm_config.query_num,
                             "MiniCPM video group exceeds the prompt token count.");
             const size_t group_size = m_vlm_config.query_num * m_vlm_config.hidden_size;
-            constexpr size_t max_frames_per_group = 6;
-            const size_t group_start = video_group_idx * max_frames_per_group;
-            const size_t group_end = std::min(group_start + max_frames_per_group, encoded_video.frame_num);
             size_t pad_to_max = feature_shape.at(1);
             for (const size_t image_id : images_sequence) {
                 const ImageSize& size = images.at(image_id).resized_source_size;
                 pad_to_max = std::max(pad_to_max, size.height * size.width);
             }
-            ov::Tensor group_frames(encoded_video.video_features,
-                                    {group_start, 0, 0},
-                                    {group_end, feature_shape.at(1), feature_shape.at(2)});
-            std::vector<size_t> temporal_ids;
-            for (size_t frame_idx = group_start; frame_idx < group_end; ++frame_idx) {
-                const VideoMetadata& metadata = encoded_video.metadata;
-                const size_t source_frame_idx = metadata.frames_indices.empty() ? frame_idx : metadata.frames_indices.at(frame_idx);
-                temporal_ids.push_back(metadata.fps > 0.0f
-                                           ? static_cast<size_t>(std::round(source_frame_idx / metadata.fps * 10.0f))
-                                           : source_frame_idx);
-            }
-            const ov::Tensor group_features = std::static_pointer_cast<VisionEncoderMiniCPM>(m_vision_encoder)
-                                                 ->resample(group_frames, encoded_video.resized_source_size, pad_to_max, temporal_ids);
+            const ov::Tensor group_features = resample_video_group(encoded_video, video_group_idx, pad_to_max);
             std::copy_n(group_features.data<float>(),
                         group_size,
                         inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
@@ -926,7 +881,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
         const EncodedImage& encoded_image = images.at(images_sequence[image_sequence_idx++]);
         ov::Tensor aligned_resampled_source;
         const ov::Tensor* resampled_source = &encoded_image.resampled_image.resampled_source;
-        if (!videos.empty()) {
+        if (!videos.empty() && !group.has_slices) {
             size_t pad_to_max = encoded_image.resized_source_size.height * encoded_image.resized_source_size.width;
             for (const EncodedVideo& video : videos) {
                 pad_to_max = std::max(pad_to_max,
@@ -946,7 +901,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
         ids += m_vlm_config.query_num;
 
         const ov::Shape& slices_shape = encoded_image.slices_shape;
-        if (videos.empty() && !slices_shape.empty()) {
+        if (group.has_slices && !slices_shape.empty()) {
             for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
                 for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
                     const ov::Tensor& slice = encoded_image.resampled_image.vision_embed_tensors[row_idx][col_idx];
@@ -1028,13 +983,18 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image,
                 float* position = pos_embed_data + (temporal_ids.empty() ? patch_idx * bs + i : i * pad_to_max + patch_idx) * embed_len;
                 const float* spatial_position = cache_data + (h_idx * _d1 + w_idx) * embed_len;
                 std::copy_n(spatial_position, embed_len, position);
-                if (!temporal_ids.empty()) {
-                    for (size_t dim = 0; dim < embed_len / 2; ++dim) {
-                        const float omega = 1.0f / std::pow(10000.0f, static_cast<float>(dim) / (embed_len / 2));
-                        const float value = omega * static_cast<float>(temporal_ids[i]);
-                        position[dim] += std::sin(value);
-                        position[dim + embed_len / 2] += std::cos(value);
-                    }
+            }
+        }
+        if (!temporal_ids.empty()) {
+            for (size_t dim = 0; dim < embed_len / 2; ++dim) {
+                const float omega = 1.0f / std::pow(10000.0f, static_cast<float>(dim) / (embed_len / 2));
+                const float value = omega * static_cast<float>(temporal_ids[i]);
+                const float temporal_sin = std::sin(value);
+                const float temporal_cos = std::cos(value);
+                for (size_t patch_idx = 0; patch_idx < pad_to_max; ++patch_idx) {
+                    float* position = pos_embed_data + (i * pad_to_max + patch_idx) * embed_len;
+                    position[dim] += temporal_sin;
+                    position[dim + embed_len / 2] += temporal_cos;
                 }
             }
         }
