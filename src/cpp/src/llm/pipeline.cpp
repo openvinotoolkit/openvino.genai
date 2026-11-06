@@ -312,7 +312,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     // legacy reader's model has no such rt_info, and enable_save_ov_model needs the source
     // directory to write the tokenizer/detokenizer IRs to, which the metadata alone can't give.
     const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.enable_save_ov_model &&
-                                      !gguf_properties.use_legacy_reader();
+                                      gguf_properties.use_frontend_reader();
     const Tokenizer tokenizer =
         tokenizer_from_model ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
                              : Tokenizer(models_path, properties);

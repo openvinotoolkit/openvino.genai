@@ -8,12 +8,14 @@
 #include "utils.hpp"
 
 TEST(GGUFProperties, FilterConversionPropertiesAndPreservePluginProperties) {
-    for (const std::string reader : {"LEGACY", "FRONTEND"}) {
+    for (const std::string reader : {"LEGACY", "FRONTEND", "llama_cpp"}) {
         const ov::AnyMap properties{ov::genai::gguf_reader(reader),
                                     ov::genai::enable_save_ov_model(true),
                                     {"INFERENCE_NUM_THREADS", 2}};
         const auto extracted = ov::genai::gguf_utils::extract_gguf_properties(properties);
         EXPECT_EQ(extracted.use_legacy_reader(), reader == "LEGACY");
+        EXPECT_EQ(extracted.use_frontend_reader(), reader == "FRONTEND");
+        EXPECT_EQ(extracted.use_llama_cpp_reader(), reader == "llama_cpp");
         EXPECT_TRUE(extracted.enable_save_ov_model);
         ASSERT_EQ(extracted.rest.size(), 1);
         EXPECT_EQ(extracted.rest.at("INFERENCE_NUM_THREADS").as<int>(), 2);
@@ -21,7 +23,9 @@ TEST(GGUFProperties, FilterConversionPropertiesAndPreservePluginProperties) {
     }
     const auto defaults = ov::genai::gguf_utils::extract_gguf_properties({});
     EXPECT_TRUE(defaults.use_legacy_reader());
-    EXPECT_FALSE(defaults.legacy_reader.has_value());
+    EXPECT_FALSE(defaults.use_frontend_reader());
+    EXPECT_FALSE(defaults.use_llama_cpp_reader());
+    EXPECT_FALSE(defaults.reader.has_value());
     EXPECT_FALSE(defaults.enable_save_ov_model);
 }
 
