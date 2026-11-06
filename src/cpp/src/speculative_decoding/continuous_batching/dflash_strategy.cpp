@@ -165,6 +165,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request_config(con
     OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
                     "DFlash supports num_assistant_tokens only; assistant_confidence_threshold must be 0.f.");
     OPENVINO_ASSERT(config.max_ngram_size == 0, "DFlash does not support prompt lookup decoding; max_ngram_size must be 0.");
+    OPENVINO_ASSERT(!config.return_omni_outputs, "DFlash does not support Omni intermediate outputs.");
 }
 
 GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_generation_config(
@@ -230,6 +231,16 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     validate_request_config(sampling_params);
+    const auto input_shape = input_ids.get_shape();
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        OPENVINO_ASSERT(input_ids.get_element_type() == ov::element::f32 && input_shape.size() == 3 &&
+                            input_shape[0] == 1 && input_shape[1] > 0,
+                        "DFlash expects input embeddings with shape [1, rows, hidden]; got ", input_shape);
+    } else {
+        OPENVINO_ASSERT(input_ids.get_element_type() == ov::element::i64 && input_shape.size() == 2 &&
+                            input_shape[0] == 1 && input_shape[1] > 0,
+                        "DFlash expects input_ids with shape [1, seq_len]; got ", input_shape);
+    }
     OPENVINO_ASSERT(m_model_input_type != ModelInputType::EMBEDDINGS || !m_main_pipeline->is_prefix_caching_enabled() ||
                         (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
                          prompt_ids->get_size() == input_ids.get_shape()[1]),

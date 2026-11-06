@@ -806,12 +806,14 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_a
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::dflash_draft_multistep() {
-    const bool has_windows = !m_dflash_draft_windows.empty();
+    bool ran_forward = false;
     float step_duration = 0.0f;
-    if (has_windows) {
+    if (!m_dflash_draft_windows.empty()) {
         const auto step_start = std::chrono::steady_clock::now();
         step();
         step_duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+        // A step that schedules nothing returns before the forward and keeps the previous inference_duration.
+        ran_forward = get_metrics().scheduled_requests > 0;
     }
 
     size_t num_candidates = 0;
@@ -849,7 +851,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
     // Candidates need embeddings before the next update can remove the rejected ones.
     sync_generated_embeddings();
 
-    if (has_windows) {
+    if (ran_forward) {
         raw_perf_metrics.m_durations.emplace_back(step_duration);
         raw_perf_metrics.m_inference_durations[0] += MicroSeconds(get_metrics().inference_duration);
         raw_perf_metrics.m_batch_sizes.emplace_back(num_candidates);
