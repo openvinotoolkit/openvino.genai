@@ -14,6 +14,7 @@
 #include "openvino/op/assign.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/convert.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
@@ -26,6 +27,7 @@
 #include "openvino/op/unsqueeze.hpp"
 #include "openvino/op/util/variable.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
+#include "openvino/runtime/core.hpp"
 #include "speculative_decoding/continuous_batching/dflash_strategy_utils.hpp"
 #include "speculative_decoding/dflash_model_transforms.hpp"
 #include "utils.hpp"
@@ -354,6 +356,127 @@ TEST(DFlashModelTransforms, ReshapesDynamicDraftHiddenStatesInputForCB) {
     ASSERT_TRUE(reshape);
     ASSERT_EQ(reshape->get_output_partial_shape(0),
               ov::PartialShape({ov::Dimension(1), ov::Dimension::dynamic(), ov::Dimension(4)}));
+}
+
+class DFlashFCRelocationTest : public testing::TestWithParam<bool> {};
+
+TEST_P(DFlashFCRelocationTest, MovesFCToTargetAndPreservesOutputsWithCBLayout) {
+    const bool transpose_b = GetParam();
+    auto target_input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, 1, 4});
+    target_input->output(0).set_names({"target_input"});
+    auto target_hidden = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{target_input, target_input}, 2);
+    auto target_hidden_result = std::make_shared<ov::op::v0::Result>(target_hidden);
+    target_hidden_result->output(0).set_names({"last_hidden_state"});
+    auto target_logits = std::make_shared<ov::op::v1::Add>(
+        target_input,
+        ov::op::v0::Constant::create(ov::element::f32, ov::Shape{4}, {1.0f, 2.0f, 3.0f, 4.0f}));
+    auto target_logits_result = std::make_shared<ov::op::v0::Result>(target_logits);
+    target_logits_result->output(0).set_names({"logits"});
+    auto target_model = std::make_shared<ov::Model>(ov::ResultVector{target_logits_result, target_hidden_result},
+                                                  ov::ParameterVector{target_input});
+
+    auto draft_hidden = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 8});
+    draft_hidden->set_friendly_name("hidden_states");
+    draft_hidden->output(0).set_names({"hidden_states"});
+    std::vector<float> weight_values(32);
+    std::iota(weight_values.begin(), weight_values.end(), -16.0f);
+    auto weights = ov::op::v0::Constant::create(ov::element::f16,
+                                               transpose_b ? ov::Shape{4, 8} : ov::Shape{8, 4},
+                                               weight_values);
+    auto converted_weights = std::make_shared<ov::op::v0::Convert>(weights, ov::element::f32);
+    auto draft_fc = std::make_shared<ov::op::v0::MatMul>(draft_hidden, converted_weights, false, transpose_b);
+    auto bias = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{4}, {0.5f, -1.0f, 2.0f, -0.5f});
+    auto draft_add = std::make_shared<ov::op::v1::Add>(draft_fc, bias);
+    auto draft_multiply = std::make_shared<ov::op::v1::Multiply>(draft_fc, bias);
+    auto draft_model = std::make_shared<ov::Model>(ov::OutputVector{draft_add, draft_multiply},
+                                                 ov::ParameterVector{draft_hidden});
+    auto original_target = target_model->clone();
+    auto original_draft = draft_model->clone();
+
+    ov::genai::utils::dflash::move_fc_from_draft_to_main(draft_model, target_model);
+
+    ASSERT_EQ(count_outputs_with_name(target_model, "last_hidden_state"), 1);
+    ASSERT_EQ(target_model->get_results().size(), 2);
+    ASSERT_EQ(target_model->output("last_hidden_state").get_partial_shape(), ov::PartialShape({-1, 1, 4}));
+    ASSERT_EQ(draft_model->input("hidden_states").get_partial_shape(), ov::PartialShape({1, -1, 4}));
+    ASSERT_EQ(draft_add->input_value(0), draft_hidden->output(0));
+    ASSERT_EQ(draft_multiply->input_value(0), draft_hidden->output(0));
+    const auto draft_ops = draft_model->get_ordered_ops();
+    ASSERT_FALSE(std::any_of(draft_ops.begin(), draft_ops.end(), [](const std::shared_ptr<ov::Node>& node) {
+        return ov::is_type<ov::op::v0::MatMul>(node);
+    }));
+    auto target_fc = ov::as_type_ptr<ov::op::v0::MatMul>(target_hidden_result->input_value(0).get_node_shared_ptr());
+    ASSERT_TRUE(target_fc);
+    ASSERT_EQ(target_fc->get_friendly_name(), "dflash_hidden_state_fc");
+    ASSERT_EQ(target_fc->input_value(0), target_hidden->output(0));
+    ASSERT_FALSE(target_fc->get_transpose_a());
+    ASSERT_EQ(target_fc->get_transpose_b(), transpose_b);
+    auto cloned_convert = ov::as_type_ptr<ov::op::v0::Convert>(target_fc->input_value(1).get_node_shared_ptr());
+    ASSERT_TRUE(cloned_convert);
+    ASSERT_NE(cloned_convert, converted_weights);
+    auto cloned_weights = ov::as_type_ptr<ov::op::v0::Constant>(cloned_convert->input_value(0).get_node_shared_ptr());
+    ASSERT_TRUE(cloned_weights);
+    ASSERT_NE(cloned_weights, weights);
+    ASSERT_EQ(cloned_weights->get_element_type(), ov::element::f16);
+    ASSERT_EQ(cloned_weights->get_shape(), weights->get_shape());
+    ASSERT_EQ(cloned_weights->cast_vector<float>(), weight_values);
+    ASSERT_EQ(target_logits_result->input_value(0), target_logits->output(0));
+
+    ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(draft_model);
+    ASSERT_EQ(draft_model->input("hidden_states").get_partial_shape(), ov::PartialShape({-1, 1, 4}));
+    ASSERT_EQ(draft_model->output(0).get_partial_shape(), ov::PartialShape({1, -1, 4}));
+    ASSERT_EQ(draft_add->input_value(0), draft_multiply->input_value(0));
+
+    ov::Core core;
+    const ov::AnyMap properties{{"INFERENCE_PRECISION_HINT", ov::element::f32}};
+    auto original_target_request = core.compile_model(original_target, "CPU", properties).create_infer_request();
+    auto original_draft_request = core.compile_model(original_draft, "CPU", properties).create_infer_request();
+    auto target_request = core.compile_model(target_model, "CPU", properties).create_infer_request();
+    auto draft_request = core.compile_model(draft_model, "CPU", properties).create_infer_request();
+    for (const size_t seq_len : {size_t{1}, size_t{3}}) {
+        SCOPED_TRACE(seq_len);
+        auto input = make_token_major_hidden_delta(seq_len, 4, -2.0f);
+        original_target_request.set_input_tensor(input);
+        original_target_request.infer();
+        target_request.set_input_tensor(input);
+        target_request.infer();
+        ASSERT_EQ(tensor_values(target_request.get_tensor("logits")),
+                  tensor_values(original_target_request.get_tensor("logits")));
+
+        auto original_hidden = original_target_request.get_tensor("last_hidden_state");
+        ASSERT_EQ(original_hidden.get_shape(), ov::Shape({seq_len, 1, 8}));
+        original_hidden.set_shape({1, seq_len, 8});
+        original_draft_request.set_input_tensor(original_hidden);
+        original_draft_request.infer();
+        auto reduced_hidden = target_request.get_tensor("last_hidden_state");
+        ASSERT_EQ(reduced_hidden.get_shape(), ov::Shape({seq_len, 1, 4}));
+        draft_request.set_input_tensor(reduced_hidden);
+        draft_request.infer();
+        for (size_t output_idx = 0; output_idx < 2; ++output_idx) {
+            const auto expected = original_draft_request.get_output_tensor(output_idx);
+            const auto actual = draft_request.get_output_tensor(output_idx);
+            ASSERT_EQ(actual.get_shape(), expected.get_shape());
+            for (size_t idx = 0; idx < expected.get_size(); ++idx) {
+                EXPECT_NEAR(actual.data<const float>()[idx], expected.data<const float>()[idx], 1e-5f);
+            }
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(WeightOrientation, DFlashFCRelocationTest, testing::Bool());
+
+TEST(DFlashModelTransforms, LeavesModelsUnchangedWhenDraftHasNoFC) {
+    auto draft_model = make_dflash_draft_hidden_states_model(ov::PartialShape({1, -1, 4}));
+    auto target_model = make_eagle3_pattern_hidden_state_model();
+    const auto original_draft_ops = draft_model->get_ordered_ops();
+    const auto original_target_ops = target_model->get_ordered_ops();
+    const auto original_draft_shape = draft_model->input("hidden_states").get_partial_shape();
+
+    ov::genai::utils::dflash::move_fc_from_draft_to_main(draft_model, target_model);
+
+    ASSERT_EQ(draft_model->get_ordered_ops(), original_draft_ops);
+    ASSERT_EQ(target_model->get_ordered_ops(), original_target_ops);
+    ASSERT_EQ(draft_model->input("hidden_states").get_partial_shape(), original_draft_shape);
 }
 
 TEST(DFlashModelTransforms, ThrowsForIncompatibleDraftHiddenStatesInput) {
