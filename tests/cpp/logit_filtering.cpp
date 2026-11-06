@@ -197,6 +197,17 @@ TEST(RepetitionPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     EXPECT_THROW(transform.apply(logits, {0, -1}), ov::Exception);
 }
 
+TEST(LogitProcessorTest, RepetitionPenaltySkipsNegativePlaceholderIds) {
+    GenerationConfig config;
+    config.repetition_penalty = 2.0f;
+    LogitProcessor logit_processor(config, TokenIds{0, -1, -1, 1});
+    float input[]{4.0f, -1.0f, 3.0f};
+    Logits logits(input, 3);
+    ASSERT_NO_THROW(logit_processor.apply(logits));
+    EXPECT_NEAR(logits.m_data[0], 2.0f, 1e-6);
+    EXPECT_NEAR(logits.m_data[1], -2.0f, 1e-6);
+    EXPECT_NEAR(logits.m_data[2], 3.0f, 1e-6);
+}
 
 struct FrequencyPenaltyTransformTestStruct {
     static inline const size_t size = 3;

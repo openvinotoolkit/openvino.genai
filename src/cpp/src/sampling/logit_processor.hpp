@@ -30,7 +30,10 @@ public:
                    std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr
     ) {
         for (const auto& input_id : input_ids) {
-            m_unique_prompt_token_ids->insert(input_id);
+            // Negative ids are VLM image placeholders whose embeddings are replaced by visual features
+            if (input_id >= 0) {
+                m_unique_prompt_token_ids->insert(input_id);
+            }
         }
 
         // When logprobs > 0: snapshot the full-vocab log-partition function (LSE) and copy
