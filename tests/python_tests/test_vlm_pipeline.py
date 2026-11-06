@@ -1338,7 +1338,9 @@ def test_minicpm_mixed_media_cached_history(
     first = pipeline.generate(history, images=[image], generation_config=config, **first_media)
     assert history.get_messages() == messages
     history.append({"role": "assistant", "content": first.texts[0]})
-    history.append({"role": "user", "content": f"Compare <ov_genai_image_1> with <ov_genai_video_{int(video_first)}> ."})
+    history.append(
+        {"role": "user", "content": f"Compare <ov_genai_image_1> with <ov_genai_video_{int(video_first)}> ."}
+    )
     cached = pipeline.generate(history, images=[image], videos=[video], generation_config=config)
 
     assert direct.texts == first.texts
@@ -2587,7 +2589,9 @@ def _prepare_minicpm_video_inputs(processor, prompt, image, video):
         tokenize=False,
         add_generation_prompt=True,
     )
-    inputs = processor(prompt, media, temporal_ids=temporal_ids, max_slice_nums=1, use_image_id=False, return_tensors="pt")
+    inputs = processor(
+        prompt, media, temporal_ids=temporal_ids, max_slice_nums=1, use_image_id=False, return_tensors="pt"
+    )
     inputs.pop("image_sizes", None)
     return inputs
 
