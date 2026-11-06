@@ -193,7 +193,9 @@ def gen_data_to_csv(
         result["tts_rtf"] = round(tts_rtf, 5) if tts_rtf != "" else tts_rtf
     input_idx = chat_idx if chat_idx != "" else iter_data["prompt_idx"]
     result["start"], result["end"] = output_json.get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
-    result = result | output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
+    result |= output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
+    result.pop("compile_max_share_rss_mem", None)
+    result.pop("compile_max_share_sys_mem", None)
 
 
 def write_result(
