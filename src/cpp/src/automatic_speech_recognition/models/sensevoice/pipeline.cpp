@@ -223,7 +223,7 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
         const std::string text = m_tokenizer.decode(transcription_token_ids);
         detokenization_stop_time = std::chrono::steady_clock::now();
         detokenization_microseconds += PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
-        generated_token_count += transcription_token_ids.size();
+        generated_token_count += token_ids.size();
 
         results.texts.push_back(text);
         results.scores.push_back(0.0f);
@@ -233,7 +233,6 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
         results.languages.push_back(result_language);
 
         ov::AnyMap metadata_entry;
-        metadata_entry.emplace("rich_token_count", rich_prefix.rich_token_count);
         if (rich_prefix.emotion.has_value()) {
             metadata_entry.emplace("emotion", rich_prefix.emotion.value());
         }
