@@ -19,6 +19,7 @@ tests_dependencies:
     - sampling
     - text_streamer
     - RAG
+    - classification
     - WWB
     - llm_bench
     - image_generation
@@ -36,6 +37,7 @@ samples_dependencies:
     - Video_generation_samples
     - VLM_samples
     - RAG_samples
+    - classification_samples
     - Speech_generation_samples
     - WWB
     - llm_bench
@@ -128,6 +130,10 @@ RAG:
   revalidate:
     - RAG_samples
 
+classification:
+  revalidate:
+    - classification_samples
+
 speech_generation:
   revalidate:
     - Speech_generation_samples
@@ -178,6 +184,9 @@ VLM_samples:
   revalidate: []
 
 RAG_samples:
+  revalidate: []
+
+classification_samples:
   revalidate: []
 
 Speech_generation_samples:

@@ -165,6 +165,13 @@ from .py_openvino_genai import (
 # RAG
 from .py_openvino_genai import EmbedResult, EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline
 
+# Classification pipeline
+from .py_openvino_genai import (
+    ClassificationActivation,
+    ClassificationPipeline,
+    ClassificationResult,
+)
+
 # Speech generation
 from .py_openvino_genai import (
     SpeechGenerationConfig,
