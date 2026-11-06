@@ -74,7 +74,7 @@ from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.media_tags import ModalityType, get_media_inputs_kwargs, get_universal_tag
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
-from utils.hugging_face import download_and_convert_model
+from utils.hugging_face import download_and_convert_model, get_qwen38_mtp_model_path
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
@@ -2762,6 +2762,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    "optimum-intel-internal-testing/tiny-random-qwen3.8",
     MODEL_QWEN38_FLASH_NEXT,
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
@@ -3321,10 +3322,10 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
-@pytest.fixture(scope="module")
-def qwen35_mtp_model_path() -> Path:
-    model_path = Path(_get_ov_model(MODEL_QWEN35_MTP))
-    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5 export must include the MTP draft model"
+@pytest.fixture(scope="module", params=[MODEL_QWEN35_MTP, MODEL_QWEN38_FLASH_NEXT])
+def mtp_model_path(request) -> Path:
+    model_path = Path(_get_ov_model(request.param))
+    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5/8 export must include the MTP draft model"
     return model_path
 
 
@@ -3346,8 +3347,8 @@ def test_qwen35_mtp_rejects_prefix_mismatch(qwen35_mtp_model_path, main_prefix):
         )
 
 
-def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
-    model_path = qwen35_mtp_model_path
+def test_mtp_text_add_request(mtp_model_path, monkeypatch, capfd):
+    model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
@@ -3386,8 +3387,8 @@ def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
             assert "MTP paired prefix replay:" in captured.out + captured.err
 
 
-def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
-    model_path = qwen35_mtp_model_path
+def test_mtp_image_add_request(mtp_model_path, monkeypatch, capfd):
+    model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
