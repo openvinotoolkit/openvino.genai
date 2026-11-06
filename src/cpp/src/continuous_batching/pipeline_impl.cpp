@@ -226,6 +226,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
         CacheOrchestrator::create(infer_request, normalized_config, get_available_memory, hidden_state_bytes_per_token);
     m_num_decoder_layers = cache_orchestrator->get_num_kv_layers();
 
+    if (cache_orchestrator->has_kv_cache()) {
+        const auto& kv_cache_manager = static_cast<const KVCacheManager&>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
+        // Sparse attention selects KV blocks by logical index, so blocks can't be evicted or skipped.
+        OPENVINO_ASSERT(!kv_cache_manager.has_qsa_index_caches()
+            || (!normalized_config.use_cache_eviction && !normalized_config.use_sparse_attention),
+            "SchedulerConfig use_cache_eviction and use_sparse_attention must be false for models with sparse attention"
+            ", got use_cache_eviction=", normalized_config.use_cache_eviction,
+            ", use_sparse_attention=", normalized_config.use_sparse_attention);
+    }
+
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
         // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,

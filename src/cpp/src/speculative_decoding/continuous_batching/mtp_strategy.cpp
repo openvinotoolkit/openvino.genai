@@ -41,6 +41,20 @@ ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
     return shifted;
 }
 
+// The draft prompt holds the embeddings of tokens 1..L-1 at the positions of tokens 0..L-2.
+ov::Tensor create_draft_position_ids(const ov::Tensor& position_ids) {
+    const auto shape = position_ids.get_shape();
+    const size_t seq_len_dim = shape.size() - 1;
+    OPENVINO_ASSERT(shape[seq_len_dim] > 1, "MTP draft position ids expect seq_len > 1, got shape ", shape);
+
+    auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, seq_len_dim, 0, shape[seq_len_dim] - 1);
+    ov::Shape draft_shape = shape;
+    draft_shape[seq_len_dim] -= 1;
+    ov::Tensor draft_position_ids(position_ids.get_element_type(), draft_shape);
+    ov::Tensor(position_ids, start_coord, end_coord).copy_to(draft_position_ids);
+    return draft_position_ids;
+}
+
 }  // namespace
 
 ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
@@ -164,7 +178,11 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     // under the same request_id. insert() would be a no-op there, dropping the new handle as a
     // temporary whose destructor stops the freshly added draft request before it can draft.
     try {
+        // ContinuousBatchingImpl::add_request() reads prompt positions from the shared embedder.
+        const ov::Tensor main_position_ids = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0).first;
+        m_inputs_embedder->set_position_ids(create_draft_position_ids(main_position_ids));
         m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
+        m_inputs_embedder->set_position_ids(main_position_ids);
         auto main_handle = m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
         align_request_pair_processed_prefix(request_id);
         return main_handle;
