@@ -14,7 +14,7 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 
 extern "C" {
-#include "../../samples/c/whisper_speech_recognition/whisper_utils.h"
+#include "../../samples/c/common/audio_utils.h"
 }
 
 namespace {

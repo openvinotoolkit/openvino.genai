@@ -28,10 +28,19 @@ endif()
 list(REMOVE_ITEM tests_src "${CMAKE_CURRENT_SOURCE_DIR}/test_asr_c_api.cpp"
                            "${CMAKE_CURRENT_SOURCE_DIR}/test_asr_c_api_e2e.cpp")
 
+include(FetchContent)
+
+if(NOT TARGET dr_libs)
+    FetchContent_Declare(dr_libs
+        URL https://github.com/mackron/dr_libs/archive/da35f9d6c7374a95353fd1df1d394d44ab66cf01.tar.gz
+        URL_HASH SHA256=2704d347f480ca1bc92233fb01747e4550cc8031735b6ea62ca9990ebb8851ae)
+    FetchContent_MakeAvailable(dr_libs)
+endif()
+
 add_executable(tests_asr_c_api test_asr_c_api.cpp test_asr_c_api_e2e.cpp
-    "${OpenVINOGenAI_SOURCE_DIR}/samples/c/whisper_speech_recognition/whisper_utils.c")
+    "${OpenVINOGenAI_SOURCE_DIR}/samples/c/common/audio_utils.c")
 target_link_libraries(tests_asr_c_api PRIVATE openvino::genai::c openvino::genai gtest_main)
-target_include_directories(tests_asr_c_api PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/c/src")
+target_include_directories(tests_asr_c_api PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/c/src" "${dr_libs_SOURCE_DIR}")
 
 set(TEST_TARGET_NAME "tests_continuous_batching")
 

@@ -2,7 +2,7 @@
 
 This sample uses the GenAI `ASRPipeline` C API to transcribe a WAV file and
 optionally print segment and word timestamps. It uses the
-existing Whisper sample's WAV loader and error handling.
+shared C sample WAV loader and the Whisper sample's error handling.
 
 ## Build and run
 
