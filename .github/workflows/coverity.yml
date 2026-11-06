@@ -5,6 +5,11 @@ on:
     # run daily at 00:00
     - cron: '0 0 * * *'
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     paths:
       - '.github/workflows/coverity.yml'
 
@@ -20,6 +25,7 @@ env:
 
 jobs:
   openvino_download:
+    if: github.event.pull_request.draft == false || github.run_attempt > 1 || contains(github.event.pull_request.labels.*.name, 'enable_ci_for_draft_pr')
     name: Download OpenVINO
     outputs:
       status: ${{ steps.openvino_download.outcome }}

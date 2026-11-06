@@ -2,6 +2,11 @@ name: Manylinux 2_28
 on:
   workflow_dispatch:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   merge_group:
   push:
     branches:
@@ -42,6 +47,7 @@ jobs:
   smart_ci:
     name: Smart CI
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false || github.run_attempt > 1 || contains(github.event.pull_request.labels.*.name, 'enable_ci_for_draft_pr')
     outputs:
       affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
       changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
@@ -665,9 +671,6 @@ jobs:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.PY_INSTALL_DIR }}/wheels
-
-      - name: Install Optimum Intel with Qwen3-Omni support
-        run: python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16
 
       # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
       - name: Install Transformers compatibility version
