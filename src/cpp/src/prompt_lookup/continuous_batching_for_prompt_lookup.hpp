@@ -54,6 +54,7 @@ public:
     size_t get_processed_tokens_per_iteration();
 
     using ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests;
+    using ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests;
 protected:
     TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size);
 
