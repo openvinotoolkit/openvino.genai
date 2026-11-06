@@ -65,6 +65,50 @@ prompts = [
 ]
 
 
+@pytest.mark.parametrize(
+    "text,merged_token",
+    [
+        (" \na", "\u0120\u010a"),
+        (" (s)", "\u0120("),
+        (":e", ":e"),
+        ("a\u0301", "a\u00cc\u0123"),
+    ],
+)
+def test_gguf_qwen35_pre_tokenization(tmp_path, text, merged_token):
+    gguf = pytest.importorskip("gguf")
+    from openvino_genai import GGUFTokenizer
+
+    byte_alphabet = [
+        chr(codepoint)
+        for begin, end in [(33, 127), (161, 173), (174, 256), (256, 324)]
+        for codepoint in range(begin, end)
+    ]
+    vocab = ["<eos>"] + sorted(byte_alphabet)
+    vocab += ["\u0120\u010a", "\u0120(", ":e", "a\u00cc", "a\u00cc\u0123"]
+    model_path = tmp_path / "qwen35-tokenizer.gguf"
+    writer = gguf.GGUFWriter(model_path, "qwen35")
+    writer.add_tokenizer_model("gpt2")
+    writer.add_tokenizer_pre("qwen35")
+    writer.add_token_list(vocab)
+    writer.add_token_types([3] + [1] * (len(vocab) - 1))
+    writer.add_token_merges(["\u0120 \u010a", "\u0120 (", ": e", "a \u00cc", "a\u00cc \u0123"])
+    writer.add_eos_token_id(0)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+
+    tokenizer = GGUFTokenizer(model_path)
+    actual = tokenizer.encode(text, add_special_tokens=False).input_ids.data.tolist()[0]
+    expected = [vocab.index(merged_token)]
+    if text == " (s)":
+        expected += [vocab.index("s"), vocab.index(")")]
+    elif text == " \na":
+        expected += [vocab.index("a")]
+    assert actual == expected
+    assert tokenizer.decode(actual, skip_special_tokens=False) == text
+
+
 @pytest.fixture(scope="module")
 def ov_hf_tokenizers(request):
     model_schema = download_and_convert_model(request.param)
