@@ -86,9 +86,9 @@ install(TARGETS taylorseer_text2video
         EXCLUDE_FROM_ALL)
 
 # create image to video sample executable
-add_executable(image2video image2video.cpp imwrite_video.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/load_image.cpp)
+add_executable(image2video image2video.cpp imwrite_video.cpp save_audio.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/load_image.cpp)
 
-target_include_directories(image2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
+target_include_directories(image2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 ov_genai_link_opencv(image2video core imgproc videoio imgcodecs)
 target_link_libraries(image2video PRIVATE openvino::genai indicators::indicators)
 

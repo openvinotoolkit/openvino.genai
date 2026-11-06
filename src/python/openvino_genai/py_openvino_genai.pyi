@@ -886,7 +886,7 @@ class AutoencoderKLLTX2Audio:
         """
 class AutoencoderKLLTX2Video:
     """
-    AutoencoderKLLTX2Video class for LTX2 VAE decoding.
+    AutoencoderKLLTX2Video class for LTX2 VAE encoding and decoding.
     """
     class Config:
         """
@@ -909,13 +909,29 @@ class AutoencoderKLLTX2Video:
     @typing.overload
     def __init__(self, vae_decoder_path: os.PathLike | str | bytes) -> None:
         """
-                    AutoencoderKLLTX2Video class constructor.
+                    AutoencoderKLLTX2Video class constructor with decoder only.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
+        """
+    @typing.overload
+    def __init__(self, vae_encoder_path: os.PathLike | str | bytes, vae_decoder_path: os.PathLike | str | bytes) -> None:
+        """
+                    AutoencoderKLLTX2Video class constructor with encoder and decoder.
+                    vae_encoder_path (os.PathLike): VAE encoder directory.
                     vae_decoder_path (os.PathLike): VAE decoder directory.
         """
     @typing.overload
     def __init__(self, vae_decoder_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
-                    AutoencoderKLLTX2Video class constructor.
+                    AutoencoderKLLTX2Video class constructor with decoder only.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, vae_encoder_path: os.PathLike | str | bytes, vae_decoder_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                    AutoencoderKLLTX2Video class constructor with encoder and decoder.
+                    vae_encoder_path (os.PathLike): VAE encoder directory.
                     vae_decoder_path (os.PathLike): VAE decoder directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
@@ -931,6 +947,11 @@ class AutoencoderKLLTX2Video:
                         Decodes latent video to pixel space.
                         latent (ov.Tensor): Latent video tensor.
                         Returns: Decoded video tensor.
+        """
+    def encode(self, video: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        """
+                        Encodes a [B, 3, F, H, W] video into the latent distribution mean.
+                        video (openvino.Tensor): f32 video tensor in [-1, 1].
         """
     def get_config(self) -> AutoencoderKLLTX2Video.Config:
         ...
@@ -3158,7 +3179,7 @@ class LTX2VideoTransformer3DModel:
                             (LTX-2.3 Spatio-Temporal Guidance). Out-of-range indices are ignored.
                         Returns: Tuple of video and audio velocity predictions.
         """
-    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt) -> LTX2VideoTransformer3DModel:
+    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt, per_token_timestep: bool = False) -> LTX2VideoTransformer3DModel:
         """
                         Reshapes the model for specific input dimensions.
                         batch_size (int): Batch size.
@@ -3166,6 +3187,8 @@ class LTX2VideoTransformer3DModel:
                         height (int): Video height.
                         width (int): Video width.
                         audio_num_frames (int): Number of audio latent frames.
+                        per_token_timestep (bool): Keep a per-token [B, S] timestep (image-to-video) on exports that
+                            otherwise take a shared [B, 1] one.
         """
     def set_hidden_states(self, tensor_name: str, tensor: openvino._pyopenvino.Tensor) -> None:
         """
