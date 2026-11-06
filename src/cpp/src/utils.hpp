@@ -160,6 +160,17 @@ extern const std::string PER_MODEL_PROPERTIES;
 ///         untouched so callers may continue using the meta keys.
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
 
+/// @brief Properties of MODEL_PROPERTIES[@p model_role] alone, without the global and DEVICE_PROPERTIES layers.
+inline ov::AnyMap get_role_properties(const ov::AnyMap& properties, const std::string& model_role) {
+    const auto models = properties.find(PER_MODEL_PROPERTIES);
+    if (models == properties.end()) {
+        return {};
+    }
+    const auto& role_map = models->second.as<ov::AnyMap>();
+    const auto role = role_map.find(model_role);
+    return role == role_map.end() ? ov::AnyMap{} : role->second.as<ov::AnyMap>();
+}
+
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
