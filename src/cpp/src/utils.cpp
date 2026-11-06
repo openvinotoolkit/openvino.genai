@@ -335,7 +335,9 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     std::shared_ptr<ov::Node> matmul = ov::as_type_ptr<ov::op::v0::MatMul>(last_node);
 
     // in case of PA all tokens are moved to batch dimension and we have to slice / gather accordingly
-    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension");
+    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension")
+        || has_op_with_type(model, "PagedSparseAttention");
+
     int64_t slice_gather_dim = pa_based_model ? 0 : 1;
 
     // There are several patterns for matmul we are looking for:
