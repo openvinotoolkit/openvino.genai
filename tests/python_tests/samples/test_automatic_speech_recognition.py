@@ -46,6 +46,20 @@ class TestAutomaticSpeechRecognition:
         c_command = [c_sample, convert_model, download_test_content]
         c_result = run_sample(c_command)
 
+        # Run the generic ASR C sample, including word-level timestamps.
+        asr_c_sample = SAMPLES_C_DIR / "automatic_speech_recognition_c"
+        asr_c_result = run_sample(
+            [
+                asr_c_sample,
+                convert_model,
+                download_test_content,
+                "--language",
+                "<|en|>",
+                "--timestamps",
+                "--word-timestamps",
+            ]
+        )
+
         # Run JS sample
         js_sample = SAMPLES_JS_DIR / "automatic_speech_recognition/automatic_speech_recognition.js"
         js_command = ["node", js_sample, convert_model, download_test_content]
@@ -54,8 +68,53 @@ class TestAutomaticSpeechRecognition:
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
         assert py_result.stdout == js_result.stdout, "Python and JS results should match"
-        # C API has no word-level timestamps support which enabled in Python and CPP samples
+        assert py_result.stdout == asr_c_result.stdout, "Python and ASR C results should match"
+        # Whisper C API has no word-level timestamps support which enabled in Python and CPP samples
         # ticket to enable C API: 180115
         assert filter_word_level_timestamps(py_result.stdout) == c_result.stdout.strip(), (
             "Python and C results should match without word-level timestamps"
         )
+
+    @pytest.mark.automatic_speech_recognition
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, language",
+        [
+            ("WhisperTiny", "<|en|>"),
+            pytest.param(
+                "TinyRandomQwen3ASR",
+                "English",
+                marks=pytest.mark.transformers_lower_v5,
+            ),
+            pytest.param(
+                "TinyRandomFunASR",
+                "English",
+                marks=pytest.mark.transformers_lower_v5,
+            ),
+        ],
+        indirect=["convert_model"],
+    )
+    @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
+    def test_asr_c_sample_backends(self, convert_model, language, download_test_content):
+        import librosa
+        import openvino_genai
+
+        # Bound generation for random fixtures; their output need not contain EOS.
+        pipeline = openvino_genai.ASRPipeline(convert_model, "CPU")
+        speech, _ = librosa.load(download_test_content, sr=16000)
+        config = pipeline.get_generation_config()
+        config.language = language
+        config.max_new_tokens = 16
+        expected = str(pipeline.generate(speech.tolist(), config))
+        result = run_sample(
+            [
+                SAMPLES_C_DIR / "automatic_speech_recognition_c",
+                convert_model,
+                download_test_content,
+                "--language",
+                language,
+                "--max-new-tokens",
+                "16",
+            ]
+        )
+        assert result.stdout.rstrip("\n") == expected, "C and Python ASR results should match"
