@@ -28,6 +28,15 @@ bool update_adapters_from_properties (const AnyMap& properties, std::optional<Ad
     return false;
 }
 
+AnyMap forward_adapters_to_submodels (const AnyMap& properties) {
+    std::optional<AdapterConfig> adapters;
+    AnyMap result = *extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
+        result[utils::FORWARDED_ADAPTERS_PROPERTY] = *adapters;
+    }
+    return result;
+}
+
 
 void update_adapters_in_properties(utils::SharedOptional<const AnyMap>& properties, const AdapterConfigAction& action) {
     std::optional<AdapterConfig> adapter_config;
@@ -56,6 +65,10 @@ std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, con
         updated_adapters->set_tensor_name_prefix(adapters.get_tensor_name_prefix());
     }
     return updated_adapters;
+}
+
+void set_foreign_tensor_name_prefix(AdapterConfig& config, const std::optional<std::string>& prefix) {
+    config.foreign_tensor_name_prefix = prefix;
 }
 
 }

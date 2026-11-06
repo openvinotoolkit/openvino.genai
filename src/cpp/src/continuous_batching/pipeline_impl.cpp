@@ -188,6 +188,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+        set_foreign_tensor_name_prefix(*m_generation_config.adapters, QWEN_VL_VISION_LORA_TENSOR_NAME_PREFIX);
         m_adapter_controller =
             AdapterController(model, *m_generation_config.adapters, device);  // TODO: Make the prefix name configurable
     }
