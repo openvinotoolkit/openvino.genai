@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 FUNASR_TOKENIZER_SUBFOLDER = (
     "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
 )
-ASR_MODEL_TYPES = {"funasr", "fun_asr"}
+ASR_MODEL_TYPES = {"funasr", "fun_asr", "sense_voice"}
 QWEN_ASR_MODEL_TYPES = {"qwen3_asr"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
@@ -192,8 +192,12 @@ class FunASRSourceTranscriber:
             )
 
         if torch_dtype is not None:
-            # Cast only the decoder: casting the audio encoder breaks inference with its FP32 inputs.
-            self.model.model.llm.to(dtype=torch_dtype)
+            # Keep the audio encoder in FP32; cast only Fun-ASR's LLM decoder.
+            decoder = getattr(self.model.model, "llm", None)
+            if decoder is not None:
+                decoder.to(dtype=torch_dtype)
+            elif torch_dtype != torch.float32:
+                raise ValueError("SenseVoice source evaluation supports only FP32 (--torch-dtype fp32).")
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
         import torch
@@ -220,25 +224,42 @@ class FunASROptimumTranscriber:
         import torch
 
         inputs = self.model.preprocess_input(audio, sampling_rate=AUDIO_SAMPLING_RATE, **self.preprocess_kwargs)
-        prompt_len = inputs["decoder_input_ids"].shape[-1]
+        prompt_len = inputs["decoder_input_ids"].shape[-1] if "decoder_input_ids" in inputs else None
+        if self.tokenizer is None:
+            inputs["language"] = self.preprocess_kwargs.get("language", "auto")
         with torch.inference_mode():
-            tokens = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
-        tokens = getattr(tokens, "sequences", tokens)
-        # generate() returns the prompt followed by the generated ids, decode the generated part only.
-        return self.tokenizer.batch_decode(tokens[:, prompt_len:], skip_special_tokens=True)[0].strip()
+            output = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
+        output = getattr(output, "sequences", output)
+
+        if prompt_len is not None:
+            return self.tokenizer.batch_decode(output[:, prompt_len:], skip_special_tokens=True)[0].strip()
+
+        # SenseVoice generate() returns decoded text.
+        return (output if isinstance(output, str) else str(output[0])).strip()
 
 
 class ASRGenAIPipelineTranscriber:
-    def __init__(self, pipeline: Any, language: str = "") -> None:
+    def __init__(self, pipeline: Any, language: str = "", model_type: str = "") -> None:
         self.pipeline = pipeline
         self.language = language
+        self.is_sense_voice = model_type == "sense_voice"
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
         generation_kwargs = {"max_new_tokens": max_new_tokens}
         if self.language:
             generation_kwargs["language"] = self.language
+        if self.is_sense_voice:
+            generation_kwargs["use_itn"] = False
         result = self.pipeline.generate(np.asarray(audio, dtype=np.float32).tolist(), **generation_kwargs)
-        return result.texts[0].strip()
+        text = result.texts[0].strip()
+        if not self.is_sense_voice:
+            return text
+
+        metadata = result.metadata
+        language = result.languages[0]
+        emotion, event = metadata[0]["emotion"], metadata[0]["event"]
+        # use_itn=False selects <|woitn|>.
+        return f"<|{language}|><|{emotion}|><|{event}|><|woitn|>{text}"
 
 
 def _get_asr_model_type(model_id: str) -> str:
@@ -301,7 +322,7 @@ class ASRGenAITranscriber:
 
             pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
             default_language = "en" if model_type in ASR_MODEL_TYPES else ""
-            return ASRGenAIPipelineTranscriber(pipeline, language or default_language)
+            return ASRGenAIPipelineTranscriber(pipeline, language or default_language, model_type=model_type)
         _register_model_backend(model_type)
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
@@ -316,8 +337,11 @@ class ASROptimumTranscriber:
             from transformers import AutoTokenizer
 
             model = _load_optimum_speech_model(model_id, device, ov_config)
-            subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
-            tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
+            if model_type == "sense_voice":
+                tokenizer = None
+            else:
+                subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
+                tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
             return FunASROptimumTranscriber(model, tokenizer, language or "en")
 
         _register_model_backend(model_type)

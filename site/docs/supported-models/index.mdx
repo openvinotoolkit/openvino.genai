@@ -52,6 +52,18 @@ Models should belong to the same family and have the same tokenizers.
 
 <ImageGenerationModelsTable />
 
+:::warning Image Generation Models Notes
+#### Qwen-Image-2.1 {#qwen-image-2_1-notes}
+
+The model requires `diffusers==0.41.0` and `transformers==5.15.1` for the export with `optimum-cli`:
+
+```bash
+pip install diffusers==0.41.0 transformers==5.15.1
+```
+
+`diffusers==0.41.0` imports the LTX2 pipeline, which requires `Gemma4UnifiedForConditionalGeneration` from `transformers`.
+:::
+
 ## Video Generation Models
 
 <VideoGenerationModelsTable />
@@ -133,6 +145,10 @@ The model requires `transformers==5.2` for the export with `optimum-cli`.
 #### nanoLLaVA {#nanollava-notes}
 
 The model requires `transformers>=4.48` for the export with `optimum-cli`.
+
+#### Mistral3 {#mistral3-notes}
+
+Ministral-3 models require `transformers>=5.0` for the export with `optimum-cli`.
 :::
 
 ## Speech Recognition Models
