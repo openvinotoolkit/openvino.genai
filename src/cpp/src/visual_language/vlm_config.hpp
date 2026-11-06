@@ -41,6 +41,7 @@ enum class VLMModelType {
     MINICPMV4_7,
     MISTRAL3,
     LFM3_VL,
+    LFM3_OMNI,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to

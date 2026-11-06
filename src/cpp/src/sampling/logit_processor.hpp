@@ -27,7 +27,8 @@ protected:
 public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids,
-                   std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr
+                   std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr,
+                   const std::set<int64_t>& suppressed_token_ids = {}
     ) {
         for (const auto& input_id : input_ids) {
             m_unique_prompt_token_ids->insert(input_id);
@@ -42,6 +43,11 @@ public:
         if ((sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) && sampling_params.logprobs > 0) {
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::FullVocabLogSumExpTransform>());
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::CopyLogitsToVectorTransform>());
+        }
+
+        if (!suppressed_token_ids.empty()) {
+            m_logit_transformers.push_back(
+                std::make_shared<LogitTransformers::SuppressTokensTransform>(suppressed_token_ids));
         }
 
         if (sampling_params.min_new_tokens > 0) {

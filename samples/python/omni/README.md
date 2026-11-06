@@ -2,7 +2,7 @@
 
 > **Preview:** The Qwen3-Omni API (`OmniPipeline` and related types) is a preview feature and is subject to change in future releases.
 
-This example demonstrates interactive multimodal chat with Qwen3-Omni models: text, image, audio, and video input producing text and optionally synthesized speech output. The sample features `openvino_genai.OmniPipeline` and configures it for the chat scenario using the `ChatHistory` API.
+This example demonstrates interactive multimodal chat with Qwen3-Omni and LFM3-Omni models: text, image, audio, and video input producing text and optionally synthesized speech output. The sample features `openvino_genai.OmniPipeline` and configures it for the chat scenario using the `ChatHistory` API.
 
 The following are sample files:
  - [`qwen3_omni_chat.py`](./qwen3_omni_chat.py) demonstrates multimodal chat with optional speech synthesis.
@@ -17,7 +17,8 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 ```
 
-Then export a Qwen3-Omni model to OpenVINO format using the Optimum Intel CLI or Python API.
+Then export a Qwen3-Omni or LFM3-Omni model to OpenVINO format using the Optimum Intel CLI or Python API. LFM3-Omni export
+notes are in [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#lfm3-omni-notes).
 
 Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` to run the sample.
 
@@ -44,7 +45,7 @@ python qwen3_omni_chat.py <MODEL_DIR> <IMAGE_FILE_OR_DIR> <VIDEO_FILE> [--audio 
 ```
 
 **Parameters:**
-- `<MODEL_DIR>` — Path to the exported Qwen3-Omni OpenVINO model directory.
+- `<MODEL_DIR>` — Path to the exported Qwen3-Omni or LFM3-Omni OpenVINO model directory.
 - `<IMAGE_FILE_OR_DIR>` — Path to an input image or a directory of images for visual context.
 - `<VIDEO_FILE>` — Path to an input video file.
 - `--audio AUDIO_WAV` — Path to an input audio file (16kHz mono WAV). Repeat the flag to pass several; refer to them in a question as `<ov_genai_audio_0>`, `<ov_genai_audio_1>`, and so on.
@@ -74,7 +75,7 @@ media through the chat history rather than sending the tensors again.
 
 ## Speech synthesis
 
-Text decoding (the "thinker" phase) and speech output (the "talker" phase) are configured separately:
+Text decoding and speech output are configured separately:
 
 ```python
 text_config = openvino_genai.GenerationConfig()
@@ -82,10 +83,10 @@ text_config.max_new_tokens = 256
 
 talker_speech_config = openvino_genai.OmniTalkerSpeechConfig(model_dir)
 talker_speech_config.return_audio = True  # Enable speech synthesis
-talker_speech_config.speaker = "Cherry"   # Select voice (optional)
+talker_speech_config.speaker = "Cherry"   # Select a Qwen3-Omni voice (optional)
 ```
 
-Available voices vary by checkpoint. MoE models typically expose `"Ethan"`, `"Chelsie"`, `"Aiden"`, `"Cherry"`. Check `talker_config.speaker_id` in the model's `config.json` for the full list. Leaving `speaker` empty selects the default voice. Set `talker_speech_config.return_audio = False` for text-only responses.
+Available voices vary by checkpoint. MoE models typically expose `"Ethan"`, `"Chelsie"`, `"Aiden"`, `"Cherry"`. Check `talker_config.speaker_id` in the model's `config.json` for the full list. Leaving `speaker` empty selects the default voice. LFM3-Omni has no speaker selection: describe the voice in the system prompt. Set `talker_speech_config.return_audio = False` for text-only responses.
 
 ## GPU inference
 

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -22,11 +23,15 @@
 namespace ov::genai {
 
 /// @brief Implementation backing OmniPipeline. Holds a VLMPipelineBase (text-side) and a
-/// TalkerBase (speech-side). Speech is gated per-call via OmniTalkerSpeechConfig::return_audio.
+/// TalkerBase (Qwen3-Omni), or a VLM that decodes speech in its language model stream
+/// (LFM3-Omni). Speech is gated per-call via OmniTalkerSpeechConfig::return_audio.
 class OmniPipeline::OmniPipelineImpl {
 public:
     OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm,
                      const std::shared_ptr<TalkerBase>& talker);
+
+    /// @brief For a VLM whose language model emits speech frames itself (LFM3-Omni).
+    explicit OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm);
 
     OmniDecodedResults generate(const std::string& prompt,
                                 const std::vector<ov::Tensor>& images,
@@ -70,7 +75,20 @@ private:
     /// @brief Reject non-Omni-capable models early, before any inference work.
     void assert_omni_capable() const;
 
+    /// @brief Speech decoded by the VLM: talker_speech_config goes through its AnyMap generate(), and the
+    /// waveform comes back through the speech streamer.
+    OmniDecodedResults generate_speech_in_stream(const std::function<VLMDecodedResults(const ov::AnyMap&)>& generate,
+                                                 const std::vector<ov::Tensor>& images,
+                                                 const std::vector<ov::Tensor>& videos,
+                                                 const std::vector<VideoMetadata>& videos_metadata,
+                                                 const std::vector<ov::Tensor>& audios,
+                                                 const GenerationConfig& text_config,
+                                                 const OmniTalkerSpeechConfig& talker_speech_config,
+                                                 const StreamerVariant& streamer,
+                                                 const OmniSpeechStreamerVariant& speech_streamer);
+
     std::shared_ptr<VLMPipelineBase> m_vlm;
+    /// Null when the VLM decodes speech in its language model stream (LFM3-Omni).
     std::shared_ptr<TalkerBase> m_talker;
     OmniTalkerSpeechConfig m_default_talker_speech_config;
 };

@@ -435,6 +435,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::AdapterConfig>(py_obj);
     } else if (py::isinstance<ov::genai::OmniTalkerSpeechConfig>(py_obj)) {
         return py::cast<ov::genai::OmniTalkerSpeechConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::SpeechOutputMode>(py_obj)) {
+        return py::cast<ov::genai::SpeechOutputMode>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagItem>(py_obj)) {
         return py::cast<ov::genai::StructuralTagItem>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {

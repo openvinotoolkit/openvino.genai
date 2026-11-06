@@ -4,6 +4,7 @@
 #include "openvino/genai/omni/talker.hpp"
 
 #include "openvino/core/except.hpp"
+#include "omni/speech_streamer_utils.hpp"
 #include "omni/talker_speech_config_utils.hpp"
 #include "utils.hpp"
 #include "visual_language/qwen3_omni/speech_pipeline.hpp"
@@ -35,12 +36,29 @@ std::vector<ov::Tensor> split_hidden_states(const std::vector<ov::Tensor>& per_s
     return per_token;
 }
 
+void reject_model_without_talker(const VLMConfig& vlm_config) {
+    OPENVINO_ASSERT(vlm_config.model_type != VLMModelType::LFM3_OMNI,
+                    "Talker: LFM3-Omni has no separate talker, it speaks in the language model stream. "
+                    "Use OmniPipeline(models_path, device, properties).");
+}
+
+bool has_in_stream_speech_fields(const OmniTalkerSpeechConfig& config) {
+    return config.output_mode != SpeechOutputMode::INTERLEAVED || config.cp_repetition_penalty.has_value();
+}
+
+void reject_in_stream_speech_fields(const OmniTalkerSpeechConfig& config) {
+    OPENVINO_ASSERT(config.output_mode == SpeechOutputMode::INTERLEAVED,
+                    "Talker: output_mode applies to models that emit text and speech in one stream (LFM3-Omni)");
+    OPENVINO_ASSERT(!config.cp_repetition_penalty, "Talker: cp_repetition_penalty applies to LFM3-Omni only");
+}
+
 }  // namespace
 
 class Talker::Impl {
 public:
     Impl(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap& properties) {
         VLMConfig vlm_config(model_dir / "config.json");
+        reject_model_without_talker(vlm_config);
         m_speech = std::make_unique<Qwen3OmniSpeechPipeline>(model_dir, vlm_config, device, properties);
 
         OPENVINO_ASSERT(m_speech->is_available(),
@@ -53,6 +71,7 @@ public:
          const std::map<std::string, std::string>& device_mapping,
          const ov::AnyMap& properties) {
         VLMConfig vlm_config(config_dir_path / "config.json");
+        reject_model_without_talker(vlm_config);
         m_speech = std::make_unique<Qwen3OmniSpeechPipeline>(models_map,
                                                              vlm_config,
                                                              config_dir_path,
@@ -69,6 +88,11 @@ public:
     TalkerResults generate(const VLMDecodedResults& vlm_result,
                           const OmniTalkerSpeechConfig& talker_speech_config,
                           const OmniSpeechStreamerVariant& speech_streamer) {
+        if (has_in_stream_speech_fields(talker_speech_config) && is_speech_streamer_active(speech_streamer)) {
+            // The speech pipeline has not installed its streamer guard yet, so the rejected call ends the stream.
+            end_speech_streamer(speech_streamer);
+        }
+        reject_in_stream_speech_fields(talker_speech_config);
         OPENVINO_ASSERT(!vlm_result.intermediate_hidden_states.empty(),
                         "Talker: intermediate hidden states missing on VLMDecodedResults; the VLM must run "
                         "with talker_speech_config.return_audio=true so it accumulates thinker hidden states.");
@@ -103,6 +127,7 @@ public:
 
     void set_speech_config(const OmniTalkerSpeechConfig& config) {
         validate_omni_talker_speech_config(config);
+        reject_in_stream_speech_fields(config);
         m_speech_config = config;
     }
 

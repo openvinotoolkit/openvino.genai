@@ -139,6 +139,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
                              generation_config,
                              is_validation_mode_enabled) {
     m_inputs_embedder = inputs_embedder;
+    m_sampler->set_suppressed_token_ids(inputs_embedder->get_suppressed_token_ids());
     
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
@@ -338,6 +339,10 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params_copy.validate();
+    // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
+    OPENVINO_ASSERT(!sampling_params_copy.is_beam_search() || !m_inputs_embedder ||
+                        m_inputs_embedder->get_suppressed_token_ids().empty(),
+                    "Beam search is not supported for this model because it has suppressed token ids");
     size_t prompt_len;
     if (input_ids.get_shape().size() > 1) {
         prompt_len = input_ids.get_shape()[1];
