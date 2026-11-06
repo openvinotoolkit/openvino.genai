@@ -609,6 +609,15 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
+            if config.model_type == "mistral3":
+                # Checkpoint weights are bf16 while the processor emits fp32 pixel_values.
+                if model_kwargs["torch_dtype"] not in (None, torch.float32):
+                    logger.warning(
+                        "Mistral3 uses float32 because pixel_values are float32. Ignoring %s arg.",
+                        model_kwargs["torch_dtype"],
+                    )
+                model_kwargs.update({"torch_dtype": torch.float32})
+
             model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
         except ValueError:
             try:
@@ -1317,7 +1326,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
 def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     language = kwargs.pop("speech_language", "") or ""
-    from .speech_recognition_evaluator import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
+    from .speech_recognition_model_wrappers import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
 
     if use_hf:
         kwargs["torch_dtype"] = _resolve_torch_dtype(kwargs.get("torch_dtype"))

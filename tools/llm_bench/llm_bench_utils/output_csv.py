@@ -149,6 +149,7 @@ def gen_data_to_csv(
     mem_unit: MemoryUnit,
     include_tts_metrics: bool = False,
     include_e2e_throughput: bool = False,
+    first_latency_unit: str = "ms",
 ):
     generation_time = iter_data["generation_time"]
     latency = iter_data["latency"]
@@ -174,17 +175,19 @@ def gen_data_to_csv(
     result["latency(ms)"] = round(latency, 5) if latency != "" else latency
     result["result_md5"] = iter_data["result_md5"]
     if first_latency < 0:
-        result['1st_latency(ms)'] = 'NA'
+        result[f"1st_latency({first_latency_unit})"] = "NA"
     else:
-        result['1st_latency(ms)'] = round(first_latency, 5) if first_latency != '' else first_latency
+        result[f"1st_latency({first_latency_unit})"] = round(first_latency, 5) if first_latency != "" else first_latency
     if other_latency < 0:
         result['2nd_avg_latency(ms)'] = 'NA'
     else:
         result['2nd_avg_latency(ms)'] = round(other_latency, 5) if other_latency != '' else other_latency
     if first_token_infer_latency < 0:
-        result['1st_infer_latency(ms)'] = 'NA'
+        result[f"1st_infer_latency({first_latency_unit})"] = "NA"
     else:
-        result['1st_infer_latency(ms)'] = round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency
+        result[f"1st_infer_latency({first_latency_unit})"] = (
+            round(first_token_infer_latency, 5) if first_token_infer_latency != "" else first_token_infer_latency
+        )
     if other_token_infer_latency < 0:
         result['2nd_infer_avg_latency(ms)'] = 'NA'
     else:
@@ -306,6 +309,7 @@ def write_result(
                     mem_unit,
                     include_tts_metrics,
                     include_e2e_throughput,
+                    first_latency_unit=first_latenct_unit,
                 )
                 writer.writerow(result)
 
@@ -314,7 +318,15 @@ def write_result(
             for key in res_data.keys():
                 for data in res_data[key]:
                     gen_data_to_csv(
-                        result, data, "", iter_timestamp, None, mem_unit, include_tts_metrics, include_e2e_throughput
+                        result,
+                        data,
+                        "",
+                        iter_timestamp,
+                        None,
+                        mem_unit,
+                        include_tts_metrics,
+                        include_e2e_throughput,
+                        first_latency_unit=first_latenct_unit,
                     )
                     writer.writerow(result)
             output_comments(result, model_args["use_case"].task, writer)

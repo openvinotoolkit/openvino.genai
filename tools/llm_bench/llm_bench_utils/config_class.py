@@ -204,8 +204,10 @@ USE_CASES = {
                 "smolvlm",
                 "qwen3-vl",
                 "qwen3-5",
+                "qwen4-exp",
                 "videochat-flash-qwen",
                 "gemma4",
+                "mistral3",
             ]
         ),
         UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
