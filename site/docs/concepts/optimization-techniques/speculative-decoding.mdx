@@ -10,24 +10,28 @@ import OptimumCLI from '@site/src/components/OptimumCLI';
 
 Speculative decoding (also referred to as [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency)) is a latency-oriented optimization for autoregressive text generation.
 A small, cheap *drafter* proposes one or more candidate continuations, and the larger *target* (main) model validates them in a single forward pass.
-Tokens that the target would have produced anyway are accepted; the first divergent token is replaced by the target's own sample, and drafting resumes from there.
+With greedy decoding, candidates that match the target's own choice are accepted; the first mismatch is replaced by the target's token, and drafting resumes from there.
+With multinomial sampling (`do_sample=true`), validation follows [speculative sampling](https://arxiv.org/abs/2211.17192): a candidate is accepted with probability `min(1, p/q)`, where `p` and `q` are the probabilities the target and the drafter assign to it after penalties, temperature, top-k, top-p and min-p.
+The first rejected candidate is replaced by a sample from the normalized residual `max(0, p - q)`, and drafting resumes from there.
 
 Because validation is parallel over the candidate length, each accepted draft token replaces a sequential decode step of the target model with (a fraction of) one batched step.
-When acceptance is high, this yields end-to-end speedups on memory-bandwidth-bound decoding without changing the model output distribution in theory (the standard verification scheme is statistically equivalent to sampling from the target).
+When acceptance is high, this yields end-to-end speedups on memory-bandwidth-bound decoding without changing the model output distribution: sampled tokens follow the same distribution as sampling from the target alone.
 
-OpenVINO GenAI implements three drafting strategies. They differ only in *how candidates are produced* — the target-side validation step is shared.
+OpenVINO GenAI implements four drafting strategies. They differ only in *how candidates are produced* — the target-side validation step is shared.
 
 | Strategy | Drafter | Best For | Continuous Batching (CPU/GPU) | Stateful (NPU) |
 |---|---|---|---|---|
 | [Speculative Decoding (Fast Draft)](#speculative-decoding-fast-draft) | Smaller off-the-shelf LLM | General-purpose, robust speedup without retraining | ✓ | ✓ |
 | [Prompt Lookup Decoding](#prompt-lookup-decoding) | N-gram match against the prompt | Output copies large spans of the input (RAG, summarization, code editing) | ✓ | ✗ |
 | [EAGLE3](#eagle3) | Custom draft head trained on the target's hidden states | Highest acceptance rate; also supports [tree drafting](#tree-drafting) | ✓ | ✓ |
+| [DFlash](#dflash) | Block diffusion draft model trained on the target's hidden states, optionally with a Markov head | Long candidate blocks drafted in one forward pass | ✓ | ✗ |
 
 :::info
-All three strategies are available through the `LLMPipeline` Python and C++ APIs.
-Prompt Lookup Decoding and EAGLE3 are additionally supported in `VLMPipeline` (e.g. Qwen3-VL).
+All four strategies are available through the `LLMPipeline` Python and C++ APIs.
+Prompt Lookup Decoding, EAGLE3 and DFlash are additionally supported in `VLMPipeline` (e.g. Qwen3-VL, Qwen3.5).
 
 The Continuous Batching backend supports multi-request batching; the Stateful backend is single-request.
+Multinomial sampling is supported on the Continuous Batching backend, except with EAGLE3 tree drafting; the Stateful backend supports greedy decoding only.
 :::
 
 Every strategy is configured in two places: the drafter is selected when the pipeline is **constructed**, and the drafting behavior is tuned **per request** through `GenerationConfig`.
@@ -48,8 +52,10 @@ cached prefixes across requests with shared prompts. For hybrid-attention models
 also depends on linear-attention state checkpoints; see
 [Hybrid Attention Model Cache Management](./hybrid-attention-models-cache.md) for checkpoint
 granularity and memory-budget guidance.
+With prefix caching, speculative decoding of hybrid-attention models supports greedy decoding only.
+To use multinomial sampling, set `enable_prefix_caching` to `false`; `LLMPipeline` and `VLMPipeline` enable it when no `SchedulerConfig` is passed.
 
-With MTP drafting, the main and draft models must use the same `enable_prefix_caching` setting.
+With MTP and DFlash drafting, the main and draft models must use the same `enable_prefix_caching` setting.
 The pipeline restores both models to a common reusable prefix before processing a request.
 
 ## Speculative Decoding (Fast Draft)
@@ -340,8 +346,161 @@ It cannot be combined with beam search or multinomial sampling — set `tree_dep
 :::
 
 :::warning EAGLE3 Streaming
-Streaming is restricted to batch size 1, with either greedy decoding or tree search.
-Beam search and multinomial sampling are not supported.
+Streaming is restricted to batch size 1, with greedy decoding, multinomial sampling or tree drafting.
+Beam search is not supported.
 
 `assistant_confidence_threshold` must be 0 for EAGLE3 — dynamic-length drafting is a Fast Draft feature.
+:::
+
+## DFlash
+
+[DFlash](https://arxiv.org/abs/2602.06036) drafts with a small block diffusion model.
+Like EAGLE3, the draft is trained against a specific target and reads the target's *hidden states*.
+Unlike EAGLE3, it does not run once per candidate: it fills a whole block of masked positions in a single forward pass, so drafting more candidates costs little extra draft time.
+
+The draft backbone predicts every position of the block independently.
+DSpark and DFlash v2 drafts add a Markov head, which scores the backbone candidates of neighboring positions so that every drafted token depends on the one before it.
+DSpark has a vanilla Markov head; the gated Markov head of DFlash v2 also reads the draft hidden states. DFlash v1 drafts have no Markov head.
+
+The draft runs as a continuous-batching pipeline of its own next to the target, on PagedAttention, so the drafts of all scheduled requests run together in one inference.
+At load time, OpenVINO GenAI reuses the target's embedding and LM-head weights instead of duplicating them in the draft, and computes the draft logits only for the drafted positions.
+Use `LLMPipeline` for text targets and `VLMPipeline` for vision-language targets; for a VLM, the target's embedding pipeline supplies the draft's `inputs_embeds`.
+
+### Model Preparation
+
+Export the target and the matching DFlash draft with `optimum-cli`.
+The draft must be trained against the same target and runs with the target's tokenizer. OpenVINO GenAI reads the DFlash metadata stored in the exported draft and selects DFlash automatically:
+
+<OptimumCLI model='Qwen/Qwen3.5-9B' outputDir='Qwen3.5-9B-ov-int4' weightFormat='int4' />
+
+<OptimumCLI model='z-lab/Qwen3.5-9B-DFlash' outputDir='Qwen3.5-9B-DFlash-ov-int4' weightFormat='int4' task='text-generation-with-past' trustRemoteCode />
+
+The draft backbone is exported as `openvino_model.xml`, and the Markov head of a DSpark or DFlash v2 draft next to it as `openvino_markov_head_model.xml`.
+INT8 and INT4 weight formats compress only the draft backbone; the Markov head keeps the checkpoint precision unless `--weight-format fp16` or `fp32` converts it.
+
+DSpark and DFlash v1 drafts can have a pruned vocabulary, as [openbmb/MiniCPM-OCR-1.0-DSpark](https://huggingface.co/openbmb/MiniCPM-OCR-1.0-DSpark) does: their own LM head predicts a subset of the target vocabulary, which OpenVINO GenAI maps to the target vocabulary when it loads the draft.
+
+### Configuration and Usage
+
+Per request, DFlash needs no configuration beyond `num_assistant_tokens`, the number of candidates the draft fills in each step.
+Setting it to `0` runs the request on the target alone.
+A draft with a Markov head also takes the `markov_head_top_k` draft property; see [Markov Head Modes](#markov-head-modes).
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai
+
+        main_model_dir = "Qwen3.5-9B-ov-int4"
+        draft_model_dir = "Qwen3.5-9B-DFlash-ov-int4"
+
+        draft_model = openvino_genai.draft_model(draft_model_dir, "GPU")
+        pipe = openvino_genai.VLMPipeline(main_model_dir, "GPU", draft_model=draft_model)
+
+        config = openvino_genai.GenerationConfig()
+        config.max_new_tokens = 100
+        config.num_assistant_tokens = 7
+
+        pipe.generate("What is OpenVINO?", generation_config=config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/visual_language/pipeline.hpp"
+
+        std::string main_model_dir = "Qwen3.5-9B-ov-int4";
+        std::string draft_model_dir = "Qwen3.5-9B-DFlash-ov-int4";
+
+        ov::genai::VLMPipeline pipe(
+            main_model_dir, "GPU",
+            ov::genai::draft_model(draft_model_dir, "GPU"));
+
+        ov::genai::GenerationConfig config;
+        config.max_new_tokens = 100;
+        config.num_assistant_tokens = 7;
+
+        pipe.generate("What is OpenVINO?", ov::genai::generation_config(config));
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Choosing the Block Size
+
+A DFlash draft is trained with a fixed block size, which the model provider usually states.
+OpenVINO GenAI does not limit `num_assistant_tokens`, but staying within the trained block size is recommended.
+
+:::tip
+Tune `num_assistant_tokens` on prompts that resemble your use case, balancing the accepted tokens per step against the step latency of the target and the draft.
+As the block grows, the accepted tokens per step rise and then plateau, while the step latency keeps growing, so past some point a larger block slows generation down.
+:::
+
+### Markov Head Modes
+
+`draft_model` loads the Markov head next to the draft backbone and runs it on the draft device, in one of two modes selected by the `markov_head_top_k` draft property:
+
+- Top-K candidate scorer (the default, with the `K` the Markov head was exported with): keeps the `K` best backbone candidates at every drafted position and scores every pair of neighboring candidates with the Markov head, in one inference for all scheduled requests. Set `markov_head_top_k` to another `K` between 1 and the draft vocabulary size to change it.
+- Dense Markov walk (`markov_head_top_k = 0`, DSpark drafts only): corrects every drafted position with the Markov head, one inference per position. The gated Markov head of DFlash v2 has no dense walk.
+
+The Top-K candidate scorer is usually much faster. With greedy decoding, it drafts the same tokens as the dense walk up to floating-point rounding, except where the walk would pick a token outside the `K` candidates.
+The target verifies every drafted token either way, so the mode changes neither the greedy output nor the output distribution of sampled decoding.
+As with any speculative decoding, FP16 inference on GPU can resolve near-ties in the verification differently from the target alone.
+`draft_model` rejects `markov_head_top_k` for a draft without a Markov head.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        # dspark_draft_dir holds a DSpark draft exported with optimum-cli as above.
+        # 16 candidates per drafted position; markov_head_top_k=0 selects the dense Markov walk of a DSpark draft
+        draft_model = openvino_genai.draft_model(dspark_draft_dir, "GPU", markov_head_top_k=16)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        // dspark_draft_dir holds a DSpark draft exported with optimum-cli as above.
+        // 16 candidates per drafted position; 0 selects the dense Markov walk of a DSpark draft
+        auto draft_model = ov::genai::draft_model(dspark_draft_dir, "GPU", ov::AnyMap{{"markov_head_top_k", 16}});
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Sampling
+
+DFlash supports greedy decoding and multinomial sampling.
+With multinomial sampling, the draft samples its candidates and the target validates them with speculative sampling, as described in the [Overview](#overview).
+With prefix caching, a hybrid-attention target such as Qwen3.5 supports greedy decoding only; see [Prefix Caching with Speculative Decoding](#prefix-caching-with-speculative-decoding).
+
+How the draft chooses its candidates depends on the Markov head mode:
+
+- With the Top-K candidate scorer, greedy decoding walks the candidates position by position, taking the best-scoring candidate after the previous drafted token. When the request's penalties or `min_new_tokens` can change the best token, the draft sampler applies them to the candidate scores, and a drafted token outside the candidates ends the block. Multinomial sampling draws every drafted token from its `K` candidates, with the request temperature applied to their scores.
+- With the dense Markov walk, or for drafts without a Markov head, the draft sampler takes or draws every drafted token from the corrected or the backbone distribution after the request's logit processors, as the regular sampler does.
+
+The draft does not apply structured output or stop strings; the target enforces them when it validates the candidates.
+
+### KV Cache and Scheduling
+
+The draft has a KV cache of its own, set by the `scheduler_config` passed to `draft_model`.
+Without one, the draft uses a copy of the target's `SchedulerConfig`, and a fixed `cache_size` is split between the target and the draft in proportion to their KV size per token.
+With dynamic split fuse, the default, the draft step that runs the last prompt rows of a request also drafts its first block.
+Without dynamic split fuse, a scheduler step runs either prompt or generation rows, so the first block waits one step and every request runs one target step without candidates.
+
+### Draft Step Metrics
+
+`result.extended_perf_metrics` breaks every DFlash draft step down.
+`draft_step_metrics` holds the wall-clock time of each draft step, until its candidates are submitted to the target.
+Within each step, `draft_model_metrics` holds the draft-backbone inference, `draft_markov_head_metrics` the Markov head inference of DSpark and DFlash v2 drafts, and `draft_sampling_metrics` the candidate sampling; the rest is scheduling, input preparation, and candidate submission.
+
+:::warning Runtime limits
+DFlash uses the Continuous Batching backend on CPU and GPU; NPU and the Stateful backend are not supported.
+
+- Greedy decoding and multinomial sampling are supported, with one return sequence per request.
+  Beam search, adapters, prompt lookup, and `assistant_confidence_threshold` are not supported.
+- Cache eviction (`SchedulerConfig.use_cache_eviction`) is not supported for the target or the draft.
+- With a VLM target and prefix caching, `ChatHistory` and image `add_request()` requests need `num_assistant_tokens` > 0.
+- For a linear-attention target, leave `SchedulerConfig.num_linear_attention_blocks` at `0` for automatic allocation, or explicitly provide one committed state row per concurrent request plus `num_assistant_tokens + 1` speculative checkpoint rows, and one more row with prefix caching.
+- Streaming is supported for a single request.
+- `VLMPipeline` does not support Omni intermediate outputs (`return_omni_outputs`).
+:::
+
+:::note
+DFlash drafts exported for OpenVINO GenAI 2026.4 or earlier do not load. Re-export them with optimum-intel 2.3.0 or later.
 :::

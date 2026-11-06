@@ -6,6 +6,7 @@
 
 #include <list>
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -21,6 +22,7 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+#include "sampling/block_row_source.hpp"
 #include "sampling/logit_transformers.hpp"
 #include "sampling/logit_processor.hpp"
 #include "continuous_batching/scheduler.hpp"
@@ -29,6 +31,38 @@
 #include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov::genai {
+
+namespace detail {
+// Probability with which multinomial sampling draws token_id from the processed logits; 0 for tokens it
+// cannot draw, including ids beyond the logits width.
+float sampling_probability(const Logits& logits, int64_t token_id);
+
+// The distribution multinomial sampling draws from: sparse over the surviving candidates when the logit
+// processor selected them, dense otherwise. With d2t (EAGLE), draft id i is recorded as target id i + d2t[i].
+DraftProposal make_draft_proposal(const Logits& logits, const int64_t* d2t = nullptr);
+
+// Checks that a proposal is a distribution, without allocating, so it does not check that sparse ids are distinct.
+void validate_draft_proposal(const DraftProposal& proposal);
+float proposal_probability(const DraftProposal& proposal, int64_t token_id);
+
+// Draws from the residual max(0, p - q) normalized, where p is the target distribution of the processed
+// logits. Draft ids outside the target logits have p = 0 and target ids absent from q have q = 0. Falls back
+// to p when the residual has no mass, e.g. q == p up to rounding.
+Token sample_residual(const Logits& target_logits, const DraftProposal& proposal, std::mt19937& rng_engine);
+
+struct DraftTokenVerdict {
+    Token token;
+    bool accepted = false;
+};
+
+// Speculative sampling (Leviathan et al., 2023): accepts draft_token with probability min(1, p / q), otherwise
+// replaces it with a residual sample, so the emitted token follows the target distribution p exactly.
+DraftTokenVerdict verify_draft_token(const Logits& target_logits,
+                                     int64_t draft_token,
+                                     const DraftProposal& proposal,
+                                     std::mt19937& rng_engine);
+}  // namespace detail
+
 // Handle stop_token_ids
 inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t> & stop_token_ids) {
     for (auto & stop_token_id : stop_token_ids) {
@@ -149,9 +183,11 @@ class Sampler {
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr& sequence_group,
                                                  const std::pair<size_t, std::set<std::string>>& stop_strings);
 
-    bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities,
-                            std::mt19937& rng_engine);
+    bool validate_candidate(Sequence::Ptr running_sequence,
+                            size_t& token_idx,
+                            const Token& sampled_token,
+                            bool& is_extend_sequence,
+                            size_t& max_removed_tokens);
 
     // Verify the candidate tree against target-model logits: greedily accept the longest
     // matching prefix across all tree paths, then append a bonus token.
@@ -165,6 +201,26 @@ class Sampler {
                                                         RequestSamplerContext& context,
                                                         bool is_validation_mode_enabled,
                                                         bool notify_handle);
+
+    // Block sampling of one request: samples one token from each gathered row, in row order, in place of the
+    // request's trailing placeholder tokens. A sampled token carries its proposal when proposals are collected.
+    SequenceGroupSamplingInfo _sample_block_from_sequence_group(SequenceGroup::Ptr sequence_group,
+                                                                ov::Tensor sequence_group_logits,
+                                                                RequestSamplerContext& context);
+    // Removes the request's placeholder tokens and returns its block, whose rows start at first_row. The block has no
+    // candidates when its window gathered no rows or the request has no token left to draft.
+    SampledBlock _start_block(const SequenceGroup::Ptr& sequence_group, size_t first_row);
+    // Samples the next token of a block from its row with the request's logit processors and appends it.
+    int64_t _sample_block_token(const Sequence::Ptr& sequence,
+                                const ov::genai::GenerationConfig& sampling_params,
+                                Logits logits,
+                                RequestSamplerContext& context);
+    // Appends a token that a row source drew for a block.
+    void _append_block_token(const Sequence::Ptr& sequence, const BlockToken& token, RequestSamplerContext& context);
+    // Samples the blocks of all requests from the rows of m_block_row_source, by request or by position.
+    std::vector<SequenceGroupSamplingInfo> _sample_blocks(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                                          const std::vector<size_t>& first_rows,
+                                                          const ov::Tensor& logits);
 
     // request ID => beam search tracking information (kept separate — has its own mutex)
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
@@ -181,6 +237,17 @@ class Sampler {
 
     ThreadPool m_thread_pool;
     std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
+    // Whether m_d2t_mapping sends the draft tokens to distinct non-negative target ids, which recording proposals
+    // in target ids requires.
+    bool m_d2t_mapping_is_one_to_one = false;
+    bool m_collect_draft_proposals = false;
+    bool m_block_sampling = false;
+    // Rows from the row of the last real token (the seed) to the first gathered row: 1 when the gathered rows start
+    // at the first placeholder (DFlash), 0 when they start at the seed (DeepSpec).
+    size_t m_block_sampling_start_offset = 1;
+    // the rows block sampling draws from instead of the gathered logits rows
+    std::shared_ptr<BlockRowSource> m_block_row_source;
+
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -211,9 +278,22 @@ public:
     std::pair<std::map<std::string, float>, std::vector<float>> get_structured_output_times();
     void clear_structured_output_compile_times();
 
-    void set_d2t_for_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t) {
-        m_d2t_mapping = d2t;
-    };
+    void set_d2t_for_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t);
+
+    // A draft pipeline's sampler records the distribution q(.) of each multinomially sampled token, which the main
+    // pipeline needs to verify it.
+    void set_collect_draft_proposals(bool collect_draft_proposals) {
+        m_collect_draft_proposals = collect_draft_proposals;
+    }
+
+    // Block sampling: each gathered row of a request yields one token, in row order, and the tokens replace the
+    // request's trailing placeholder tokens. Used by the DFlash draft. A row source gives the row of each token in
+    // place of the gathered row, and its block ends when it has no row for the next position.
+    void set_block_sampling(size_t start_offset, std::shared_ptr<BlockRowSource> row_source = nullptr) {
+        m_block_sampling = true;
+        m_block_sampling_start_offset = start_offset;
+        m_block_row_source = std::move(row_source);
+    }
 };
 
 class Sampler::Searcher {
