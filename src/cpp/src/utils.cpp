@@ -592,15 +592,23 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
             continue;
         }
 
+        KVAxesPosition candidate = kv_pos;
+        bool has_seq_len_axis = false;
         for (size_t i = 0; i < shape.rank().get_length(); i++) {
             // Find axis = 0. This would be sequence length axis.
             if (shape[i] == 0) {
-                kv_pos.seq_len = i;
+                candidate.seq_len = i;
+                has_seq_len_axis = true;
             } else if (shape[i].is_dynamic()) {
                 // Dynamic axis is a batch
-                kv_pos.batch = i;
+                candidate.batch = i;
             }
         }
+        if (!has_seq_len_axis) {
+            // Rank-4 state without zero-length axis is a linear attention (ssm) state, not a KV cache
+            continue;
+        }
+        kv_pos = candidate;
         break;
     }
 
