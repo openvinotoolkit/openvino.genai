@@ -4,6 +4,7 @@
 #include "dflash_strategy.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <string>
 #include <vector>
@@ -73,6 +74,17 @@ public:
           m_sampler(tokenizer),
           m_mask_token_id(rt_info.mask_token_id),
           m_candidate_position_offset(rt_info.candidate_position_offset) {
+        if (rt_info.markov_head_computation) {
+            auto markov_head_request =
+                utils::singleton_core()
+                    .compile_model(rt_info.markov_head_computation, model_desc.device, model_desc.properties)
+                    .create_infer_request();
+            if (rt_info.markov_head_top_k == utils::dflash::TOP_K_FOR_MARKOV_STEP) {
+                m_markov_step_request = std::move(markov_head_request);
+            } else {
+                m_candidate_scorer_request = std::move(markov_head_request);
+            }
+        }
         m_has_beam_idx = has_compiled_input(m_request.get_compiled_model(), "beam_idx");
         if (m_has_beam_idx) {
             m_beam_idx = ov::Tensor(ov::element::i32, {BATCH_SIZE});
@@ -139,17 +151,11 @@ public:
         return m_request.get_tensor("logits");
     }
 
-    std::vector<DraftCandidateToken> sample_candidates(const ov::Tensor& logits, size_t candidate_count) {
-        std::vector<DraftCandidateToken> candidates;
-        candidates.reserve(candidate_count);
-        const auto shape = logits.get_shape();
-        for (size_t idx = 0; idx < candidate_count; ++idx) {
-            ov::Tensor one_position(logits,
-                                    ov::Coordinate{0, idx, 0},
-                                    ov::Coordinate{1, idx + 1, shape[2]});
-            auto sampled = sample_one_candidate(one_position);
-            candidates.insert(candidates.end(), sampled.begin(), sampled.end());
-        }
+    std::vector<DraftCandidateToken> sample_candidates(const ov::Tensor& logits,
+                                                       int64_t anchor_token,
+                                                       size_t candidate_count) {
+        auto candidates = m_candidate_scorer_request ? select_scored_candidates(logits, anchor_token, candidate_count)
+                                                     : sample_token_by_token(logits, anchor_token, candidate_count);
         m_raw_perf_metrics.m_batch_sizes.emplace_back(candidates.size());
         return candidates;
     }
@@ -163,12 +169,107 @@ public:
     }
 
 private:
+    // Samples the drafted positions one by one. With a Markov step model, each position's logits are first corrected
+    // by a Markov bias computed from the token drafted at the previous position, so drafting becomes autoregressive.
+    std::vector<DraftCandidateToken> sample_token_by_token(const ov::Tensor& logits,
+                                                           int64_t anchor_token,
+                                                           size_t candidate_count) {
+        std::vector<DraftCandidateToken> candidates;
+        candidates.reserve(candidate_count);
+        const auto shape = logits.get_shape();
+        int64_t previous_token = anchor_token;
+        uint64_t markov_inference_time_us = 0;
+        for (size_t idx = 0; idx < candidate_count; ++idx) {
+            ov::Tensor one_position(logits,
+                                    ov::Coordinate{0, idx, 0},
+                                    ov::Coordinate{1, idx + 1, shape[2]});
+            if (m_markov_step_request) {
+                one_position = add_markov_bias(one_position, previous_token, markov_inference_time_us);
+            }
+            auto sampled = sample_one_candidate(one_position);
+            if (m_markov_step_request) {
+                // The next position's Markov bias needs the token drafted here.
+                if (sampled.empty()) {
+                    break;
+                }
+                previous_token = sampled.back().token_id;
+            }
+            candidates.insert(candidates.end(), sampled.begin(), sampled.end());
+        }
+        if (m_markov_step_request) {
+            add_to_stage_inference_time(markov_inference_time_us);
+        }
+        return candidates;
+    }
+
+    // Drafts all positions with one candidate scorer inference instead of one Markov step inference per position.
+    // The scorer takes the rows of draft blocks packed back to back; this request is a single block of S rows.
+    // It computes a Top-K grid in one pass:
+    //   candidate_ids [S, K]: the K best backbone candidates at every position;
+    //   edge_scores [S, K, K]: edge_scores[s, i, j] is the backbone logit of candidate j at position s plus
+    //   its Markov bias after candidate i at position s - 1. At position 0 all K rows follow the anchor token.
+    // walk_candidate_lattice() then drafts one position at a time from the row of the candidate drafted before it,
+    // through the draft sampler like the token-by-token walk, so the request's logit processors apply. It drafts the
+    // same tokens as the token-by-token Markov walk unless that walk would pick a token outside the K candidates.
+    // When the processors cannot change the argmax, greedy_candidate_path() takes the best candidate of every row
+    // without the sampler's vocabulary-sized row per position.
+    std::vector<DraftCandidateToken> select_scored_candidates(const ov::Tensor& logits,
+                                                              int64_t anchor_token,
+                                                              size_t candidate_count) {
+        const auto logits_shape = logits.get_shape();
+        OPENVINO_ASSERT(logits_shape.size() == 3 && logits_shape[0] == BATCH_SIZE && candidate_count <= logits_shape[1],
+                        "Candidate scorer positions exceed the DFlash draft logits [1, S, vocab].");
+        OPENVINO_ASSERT(logits.is_continuous(), "DFlash draft logits must be contiguous.");
+        int64_t subsequence_begin_values[] = {0, static_cast<int64_t>(candidate_count)};
+        const ov::Tensor subsequence_begins(ov::element::i64, {BATCH_SIZE + 1}, subsequence_begin_values);
+        dflash_cb::validate_subsequence_begins(subsequence_begins, BATCH_SIZE, candidate_count);
+        m_candidate_scorer_request->set_tensor(
+            "draft_logits",
+            ov::Tensor(logits.get_element_type(), {candidate_count, logits_shape[2]}, logits.data()));
+        m_candidate_scorer_request->set_tensor("anchor_token_ids",
+                                               ov::Tensor(ov::element::i64, {BATCH_SIZE}, &anchor_token));
+        m_candidate_scorer_request->set_tensor("subsequence_begins", subsequence_begins);
+        add_to_stage_inference_time(execute_timed(*m_candidate_scorer_request));
+
+        const auto edge_scores = m_candidate_scorer_request->get_tensor("edge_scores");
+        const auto candidate_ids = m_candidate_scorer_request->get_tensor("candidate_ids");
+        dflash_cb::validate_candidate_lattice(edge_scores, candidate_ids, candidate_count, logits_shape[2]);
+        std::vector<DraftCandidateToken> candidates;
+        candidates.reserve(candidate_count);
+        if (m_logit_processors_keep_argmax) {
+            for (const int64_t token : dflash_cb::greedy_candidate_path(edge_scores, candidate_ids)) {
+                // Greedy validation compares token ids and never reads the draft log-prob.
+                candidates.push_back({token, 0.0f});
+            }
+            return candidates;
+        }
+        const ov::Shape row_shape{BATCH_SIZE, 1, logits_shape[2]};
+        if (!m_candidate_row || m_candidate_row.get_shape() != row_shape) {
+            m_candidate_row = ov::Tensor(ov::element::f32, row_shape);
+        }
+        dflash_cb::walk_candidate_lattice(logits,
+                                          edge_scores,
+                                          candidate_ids,
+                                          candidate_count,
+                                          m_candidate_row,
+                                          [&](const ov::Tensor& row) -> std::optional<int64_t> {
+                                              const auto sampled = sample_one_candidate(row);
+                                              if (sampled.empty()) {
+                                                  return std::nullopt;
+                                              }
+                                              candidates.insert(candidates.end(), sampled.begin(), sampled.end());
+                                              return sampled.back().token_id;
+                                          });
+        return candidates;
+    }
+
     void initialize_sampler_sequence(TokenIds prompt_ids, const GenerationConfig& config) {
         m_prompt_length = prompt_ids.size();
         // Sampler state is keyed by request_id; we reuse request_id=1, so clear per-request context.
         m_sampler.clear_request_info(1);
         m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config);
         m_sequence_group->update_processed_tokens_num(m_prompt_length);
+        m_logit_processors_keep_argmax = dflash_cb::logit_processors_keep_argmax(config);
         m_committed_context_length = 0;
         m_request.reset_state();
         if (m_has_beam_idx) {
@@ -245,15 +346,48 @@ private:
         return candidates;
     }
 
+    ov::Tensor add_markov_bias(const ov::Tensor& logits, int64_t previous_token, uint64_t& inference_time_us) {
+        OPENVINO_ASSERT(logits.get_element_type() == ov::element::f32, "Markov correction requires FP32 draft logits.");
+        m_markov_step_request->set_tensor("prev_token_ids",
+                                          ov::Tensor(ov::element::i64, {BATCH_SIZE}, &previous_token));
+        inference_time_us += execute_timed(*m_markov_step_request);
+        const auto markov_bias = m_markov_step_request->get_tensor("markov_bias");
+        OPENVINO_ASSERT(
+            markov_bias.get_element_type() == ov::element::f32 && markov_bias.get_size() == logits.get_size(),
+            "The Markov bias must be one FP32 row over the draft vocabulary.");
+        if (!m_markov_corrected_logits || m_markov_corrected_logits.get_shape() != logits.get_shape()) {
+            m_markov_corrected_logits = ov::Tensor(ov::element::f32, logits.get_shape());
+        }
+        const auto* logits_data = logits.data<const float>();
+        std::transform(logits_data,
+                       logits_data + logits.get_size(),
+                       markov_bias.data<const float>(),
+                       m_markov_corrected_logits.data<float>(),
+                       std::plus<float>());
+        return m_markov_corrected_logits;
+    }
+
     uint64_t execute_inference() {
+        return execute_timed(m_request);
+    }
+
+    static uint64_t execute_timed(ov::InferRequest& request) {
         auto start = std::chrono::steady_clock::now();
-        m_request.infer();
+        request.infer();
         return static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
     }
 
     void update_inference_time(uint64_t inference_time_us) {
         m_raw_perf_metrics.m_durations.emplace_back(static_cast<float>(inference_time_us));
+        m_raw_perf_metrics.m_inference_durations[0] += MicroSeconds(static_cast<float>(inference_time_us));
+    }
+
+    // Draft TPOT statistics expect one duration per proposal stage, so Markov and candidate scorer inferences are added
+    // to the stage's backbone inference instead of being recorded separately.
+    void add_to_stage_inference_time(uint64_t inference_time_us) {
+        OPENVINO_ASSERT(!m_raw_perf_metrics.m_durations.empty(), "DFlash proposal stage has no backbone inference.");
+        m_raw_perf_metrics.m_durations.back() += MicroSeconds(static_cast<float>(inference_time_us));
         m_raw_perf_metrics.m_inference_durations[0] += MicroSeconds(static_cast<float>(inference_time_us));
     }
 
@@ -270,6 +404,12 @@ private:
     size_t m_committed_context_length = 0;
     int64_t m_mask_token_id = -1;
     size_t m_candidate_position_offset = 1;
+    std::optional<ov::InferRequest> m_candidate_scorer_request;
+    std::optional<ov::InferRequest> m_markov_step_request;
+    bool m_logit_processors_keep_argmax = true;
+    // Reused for every drafted position: each row is sampled before the next one is computed.
+    ov::Tensor m_markov_corrected_logits;
+    ov::Tensor m_candidate_row;
 };
 
 ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
@@ -281,6 +421,11 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     OPENVINO_ASSERT(!m_rt_info.target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
     OPENVINO_ASSERT(!main_model_desc.scheduler_config.enable_prefix_caching,
                     "DFlash CB/PA does not support scheduler_config.enable_prefix_caching.");
+    const auto& draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
+    if (m_rt_info.markov_rank > 0) {
+        OPENVINO_ASSERT(!utils::is_npu_requested(draft_device, draft_model_desc.properties),
+                        "DFlash drafts with a Markov head do not support NPU.");
+    }
 
     auto main_model = main_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model_desc.model, "DFlash requires both target and draft models.");
@@ -364,6 +509,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                                                     m_tokenizer,
                                                     m_rt_info,
                                                     draft_embedding_model);
+    m_rt_info.markov_head_computation.reset();
 
     if (is_vlm_dflash) {
         m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
@@ -590,7 +736,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         auto hidden_delta = materialize_pending_hidden_delta(state);
         auto draft_logits = m_draft->infer(seed_token, hidden_delta, draft_count);
         clear_pending_hidden_delta(state);
-        auto candidates = m_draft->sample_candidates(draft_logits, validation_count);
+        auto candidates = m_draft->sample_candidates(draft_logits, seed_token, validation_count);
 
         state.generated_before_draft = state.generated_tokens.size();
         state.draft_generated = candidates.size();

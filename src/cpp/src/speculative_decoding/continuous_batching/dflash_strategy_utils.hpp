@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <vector>
 
 #include <openvino/core/except.hpp>
@@ -234,6 +236,187 @@ inline size_t validation_candidate_count(size_t draft_count, size_t generated_le
         return 0;
     }
     return std::min(draft_count, remaining - 1);
+}
+
+// The candidate scorer takes the rows of num_blocks draft blocks packed back to back: block n spans rows
+// subsequence_begins[n] to subsequence_begins[n + 1]. The graph marks the first row of every block and gives it the
+// block's anchor as predecessor, so an empty block would mark a row twice and shift the anchors of later blocks.
+inline void validate_subsequence_begins(const ov::Tensor& subsequence_begins, size_t num_blocks, size_t num_rows) {
+    OPENVINO_ASSERT(num_blocks > 0, "The candidate scorer needs at least one draft block.");
+    OPENVINO_ASSERT(subsequence_begins && subsequence_begins.get_element_type() == ov::element::i64 &&
+                        subsequence_begins.get_shape() == ov::Shape{num_blocks + 1},
+                    "The candidate scorer subsequence_begins must be an I64 tensor of shape [",
+                    num_blocks + 1,
+                    "].");
+    const auto* begins = subsequence_begins.data<const int64_t>();
+    OPENVINO_ASSERT(begins[0] == 0 && begins[num_blocks] == static_cast<int64_t>(num_rows),
+                    "The candidate scorer subsequence_begins must start at 0 and end at the number of draft rows ",
+                    num_rows,
+                    ".");
+    for (size_t block = 0; block < num_blocks; ++block) {
+        OPENVINO_ASSERT(begins[block] < begins[block + 1],
+                        "The candidate scorer subsequence_begins must be strictly increasing: draft block ",
+                        block,
+                        " is empty.");
+    }
+}
+
+// The candidate scorer computes a Top-K lattice for one draft block of S positions:
+//   candidate_ids [S, K]: the backbone's K best tokens at every position;
+//   edge_scores [S, K, K]: edge_scores[s, i, j] scores candidate j at position s after candidate i at position s - 1.
+// All rows at position 0 follow the anchor token and are identical.
+inline void validate_candidate_lattice(const ov::Tensor& edge_scores,
+                                       const ov::Tensor& candidate_ids,
+                                       size_t num_positions,
+                                       size_t vocab_size) {
+    OPENVINO_ASSERT(candidate_ids && candidate_ids.get_element_type() == ov::element::i64 &&
+                        candidate_ids.get_shape().size() == 2 && candidate_ids.get_shape()[0] == num_positions &&
+                        candidate_ids.get_shape()[1] > 0,
+                    "Candidate scorer candidate_ids must be an I64 tensor of shape [",
+                    num_positions,
+                    ", K].");
+    const size_t top_k = candidate_ids.get_shape()[1];
+    OPENVINO_ASSERT(edge_scores && edge_scores.get_element_type() == ov::element::f32 &&
+                        edge_scores.get_shape() == ov::Shape({num_positions, top_k, top_k}),
+                    "Candidate scorer edge_scores must be an FP32 tensor of shape [",
+                    num_positions,
+                    ", ",
+                    top_k,
+                    ", ",
+                    top_k,
+                    "].");
+    const auto* ids = candidate_ids.data<const int64_t>();
+    OPENVINO_ASSERT(std::all_of(ids,
+                                ids + candidate_ids.get_size(),
+                                [&](int64_t id) {
+                                    return id >= 0 && static_cast<size_t>(id) < vocab_size;
+                                }),
+                    "Candidate scorer candidate_ids must be draft vocabulary ids.");
+}
+
+// True when the logit processors of a draft sampler with this config cannot change which token has the highest logit,
+// so a greedy draft can take the best candidate of every row without the sampler. Follows the transforms that
+// LogitProcessor adds for greedy decoding; the log-prob transforms keep the argmax.
+inline bool logit_processors_keep_argmax(const GenerationConfig& config) {
+    return config.is_greedy_decoding() && config.repetition_penalty == 1.0f && config.presence_penalty == 0.0f &&
+           config.frequency_penalty == 0.0f && config.min_new_tokens == 0 && !config.is_structured_output_generation();
+}
+
+// Walks a validated lattice greedily without a sampler: at every position, the best candidate in the row of the
+// candidate drafted before it. Ties go to the smaller token id, as in the greedy sampler's scan over the vocabulary,
+// so the walk drafts the same tokens as walk_candidate_lattice() with a greedy sampler and no logit processors.
+inline std::vector<int64_t> greedy_candidate_path(const ov::Tensor& edge_scores, const ov::Tensor& candidate_ids) {
+    const size_t num_positions = candidate_ids.get_shape()[0];
+    const size_t top_k = candidate_ids.get_shape()[1];
+    const auto* scores = edge_scores.data<const float>();
+    std::vector<int64_t> path;
+    path.reserve(num_positions);
+    size_t previous_index = 0;
+    for (size_t position = 0; position < num_positions; ++position) {
+        const auto* row = scores + (position * top_k + previous_index) * top_k;
+        const auto* ids = candidate_ids.data<const int64_t>() + position * top_k;
+        size_t best = 0;
+        for (size_t j = 1; j < top_k; ++j) {
+            if (row[j] > row[best] || (row[j] == row[best] && ids[j] < ids[best])) {
+                best = j;
+            }
+        }
+        previous_index = best;
+        path.push_back(ids[best]);
+    }
+    return path;
+}
+
+// Tokens outside the candidates are shifted at least this far below the worst candidate.
+inline constexpr float CANDIDATE_ROW_GAP = 1.0e4f;
+
+// Spreads the lattice row that follows candidate previous_index at position - 1 over the vocabulary, so the request's
+// logit processors and sampler pick the token as they do from a full logits row. Candidate j gets
+// edge_scores[position, previous_index, j]. Every other token keeps its backbone logit, shifted below the candidates
+// by at least CANDIDATE_ROW_GAP: a candidate still wins after the usual penalties unless the processors mask all K of
+// them (e.g. structured output), and then the token comes from the remaining backbone logits. A repetition_penalty
+// far below 1 can lift a non-candidate above the candidates, as it would in the token-by-token Markov walk, and the
+// walk then ends the block at that token.
+inline void fill_candidate_row(const float* backbone_logits,
+                               size_t vocab_size,
+                               const ov::Tensor& edge_scores,
+                               const ov::Tensor& candidate_ids,
+                               size_t position,
+                               size_t previous_index,
+                               float* row) {
+    const size_t top_k = candidate_ids.get_shape()[1];
+    const auto* ids = candidate_ids.data<const int64_t>() + position * top_k;
+    const auto* scores = edge_scores.data<const float>() + (position * top_k + previous_index) * top_k;
+    // The candidates are the backbone's Top-K at this position, so its best logit is among them.
+    float best_logit = -std::numeric_limits<float>::infinity();
+    float worst_score = std::numeric_limits<float>::infinity();
+    for (size_t j = 0; j < top_k; ++j) {
+        best_logit = std::max(best_logit, backbone_logits[ids[j]]);
+        worst_score = std::min(worst_score, scores[j]);
+    }
+    const float shift = worst_score - CANDIDATE_ROW_GAP - best_logit;
+    std::transform(backbone_logits, backbone_logits + vocab_size, row, [shift](float logit) {
+        return logit + shift;
+    });
+    for (size_t j = 0; j < top_k; ++j) {
+        row[ids[j]] = scores[j];
+    }
+}
+
+inline std::optional<size_t> find_candidate(const ov::Tensor& candidate_ids, size_t position, int64_t token_id) {
+    const size_t top_k = candidate_ids.get_shape()[1];
+    const auto* ids = candidate_ids.data<const int64_t>() + position * top_k;
+    const auto* found = std::find(ids, ids + top_k, token_id);
+    if (found == ids + top_k) {
+        return std::nullopt;
+    }
+    return static_cast<size_t>(std::distance(ids, found));
+}
+
+// Walks a validated lattice through a sampler. At every position, sample_token(row) picks a token from the lattice row
+// of the candidate drafted at the previous position, spread over the vocabulary in the [1, 1, vocab] row tensor by
+// fill_candidate_row(). It returns the token, or nullopt to end the block. A token outside the position's candidates
+// ends the block as well, since the lattice has no row for it.
+// TODO: DFlash drafts are greedy-only until speculative sampling in the target sampler is fixed. With sampling, the
+// sampler draws every position from this row, and the target also needs that distribution as the draft proposal of
+// the token.
+template <typename SampleToken>
+void walk_candidate_lattice(const ov::Tensor& backbone_logits,
+                            const ov::Tensor& edge_scores,
+                            const ov::Tensor& candidate_ids,
+                            size_t num_positions,
+                            ov::Tensor& row,
+                            SampleToken&& sample_token) {
+    OPENVINO_ASSERT(backbone_logits && backbone_logits.get_element_type() == ov::element::f32 &&
+                        backbone_logits.is_continuous(),
+                    "DFlash draft logits must be a contiguous FP32 tensor.");
+    const auto logits_shape = backbone_logits.get_shape();
+    OPENVINO_ASSERT(logits_shape.size() == 3 && logits_shape[0] == 1 && num_positions <= logits_shape[1],
+                    "Candidate scorer positions exceed the DFlash draft logits [1, S, vocab].");
+    const size_t vocab_size = logits_shape[2];
+    OPENVINO_ASSERT(
+        row && row.get_element_type() == ov::element::f32 && row.get_shape() == ov::Shape({1, 1, vocab_size}),
+        "The candidate row must be an FP32 tensor of shape [1, 1, vocab].");
+    const auto* logits = backbone_logits.data<const float>();
+    size_t previous_index = 0;
+    for (size_t position = 0; position < num_positions; ++position) {
+        fill_candidate_row(logits + position * vocab_size,
+                           vocab_size,
+                           edge_scores,
+                           candidate_ids,
+                           position,
+                           previous_index,
+                           row.data<float>());
+        const std::optional<int64_t> token = sample_token(row);
+        if (!token) {
+            return;
+        }
+        const auto index = find_candidate(candidate_ids, position, *token);
+        if (!index) {
+            return;
+        }
+        previous_index = *index;
+    }
 }
 
 struct ValidationAccounting {
