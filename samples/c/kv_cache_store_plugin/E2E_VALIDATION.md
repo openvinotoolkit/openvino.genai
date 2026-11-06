@@ -165,6 +165,17 @@ finished block runs on the pipeline thread, so a long prefill pays for copying i
 (1.1 s and 1.7 s) happens on the writer thread. Blocks that do not fit into the writer's `buffer_slots` queue are
 skipped and only cost recomputation later.
 
+`store_completed_blocks` also works together with the other two scenarios (Qwen3.5-9B, GPU, the in-memory
+provider unless stated otherwise):
+
+- Session snapshots: `verify_session_snapshot.py ... --chunk-store` passes in one process (restore TTFT 811 ms
+  against 4136 ms for a full re-prefill, 5.1x) and with `sample-persistent-file` in two separate processes
+  (`--phase save` then `--phase restore`); the restored continuation matches the baseline token for token.
+- Opportunistic offload (`llm_bench`, `num_kv_blocks` 220, `"store_completed_blocks": true` in `cache_offload_config`):
+  P0/P1/P2 give the same output hashes as without the flag, and P2 (the P0 prompt again after P1 evicted it) takes
+  780 ms against 3465 ms for P0 (194 blocks warmed from the store, 397 blocks stored as `published` plus 4 as
+  `overwritten`).
+
 ### What the host expects from your plugin's stores
 
 The host opens **one store instance per group** and passes the group as the `OvKVCacheNamespace`

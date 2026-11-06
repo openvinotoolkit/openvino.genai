@@ -65,11 +65,13 @@ def make_greedy_config(max_new_tokens: int) -> ov_genai.GenerationConfig:
     return config
 
 
-def make_store_config(plugin_path: str, provider_name: str, store_dir: str = "") -> ov_genai.CacheOffloadConfig:
+def make_store_config(plugin_path: str, provider_name: str, store_dir: str = "",
+                      store_completed_blocks: bool = False) -> ov_genai.CacheOffloadConfig:
     config = ov_genai.CacheOffloadConfig()
     config.store_library_path = plugin_path
     config.store_provider_name = provider_name
     config.allow_untrusted_store_plugin = True
+    config.store_completed_blocks = store_completed_blocks
     if store_dir:
         config.path = store_dir
     # Snapshot blocks stay in the store (pinned), so it must hold every block of the conversation. A hybrid model's
@@ -199,9 +201,12 @@ def main() -> int:
     parser.add_argument("--state-file", default="",
                         help="With --phase save/restore: where the snapshot and its expected tokens are kept "
                              "(the snapshot is <state-file>.snapshot, the tokens <state-file>.json)")
+    parser.add_argument("--chunk-store", action="store_true",
+                        help="Also set CacheOffloadConfig.store_completed_blocks, so every block is stored right after "
+                             "the forward pass that completed it while the snapshot is taken and restored")
     args = parser.parse_args()
 
-    store_config = make_store_config(args.plugin, args.provider, args.store_dir)
+    store_config = make_store_config(args.plugin, args.provider, args.store_dir, args.chunk_store)
     if args.phase != "all":
         if not args.state_file:
             parser.error("--phase save/restore needs --state-file")
