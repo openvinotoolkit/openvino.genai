@@ -149,6 +149,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  const ov::genai::GenerationConfig& sampling_params,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
+    const size_t prompt_len = input_ids.get_shape().size() > 1 ? input_ids.get_shape()[1] : input_ids.get_size();
+    const auto max_tokens = get_max_request_tokens();
+    OPENVINO_ASSERT(!max_tokens.has_value() || prompt_len < *max_tokens,
+                    "The requested prompt length (",
+                    prompt_len,
+                    " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                    *max_tokens,
+                    " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
+
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -167,6 +176,17 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  const ov::genai::GenerationConfig& sampling_params) {
+    const auto max_tokens = get_max_request_tokens();
+    if (max_tokens.has_value()) {
+        const size_t prompt_len = m_tokenizer.encode(prompt).input_ids.get_size();
+        OPENVINO_ASSERT(prompt_len < *max_tokens,
+                        "The requested prompt length (",
+                        prompt_len,
+                        " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                        *max_tokens,
+                        " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
+    }
+
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;

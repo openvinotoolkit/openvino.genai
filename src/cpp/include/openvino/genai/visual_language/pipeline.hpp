@@ -225,6 +225,14 @@ public:
     /// @see supports_hidden_states_collection(), which instead reflects the active backend.
     /// @note This is a preview API and is subject to change.
     virtual bool is_audio_output_enabled() const = 0;
+
+    /// @brief Returns the maximum token capacity that a single request can consume under
+    ///        the current cache configuration.
+    /// @return Maximum token capacity in tokens, or std::nullopt if not using continuous batching
+    ///         with a static cache budget.
+    virtual std::optional<size_t> get_max_request_tokens() const {
+        return std::nullopt;
+    }
 };
 
 /// @brief A Visual language modeling pipeline class used to generate a
@@ -531,6 +539,8 @@ public:
     // Qwen3-Omni support hooks forwarded to the backing implementation. See VLMPipelineBase.
     bool supports_hidden_states_collection() const override;
     bool is_audio_output_enabled() const override;
+
+    std::optional<size_t> get_max_request_tokens() const override;
 
 private:
     class VLMBackend;  // internal Omni-aware base; defined in src/cpp/src/visual_language/pipeline_base.hpp.

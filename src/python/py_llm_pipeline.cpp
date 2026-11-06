@@ -245,6 +245,8 @@ void init_llm_pipeline(py::module_& m) {
         )
 
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
+        .def("get_max_request_tokens", &LLMPipeline::get_max_request_tokens,
+             R"(Returns the maximum token capacity that a single request can consume under the current cache configuration, or None if dynamically allocated or not configured.)")
         .def("start_chat", [](LLMPipeline& pipe, const std::string& system_message) {
             PyErr_WarnEx(PyExc_DeprecationWarning,
                          "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
