@@ -11,10 +11,13 @@ Text2SpeechPipelineWrapper::Text2SpeechPipelineWrapper(const Napi::CallbackInfo&
 Napi::Function Text2SpeechPipelineWrapper::get_class(Napi::Env env) {
     return DefineClass(env,
                        "Text2SpeechPipeline",
-                       {InstanceMethod("init", &Text2SpeechPipelineWrapper::init),
-                        InstanceMethod("generate", &Text2SpeechPipelineWrapper::generate),
-                        InstanceMethod("getGenerationConfig", &Text2SpeechPipelineWrapper::get_generation_config),
-                        InstanceMethod("setGenerationConfig", &Text2SpeechPipelineWrapper::set_generation_config)});
+                       {
+                           InstanceMethod("init", &Text2SpeechPipelineWrapper::init),
+                           InstanceMethod("generate", &Text2SpeechPipelineWrapper::generate),
+                           InstanceMethod("getGenerationConfig", &Text2SpeechPipelineWrapper::get_generation_config),
+                           InstanceMethod("setGenerationConfig", &Text2SpeechPipelineWrapper::set_generation_config),
+                           InstanceMethod("getSpeakerEmbeddingShape", &Text2SpeechPipelineWrapper::get_speaker_embedding_shape),
+                       });
 }
 
 Napi::Value Text2SpeechPipelineWrapper::init(const Napi::CallbackInfo& info) {
@@ -61,4 +64,17 @@ Napi::Value Text2SpeechPipelineWrapper::get_generation_config(const Napi::Callba
 
 Napi::Value Text2SpeechPipelineWrapper::set_generation_config(const Napi::CallbackInfo& info) {
     return set_pipeline_generation_config(info, pipe, state, "Text2SpeechPipeline");
+}
+
+Napi::Value Text2SpeechPipelineWrapper::get_speaker_embedding_shape(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "Text2SpeechPipeline is not initialized");
+        VALIDATE_ARGS_COUNT(info, 0, "getSpeakerEmbeddingShape()");
+        auto shape = this->pipe->get_speaker_embedding_shape();
+        return cpp_to_js<std::vector<size_t>, Napi::Value>(env, shape);
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
 }

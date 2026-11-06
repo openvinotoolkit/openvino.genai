@@ -16,6 +16,7 @@ public:
     Napi::Value generate(const Napi::CallbackInfo& info);
     Napi::Value get_generation_config(const Napi::CallbackInfo& info);
     Napi::Value set_generation_config(const Napi::CallbackInfo& info);
+    Napi::Value get_speaker_embedding_shape(const Napi::CallbackInfo& info);
 
 private:
     std::shared_ptr<ov::genai::Text2SpeechPipeline> pipe = nullptr;
