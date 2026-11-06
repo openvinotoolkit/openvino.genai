@@ -216,8 +216,14 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```
 4. Build the wheel in the `dist` directory:
     ```sh
-    python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+    parallel_jobs=$(nproc)
+    python -m pip wheel . -w dist/ \
+      --config-settings="override=cmake.build_args={\"=\"=[\"--parallel\",\"${parallel_jobs}\",\"--target\",\"py_openvino_genai_stub\"]}" \
+      --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release \
+      --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
     ```
+   Replace `$(nproc)` with the platform's processor-count command on macOS or Windows. Use a lower
+   `parallel_jobs` value if you need to reduce peak memory usage.
 
 > **NOTE**: You'd need to build ABI compatible OpenVINO and OpenVINO Tokenizers for Ubuntu instead of downloading them from PyPI. See [OpenVINO™ GenAI Dependencies](../README.md#openvino-genai-dependencies) for the explanation.
 
