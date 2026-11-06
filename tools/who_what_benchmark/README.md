@@ -15,6 +15,7 @@ WWB provides default datasets for the supported use cases. However, it is relati
     * Support of custom datasets of the user choice
 * Validation of text-to-image pipelines. Computes similarity score between generated images with Diffusers library, Optimum-Intel, and OpenVINO GenAI via `Text2ImageEvaluator` class.
 * Validation of Visual Language pipelines. Computes similarity score between generated images with Diffusers library, Optimum-Intel, and OpenVINO GenAI via `VisualTextEvaluator` class.
+* Validation of agent-style text and visual-text models with local JSON or JSONL message and tool datasets.
 * Text-to-video evaluator defaults `guidance_scale` to 1; set higher to enable CFG.
 
 ### Installation
@@ -73,6 +74,58 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 > **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-n-ctx` to set context window size; if omitted, WWB uses 8192.<br>
+
+### Compare Agent-style Models
+
+Use `--model-type text-agent` for agent-style text models or `--model-type visual-text-agent` for agent-style datasets evaluated with VLM backends. The agent evaluator generates text from messages and tool definitions; it does not execute tools or load images/videos. To evaluate image or video inputs, use `visual-text` or `visual-video-text` instead.
+
+Both agent types accept a local `.json` or `.jsonl` dataset. A JSON file contains an array of records; a JSONL file contains one record per line. Each record must include a non-empty `messages` list with user text and may include a `tools` list in the chat-template tool/function format. Save this example as `agent.json`:
+
+```json
+[
+  {
+    "messages": [
+      {"role": "user", "content": "Find the weather in Paris."}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the weather for a city.",
+          "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+          }
+        }
+      }
+    ]
+  }
+]
+```
+
+Generate reference outputs with a Hugging Face model, export the model to OpenVINO, then compare the OpenVINO GenAI outputs using the same dataset and model type:
+
+```sh
+# Generate references for an agent-style text model
+wwb --base-model Qwen/Qwen2.5-0.5B-Instruct --gt-data text_agent_gt.csv --dataset agent.json --model-type text-agent --num-samples 1 --max_new_tokens 64 --hf
+# Export the model to OpenVINO
+optimum-cli export openvino -m Qwen/Qwen2.5-0.5B-Instruct --weight-format fp16 qwen2.5-agent-openvino
+# Compare with OpenVINO GenAI
+wwb --target-model qwen2.5-agent-openvino --gt-data text_agent_gt.csv --dataset agent.json --model-type text-agent --num-samples 1 --max_new_tokens 64 --genai
+```
+
+For `visual-text-agent`, replace the model identifiers and exported model directory below with a supported VLM. The tokenizer's chat template must accept the dataset's messages and tools:
+
+```sh
+# Generate references for an agent-style visual language model
+wwb --base-model org/visual-agent-model --gt-data visual_agent_gt.csv --dataset path/to/visual_agent.jsonl --model-type visual-text-agent --hf
+# Compare with OpenVINO GenAI
+wwb --target-model path/to/openvino-visual-agent --gt-data visual_agent_gt.csv --dataset path/to/visual_agent.jsonl --model-type visual-text-agent --genai
+```
+
+If `--dataset` is omitted, WWB uses its built-in long agent dataset; use `--short-prompt` to select the short dataset. `--split` and `--dataset-field` do not apply to these local JSON/JSONL datasets. To override a model's chat template, provide `--chat-template-source` with a local `.jinja` file, an HTTP(S) URL, or a Hugging Face model/tokenizer source. Apply the same override when generating references and evaluating the target.
 
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh
