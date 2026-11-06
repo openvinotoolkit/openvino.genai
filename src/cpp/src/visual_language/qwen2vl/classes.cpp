@@ -27,6 +27,24 @@ namespace ov::genai {
 
 namespace {
 
+// The merger runs on NPU, behind the NPUW padding to a static length, only when the user asks for it
+// in MODEL_PROPERTIES. It then gets only those properties; the other embedders stay on `device`.
+std::pair<std::string, ov::AnyMap> get_merger_device_and_properties(const ov::AnyMap& device_config,
+                                                                    const std::string& device) {
+    auto role_properties = utils::get_role_properties(device_config, "vision_embeddings_merger");
+    const auto npuw_merger = role_properties.find("NPUW_VISION_MERGER");
+    if (npuw_merger != role_properties.end() && npuw_merger->second.as<bool>()) {
+        utils::set_config_default(role_properties, "NPU_USE_NPUW", std::string("YES"));
+        return {"NPU", std::move(role_properties)};
+    }
+    auto properties = utils::get_model_properties(device_config, "vision_embeddings_merger", device);
+    // The NPUW_VISION_MERGER* keys are only known to NPU.
+    for (auto it = properties.begin(); it != properties.end();) {
+        it = it->first.rfind("NPUW_VISION_MERGER", 0) == 0 ? properties.erase(it) : std::next(it);
+    }
+    return {device, std::move(properties)};
+}
+
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::f32);
     auto img_trans = std::make_shared<ov::op::v1::Transpose>(
@@ -949,8 +967,8 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         auto model = utils::singleton_core().read_model(merger_path);
         utils::request_vl_sdpa_transformations(model);
 
-        auto compiled_model = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
+        const auto [merger_device, merger_properties] = get_merger_device_and_properties(device_config, device);
+        auto compiled_model = utils::singleton_core().compile_model(model, merger_device, merger_properties);
 
         m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
         ov::genai::utils::print_compiled_model_properties(compiled_model,
@@ -983,8 +1001,8 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
         utils::request_vl_sdpa_transformations(model);
 
-        auto compiled_model = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
+        const auto [merger_device, merger_properties] = get_merger_device_and_properties(device_config, device);
+        auto compiled_model = utils::singleton_core().compile_model(model, merger_device, merger_properties);
 
         m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
         ov::genai::utils::print_compiled_model_properties(compiled_model,
