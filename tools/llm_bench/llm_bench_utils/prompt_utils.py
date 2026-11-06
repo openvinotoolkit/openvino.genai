@@ -17,7 +17,27 @@ import math
 import cv2
 
 
+def get_dataset_prompts(args):
+    from datasets import load_dataset
+
+    log.info(
+        f"Read {args['dataset_samples']} samples from dataset {args['dataset']} "
+        f"(subset: {args['dataset_subset']}, split: {args['dataset_split']}, column: {args['dataset_column']}) "
+        "in streaming mode"
+    )
+    dataset = load_dataset(args["dataset"], name=args["dataset_subset"], split=args["dataset_split"], streaming=True)
+    column = args["dataset_column"]
+    prompts = []
+    for sample in dataset.take(args["dataset_samples"]):
+        if column not in sample:
+            raise RuntimeError(f"== Column '{column}' does not exist in dataset {args['dataset']}: {list(sample)} ==")
+        prompts.append(sample[column])
+    return prompts
+
+
 def get_text_prompt(args):
+    if args.get("dataset"):
+        return get_dataset_prompts(args)
     text_list = []
     output_data_list, is_json_data = get_param_from_file(args, 'prompt')
     if is_json_data is True:
@@ -152,6 +172,8 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
 
 
 def get_vlm_prompt(args):
+    if args.get("dataset"):
+        return [{"prompt": prompt} for prompt in get_dataset_prompts(args)]
     vlm_file_list = []
 
     def _resolve_media_path(vlm_input_item, prompt_file_path):

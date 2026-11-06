@@ -2,6 +2,8 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+SD_METRICS = ["sd_num_accepted_tokens", "sd_num_draft_tokens", "sd_acceptance_rate"]
+
 
 def gen_iterate_data(
     iter_idx="",
@@ -21,6 +23,9 @@ def gen_iterate_data(
     tokenization_time=[],
     mm_embeddings_preparation_time="",
     chat_idx="",
+    sd_num_accepted_tokens="",
+    sd_num_draft_tokens="",
+    sd_acceptance_rate="",
 ):
     iter_data = {}
     iter_data["iteration"] = iter_idx
@@ -45,7 +50,22 @@ def gen_iterate_data(
     iter_data["detokenization_time"] = tokenization_time[1] if len(tokenization_time) > 1 else ""
     iter_data["mm_embeddings_preparation_time"] = mm_embeddings_preparation_time
     iter_data["chat_idx"] = chat_idx
+    iter_data["sd_num_accepted_tokens"] = sd_num_accepted_tokens
+    iter_data["sd_num_draft_tokens"] = sd_num_draft_tokens
+    iter_data["sd_acceptance_rate"] = sd_acceptance_rate
     return iter_data
+
+
+def get_sd_metrics(extended_perf_metrics):
+    from openvino_genai.py_openvino_genai import SDPerModelsPerfMetrics
+
+    if not isinstance(extended_perf_metrics, SDPerModelsPerfMetrics):
+        return {}
+    return {
+        "sd_num_accepted_tokens": extended_perf_metrics.get_num_accepted_tokens(),
+        "sd_num_draft_tokens": extended_perf_metrics.get_num_draft_tokens(),
+        "sd_acceptance_rate": extended_perf_metrics.get_draft_acceptance_rate(),
+    }
 
 
 def embed_iterate_data(

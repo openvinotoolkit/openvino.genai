@@ -7,6 +7,7 @@ import copy
 from pathlib import Path
 import llm_bench_utils.output_json as output_json
 from llm_bench_utils.memory_monitor import MemThreadHandler, MemoryUnit
+from llm_bench_utils.gen_output_data import SD_METRICS
 
 
 def output_comments(result, use_case, writer):
@@ -82,7 +83,7 @@ def output_comments(result, use_case, writer):
         writer.writerow(result)
 
 
-def output_avg_min_median(iter_data_list, include_tts_metrics=False):
+def output_avg_min_median(iter_data_list, include_tts_metrics=False, include_sd_metrics=False):
     prompt_idxs = []
     for iter_data in iter_data_list:
         prompt_idxs.append(iter_data['prompt_idx'])
@@ -108,6 +109,8 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
         ]
         if include_tts_metrics:
             key_word.extend(["tts_output_duration_s", "tts_sample_rate", "tts_rtf"])
+        if include_sd_metrics:
+            key_word.extend(SD_METRICS)
         if len(same_prompt_datas) > 0:
             iters_idx = ['avg', 'mini', 'median']
             result[prompt_idx] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]
@@ -133,6 +136,7 @@ def gen_data_to_csv(
     memory_data_collector: MemThreadHandler | None,
     mem_unit: MemoryUnit,
     include_tts_metrics: bool = False,
+    include_sd_metrics: bool = False,
 ):
     generation_time = iter_data["generation_time"]
     latency = iter_data["latency"]
@@ -188,6 +192,10 @@ def gen_data_to_csv(
         )
         result["tts_sample_rate(hz)"] = int(tts_sample_rate) if tts_sample_rate != "" else tts_sample_rate
         result["tts_rtf"] = round(tts_rtf, 5) if tts_rtf != "" else tts_rtf
+    if include_sd_metrics:
+        for key in SD_METRICS:
+            value = iter_data.get(key, "")
+            result[key] = round(value, 5) if value != "" else value
     input_idx = chat_idx if chat_idx != "" else iter_data["prompt_idx"]
     result["start"], result["end"] = output_json.get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
     result = result | output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
@@ -209,6 +217,7 @@ def write_result(
     if memory_data_collector.mth:
         mem_unit = memory_data_collector.mth.memory_unit
     include_tts_metrics = model_args["use_case"].task == "text_to_speech"
+    include_sd_metrics = bool(model_args.get("draft_model"))
     first_latenct_unit = "ms/token" if model_args["use_case"].task in ["text_gen_chat"] else "ms"
     header = [
         "iteration",
@@ -254,6 +263,8 @@ def write_result(
                 "tts_rtf",
             ]
         )
+    if include_sd_metrics:
+        header.extend(SD_METRICS)
     out_file = Path(report_file)
 
     if len(iter_data_list) > 0:
@@ -280,13 +291,16 @@ def write_result(
                     mem_data_collector,
                     mem_unit,
                     include_tts_metrics,
+                    include_sd_metrics,
                 )
                 writer.writerow(result)
 
-            res_data = output_avg_min_median(iter_data_list, include_tts_metrics)
+            res_data = output_avg_min_median(iter_data_list, include_tts_metrics, include_sd_metrics)
 
             for key in res_data.keys():
                 for data in res_data[key]:
-                    gen_data_to_csv(result, data, "", iter_timestamp, None, mem_unit, include_tts_metrics)
+                    gen_data_to_csv(
+                        result, data, "", iter_timestamp, None, mem_unit, include_tts_metrics, include_sd_metrics
+                    )
                     writer.writerow(result)
             output_comments(result, model_args["use_case"].task, writer)

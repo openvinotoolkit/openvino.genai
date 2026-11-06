@@ -265,6 +265,7 @@ def run_visual_language_generation_genai(
         tokenization_time=tokenization_time,
         mm_embeddings_preparation_time=perf_metrics.get_prepare_embeddings_duration().mean,
         **memory_metrics,
+        **gen_output_data.get_sd_metrics(generation_result.extended_perf_metrics),
     )
     iter_data_list.append(iter_data)
     inference_durations = np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000

@@ -158,6 +158,11 @@ def analyze_args(args):
     model_args = {}
     model_args['prompt'] = args.prompt
     model_args['prompt_file'] = args.prompt_file
+    model_args["dataset"] = args.dataset
+    model_args["dataset_subset"] = args.dataset_subset
+    model_args["dataset_split"] = args.dataset_split
+    model_args["dataset_column"] = args.dataset_column
+    model_args["dataset_samples"] = args.dataset_samples
     model_args['infer_count'] = args.infer_count
     model_args["num_steps"] = args.num_steps
     model_args["height"] = args.height
@@ -178,7 +183,7 @@ def analyze_args(args):
     model_args["frame_rate"] = args.frame_rate
     model_args["negative_prompt"] = args.negative_prompt
     model_args["mask_image"] = args.mask_image
-    model_args["task"] = args.task
+    model_args["task"] = args.task or args.model_type
     model_args["speech_language"] = args.speech_language
     model_args["speech_voice"] = args.speech_voice
     model_args["strength"] = args.strength
@@ -246,6 +251,16 @@ def analyze_args(args):
     model_args["model_type"] = model_type
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
     model_args["is_omni_model"] = isinstance(model_type, str) and model_type.startswith("qwen3-omni")
+    if args.dataset is not None:
+        if use_case.task not in ["text_gen", "visual_text_gen"]:
+            raise RuntimeError(
+                f"--dataset is supported only for text_gen and visual_text_gen tasks, got {use_case.task}"
+            )
+        conflicting_args = [
+            name for name in ["prompt", "prompt_file", "media", "images", "video"] if getattr(args, name) is not None
+        ]
+        if conflicting_args:
+            raise RuntimeError(f"--dataset can not be used together with: {', '.join(conflicting_args)}")
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}

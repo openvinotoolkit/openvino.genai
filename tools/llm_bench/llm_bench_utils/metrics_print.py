@@ -123,6 +123,12 @@ def print_metrics(
             f'Running average of the KV cache usage {cb_metric["avg_cache_usage"]:.2f}%, '
             f'max KV cache usage: {cb_metric["max_cache_usage"]:.2f}%',
         )
+    if iter_data.get("sd_num_accepted_tokens", "") != "":
+        log.info(
+            f"{prefix} Speculative decoding accepted tokens: {iter_data['sd_num_accepted_tokens']}, "
+            f"draft tokens: {iter_data['sd_num_draft_tokens']}, "
+            f"draft acceptance rate: {iter_data['sd_acceptance_rate']:.4f}"
+        )
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
     if whisper is not None:
@@ -331,6 +337,7 @@ def output_avg_statis_tokens(
         avg_2nd_token_tput = 0
         avg_input_size = 0
         input_sizes = []
+        sd_acceptance_rates = []
         index_num = 0
 
         if latency_unit is None:
@@ -355,6 +362,8 @@ def output_avg_statis_tokens(
                         input_sizes.append(iter_data["input_size"] if iter_data["input_size"] != "" else 0)
                 else:
                     avg_input_size += iter_data["input_size"] if iter_data["input_size"] != "" else 0
+                if iter_data.get("sd_acceptance_rate", "") != "":
+                    sd_acceptance_rates.append(iter_data["sd_acceptance_rate"])
                 index_num = index_num + 1
         if index_num > 0:
             avg_1st_token_latency = avg_1st_token_latency / index_num
@@ -397,6 +406,10 @@ def output_avg_statis_tokens(
                         prefix, output_info, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput
                     )
                 )
+                if len(sd_acceptance_rates) > 0:
+                    inputs_dict[iter_idx] += ", draft acceptance rate: {:.4f}".format(
+                        sum(sd_acceptance_rates) / len(sd_acceptance_rates)
+                    )
             elif is_embed:
                 output_info = ''
                 if avg_input_size > 0:

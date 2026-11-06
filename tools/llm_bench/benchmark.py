@@ -88,6 +88,25 @@ def get_argparser():
         help="Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).",
     )
     parser.add_argument(
+        "--dataset",
+        default=None,
+        help="Hugging Face dataset path to read prompts from in streaming mode, e.g. openai/gsm8k. "
+        "Applicable for --task text_gen and visual_text_gen (including Speculative decoding).",
+    )
+    parser.add_argument(
+        "--dataset_subset",
+        default=None,
+        help="Hugging Face dataset subset (config name), e.g. main for openai/gsm8k.",
+    )
+    parser.add_argument("--dataset_split", default="test", help="Hugging Face dataset split.")
+    parser.add_argument("--dataset_column", default="question", help="Hugging Face dataset column containing prompts.")
+    parser.add_argument(
+        "--dataset_samples",
+        default=10,
+        type=greater_than_zero,
+        help="Number of samples to read from the Hugging Face dataset.",
+    )
+    parser.add_argument(
         "-pi",
         "--prompt_index",
         nargs="+",
@@ -435,7 +454,32 @@ def get_argparser():
             "image-to-video",
             "inpainting",
         ],
-        help="The task to setup the pipeline type",
+        help="[DEPRECATED] please, use --model-type. The --task to setup the pipeline type",
+    )
+    parser.add_argument(
+        "--model-type",
+        default=None,
+        choices=[
+            "text_gen",
+            "text_gen_chat",
+            "image_gen",
+            "visual_text_gen",
+            "visual_text_gen_chat",
+            "speech_to_text",
+            "image_cls",
+            "code_gen",
+            "ldm_super_resolution",
+            "embed",
+            "text_embed",
+            "text_rerank",
+            "text_to_speech",
+            "text-to-image",
+            "image-to-image",
+            "text-to-video",
+            "image-to-video",
+            "inpainting",
+        ],
+        help="The type of model to use for the pipeline. This replaces the deprecated --task argument.",
     )
     parser.add_argument(
         "--strength",

@@ -3,6 +3,7 @@
 
 import json
 from llm_bench_utils.memory_monitor import MemoryUnit, MemThreadHandler
+from llm_bench_utils.gen_output_data import SD_METRICS
 
 
 def estimate_throughput(latency, bs, ms=True):
@@ -88,6 +89,9 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             res_data["tts_sample_rate"] = int(tts_sample_rate)
         if tts_rtf is not None and tts_rtf != "":
             res_data["tts_rtf"] = round(tts_rtf, 5)
+        for key in SD_METRICS:
+            if iter_data.get(key, "") != "":
+                res_data[key] = round(iter_data[key], 5)
 
         if max_rss_mem:
             res_data["max_rss_mem"] = round(max_rss_mem, 5)
@@ -118,6 +122,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         "detokenization_time",
         "tts_output_duration",
         "tts_rtf",
+        *SD_METRICS,
     ]
     results_averaged = {}
     for key in keys_to_average:

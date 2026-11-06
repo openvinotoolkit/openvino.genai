@@ -189,6 +189,8 @@ python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --t
 optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 models/TinyLlama-1.1B-Chat-v1.0
 # speculative decoding
 python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -p "What is openvino?" -n 2 --task text_gen --num_assistant_tokens 5
+# speculative decoding on 10 samples of Hugging Face dataset read in streaming mode
+python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -n 2 --task text_gen --dataset openai/gsm8k --dataset_subset main --dataset_split test --dataset_column question --dataset_samples 10
 ```
 
 ```sh
