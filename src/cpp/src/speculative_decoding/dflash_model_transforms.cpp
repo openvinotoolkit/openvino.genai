@@ -17,7 +17,6 @@
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/parameter.hpp"
-#include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
 
 #include "eagle3_model_transforms.hpp"
@@ -125,16 +124,6 @@ std::vector<int32_t> parse_layer_ids(const std::string& raw) {
     return result;
 }
 
-std::shared_ptr<ov::op::v0::Parameter> find_hidden_states_parameter(const std::shared_ptr<ov::Model>& model) {
-    for (const auto& parameter : model->get_parameters()) {
-        if (parameter->get_friendly_name() == "hidden_states" ||
-            parameter->output(0).get_names().count("hidden_states") != 0) {
-            return parameter;
-        }
-    }
-    return nullptr;
-}
-
 std::shared_ptr<ov::op::v0::Parameter> find_inputs_embeds_parameter(const std::shared_ptr<ov::Model>& model) {
     for (const auto& parameter : model->get_parameters()) {
         if (parameter->get_friendly_name() == "inputs_embeds" ||
@@ -230,6 +219,46 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
     add_dflash_hidden_state_result(model, outputs);
 }
 
+void move_fc_from_draft_to_main(const std::shared_ptr<ov::Model>& draft_model,
+                                const std::shared_ptr<ov::Model>& main_model) {
+    OPENVINO_ASSERT(draft_model && main_model, "DFlash FC move requires both target and draft models.");
+    const auto hidden_states =
+        ov::as_type_ptr<ov::op::v0::Parameter>(draft_model->input("hidden_states").get_node_shared_ptr());
+    const auto hidden_result =
+        ov::as_type_ptr<ov::op::v0::Result>(main_model->output(LAST_HIDDEN_STATE_OUTPUT_NAME).get_node_shared_ptr());
+
+    // hidden_states is resized to the FC output width, so the FC data input must be its only consumer.
+    const auto consumers = hidden_states->output(0).get_target_inputs();
+    const auto fc = consumers.size() == 1 && consumers.begin()->get_index() == 0
+                        ? ov::as_type_ptr<ov::op::v0::MatMul>(consumers.begin()->get_node()->shared_from_this())
+                        : nullptr;
+    OPENVINO_ASSERT(fc, "DFlash draft hidden_states must feed only the data input of its hidden-state FC MatMul.");
+    const auto target_width = hidden_result->get_input_partial_shape(0)[2];
+    const auto draft_width = hidden_states->get_partial_shape()[2];
+    OPENVINO_ASSERT(target_width == draft_width,
+                    "DFlash target exports hidden states of width ", target_width,
+                    ", but the draft hidden_states input has width ", draft_width, ".");
+
+    // The weight subgraph moves to the target as is, keeping its decompression markers; once the draft FC
+    // consumers are rewired below, nothing in the draft uses it.
+    auto target_fc = std::make_shared<ov::op::v0::MatMul>(hidden_result->input_value(0),
+                                                          fc->input_value(1),
+                                                          fc->get_transpose_a(),
+                                                          fc->get_transpose_b());
+    target_fc->set_friendly_name("dflash_hidden_state_fc");
+    hidden_result->input(0).replace_source_output(target_fc);
+
+    auto hidden_states_shape = hidden_states->get_partial_shape();
+    hidden_states_shape[2] = fc->get_output_partial_shape(0)[2];
+    hidden_states->set_partial_shape(hidden_states_shape);
+    for (auto fc_consumer : fc->output(0).get_target_inputs()) {
+        fc_consumer.replace_source_output(hidden_states);
+    }
+
+    main_model->validate_nodes_and_infer_types();
+    draft_model->validate_nodes_and_infer_types();
+}
+
 void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties) {
     if (!model->has_rt_info("dflash_mode") || !model->get_rt_info<bool>("dflash_mode")) {
         return;
@@ -263,6 +292,7 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
     auto mask_it = config.find("dflash_mask_token_id");
     OPENVINO_ASSERT(mask_it != config.end(), "DFlash draft model is missing dflash_mask_token_id RT info.");
     info.mask_token_id = mask_it->second.as<int64_t>();
+    OPENVINO_ASSERT(info.mask_token_id >= 0, "DFlash dflash_mask_token_id must be non-negative, got ", info.mask_token_id, ".");
     config.erase(mask_it);
 
     auto layers_it = config.find("dflash_target_layer_ids");
@@ -284,44 +314,6 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
     }
 
     return info;
-}
-
-void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model) {
-    OPENVINO_ASSERT(model, "DFlash draft model cannot be null.");
-
-    auto hidden_states = find_hidden_states_parameter(model);
-    OPENVINO_ASSERT(hidden_states, "DFlash draft model must have 'hidden_states' input.");
-
-    const auto draft_shape = hidden_states->get_partial_shape();
-    OPENVINO_ASSERT(draft_shape.rank().is_static() && draft_shape.rank().get_length() == 3,
-                    "DFlash draft hidden_states input must have rank 3.");
-    OPENVINO_ASSERT(draft_shape[0].is_dynamic() || draft_shape[0].get_length() == 1,
-                    "DFlash draft hidden_states input must use exported shape [1, seq_len, hidden].");
-
-    std::unordered_set<const ov::Node*> live_nodes;
-    for (const auto& node : model->get_ordered_ops()) {
-        live_nodes.insert(node.get());
-    }
-    std::vector<ov::Input<ov::Node>> original_consumers;
-    for (auto consumer : hidden_states->output(0).get_target_inputs()) {
-        if (live_nodes.count(consumer.get_node()) != 0) {
-            original_consumers.push_back(consumer);
-        }
-    }
-    OPENVINO_ASSERT(!original_consumers.empty(),
-                    "DFlash draft hidden_states input has no live consumers.");
-    hidden_states->set_partial_shape(ov::PartialShape({draft_shape[1], ov::Dimension(1), draft_shape[2]}));
-
-    auto reshape_shape = ov::op::v0::Constant::create(ov::element::i64,
-                                                     ov::Shape{3},
-                                                     std::vector<int64_t>{1, -1, 0});
-    auto reshape = std::make_shared<ov::op::v1::Reshape>(hidden_states, reshape_shape, true);
-    reshape->set_friendly_name("dflash_hidden_states_cb_to_draft_layout");
-
-    for (auto consumer : original_consumers) {
-        consumer.replace_source_output(reshape->output(0));
-    }
-    model->validate_nodes_and_infer_types();
 }
 
 void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model,

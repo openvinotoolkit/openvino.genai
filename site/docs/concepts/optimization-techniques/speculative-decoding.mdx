@@ -15,17 +15,18 @@ Tokens that the target would have produced anyway are accepted; the first diverg
 Because validation is parallel over the candidate length, each accepted draft token replaces a sequential decode step of the target model with (a fraction of) one batched step.
 When acceptance is high, this yields end-to-end speedups on memory-bandwidth-bound decoding without changing the model output distribution in theory (the standard verification scheme is statistically equivalent to sampling from the target).
 
-OpenVINO GenAI implements three drafting strategies. They differ only in *how candidates are produced* — the target-side validation step is shared.
+OpenVINO GenAI implements four drafting strategies. They differ only in *how candidates are produced* — the target-side validation step is shared.
 
 | Strategy | Drafter | Best For | Continuous Batching (CPU/GPU) | Stateful (NPU) |
 |---|---|---|---|---|
 | [Speculative Decoding (Fast Draft)](#speculative-decoding-fast-draft) | Smaller off-the-shelf LLM | General-purpose, robust speedup without retraining | ✓ | ✓ |
 | [Prompt Lookup Decoding](#prompt-lookup-decoding) | N-gram match against the prompt | Output copies large spans of the input (RAG, summarization, code editing) | ✓ | ✗ |
 | [EAGLE3](#eagle3) | Custom draft head trained on the target's hidden states | Highest acceptance rate; also supports [tree drafting](#tree-drafting) | ✓ | ✓ |
+| [DFlash](#dflash) | Block diffusion draft model trained on the target's hidden states | Long candidate blocks drafted in one forward pass; greedy decoding | ✓ | ✗ |
 
 :::info
-All three strategies are available through the `LLMPipeline` Python and C++ APIs.
-Prompt Lookup Decoding and EAGLE3 are additionally supported in `VLMPipeline` (e.g. Qwen3-VL).
+All four strategies are available through the `LLMPipeline` Python and C++ APIs.
+Prompt Lookup Decoding, EAGLE3 and DFlash are additionally supported in `VLMPipeline` (e.g. Qwen3-VL, Qwen3.5).
 
 The Continuous Batching backend supports multi-request batching; the Stateful backend is single-request.
 :::
@@ -49,7 +50,7 @@ also depends on linear-attention state checkpoints; see
 [Hybrid Attention Model Cache Management](./hybrid-attention-models-cache.md) for checkpoint
 granularity and memory-budget guidance.
 
-With MTP drafting, the main and draft models must use the same `enable_prefix_caching` setting.
+With MTP and DFlash drafting, the main and draft models must use the same `enable_prefix_caching` setting.
 The pipeline restores both models to a common reusable prefix before processing a request.
 
 ## Speculative Decoding (Fast Draft)
@@ -344,4 +345,82 @@ Streaming is restricted to batch size 1, with either greedy decoding or tree sea
 Beam search and multinomial sampling are not supported.
 
 `assistant_confidence_threshold` must be 0 for EAGLE3 — dynamic-length drafting is a Fast Draft feature.
+:::
+
+## DFlash
+
+[DFlash](https://arxiv.org/abs/2602.06036) drafts with a small block diffusion model.
+Like EAGLE3, the draft is trained against a specific target and reads the target's *hidden states*.
+Unlike EAGLE3, it does not run once per candidate: it fills a whole block of masked positions in a single forward pass, so drafting more candidates costs little extra draft time.
+
+### Model Preparation
+
+Export the target and the matching DFlash draft with `optimum-cli`.
+The draft must be trained against the same target. OpenVINO GenAI reads the DFlash metadata stored in the exported draft and selects DFlash automatically:
+
+<OptimumCLI model='Qwen/Qwen3.5-9B' outputDir='Qwen3.5-9B-ov-int4' weightFormat='int4' />
+
+<OptimumCLI model='z-lab/Qwen3.5-9B-DFlash' outputDir='Qwen3.5-9B-DFlash-ov-int4' weightFormat='int4' task='text-generation-with-past' trustRemoteCode />
+
+### Configuration and Usage
+
+DFlash needs no configuration beyond `num_assistant_tokens`, the number of candidates the draft fills in each step.
+Setting it to `0` runs the request on the target alone.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai
+
+        main_model_dir = "Qwen3.5-9B-ov-int4"
+        draft_model_dir = "Qwen3.5-9B-DFlash-ov-int4"
+
+        draft_model = openvino_genai.draft_model(draft_model_dir, "GPU")
+        pipe = openvino_genai.VLMPipeline(main_model_dir, "GPU", draft_model=draft_model)
+
+        config = openvino_genai.GenerationConfig()
+        config.max_new_tokens = 100
+        config.num_assistant_tokens = 7
+
+        pipe.generate("What is OpenVINO?", generation_config=config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/visual_language/pipeline.hpp"
+
+        std::string main_model_dir = "Qwen3.5-9B-ov-int4";
+        std::string draft_model_dir = "Qwen3.5-9B-DFlash-ov-int4";
+
+        ov::genai::VLMPipeline pipe(
+            main_model_dir, "GPU",
+            ov::genai::draft_model(draft_model_dir, "GPU"));
+
+        ov::genai::GenerationConfig config;
+        config.max_new_tokens = 100;
+        config.num_assistant_tokens = 7;
+
+        pipe.generate("What is OpenVINO?", ov::genai::generation_config(config));
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Choosing the Block Size
+
+A DFlash draft is trained with a fixed block size, which the model provider usually states.
+OpenVINO GenAI does not limit `num_assistant_tokens`, but staying within the trained block size is recommended.
+
+:::tip
+Tune `num_assistant_tokens` on prompts that resemble your use case, balancing the accepted tokens per step against the step latency of the target and the draft.
+As the block grows, the accepted tokens per step rise and then plateau, while the step latency keeps growing, so past some point a larger block slows generation down.
+:::
+
+:::warning
+DFlash currently supports greedy decoding only.
+
+With a VLM target and prefix caching, `ChatHistory` and image `add_request()` requests need `num_assistant_tokens` > 0.
+:::
+
+:::note
+DFlash drafts exported for OpenVINO GenAI 2026.4 or earlier do not load. Re-export them with optimum-intel 2.3.0 or later.
 :::

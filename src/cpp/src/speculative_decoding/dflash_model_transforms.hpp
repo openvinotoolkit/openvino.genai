@@ -66,14 +66,19 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
                                  const std::vector<int32_t>& target_layer_ids);
 
 /**
- * @brief Makes DFlash draft accept CB-native hidden states externally.
+ * @brief Moves the draft's hidden-state FC into the target.
  *
- * DFlash draft graphs are exported with hidden_states shaped [1, seq_len, hidden],
- * while continuous batching produces hidden states as [seq_len, 1, hidden].
- * This transform changes the public input shape and inserts a reshape back to
- * the exported graph layout for existing consumers.
+ * The draft projects the concatenated target hidden states with `MatMul(hidden_states, fc_weight)`.
+ * Running it on the target's `last_hidden_state` makes the hidden states passed to the draft
+ * `in_width / out_width` times smaller. The FC weight subgraph moves to the target with its
+ * decompression chain, the draft FC consumers read `hidden_states` directly, and `hidden_states` is
+ * resized to the projected width. Run after `expose_target_hidden_states`.
+ *
+ * @throws ov::Exception when `hidden_states` does not feed only the data input of an FC MatMul, or when
+ * the target hidden-state width does not match the draft `hidden_states` width.
  */
-void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model);
+void move_fc_from_draft_to_main(const std::shared_ptr<ov::Model>& draft_model,
+                                const std::shared_ptr<ov::Model>& main_model);
 
 /**
  * @brief Grafts the target lm_head onto the draft model.
