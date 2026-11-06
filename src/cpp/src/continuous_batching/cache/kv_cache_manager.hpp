@@ -144,10 +144,13 @@ public:
                     break;
                 } else if (is_qsa_index_cache_input(name)) {
                     pshape = input.get_partial_shape();
+                    const size_t expected_rank = name.find("index_block_rope_cache.") == 0 ? 3 : 4;
+                    OPENVINO_ASSERT(pshape.rank().is_static() && pshape.rank().get_length() == expected_rank,
+                        "QSA index cache ", name, " must have static, positive rank ", expected_rank, ", got ", pshape);
                     size_t block_bytes = cache_precision.size();
                     for (size_t axis = 1; axis < pshape.size(); ++axis) {
                         OPENVINO_ASSERT(pshape[axis].is_static(),
-                                        "Sparse attention index cache ", name, " must have static dimensions except axis 0, got ", pshape);
+                            "QSA index cache ", name, " must have static dimensions except axis 0, got ", pshape);
                         block_bytes *= pshape[axis].get_length();
                     }
                     m_block_size_in_bytes += block_bytes;
