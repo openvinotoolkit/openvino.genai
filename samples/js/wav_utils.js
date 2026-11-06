@@ -1,7 +1,8 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { encode } from 'node-wav';
 
 function parseWavPcm16Mono(buffer) {
   if (buffer.length < 44) {
@@ -99,4 +100,37 @@ export async function readAudio(audioPath) {
   }
 
   return parseWavPcm16Mono(wavBuffer);
+}
+
+/**
+ * Save an audio tensor as a 32-bit float WAV file.
+ * If the tensor holds several tracks, each one is saved to its own file with a "_b<index>" suffix.
+ * @param {string} filename - Path to the output WAV file.
+ * @param {Tensor} audioTensor - f32 tensor with shape [num_tracks, num_channels, num_samples].
+ * @param {number} sampleRate - Sample rate of the audio in Hz.
+ * @returns {Promise<void>}
+ */
+export async function saveAudio(filename, audioTensor, sampleRate) {
+  const [batchSize, numChannels, numSamples] = audioTensor.getShape();
+  const audioData = audioTensor.data;
+
+  for (let b = 0; b < batchSize; b++) {
+    let outputPath = filename;
+    if (batchSize > 1) {
+      const dot = filename.lastIndexOf('.');
+      const base = dot === -1 ? filename : filename.slice(0, dot);
+      const ext = dot === -1 ? 'wav' : filename.slice(dot + 1);
+      outputPath = `${base}_b${b}.${ext}`;
+    }
+
+    // node-wav takes one Float32Array per channel
+    const channelData = [];
+    for (let c = 0; c < numChannels; c++) {
+      const offset = (b * numChannels + c) * numSamples;
+      channelData.push(audioData.subarray(offset, offset + numSamples));
+    }
+
+    await writeFile(outputPath, encode(channelData, { sampleRate, float: true }));
+    console.log(`Wrote ${outputPath} (${numSamples} samples, ${numChannels} channels @ ${sampleRate} Hz)`);
+  }
 }

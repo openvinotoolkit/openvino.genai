@@ -28,6 +28,7 @@
 #include "include/whisper_pipeline/pipeline_wrapper.hpp"
 #include "include/text2speech_pipeline/perf_metrics.hpp"
 #include "include/text2speech_pipeline/pipeline_wrapper.hpp"
+#include "include/text2video_pipeline/pipeline_wrapper.hpp"
 
 void init_class(Napi::Env env,
                 Napi::Object exports,
@@ -84,6 +85,11 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
                "InpaintingPipeline",
                &InpaintingPipelineWrapper::get_class,
                addon_data->inpainting_pipeline);
+    init_class(env,
+               exports,
+               "Text2VideoPipeline",
+               &Text2VideoPipelineWrapper::get_class,
+               addon_data->text2video_pipeline);
     init_class(env, exports, "TextEmbeddingPipeline", &TextEmbeddingPipelineWrapper::get_class, addon_data->core);
     init_class(env,
                exports,

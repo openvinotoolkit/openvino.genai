@@ -57,3 +57,40 @@ export function readVideo(path, numFrames) {
     const videoMetadata = { fps, frames_indices: sampleFrameIndices(frames.length, numFrames) };
     return { videoTensor, videoMetadata };
 }
+
+/**
+ * Saves a video tensor as an AVI file with MJPG-encoded frames using @u4/opencv4nodejs.
+ * If the tensor holds several videos, each one is saved to its own file with a "_b<index>" suffix.
+ * @param {string} filename - Path to the output video file.
+ * @param {ov.Tensor} videoTensor - u8 tensor with shape [num_videos, num_frames, height, width, 3] in RGB.
+ * @param {number} [fps=25] - Frame rate of the output video.
+ */
+export function saveVideo(filename, videoTensor, fps = 25) {
+    const [batchSize, numFrames, height, width] = videoTensor.getShape();
+    const frameSize = height * width * 3;
+    const videoData = videoTensor.data;
+
+    for (let b = 0; b < batchSize; b++) {
+        let outputPath = filename;
+        if (batchSize > 1) {
+            const dot = filename.lastIndexOf(".");
+            const base = dot === -1 ? filename : filename.slice(0, dot);
+            const ext = dot === -1 ? "avi" : filename.slice(dot + 1);
+            outputPath = `${base}_b${b}.${ext}`;
+        }
+
+        const fourcc = cv.VideoWriter.fourcc("MJPG");
+        const writer = new cv.VideoWriter(outputPath, fourcc, fps, new cv.Size(width, height));
+
+        for (let f = 0; f < numFrames; f++) {
+            const offset = videoData.byteOffset + (b * numFrames + f) * frameSize;
+            const rgbData = Buffer.from(videoData.buffer, offset, frameSize);
+            const frame = new cv.Mat(rgbData, height, width, cv.CV_8UC3);
+            // OpenCV expects frames in BGR order
+            writer.write(frame.cvtColor(cv.COLOR_RGB2BGR));
+        }
+
+        writer.release();
+        console.log(`Wrote ${outputPath} (${numFrames} frames, ${width}x${height} @ ${fps} fps)`);
+    }
+}
