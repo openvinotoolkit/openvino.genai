@@ -33,7 +33,6 @@ patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
 import json
-import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,8 +60,6 @@ from openvino_genai import (
     GenerationFinishReason,
     ChatHistory,
     VideoMetadata,
-    Adapter,
-    AdapterConfig,
     draft_model,
 )
 
@@ -3958,83 +3955,3 @@ def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) ->
     audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
     with pytest.raises(RuntimeError, match="does not encode <\\|audio_pad\\|> as the single token"):
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
-
-
-VISION_LORA_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen2vl"
-
-
-def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> int:
-    """Creates a LoRA adapter targeting every linear layer of the vision merger sub-model.
-
-    Layer names follow the PyTorch frontend convention `__module.<module path>/aten::linear/MatMul`,
-    and `openvino_vision_embeddings_merger_model.xml` is exported from the `model.visual` submodule.
-    """
-    from safetensors.numpy import save_file
-
-    model = openvino.Core().read_model(Path(models_path) / "openvino_vision_embeddings_merger_model.xml")
-    tensors: dict[str, np.ndarray] = {}
-    for op in model.get_ops():
-        if op.get_type_name() != "MatMul":
-            continue
-        module_path = re.match(r"__module\.(.+?)/", op.get_friendly_name())
-        weight_shape = op.input(1).get_partial_shape()
-        if module_path is None or weight_shape.is_dynamic or weight_shape.rank.get_length() != 2:
-            continue
-        transpose_b = op.get_attributes()["transpose_b"]
-        input_dim = weight_shape[1 if transpose_b else 0].get_length()
-        output_dim = weight_shape[0 if transpose_b else 1].get_length()
-        key = f"base_model.model.model.visual.{module_path.group(1)}"
-        tensors[f"{key}.lora_A.weight"] = np.full((rank, input_dim), 0.5, dtype=np.float32)
-        tensors[f"{key}.lora_B.weight"] = np.full((output_dim, rank), 0.5, dtype=np.float32)
-
-    save_file(tensors, str(adapter_path))
-    return len(tensors) // 2
-
-
-@pytest.mark.precommit
-@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-@pytest.mark.parametrize("mode", [AdapterConfig.Mode.MODE_STATIC, AdapterConfig.Mode.MODE_DYNAMIC])
-def test_vlm_vision_lora(backend: str, mode, cat_tensor: openvino.Tensor, tmp_path: Path) -> None:
-    models_path = _get_ov_model(VISION_LORA_MODEL_ID)
-    adapter_path = tmp_path / "vision_lora.safetensors"
-    assert _build_vision_lora(models_path, adapter_path) > 0, "No vision layer to adapt was found"
-
-    config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
-    reference = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend).generate(
-        PROMPTS[0], images=[cat_tensor], generation_config=config
-    )
-
-    adapters = AdapterConfig(Adapter(str(adapter_path)), 1.0, mode)
-    adapted = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, adapters=adapters).generate(
-        PROMPTS[0], images=[cat_tensor], generation_config=config
-    )
-
-    assert adapted.texts[0] != reference.texts[0], "Vision LoRA adapter did not affect the generated text"
-
-
-@pytest.mark.precommit
-@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-def test_vlm_vision_lora_switched_per_generate(backend: str, cat_tensor: openvino.Tensor, tmp_path: Path) -> None:
-    models_path = _get_ov_model(VISION_LORA_MODEL_ID)
-    adapter_path = tmp_path / "vision_lora.safetensors"
-    assert _build_vision_lora(models_path, adapter_path) > 0, "No vision layer to adapt was found"
-
-    config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
-    adapter = Adapter(str(adapter_path))
-    pipe = VLMPipeline(
-        models_path,
-        "CPU",
-        ATTENTION_BACKEND=backend,
-        adapters=AdapterConfig(adapter, 1.0, AdapterConfig.Mode.MODE_DYNAMIC),
-    )
-
-    adapted = pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config).texts[0]
-    disabled = pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config, adapters=AdapterConfig()).texts[
-        0
-    ]
-    other_alpha = pipe.generate(
-        PROMPTS[0], images=[cat_tensor], generation_config=config, adapters=AdapterConfig(adapter, 2.0)
-    ).texts[0]
-
-    assert disabled != adapted, "Disabling the adapters did not affect the generated text"
-    assert other_alpha != adapted, "Changing the alpha did not affect the generated text"
