@@ -65,6 +65,19 @@ ov_genai_asr_generation_config_get_generation_config(const ov_genai_asr_generati
                                                      ov_genai_generation_config** generation_config);
 
 /**
+ * @brief Replace all base GenerationConfig fields, preserving ASR-specific fields.
+ * This copies the entire base configuration, including generation limits and EOS/stop token IDs; it does not
+ * merge individual updates. To change individual base settings, first obtain a copy with
+ * ov_genai_asr_generation_config_get_generation_config, modify that copy, and pass it to this function.
+ * @param config The ASR configuration to update.
+ * @param generation_config The base settings to copy. Ownership remains with the caller.
+ * @return OK on success, INVALID_C_PARAM for NULL arguments, UNKNOW_EXCEPTION on failure.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_asr_generation_config_set_generation_config(ov_genai_asr_generation_config* config,
+                                                     const ov_genai_generation_config* generation_config);
+
+/**
  * @brief Set the decoder start token id.
  * @param config A pointer to the ov_genai_asr_generation_config instance.
  * @param token_id The decoder start token id (default: 50258).
@@ -457,16 +470,3 @@ ov_genai_asr_generation_config_set_word_timestamps(ov_genai_asr_generation_confi
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_asr_generation_config_get_word_timestamps(const ov_genai_asr_generation_config* config, bool* word_timestamps);
-
-/**
- * @brief Replace all base GenerationConfig fields, preserving ASR-specific fields.
- * This copies the entire base configuration, including generation limits and EOS/stop token IDs; it does not
- * merge individual updates. To change individual base settings, first obtain a copy with
- * ov_genai_asr_generation_config_get_generation_config, modify that copy, and pass it to this function.
- * @param config The ASR configuration to update.
- * @param generation_config The base settings to copy. Ownership remains with the caller.
- * @return OK on success, INVALID_C_PARAM for NULL arguments, UNKNOW_EXCEPTION on failure.
- */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_asr_generation_config_set_generation_config(ov_genai_asr_generation_config* config,
-                                                     const ov_genai_generation_config* generation_config);

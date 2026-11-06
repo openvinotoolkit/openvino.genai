@@ -30,13 +30,29 @@ TEST(ASRCAPI, ConfigurationDefaultsAndBaseSettingsCopy) {
     ASSERT_EQ(OK, ov_genai_asr_generation_config_get_generation_config(config.get(), &base_raw));
     Handle<ov_genai_generation_config, ov_genai_generation_config_free> base(base_raw, ov_genai_generation_config_free);
     ASSERT_EQ(OK, ov_genai_generation_config_set_max_new_tokens(base.get(), 42));
+    ASSERT_EQ(OK, ov_genai_generation_config_set_do_sample(base.get(), true));
+    ASSERT_EQ(OK, ov_genai_generation_config_set_top_k(base.get(), 7));
+    ASSERT_EQ(OK, ov_genai_generation_config_set_temperature(base.get(), 0.7f));
     EXPECT_NE(42, config->object->max_new_tokens);
+    EXPECT_EQ(defaults.do_sample, config->object->do_sample);
+    EXPECT_EQ(defaults.top_k, config->object->top_k);
+    EXPECT_FLOAT_EQ(defaults.temperature, config->object->temperature);
     ASSERT_EQ(OK, ov_genai_asr_generation_config_set_generation_config(config.get(), base.get()));
     EXPECT_EQ(42, config->object->max_new_tokens);
+    EXPECT_TRUE(config->object->do_sample);
+    EXPECT_EQ(7, config->object->top_k);
+    EXPECT_FLOAT_EQ(0.7f, config->object->temperature);
+    ASSERT_EQ(OK, ov_genai_generation_config_set_do_sample(base.get(), false));
+    ASSERT_EQ(OK, ov_genai_generation_config_set_top_k(base.get(), 3));
+    ASSERT_EQ(OK, ov_genai_generation_config_set_temperature(base.get(), 0.5f));
+    EXPECT_TRUE(config->object->do_sample);
+    EXPECT_EQ(7, config->object->top_k);
+    EXPECT_FLOAT_EQ(0.7f, config->object->temperature);
     EXPECT_EQ("English", config->object->language);
     EXPECT_EQ("OpenVINO", config->object->context);
     EXPECT_TRUE(config->object->word_timestamps);
     EXPECT_EQ(INVALID_C_PARAM, ov_genai_asr_generation_config_set_generation_config(config.get(), nullptr));
+    EXPECT_EQ(INVALID_C_PARAM, ov_genai_asr_generation_config_set_generation_config(nullptr, base.get()));
 }
 
 TEST(ASRCAPI, OptionalStringsAndBufferBounds) {

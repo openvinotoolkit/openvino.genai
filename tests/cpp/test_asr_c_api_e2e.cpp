@@ -193,6 +193,58 @@ TEST_P(ASRCAPIE2E, MatchesCppAndRetainsResultsAcrossCalls) {
     std::cout << GetParam() << ": " << read_result(result.get()) << '\n';
 }
 
+TEST_P(ASRCAPIE2E, BaseGenerationSettingsGetModifySetControlsGeneration) {
+    const char* model = std::getenv(GetParam());
+    const char* wav = std::getenv("ASR_TEST_WAV");
+    if (!model || !wav) {
+        GTEST_SKIP() << "Set " << GetParam() << " and ASR_TEST_WAV to run real-model comparisons";
+    }
+    float* audio_raw = nullptr;
+    size_t length = 0;
+    float rate = 0.f;
+    ASSERT_EQ(0, load_wav_file(wav, &audio_raw, &length, &rate));
+    std::unique_ptr<float, decltype(&std::free)> audio(audio_raw, &std::free);
+    ASSERT_FLOAT_EQ(16000.f, rate);
+    std::vector<float> speech(audio.get(), audio.get() + length);
+
+    ov_genai_asr_pipeline* pipeline_raw = nullptr;
+    ASSERT_EQ(OK, ov_genai_asr_pipeline_create(model, "CPU", 0, &pipeline_raw));
+    Handle<ov_genai_asr_pipeline, ov_genai_asr_pipeline_free> pipeline(pipeline_raw, ov_genai_asr_pipeline_free);
+    ov_genai_asr_generation_config* config_raw = nullptr;
+    ASSERT_EQ(OK, ov_genai_asr_pipeline_get_generation_config(pipeline.get(), &config_raw));
+    Handle<ov_genai_asr_generation_config, ov_genai_asr_generation_config_free> config(
+        config_raw, ov_genai_asr_generation_config_free);
+    ov_genai_generation_config* base_raw = nullptr;
+    ASSERT_EQ(OK, ov_genai_asr_generation_config_get_generation_config(config.get(), &base_raw));
+    Handle<ov_genai_generation_config, ov_genai_generation_config_free> base(base_raw, ov_genai_generation_config_free);
+    ASSERT_EQ(OK, ov_genai_generation_config_set_max_new_tokens(base.get(), 1));
+    ASSERT_EQ(OK, ov_genai_generation_config_set_do_sample(base.get(), false));
+    ASSERT_EQ(OK, ov_genai_asr_generation_config_set_generation_config(config.get(), base.get()));
+    base.reset();
+
+    ov::genai::ASRPipeline cpp(model, "CPU");
+    auto cpp_config = cpp.get_generation_config();
+    cpp_config.max_new_tokens = 1;
+    cpp_config.do_sample = false;
+    const auto expected = cpp.generate(speech, cpp_config);
+    ASSERT_EQ(OK, ov_genai_asr_pipeline_set_generation_config(pipeline.get(), config.get()));
+    config.reset();
+    ov_genai_asr_decoded_results* result_raw = nullptr;
+    ASSERT_EQ(OK, ov_genai_asr_pipeline_generate(pipeline.get(), speech.data(), speech.size(), nullptr, &result_raw));
+    Handle<ov_genai_asr_decoded_results, ov_genai_asr_decoded_results_free> result(
+        result_raw, ov_genai_asr_decoded_results_free);
+    EXPECT_EQ(static_cast<std::string>(expected), read_result(result.get()));
+    ov_genai_perf_metrics* metrics_raw = nullptr;
+    ASSERT_EQ(OK, ov_genai_asr_decoded_results_get_perf_metrics(result.get(), &metrics_raw));
+    Handle<ov_genai_perf_metrics, ov_genai_asr_decoded_results_perf_metrics_free> metrics(
+        metrics_raw, ov_genai_asr_decoded_results_perf_metrics_free);
+    size_t tokens = 0;
+    ASSERT_EQ(OK, ov_genai_perf_metrics_get_num_generation_tokens(metrics.get(), &tokens));
+    EXPECT_LE(tokens, 1);
+    auto expected_metrics = expected.perf_metrics;
+    EXPECT_EQ(expected_metrics.get_num_generated_tokens(), tokens);
+}
+
 INSTANTIATE_TEST_SUITE_P(Models,
                          ASRCAPIE2E,
                          testing::Values("ASR_TEST_WHISPER_MODEL", "ASR_TEST_QWEN_MODEL", "ASR_TEST_FUN_MODEL"));
