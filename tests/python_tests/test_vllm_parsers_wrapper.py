@@ -78,3 +78,61 @@ def test_final_parser_deepseek():
     wrapper.parse(message)  # modifies message in place
 
     assert compare_dicts(message, message_vllm, skip_keys=["id"])
+
+
+class _ReasoningParserReturningNone:
+    """Follows vLLM's BaseThinkingReasoningParser.extract_reasoning: a missing part is None."""
+
+    def extract_reasoning(self, model_output, request):
+        if "</think>" not in model_output:
+            return model_output, None
+        reasoning, _, content = model_output.partition("</think>")
+        return reasoning, content or None
+
+
+@pytest.mark.parametrize(
+    "model_output, expected",
+    [
+        ("thinking</think>answer", {"content": "answer", "reasoning": "thinking"}),
+        ("thinking</think>", {"content": None, "reasoning": "thinking"}),
+        ("still thinking", {"content": None, "reasoning": "still thinking"}),
+    ],
+)
+def test_wrapper_keeps_none_from_extract_reasoning(model_output, expected):
+    wrapper = VLLMParserWrapper(_ReasoningParserReturningNone())
+    message = {"content": model_output}
+    wrapper.parse(message)
+    assert message == expected
+
+
+class _ReasoningParserReturning:
+    def __init__(self, result):
+        self.result = result
+
+    def extract_reasoning(self, model_output, request):
+        return self.result
+
+
+@pytest.mark.parametrize(
+    "result, expected",
+    [
+        ((None, "answer"), {"content": "answer", "reasoning": None}),
+        ((None, None), {"content": None, "reasoning": None}),
+        (("", ""), {"content": "", "reasoning": ""}),
+    ],
+)
+def test_wrapper_keeps_reasoning_parts_as_returned(result, expected):
+    message = {"content": "text"}
+    VLLMParserWrapper(_ReasoningParserReturning(result)).parse(message)
+    assert message == expected
+
+
+@pytest.mark.parametrize("result", [("a", "b", "c"), ("a",), ["a", "b"], None])
+def test_wrapper_rejects_result_that_is_not_a_pair(result):
+    with pytest.raises(RuntimeError, match="not a tuple of length 2"):
+        VLLMParserWrapper(_ReasoningParserReturning(result)).parse({"content": "text"})
+
+
+def test_wrapper_rejects_parts_that_are_not_strings():
+    with pytest.raises(RuntimeError):
+        VLLMParserWrapper(_ReasoningParserReturning(("a", 2))).parse({"content": "text"})
