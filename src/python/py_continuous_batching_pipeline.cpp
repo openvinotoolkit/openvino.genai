@@ -454,6 +454,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config)
         .def_readwrite("use_sparse_attention", &SchedulerConfig::use_sparse_attention)
         .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config)
+        .def_readwrite("use_chunked_kv_cache", &SchedulerConfig::use_chunked_kv_cache)
+        .def_readwrite("kv_cache_chunk_size_blocks", &SchedulerConfig::kv_cache_chunk_size_blocks)
         .def("to_string", &SchedulerConfig::to_string);
 
     py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)

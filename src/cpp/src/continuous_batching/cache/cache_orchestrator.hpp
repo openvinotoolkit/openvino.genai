@@ -162,7 +162,16 @@ public:
 
     void allocate_tokens(Sequence::Ptr sequence, SequenceGroup::CPtr seq_group, size_t num_tokens, size_t prompt_size = 0) {
         for (auto& [type, block_mgr] : m_block_managers) {
+            const size_t free_before = block_mgr->num_free_blocks();
             block_mgr->allocate_tokens(sequence, seq_group, num_tokens, prompt_size);
+            const size_t free_after = block_mgr->num_free_blocks();
+            if (free_after < free_before) {
+                GENAI_INFO("[KV_TRACE] logical_pool_allocate type=%d seq=%llu free_before=%zu free_after=%zu",
+                           static_cast<int>(type),
+                           static_cast<unsigned long long>(sequence->get_id()),
+                           free_before,
+                           free_after);
+            }
             queue_linear_attention_initial_state_zero(type, *block_mgr, seq_group);
         }
     }
@@ -526,8 +535,21 @@ public:
         bool grew_capacity = false;
         for (auto& [type, block_mgr] : m_block_managers) {
             if (!block_mgr->is_fixed_size_per_sequence()) {
+                const size_t old_blocks = block_mgr->get_total_block_count();
+                const size_t free_before = block_mgr->num_free_blocks();
                 block_mgr->grow_capacity_by_tokens(num_tokens);
-                grew_capacity = true;
+                const size_t new_blocks = block_mgr->get_total_block_count();
+                const size_t free_after = block_mgr->num_free_blocks();
+                if (new_blocks > old_blocks) {
+                    GENAI_INFO("[KV_TRACE] capacity_grow reason=token_quantum type=%d tokens=%zu old_blocks=%zu new_blocks=%zu free_before=%zu free_after=%zu",
+                               static_cast<int>(type),
+                               num_tokens,
+                               old_blocks,
+                               new_blocks,
+                               free_before,
+                               free_after);
+                    grew_capacity = true;
+                }
             }
         }
         return grew_capacity;
@@ -542,7 +564,19 @@ public:
     void ensure_sequence_token_capacity(const std::vector<std::pair<size_t, size_t>>& sequence_token_targets) {
         for (auto& [type, block_mgr] : m_block_managers) {
             if (!block_mgr->is_fixed_size_per_sequence()) {
+                const size_t old_blocks = block_mgr->get_total_block_count();
+                const size_t free_before = block_mgr->num_free_blocks();
                 block_mgr->ensure_sequence_token_capacity(sequence_token_targets);
+                const size_t new_blocks = block_mgr->get_total_block_count();
+                const size_t free_after = block_mgr->num_free_blocks();
+                if (new_blocks > old_blocks) {
+                    GENAI_INFO("[KV_TRACE] capacity_grow reason=sequence_targets type=%d old_blocks=%zu new_blocks=%zu free_before=%zu free_after=%zu",
+                               static_cast<int>(type),
+                               old_blocks,
+                               new_blocks,
+                               free_before,
+                               free_after);
+                }
             }
         }
     }
@@ -556,8 +590,19 @@ public:
         for (auto& [type, block_mgr] : m_block_managers) {
             if (block_mgr->is_fixed_size_per_sequence()) {
                 const size_t additional_blocks = num_seqs * block_mgr->get_fixed_blocks_per_sequence();
-                block_mgr->increase_block_count(
-                    block_mgr->get_total_block_count() + additional_blocks);
+                if (additional_blocks == 0) {
+                    continue;
+                }
+                const size_t old_blocks = block_mgr->get_total_block_count();
+                const size_t free_before = block_mgr->num_free_blocks();
+                block_mgr->increase_block_count(old_blocks + additional_blocks);
+                GENAI_INFO("[KV_TRACE] capacity_grow reason=initial_sequences type=%d sequences=%zu old_blocks=%zu new_blocks=%zu free_before=%zu free_after=%zu",
+                           static_cast<int>(type),
+                           num_seqs,
+                           old_blocks,
+                           block_mgr->get_total_block_count(),
+                           free_before,
+                           block_mgr->num_free_blocks());
             }
         }
     }
@@ -577,8 +622,14 @@ public:
             const size_t required_blocks = block_mgr->required_blocks_count(seq_group);
             const size_t free_blocks = block_mgr->num_free_blocks();
             if (required_blocks > free_blocks) {
-                block_mgr->increase_block_count(
-                    block_mgr->get_total_block_count() + required_blocks - free_blocks);
+                const size_t old_blocks = block_mgr->get_total_block_count();
+                block_mgr->increase_block_count(old_blocks + required_blocks - free_blocks);
+                GENAI_INFO("[KV_TRACE] capacity_grow reason=sequence_capacity type=%d old_blocks=%zu new_blocks=%zu free_before=%zu free_after=%zu",
+                           static_cast<int>(type),
+                           old_blocks,
+                           block_mgr->get_total_block_count(),
+                           free_blocks,
+                           block_mgr->num_free_blocks());
                 grew_capacity = true;
             }
         }
@@ -734,7 +785,7 @@ private:
 
         std::unique_ptr<KVCacheManager> kv_manager;
         if (KVCacheManager::has_cache_inputs(compiled_model)) {
-            kv_manager = std::make_unique<KVCacheManager>(infer_request);
+            kv_manager = std::make_unique<KVCacheManager>(infer_request, config.use_chunked_kv_cache, config.kv_cache_chunk_size_blocks);
         }
 
         std::unique_ptr<LinearAttentionCacheManager> la_manager;

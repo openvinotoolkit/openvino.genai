@@ -3,6 +3,8 @@
 //
 
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <numeric>
 #include "openvino/runtime/core.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
@@ -105,4 +107,155 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     // check that cache does not increase if new blocks were not allocated
     cache_manager->allocate_cache_if_needed(block_manager.get_total_block_count());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 200 * block_size_in_bytes);
+}
+
+// Exercises KVCacheManager's legacy chunked allocation path (chunk_base_ptrs inputs) directly. GPU-only: chunked
+// mode requires a RemoteContext (see KVCacheManager's constructor assert).
+TEST(TestCacheManager, test_gpu_chunked_allocation_rounds_up_to_chunk_boundary) {
+    ov::Core core;
+    auto devices = core.get_available_devices();
+    if (std::find(devices.begin(), devices.end(), "GPU") == devices.end()) {
+        GTEST_SKIP() << "No GPU device available on this machine.";
+    }
+
+    constexpr size_t num_layers = 2;
+    constexpr size_t blocks_per_chunk = 4;
+    ov::InferRequest request =
+        core.compile_model(get_dummy_model_with_chunk_base_ptrs(core, num_layers), "GPU").create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request, /*use_chunked_kv_cache=*/true, blocks_per_chunk);
+
+    // 6 blocks requested -> rounds up to 2 chunks (8 blocks), not exactly 6: chunks are always fixed-size.
+    cache_manager->allocate_cache_if_needed(6);
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 2 * blocks_per_chunk);
+
+    // Already-satisfied request is a no-op (matches the non-chunked contract).
+    cache_manager->allocate_cache_if_needed(6);
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 2 * blocks_per_chunk);
+
+    // Growing past the current capacity adds exactly one more chunk (9 blocks needs a 3rd chunk).
+    cache_manager->allocate_cache_if_needed(9);
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 3 * blocks_per_chunk);
+}
+
+TEST(TestCacheManager, test_gpu_chunked_growth_preserves_existing_chunk_data) {
+    ov::Core core;
+    auto devices = core.get_available_devices();
+    if (std::find(devices.begin(), devices.end(), "GPU") == devices.end()) {
+        GTEST_SKIP() << "No GPU device available on this machine.";
+    }
+
+    constexpr size_t num_layers = 2;
+    constexpr size_t blocks_per_chunk = 2;
+    ov::InferRequest request =
+        core.compile_model(get_dummy_model_with_chunk_base_ptrs(core, num_layers), "GPU").create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request, /*use_chunked_kv_cache=*/true, blocks_per_chunk);
+
+    // First chunk only (blocks 0-1).
+    cache_manager->allocate_cache_if_needed(2);
+    std::vector<uint8_t> written_data(cache_manager->get_block_size_in_bytes());
+    std::iota(written_data.begin(), written_data.end(), static_cast<uint8_t>(1));
+    cache_manager->write_block(/*block_id=*/1, written_data);
+
+    // Growing to 5 blocks allocates 2 brand-new chunks (chunk 1: blocks 2-3, chunk 2: blocks 4-5);
+    // this must NOT touch the first chunk's already-written block 1 (the whole point of chunking is
+    // that growth never copies/reallocates existing chunks).
+    cache_manager->allocate_cache_if_needed(5);
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 3 * blocks_per_chunk);
+    EXPECT_EQ(cache_manager->read_block(1), written_data);
+}
+
+TEST(TestCacheManager, test_gpu_chunked_copy_blocks_across_chunk_boundary) {
+    ov::Core core;
+    auto devices = core.get_available_devices();
+    if (std::find(devices.begin(), devices.end(), "GPU") == devices.end()) {
+        GTEST_SKIP() << "No GPU device available on this machine.";
+    }
+
+    constexpr size_t num_layers = 2;
+    constexpr size_t blocks_per_chunk = 2;
+    ov::InferRequest request =
+        core.compile_model(get_dummy_model_with_chunk_base_ptrs(core, num_layers), "GPU").create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request, /*use_chunked_kv_cache=*/true, blocks_per_chunk);
+
+    // block 0 -> chunk 0, block 3 -> chunk 1: copy_blocks() must locate each side in its own chunk tensor.
+    cache_manager->allocate_cache_if_needed(4);
+    std::vector<uint8_t> written_data(cache_manager->get_block_size_in_bytes());
+    std::iota(written_data.begin(), written_data.end(), static_cast<uint8_t>(7));
+    cache_manager->write_block(/*block_id=*/0, written_data);
+
+    cache_manager->copy_blocks({{0, {3}}});
+    EXPECT_EQ(cache_manager->read_block(3), written_data);
+}
+
+namespace {
+// Cache inputs only (no chunk_base_ptrs.N): the chunk-table mode binds pointer tables to key_cache.N / value_cache.N,
+// which the GPU plugin recognises by the `kv_cache_chunk_table` flag on the Parameter's output tensor.
+std::shared_ptr<ov::Model> get_dummy_model_with_chunk_tables(ov::Core core, size_t num_layers) {
+    auto model = get_dummy_model(core, num_layers);
+    for (const auto& param : model->get_parameters()) {
+        param->get_output_tensor(0).get_rt_info()["kv_cache_chunk_table"] = true;
+    }
+    return model;
+}
+}  // namespace
+
+// Table mode adds one chunk per growth step, sized from the shortfall (rounded up to the granule) and at least 1/16 of
+// the blocks already allocated, so chunk sizes differ between steps.
+TEST(TestCacheManager, test_gpu_chunk_tables_grow_by_variable_sized_chunks) {
+    ov::Core core;
+    auto devices = core.get_available_devices();
+    if (std::find(devices.begin(), devices.end(), "GPU") == devices.end()) {
+        GTEST_SKIP() << "No GPU device available on this machine.";
+    }
+
+    ov::InferRequest request =
+        core.compile_model(get_dummy_model_with_chunk_tables(core, /*num_layers=*/2), "GPU").create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request,
+                                                          /*use_chunked_kv_cache=*/true,
+                                                          /*blocks_per_chunk=*/0,
+                                                          /*granule_blocks=*/2);
+
+    cache_manager->allocate_cache_if_needed(6);   // shortfall 6, already a multiple of 2
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 6);
+    cache_manager->allocate_cache_if_needed(6);   // already satisfied
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 6);
+    cache_manager->allocate_cache_if_needed(7);   // shortfall 1, rounded up to the granule: 2
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 8);
+    cache_manager->allocate_cache_if_needed(64);  // shortfall 56
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 64);
+    cache_manager->allocate_cache_if_needed(65);  // shortfall 1, but the floor is 64 / 16 = 4
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 68);
+}
+
+TEST(TestCacheManager, test_gpu_chunk_tables_preserve_and_copy_data_across_unequal_chunks) {
+    ov::Core core;
+    auto devices = core.get_available_devices();
+    if (std::find(devices.begin(), devices.end(), "GPU") == devices.end()) {
+        GTEST_SKIP() << "No GPU device available on this machine.";
+    }
+
+    ov::InferRequest request =
+        core.compile_model(get_dummy_model_with_chunk_tables(core, /*num_layers=*/2), "GPU").create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request,
+                                                          /*use_chunked_kv_cache=*/true,
+                                                          /*blocks_per_chunk=*/2,
+                                                          /*granule_blocks=*/2);
+
+    // Chunks of 4, 2 and 6 blocks: blocks [0,4), [4,6) and [6,12).
+    cache_manager->allocate_cache_if_needed(3);
+    cache_manager->allocate_cache_if_needed(5);
+    std::vector<uint8_t> first(cache_manager->get_block_size_in_bytes()), second(cache_manager->get_block_size_in_bytes());
+    std::iota(first.begin(), first.end(), static_cast<uint8_t>(1));
+    std::iota(second.begin(), second.end(), static_cast<uint8_t>(101));
+    cache_manager->write_block(/*block_id=*/3, first);    // last block of chunk 0
+    cache_manager->write_block(/*block_id=*/4, second);   // first block of chunk 1
+
+    cache_manager->allocate_cache_if_needed(11);
+    EXPECT_EQ(cache_manager->get_num_allocated_blocks(), 12);
+    EXPECT_EQ(cache_manager->read_block(3), first);
+    EXPECT_EQ(cache_manager->read_block(4), second);
+
+    cache_manager->copy_blocks({{3, {9}}, {4, {11}}});    // into the middle and last block of chunk 2
+    EXPECT_EQ(cache_manager->read_block(9), first);
+    EXPECT_EQ(cache_manager->read_block(11), second);
 }

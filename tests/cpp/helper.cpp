@@ -29,6 +29,35 @@ std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers) {
     return std::make_shared<ov::Model>(ov::OutputVector{concat1, concat2}, params);
 }
 
+std::shared_ptr<ov::Model> get_dummy_model_with_chunk_base_ptrs(ov::Core core, size_t num_layers) {
+    ov::NodeVector keys, values;
+    ov::ParameterVector params;
+    ov::element::Type kv_cache_type = core.get_property("CPU", ov::hint::kv_cache_precision);
+
+    auto shape = ov::PartialShape::dynamic(4);
+    shape[1] = 12;
+    shape[2] = 64;
+    shape[3] = 64;
+
+    for (size_t i = 0; i < num_layers; i++) {
+        auto key = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
+        auto value = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
+        key->get_output_tensor(0).set_names({"key_cache." + std::to_string(i)});
+        value->get_output_tensor(0).set_names({"value_cache." + std::to_string(i)});
+        keys.push_back(key);
+        values.push_back(value);
+        params.push_back(key);
+        params.push_back(value);
+
+        auto chunk_base_ptrs = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+        chunk_base_ptrs->get_output_tensor(0).set_names({"chunk_base_ptrs." + std::to_string(i)});
+        params.push_back(chunk_base_ptrs);
+    }
+    const auto& concat1 = std::make_shared<ov::op::v0::Concat>(keys, 1);
+    const auto& concat2 = std::make_shared<ov::op::v0::Concat>(values, 1);
+    return std::make_shared<ov::Model>(ov::OutputVector{concat1, concat2}, params);
+}
+
 std::shared_ptr<ov::Model> get_dummy_hybrid_model(ov::Core core, size_t kv_num_layers, size_t la_num_layers) {
     ov::OutputVector outputs;
     ov::ParameterVector params;

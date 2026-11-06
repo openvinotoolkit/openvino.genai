@@ -30,6 +30,20 @@ struct SchedulerConfig {
     // When both num_kv_blocks and cache_size are equal to zero dynamic cache allocation is turned on.
     std::size_t cache_size = 0;
 
+    /**
+     * Whether the GPU KV cache is allocated as multiple device
+     * memory chunks (instead of one tensor that is reallocated/copied every time it grows), enabling
+     * the paged_attention op's chunked addressing path. No effect on non-GPU devices.
+     */
+    bool use_chunked_kv_cache = false;
+    /**
+     * Deprecated: has no effect. With `use_chunked_kv_cache` each growth step allocates one chunk sized from the shortfall
+     * (rounded up to 4 blocks, and at least 1/16 of the blocks already allocated), so chunks can have different sizes.
+     * Memory per block depends on the model: bytes = layers * 2 (K and V) * kv_heads * block_size * head_size * element size;
+     * it is printed as `block_bytes` in the `[KV_TRACE] physical_manager` log (about 2.25 MiB for Qwen3-8B with an f16 cache).
+     */
+    std::size_t kv_cache_chunk_size_blocks = 512;
+
     // total number of linear attention blocks available to scheduler logic.
     // Each block holds the full state for one sequence across all linear attention ops.
     // When 0, automatically derived from max_num_seqs if linear attention layers are detected.
@@ -103,6 +117,11 @@ struct SchedulerConfig {
     void validate() const {
         OPENVINO_ASSERT(!enable_prefix_caching || !cache_interval_multiplier.has_value() || cache_interval_multiplier.value() > 0,
                 "SchedulerConfig cache_interval_multiplier must be greater than 0 when prefix caching is enabled");
+        // Cache eviction and prefix caching address cache blocks by absolute physical index and are not chunk-aware yet.
+        OPENVINO_ASSERT(!use_chunked_kv_cache || !use_cache_eviction,
+                "SchedulerConfig use_chunked_kv_cache is not yet supported together with use_cache_eviction");
+        OPENVINO_ASSERT(!use_chunked_kv_cache || !enable_prefix_caching,
+                "SchedulerConfig use_chunked_kv_cache is not yet supported together with enable_prefix_caching");
     }
 
     bool operator==(const SchedulerConfig& other) const {

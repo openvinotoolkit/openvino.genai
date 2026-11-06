@@ -758,6 +758,9 @@ private:
         bool grew_capacity = false;
         if (sequence_group) {
             grew_capacity = m_cache_orchestrator->ensure_sequence_capacity(sequence_group);
+            if (grew_capacity) {
+                return true;
+            }
         }
 
         auto device = m_cache_orchestrator->get_device();
