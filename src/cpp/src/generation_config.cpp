@@ -356,6 +356,7 @@ void GenerationConfig::validate() const {
     }
 
     if (is_beam_search()) {
+        OPENVINO_ASSERT(num_beam_groups > 0, "'num_beam_groups' must be greater than 0, but got ", num_beam_groups);
         OPENVINO_ASSERT(num_beams % num_beam_groups == 0, "'num_beams' (", num_beams, ") should be divisible by 'num_beam_groups' (", num_beam_groups, ")");
         OPENVINO_ASSERT(num_beams >= num_return_sequences, "'num_beams' (", num_beams, ") must be greater equal than 'num_return_sequences' (", num_return_sequences, ")");
 
