@@ -127,6 +127,44 @@ prompt shorter than one interval therefore gets no reuse at all - it is recomput
 is still correct. That is why this guide's prompts are over 3000 tokens; with short prompts offload
 through your plugin will show no speedup on a hybrid model.
 
+### Storing blocks right after each forward pass (chunk store)
+
+By default a block reaches your plugin only when the device cache is about to overwrite it. With
+`cache_offload_config.store_completed_blocks: true` (off by default) every block is also stored as soon as the
+forward pass that completed it has finished: the pipeline thread copies the block out and the offload writer
+thread writes it, so generation does not wait for your plugin. The block stays in the device cache as before.
+This makes blocks reusable from the store without having been evicted first, for example by another process
+that opens the same persistent store. Blocks restored from the store or the device cache are not written again,
+and a block stored this way is not stored a second time when it is later overwritten.
+
+[`verify_chunk_store.py`](verify_chunk_store.py) checks it with three separate processes against one store
+directory (`baseline` without offload, `write`, then `read`); the device cache is large enough that nothing is
+evicted, so everything the `read` process finds was written by the chunk store:
+
+```sh
+cd samples/c/kv_cache_store_plugin
+python verify_chunk_store.py -m <model_dir> -d CPU --plugin /path/to/sample_kv_cache_store_plugin.dll \
+    --store-dir /tmp/kv_chunk --phase baseline
+python verify_chunk_store.py -m <model_dir> -d CPU --plugin /path/to/sample_kv_cache_store_plugin.dll \
+    --store-dir /tmp/kv_chunk --phase write
+python verify_chunk_store.py -m <model_dir> -d CPU --plugin /path/to/sample_kv_cache_store_plugin.dll \
+    --store-dir /tmp/kv_chunk --phase read
+```
+
+Real numbers with the sample's `sample-persistent-file` provider (single runs; the prompt is the sample sentence
+repeated, 300 times for Qwen3-8B and 310 times for Qwen3.5-9B, `--num-kv-blocks` 600 and 400):
+
+| Model | Device | TTFT baseline | TTFT `write` (chunk store on) | TTFT `read` (new process) | Blocks read back | Generated text |
+|---|---|---|---|---|---|---|
+| Qwen3-8B | CPU | 55807 ms | 53925 ms | 6848 ms (**~8.1x**) | 94 KV | identical |
+| Qwen3.5-9B | GPU | 3644 ms | 3797 ms | 1130 ms (**~3.2x**) | 194 KV + 1 linear-attention | identical |
+
+Turning it on did not slow the `write` run measurably (the difference is within run-to-run spread). The copy of each
+finished block runs on the pipeline thread, so a long prefill pays for copying its blocks right after the pass
+(about 0.2 s of copying for the 94 blocks above on CPU and 0.08 s for the 194 blocks on GPU); the writing itself
+(1.1 s and 1.7 s) happens on the writer thread. Blocks that do not fit into the writer's `buffer_slots` queue are
+skipped and only cost recomputation later.
+
 ### What the host expects from your plugin's stores
 
 The host opens **one store instance per group** and passes the group as the `OvKVCacheNamespace`

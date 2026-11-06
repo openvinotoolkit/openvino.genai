@@ -123,6 +123,18 @@ public:
     virtual void on_blocks_overwritten(size_t hash, const BlocksPerLayer& blocks) = 0;
 
     /**
+     * @brief Notified when the forward pass that completed a block has finished and the block got its prefix hash.
+     * @param hash The prefix hash of the block.
+     * @param blocks The block holding the finished contents, one per block-table layer.
+     * The observer may copy the contents out here and store them in the background (chunk store); the default
+     * does nothing, so blocks are then only stored when they are about to be overwritten.
+     */
+    virtual void on_blocks_published(size_t hash, const BlocksPerLayer& blocks) {
+        (void)hash;
+        (void)blocks;
+    }
+
+    /**
      * @brief Tells where a published block sits in its prompt's chain.
      * @param hash The prefix hash of the block.
      * @param parent_hash The prefix hash of the preceding block of the same chain; meaningful when @p has_parent.
@@ -2686,6 +2698,8 @@ public:
         std::map<uint64_t, BlocksPerLayer> prepared_blocks;
         std::map<uint64_t, size_t> prepared_hash_lengths;
         std::map<size_t, size_t> prepared_length_counts;
+        // Blocks hashed when they were allocated are only complete once the forward pass has covered them.
+        std::vector<std::pair<uint64_t, BlocksPerLayer>> completed_published_blocks;
         for (size_t logical_block_idx = processed_before / m_block_size;
              logical_block_idx < processed_after / m_block_size; ++logical_block_idx) {
             if (logical_block_idx < logical_start) {
@@ -2704,11 +2718,14 @@ public:
                                 "Cache blocks across layers must share publication state");
                 completed_blocks.push_back(std::move(block));
             }
-            if (completed_blocks[0]->has_published_hash()) {
-                continue;
-            }
             const size_t content_length = (logical_block_idx + 1) * m_block_size;
             const uint64_t hash = sequence->get_hash(content_length, m_block_size);
+            if (completed_blocks[0]->has_published_hash()) {
+                if (completed_blocks[0]->get_hash() == hash) {
+                    completed_published_blocks.emplace_back(hash, std::move(completed_blocks));
+                }
+                continue;
+            }
             const auto content_length_it = m_cached_hash_to_content_length.find(hash);
             OPENVINO_ASSERT(content_length_it == m_cached_hash_to_content_length.end() ||
                                 content_length_it->second == content_length,
@@ -2736,6 +2753,9 @@ public:
             for (const CacheBlock::Ptr& block : blocks) {
                 block->set_hash(hash);
             }
+            if (m_link_observer != nullptr) {
+                m_link_observer->on_blocks_published(hash, blocks);
+            }
         }
         m_prefix_hash_to_cached_blocks.merge(prepared_blocks);
         for (const auto& [content_length, count] : prepared_length_counts) {
@@ -2746,6 +2766,11 @@ public:
         }
         m_cached_content_length_ref_counts.merge(prepared_length_counts);
         m_cached_hash_to_content_length.merge(prepared_hash_lengths);
+        if (m_link_observer != nullptr) {
+            for (const auto& [hash, blocks] : completed_published_blocks) {
+                m_link_observer->on_blocks_published(hash, blocks);
+            }
+        }
     }
 
     bool restore_cached_blocks(SequenceGroup::Ptr group) {

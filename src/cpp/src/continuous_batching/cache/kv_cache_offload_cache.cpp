@@ -67,6 +67,16 @@ KVCacheOffloadCache::~KVCacheOffloadCache() {
 }
 
 void KVCacheOffloadCache::on_blocks_overwritten(std::size_t hash, const BlocksPerLayer& blocks) {
+    queue_store(hash, blocks, "overwritten");
+}
+
+void KVCacheOffloadCache::on_blocks_published(std::size_t hash, const BlocksPerLayer& blocks) {
+    if (m_store_completed_blocks) {
+        queue_store(hash, blocks, "published");
+    }
+}
+
+void KVCacheOffloadCache::queue_store(std::size_t hash, const BlocksPerLayer& blocks, const char* reason) {
     // Offload is only enabled without cache eviction, where one block table is shared by all decoder
     // layers and a single physical block index therefore addresses the whole block set.
     OPENVINO_ASSERT(blocks.size() == 1,
@@ -92,7 +102,8 @@ void KVCacheOffloadCache::on_blocks_overwritten(std::size_t hash, const BlocksPe
 
     bool reclaimed = false;
     try {
-        if (m_store->get_num_free_blocks() == 0) {
+        // Blocks already queued will each take a free slot once the writer thread gets to them.
+        if (m_store->get_num_free_blocks() <= m_queued_stores.size()) {
             if (m_reclamation_paused) {
                 ++m_statistics.num_failed;
                 return;
@@ -126,10 +137,11 @@ void KVCacheOffloadCache::on_blocks_overwritten(std::size_t hash, const BlocksPe
     }
 
     m_queued_stores.push_back(std::move(queued));
-    GENAI_INFO("[KV_TRACE] KVCacheOffloadCache queue_store hash=%zu physical_block=%d queued=%zu",
+    GENAI_INFO("[KV_TRACE] KVCacheOffloadCache queue_store hash=%zu physical_block=%d queued=%zu reason=%s",
                hash,
                block_index,
-               m_queued_stores.size());
+               m_queued_stores.size(),
+               reason);
     m_queued_cv.notify_one();
 }
 

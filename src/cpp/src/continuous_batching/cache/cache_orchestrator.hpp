@@ -262,6 +262,7 @@ public:
                                                                    std::move(store),
                                                                    offload_config.buffer_slots);
         m_block_managers.at(CacheType::KV_CACHE)->set_overwritten_block_observer(m_kv_offload_cache.get());
+        m_kv_offload_cache->set_store_completed_blocks(offload_config.store_completed_blocks);
     }
 
     /// @return The KV disk offload cache, or nullptr when offload is disabled.
@@ -324,6 +325,7 @@ public:
                                                                            std::move(store),
                                                                            offload_config.buffer_slots);
         m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->set_overwritten_block_observer(m_la_offload_cache.get());
+        m_la_offload_cache->set_store_completed_blocks(offload_config.store_completed_blocks);
     }
 
     /// @return The linear attention disk offload cache, or nullptr when offload is disabled.

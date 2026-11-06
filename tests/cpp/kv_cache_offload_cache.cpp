@@ -212,6 +212,57 @@ TEST(TestKVCacheOffloadCache, BlockManagerStoresEvictedPrefixBlock) {
     block_manager.free_sequence(pressure->get_running_sequences().at(0)->get_id());
 }
 
+TEST(TestKVCacheOffloadCache, PublishedBlockIsOnlyStoredWhenStoringCompletedBlocksIsEnabled) {
+    CacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    fixture.fill_block(0, /*seed=*/6);
+
+    offload_cache->on_blocks_published(/*hash=*/1, make_block_set(0));
+    offload_cache->flush();
+    EXPECT_FALSE(offload_cache->contains(1));
+
+    offload_cache->set_store_completed_blocks(true);
+    offload_cache->on_blocks_published(/*hash=*/1, make_block_set(0));
+    offload_cache->flush();
+    EXPECT_TRUE(offload_cache->contains(1));
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
+
+    // A block stored when it was completed is not stored a second time when it is overwritten.
+    offload_cache->on_blocks_overwritten(/*hash=*/1, make_block_set(0));
+    offload_cache->flush();
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
+    EXPECT_EQ(offload_cache->get_statistics().num_already_present, 1);
+}
+
+TEST(TestKVCacheOffloadCache, BlockManagerStoresCompletedBlocksWithoutAnyEviction) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/4);
+    auto offload_cache = make_offload_cache(fixture, 4);
+    offload_cache->set_store_completed_blocks(true);
+
+    BlockManager block_manager(/*num_blocks=*/4, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    block_manager.set_overwritten_block_observer(offload_cache.get());
+
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto group = make_group(tokens, /*request_id=*/1);
+    const auto sequence = group->get_running_sequences().at(0);
+    group->schedule_tokens(tokens.size());
+    block_manager.append_slots(group);
+    group->finish_iteration();
+    block_manager.publish_completed_blocks(sequence, 0, tokens.size());
+    offload_cache->flush();
+
+    EXPECT_EQ(offload_cache->get_num_entries(), 2u) << "both full blocks are stored although nothing was overwritten";
+
+    // Publishing a range that is already published stores nothing more.
+    block_manager.publish_completed_blocks(sequence, 0, tokens.size());
+    offload_cache->flush();
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, 2u);
+
+    block_manager.set_overwritten_block_observer(nullptr);
+    block_manager.free_sequence(sequence->get_id());
+}
+
 TEST(TestKVCacheOffloadCache, DetachedObserverStopsStoring) {
     constexpr size_t block_size = 4;
     CacheFixture fixture(/*num_blocks=*/2);

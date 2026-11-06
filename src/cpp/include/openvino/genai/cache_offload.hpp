@@ -51,12 +51,22 @@ struct CacheOffloadConfig {
      */
     bool allow_untrusted_store_plugin = false;
 
+    /**
+     * Also stores every block as soon as the forward pass that completed it has finished (chunk store), instead of
+     * only when the block is about to be overwritten. The block is copied out right after the pass and a
+     * background thread writes it, so generation does not wait for the store. A block still stays in the device
+     * cache; this makes it reusable from the store without having been evicted first, for example by another
+     * process that opens the same persistent store.
+     */
+    bool store_completed_blocks = false;
+
     bool operator==(const CacheOffloadConfig& other) const {
         return path == other.path && capacity_bytes == other.capacity_bytes &&
                linear_attention_capacity_bytes == other.linear_attention_capacity_bytes &&
                buffer_slots == other.buffer_slots && use_page_cache == other.use_page_cache &&
                store_library_path == other.store_library_path && store_provider_name == other.store_provider_name &&
-               allow_untrusted_store_plugin == other.allow_untrusted_store_plugin;
+               allow_untrusted_store_plugin == other.allow_untrusted_store_plugin &&
+               store_completed_blocks == other.store_completed_blocks;
     }
 
     std::string to_string() const {
@@ -72,6 +82,7 @@ struct CacheOffloadConfig {
         oss << "    store_provider_name: " << (store_provider_name.empty() ? std::string("<default>") : store_provider_name)
             << "\n";
         oss << "    allow_untrusted_store_plugin: " << std::boolalpha << allow_untrusted_store_plugin << "\n";
+        oss << "    store_completed_blocks: " << std::boolalpha << store_completed_blocks << "\n";
         oss << "  }";
         return oss.str();
     }

@@ -68,6 +68,13 @@ public:
 
     void on_blocks_overwritten(std::size_t hash, const BlocksPerLayer& blocks) override;
 
+    /// See KVCacheOffloadCache::on_blocks_published.
+    void on_blocks_published(std::size_t hash, const BlocksPerLayer& blocks) override;
+
+    void set_store_completed_blocks(bool enabled) {
+        m_store_completed_blocks = enabled;
+    }
+
     void on_prefix_link(std::size_t hash, std::size_t parent_hash, bool has_parent) override;
 
     bool contains(std::size_t hash) const override;
@@ -129,6 +136,7 @@ private:
     };
 
     void record_link_locked(std::size_t hash, std::size_t parent, bool has_parent);
+    void queue_store(std::size_t hash, const BlocksPerLayer& blocks, const char* reason);
     std::vector<std::size_t> chain_to_locked(std::size_t hash) const;
     void remember_store_hit_locked(std::size_t hash);
 
@@ -155,6 +163,7 @@ private:
     std::deque<std::size_t> m_link_order;
     std::size_t m_max_links = 0;
     bool m_track_chains = false;
+    bool m_store_completed_blocks = false;
     // Front is the oldest entry and the first to be replaced when the file is full.
     std::list<std::size_t> m_insertion_order;
     // A store stays queued until it is published, so readers never lose sight of it.

@@ -75,6 +75,14 @@ public:
 
     void on_blocks_overwritten(std::size_t hash, const BlocksPerLayer& blocks) override;
 
+    /// With set_store_completed_blocks(true), copies a block out as soon as its forward pass has finished and
+    /// lets the writer thread store it; the pipeline thread never waits for the store.
+    void on_blocks_published(std::size_t hash, const BlocksPerLayer& blocks) override;
+
+    void set_store_completed_blocks(bool enabled) {
+        m_store_completed_blocks = enabled;
+    }
+
     void on_prefix_link(std::size_t hash, std::size_t parent_hash, bool has_parent) override;
 
     bool contains(std::size_t hash) const override;
@@ -157,6 +165,9 @@ private:
 
     void record_link_locked(std::size_t hash, std::size_t parent, bool has_parent);
 
+    /// Copies the block out and queues it for the writer thread unless it is already stored or queued.
+    void queue_store(std::size_t hash, const BlocksPerLayer& blocks, const char* reason);
+
     /// @return The chain from block 0 up to @p hash as far as it is known, in order.
     std::vector<std::size_t> chain_to_locked(std::size_t hash) const;
 
@@ -186,6 +197,7 @@ private:
     std::deque<std::size_t> m_link_order;
     std::size_t m_max_links = 0;
     bool m_track_chains = false;
+    bool m_store_completed_blocks = false;
     // Front is the oldest entry and the first to be replaced when the file is full.
     std::list<std::size_t> m_insertion_order;
     // A store stays queued until it is published, so readers never lose sight of it.
