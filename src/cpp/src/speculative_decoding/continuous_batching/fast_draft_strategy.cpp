@@ -22,8 +22,14 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
     
     ov::Shape shape_lhs = encoded_string_lhs.get_shape(),
               shape_rhs = encoded_string_rhs.get_shape();
+    if (shape_lhs != shape_rhs) {
+        return false;
+    }
+    const int64_t* ids_lhs = encoded_string_lhs.data<const int64_t>();
+    const int64_t* ids_rhs = encoded_string_rhs.data<const int64_t>();
 
-    return shape_lhs == shape_rhs && lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
+    return std::equal(ids_lhs, ids_lhs + encoded_string_lhs.get_size(), ids_rhs) &&
+           lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
@@ -40,6 +46,15 @@ int64_t ContinuousBatchingPipeline::SpeculativeDecodingImpl::compute_rope_delta(
     const int64_t* data = position_ids.data<const int64_t>();
     const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
     return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
+}
+
+GenerationConfig ContinuousBatchingPipeline::SpeculativeDecodingImpl::make_draft_sampling_params(
+    const GenerationConfig& sampling_params) {
+    GenerationConfig draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    draft_sampling_params.stop_strings = {};
+    draft_sampling_params.rng_seed = detail::proposal_rng_seed(sampling_params.rng_seed);
+    return draft_sampling_params;
 }
 
 std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig>
@@ -150,9 +165,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    auto draft_sampling_params = sampling_params;
-    draft_sampling_params.ignore_eos = true;
-    draft_sampling_params.stop_strings = {};
+    const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, prompt_ids)});
@@ -168,9 +181,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  const std::string& prompt,
                                                                  const ov::genai::GenerationConfig& sampling_params) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    auto draft_sampling_params = sampling_params;
-    draft_sampling_params.ignore_eos = true;
-    draft_sampling_params.stop_strings = {};
+    const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
@@ -216,7 +227,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         std::map<int64_t, UpdateRequestResult> update_sequence_info;
         // put candidates to model KV cache
         auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
-        for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
+        for (const auto& candidate : draft_generated_requests) {
             auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
             update_sequence_info.insert({{candidate.first, update_result}});
         }

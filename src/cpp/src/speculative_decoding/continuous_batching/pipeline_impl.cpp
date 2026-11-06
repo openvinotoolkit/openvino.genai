@@ -25,6 +25,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     }
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
+    m_sampler->set_collect_draft_proposals(!is_validation_mode_enabled);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
@@ -106,7 +107,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
                                         sequence->get_generated_log_probs(),
                                         num_processed_tokens,
                                         hidden_state ? hidden_state : ov::Tensor(ov::element::f32, ov::Shape{0, 1, 0}),
-                                        std::move(tree_metadata_snapshot)}}});
+                                        std::move(tree_metadata_snapshot),
+                                        sequence->get_draft_proposals()}}});
         }
     }
     return result;
@@ -263,16 +265,27 @@ remove_tokens_from_sequence(Sequence::Ptr& sequence,
     return (sequence_generated_len - min_generated_tokens);
 }
 
+void attach_draft_proposal(Sequence::Ptr& sequence, const DraftProposalPtr& proposal) {
+    if (proposal && !proposal->empty()) {
+        detail::validate_draft_proposal(*proposal);
+        sequence->set_draft_proposal(sequence->get_generated_len() - 1, proposal);
+    }
+}
+
 size_t
 insert_tokens_to_sequence(Sequence::Ptr& sequence,
                           const std::vector<int64_t>& token_ids,
                           const std::vector<float>& token_log_probs,
                           LogitProcessor& logit_proccessor,
-                          bool is_update_sampler) {
+                          bool is_update_sampler,
+                          const std::vector<DraftProposalPtr>& draft_proposals) {
     size_t generated_len = sequence->get_generated_len(), candidate_len = token_ids.size();
     OPENVINO_ASSERT(generated_len <= candidate_len);
     for (size_t i = generated_len; i < candidate_len; ++i) {
         sequence->append_token(token_ids[i], token_log_probs[i]);
+        if (!draft_proposals.empty()) {
+            attach_draft_proposal(sequence, draft_proposals[i]);
+        }
         if (is_update_sampler) {
             logit_proccessor.register_new_generated_token(token_ids[i]);
         }
@@ -324,6 +337,9 @@ init_request(
 
         for (size_t i = 0; i < min_candidate_len; ++i) {
             sequence->append_token(token_ids[i], log_probs[i]);
+            if (!candidate_sequence.second.draft_proposals.empty()) {
+                attach_draft_proposal(sequence, candidate_sequence.second.draft_proposals[i]);
+            }
             if (is_update_logit_processor) {
                 logit_processor.register_new_generated_token(token_ids[i]);
                 logit_processor.update_generated_len(sequence->get_generated_len());
@@ -430,12 +446,17 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
 
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
 
-                auto candidate_sequence = *candidate_ptr;
+                const auto& candidate_sequence = *candidate_ptr;
                 std::vector<int64_t> candidate_token_ids = candidate_sequence.token_ids;
                 std::vector<float> candidate_token_log_probs = candidate_sequence.log_probs;
                 candidate_token_ids.resize(min_candidate_len);
                 candidate_token_log_probs.resize(min_candidate_len);
-                result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
+                result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence,
+                                                                       candidate_token_ids,
+                                                                       candidate_token_log_probs,
+                                                                       logit_processor,
+                                                                       is_update_logit_processor,
+                                                                       candidate_sequence.draft_proposals);
                 // handle hidden states for eagle mode
                 if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
                     // Eagle mode hidden state management currently supports only single sequence
@@ -504,6 +525,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     TreeMetaData merged = *candidate_sequence.tree_metadata;
                     merged.validated_indices = running_sequence->get_tree_metadata().validated_indices;
                     running_sequence->set_tree_metadata(std::move(merged));
+                }
+                if (is_update_logit_processor) {
+                    // Main-model synchronization commits every retained draft
+                    // token; proposal distributions are only needed until then.
+                    running_sequence->clear_draft_proposals();
                 }
             }
             // we should update a logit processor just for draft model to generate the same tokens

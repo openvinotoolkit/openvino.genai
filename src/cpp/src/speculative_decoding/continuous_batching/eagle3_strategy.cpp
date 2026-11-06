@@ -28,6 +28,18 @@ ov::Tensor extract_draft_embeddings(std::optional<std::unordered_map<std::string
     return draft_embeddings;
 }
 
+// The main model's KV cache update after every step handles one sequence per request, so this holds also for a
+// request that runs the main model only.
+void validate_single_sequence(const GenerationConfig& sampling_params) {
+    OPENVINO_ASSERT(!sampling_params.is_beam_search() && sampling_params.num_return_sequences == 1,
+                    "Eagle3 speculative decoding supports one sequence per request, also with num_assistant_tokens=0; "
+                    "got num_beams=",
+                    sampling_params.num_beams,
+                    ", num_return_sequences=",
+                    sampling_params.num_return_sequences,
+                    ".");
+}
+
 }  // namespace
 
 KVUpdateWrapper::KVUpdateWrapper(const ov::genai::ModelDesc& kv_model_desc) {
@@ -322,6 +334,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::genai::GenerationConfig& sampling_params,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
+    validate_single_sequence(sampling_params);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         // No speculative draft for this request: run only the main model.
@@ -333,9 +346,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                             lm_extra_inputs);
     }
 
-    auto draft_sampling_params = sampling_params;
-    draft_sampling_params.ignore_eos = true;
-    draft_sampling_params.stop_strings = {};
+    const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
 
     // Extract draft-only embeddings that were staged in lm_extra_inputs and remove
     // them so the main pipeline receives only its regular auxiliary inputs.
@@ -378,6 +389,7 @@ GenerationHandle
 ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  const ov::genai::GenerationConfig& sampling_params) {
+    validate_single_sequence(sampling_params);
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
     }
@@ -388,9 +400,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         return m_main_pipeline->add_request(request_id, prompt, sampling_params);
     }
 
-    auto draft_sampling_params = sampling_params;
-    draft_sampling_params.ignore_eos = true;
-    draft_sampling_params.stop_strings = {};
+    const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
     // remove first token from input_ids to create draft_input_ids
     // add_special_tokens is false for better compression rate
     auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
@@ -427,8 +437,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
                         (input_ids.size() == 1 &&
-                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_tree_search())),
-                        "Eagle3 streaming only supports batch size=1 with greedy or tree search");
+                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial() ||
+                          sampling_params[0].is_tree_search())),
+                        "Eagle3 streaming only supports batch size=1 with greedy, multinomial or tree search");
     };
     strategy.start_timer = [](){
         return std::chrono::steady_clock::now();
