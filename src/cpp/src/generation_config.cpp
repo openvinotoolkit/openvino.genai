@@ -59,6 +59,7 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "echo", echo);
     // note that logprobs is not present in HF GenerationConfig
     read_json_param(data, "logprobs", logprobs);
+    read_json_param(data, "logprob_token_ids", logprob_token_ids);
 
     // penalties
     read_json_param(data, "repetition_penalty", repetition_penalty);
@@ -143,6 +144,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // generic
     read_anymap_param(properties, "echo", echo);
     read_anymap_param(properties, "logprobs", logprobs);
+    read_anymap_param(properties, "logprob_token_ids", logprob_token_ids);
     read_anymap_param(properties, "num_return_sequences", num_return_sequences);
     read_anymap_param(properties, "adapters", adapters);
     read_anymap_param(properties, "apply_chat_template", apply_chat_template);
@@ -332,6 +334,16 @@ void GenerationConfig::validate() const {
 
     OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()), 
         "'num_return_sequences' can be more than 1 only in case of beam search or multinomial sampling, but got ", num_return_sequences);
+
+    // logprob_token_ids is collected only on the greedy/multinomial single-sequence path.
+    if (!logprob_token_ids.empty()) {
+        OPENVINO_ASSERT(!is_assisting_generation(),
+            "logprob_token_ids is not supported with speculative decoding or prompt lookup decoding");
+        OPENVINO_ASSERT(!is_beam_search() && !is_tree_search(),
+            "logprob_token_ids is not supported with beam search or tree search; use greedy or multinomial sampling");
+        OPENVINO_ASSERT(num_return_sequences == 1,
+            "logprob_token_ids is not supported with num_return_sequences > 1 (parallel sampling), got ", num_return_sequences);
+    }
 
     // generic penalties, but not supported by beam search currently
     if (!is_beam_search()) {

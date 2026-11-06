@@ -52,6 +52,11 @@ public:
     std::vector<GenerationFinishReason> finish_reasons;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
+    // Per-sequence, per-generated-position log-probabilities (normalized over the full vocabulary) of
+    // GenerationConfig::logprob_token_ids — the one-shot-pipeline mirror of
+    // GenerationOutput::requested_token_logprobs. Each entry is parallel to tokens[i] and empty when
+    // the sampling path does not collect requested-token logprobs.
+    std::vector<std::vector<std::vector<std::pair<int64_t, float>>>> requested_token_logprobs;
 };
 
 /**

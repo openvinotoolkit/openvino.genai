@@ -1234,6 +1234,11 @@ void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& conf
 
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(std::move(generation_config));
+    // The base validate() runs before the speculative defaults below set num_assistant_tokens, so it
+    // cannot catch logprob_token_ids here; the result builder never fills the field, so reject.
+    OPENVINO_ASSERT(config.logprob_token_ids.empty(),
+                    "logprob_token_ids is not supported by stateful Eagle3 speculative decoding; "
+                    "use a non-speculative pipeline or ContinuousBatchingPipeline");
     OPENVINO_ASSERT(!config.do_sample, "Eagle3 speculative decoding requires greedy sampling (do_sample=false)");
     OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
                     "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
