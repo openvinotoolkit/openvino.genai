@@ -197,6 +197,8 @@ private:
     std::deque<std::size_t> m_link_order;
     std::size_t m_max_links = 0;
     bool m_track_chains = false;
+    // The store drops blocks by its own policy, so no index of its content is kept here and nothing is reclaimed.
+    bool m_self_evicting = false;
     bool m_store_completed_blocks = false;
     // Front is the oldest entry and the first to be replaced when the file is full.
     std::list<std::size_t> m_insertion_order;

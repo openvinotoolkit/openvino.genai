@@ -3,7 +3,7 @@
 //
 // Minimal, illustrative third-party KV cache store plugin.
 //
-// Implements the full ABI surface declared in kv_cache_store_provider_abi.h. It exports two providers:
+// Implements the full ABI surface declared in kv_cache_store_provider_abi.h. It exports three providers:
 //   - "sample-in-memory": a process-local, in-memory linked list - NOT meant for production use (no
 //     persistence, no real I/O, naive O(n) key lookup, unbounded memory growth) but enough to show exactly what
 //     a vendor plugin needs to implement and how the host drives it.
@@ -145,6 +145,7 @@ typedef struct SampleEntry {
 typedef struct SampleStore {
     SampleEntry* head;
     sample_mutex_t mutex;
+    uint64_t max_blocks; /* 0 = unbounded; otherwise the oldest block is evicted by write_blocks (self-evict provider) */
 } SampleStore;
 
 static int hash_equal(const OvKVCacheContentHash* a, const OvKVCacheContentHash* b) {
@@ -187,6 +188,33 @@ static void remove_locked(SampleStore* store, const OvKVCacheBlockKey* key) {
 /* --------------------------------------------------------------------------
  * Store instance vtable
  * ----------------------------------------------------------------------- */
+
+/* Caller must hold store->mutex. New entries go to the head, so the tail is the oldest one. */
+static void evict_oldest_locked(SampleStore* store) {
+    SampleEntry** link = &store->head;
+    SampleEntry* dead;
+    if (*link == NULL) {
+        return;
+    }
+    while ((*link)->next != NULL) {
+        link = &(*link)->next;
+    }
+    dead = *link;
+    *link = NULL;
+    free(dead->group);
+    free(dead->data);
+    free(dead->witness);
+    free(dead);
+}
+
+static uint64_t count_locked(const SampleStore* store) {
+    uint64_t count = 0;
+    const SampleEntry* entry;
+    for (entry = store->head; entry != NULL; entry = entry->next) {
+        ++count;
+    }
+    return count;
+}
 
 static void store_destroy(void* self) {
     /* Store instances are shared across open() calls for the same directory (see provider_open),
@@ -308,6 +336,9 @@ static OvKVCacheStatus store_write_blocks(void* self,
 
         /* Idempotent overwrite: drop any existing entry for this key first. */
         remove_locked(store, &req->key);
+        while (store->max_blocks > 0 && count_locked(store) >= store->max_blocks) {
+            evict_oldest_locked(store);
+        }
 
         entry->hash = req->key.hash;
         entry->group = group_copy;
@@ -447,6 +478,25 @@ static void ensure_registry_mutex(void) {
     }
 }
 
+/* Shows what CacheOffloadConfig.store_properties looks like on the plugin side: the host's own two entries come
+ * first, anything the user configured follows. A real plugin would parse the keys it knows and ignore the rest. */
+static void log_user_properties(const OvKVCacheStoreOpenOptions* opts) {
+    uint64_t i;
+    if (opts == NULL || opts->log == NULL) {
+        return;
+    }
+    for (i = 0; i < opts->property_count; ++i) {
+        const OvKVCacheProperty* property = &opts->properties[i];
+        char message[256];
+        if (property->key == NULL || property->value == NULL || strcmp(property->key, "block_size_bytes") == 0 ||
+            strcmp(property->key, "device") == 0) {
+            continue;
+        }
+        snprintf(message, sizeof(message), "sample: user property %s=%s", property->key, property->value);
+        opts->log(OV_KVCACHE_LOG_INFO, message);
+    }
+}
+
 static OvKVCacheStatus provider_open(void* self,
                                      const OvKVCacheNamespace* ns,
                                      const OvKVCacheStoreOpenOptions* opts,
@@ -470,6 +520,7 @@ static OvKVCacheStatus provider_open(void* self,
     if (opts != NULL && opts->log != NULL) {
         opts->log(OV_KVCACHE_LOG_INFO, "sample-in-memory: opening store");
     }
+    log_user_properties(opts);
 
     ensure_registry_mutex();
     sample_mutex_lock(&g_registry_mutex);
@@ -495,6 +546,7 @@ static OvKVCacheStatus provider_open(void* self,
             return out->status;
         }
         fresh->head = NULL;
+        fresh->max_blocks = 0;
         sample_mutex_init(&fresh->mutex);
         strcpy(directory_copy, directory);
         if (ns_len > 0) {
@@ -557,6 +609,46 @@ static const OvKVCacheStoreProviderDescriptor g_provider_descriptor = {
     NULL,
     OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO,
     "sample-in-memory",
+};
+
+/* --------------------------------------------------------------------------
+ * "sample-self-evict-memory" provider: the in-memory store above, but bounded by `capacity_bytes` and evicting its
+ * own oldest block when full (OV_KVCACHE_CAP_SELF_EVICT). The host then neither tracks capacity nor drops blocks.
+ * ----------------------------------------------------------------------- */
+static const char* self_evict_provider_name(void* self) {
+    (void)self;
+    return "sample-self-evict-memory";
+}
+
+static OvKVCacheStatus self_evict_provider_open(void* self,
+                                                const OvKVCacheNamespace* ns,
+                                                const OvKVCacheStoreOpenOptions* opts,
+                                                OvKVCacheStoreOpenResult* out) {
+    const OvKVCacheStatus status = provider_open(self, ns, opts, out);
+    if (status == OV_KVCACHE_OK && opts != NULL && opts->groups != NULL && opts->group_count > 0 &&
+        opts->groups[0].block_bytes > 0 && opts->capacity_bytes > 0) {
+        ((SampleStore*)out->store)->max_blocks = opts->capacity_bytes / opts->groups[0].block_bytes;
+    }
+    return status;
+}
+
+static const OvKVCacheStoreProviderVTable g_self_evict_provider_vtable = {
+    sizeof(OvKVCacheStoreProviderVTable),
+    0,
+    &provider_destroy,
+    &self_evict_provider_name,
+    &self_evict_provider_open,
+    &provider_purge,
+    &provider_list,
+    NULL,
+};
+
+static const OvKVCacheStoreProviderDescriptor g_self_evict_provider_descriptor = {
+    &g_self_evict_provider_vtable,
+    NULL,
+    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO |
+        OV_KVCACHE_CAP_SELF_EVICT,
+    "sample-self-evict-memory",
 };
 
 /* --------------------------------------------------------------------------
@@ -1081,6 +1173,7 @@ static OvKVCacheStatus persistent_provider_open(void* self,
     if (opts->log != NULL) {
         opts->log(OV_KVCACHE_LOG_INFO, "sample-persistent-file: opening store");
     }
+    log_user_properties(opts);
     out->store = store;
     out->vtable = &g_persistent_store_vtable;
     out->store_semantics_fingerprint.lo = 1;
@@ -1112,7 +1205,10 @@ static const OvKVCacheStoreProviderDescriptor* get_provider(uint32_t index) {
     if (index == 0) {
         return &g_provider_descriptor;
     }
-    return index == 1 ? &g_persistent_provider_descriptor : NULL;
+    if (index == 1) {
+        return &g_persistent_provider_descriptor;
+    }
+    return index == 2 ? &g_self_evict_provider_descriptor : NULL;
 }
 
 /* --------------------------------------------------------------------------
@@ -1132,7 +1228,7 @@ static const OvKVCacheStoreModuleInfo g_module_info = {
     SAMPLE_SDK_BUILD_FINGERPRINT,
     "sample-kv-cache-store-plugin",
     "1.0",
-    2,
+    3,
     0,
     &get_provider,
 };

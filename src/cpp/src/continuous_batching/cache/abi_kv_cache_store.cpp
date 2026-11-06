@@ -92,25 +92,43 @@ std::vector<bool> AbiKVCacheStore::has_blocks(const std::vector<size_t>& chain) 
 }
 
 bool AbiKVCacheStore::write_block(size_t hash, const std::vector<uint8_t>& data) {
-    OPENVINO_ASSERT(data.size() == m_block_size, "ABI store block size mismatch");
-    const ContentHash digest = compute_content_hash(data.data(), data.size());
+    return write_blocks({hash}, {&data})[0];
+}
 
-    OvKVCacheStoreWriteRequest request{};
-    request.key = make_key(hash);
-    request.source = data.data();
-    request.bytes = data.size();
-    request.witness.data = &digest;
-    request.witness.len = sizeof(digest);
-
-    OvKVCacheStoreWriteResult result{};
-    const OvKVCacheStatus status = run_writes(&request, &result, 1);
-    if (result.status == OV_KVCACHE_ERR_CAPACITY) {
-        return false;
+std::vector<bool> AbiKVCacheStore::write_blocks(const std::vector<size_t>& hashes,
+                                                const std::vector<const std::vector<uint8_t>*>& data) {
+    OPENVINO_ASSERT(hashes.size() == data.size(), "ABI store write_blocks needs one buffer per hash");
+    const size_t count = hashes.size();
+    std::vector<bool> written(count, false);
+    if (count == 0) {
+        return written;
     }
-    OPENVINO_ASSERT((status == OV_KVCACHE_OK || status == OV_KVCACHE_PARTIAL) && result.status == OV_KVCACHE_OK,
-                    "ABI store write_blocks failed with status ",
-                    result.status);
-    return true;
+
+    std::vector<ContentHash> digests(count);
+    std::vector<OvKVCacheStoreWriteRequest> requests(count);
+    std::vector<OvKVCacheStoreWriteResult> results(count);
+    for (size_t i = 0; i < count; ++i) {
+        OPENVINO_ASSERT(data[i]->size() == m_block_size, "ABI store block size mismatch");
+        digests[i] = compute_content_hash(data[i]->data(), data[i]->size());
+        requests[i].key = make_key(hashes[i]);
+        requests[i].source = data[i]->data();
+        requests[i].bytes = data[i]->size();
+        requests[i].witness.data = &digests[i];
+        requests[i].witness.len = sizeof(ContentHash);
+    }
+
+    const OvKVCacheStatus status = run_writes(requests.data(), results.data(), count);
+    const bool batch_ok = status == OV_KVCACHE_OK || status == OV_KVCACHE_PARTIAL;
+    for (size_t i = 0; i < count; ++i) {
+        if (results[i].status == OV_KVCACHE_ERR_CAPACITY) {
+            continue;
+        }
+        OPENVINO_ASSERT(batch_ok && results[i].status == OV_KVCACHE_OK,
+                        "ABI store write_blocks failed with status ",
+                        results[i].status);
+        written[i] = true;
+    }
+    return written;
 }
 
 bool AbiKVCacheStore::read_block(size_t hash, std::vector<uint8_t>& data) const {
@@ -225,6 +243,10 @@ size_t AbiKVCacheStore::get_num_free_blocks() const {
     OvKVCacheStoreStats stats{};
     const OvKVCacheStatus status = m_vtable->stats(m_store, &stats);
     OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store stats failed with status ", status);
+    if (evicts_itself()) {
+        // The plugin sizes itself; the host's capacity estimate is only a hint and may be exceeded.
+        return stats.blocks >= m_capacity_blocks ? 0 : m_capacity_blocks - stats.blocks;
+    }
     OPENVINO_ASSERT(stats.blocks <= m_capacity_blocks, "ABI store reported more used blocks than its capacity");
     return m_capacity_blocks - stats.blocks;
 }

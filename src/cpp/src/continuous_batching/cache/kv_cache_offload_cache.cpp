@@ -42,6 +42,7 @@ KVCacheOffloadCache::KVCacheOffloadCache(KVCacheManager& cache_manager,
     OPENVINO_ASSERT(m_store->get_block_size() == m_cache_manager.get_block_layout().get_slot_size(),
                     "KV cache offload store block size does not match the cache block layout");
     m_track_chains = m_store->is_plugin_backed();
+    m_self_evicting = m_store->evicts_itself();
     m_max_links = std::max<std::size_t>(65536, 8 * m_store->get_capacity_blocks());
     m_writer = std::thread(&KVCacheOffloadCache::run_writer, this);
 }
@@ -102,8 +103,9 @@ void KVCacheOffloadCache::queue_store(std::size_t hash, const BlocksPerLayer& bl
 
     bool reclaimed = false;
     try {
-        // Blocks already queued will each take a free slot once the writer thread gets to them.
-        if (m_store->get_num_free_blocks() <= m_queued_stores.size()) {
+        // Blocks already queued will each take a free slot once the writer thread gets to them. A self-evicting
+        // store makes room itself.
+        if (!m_self_evicting && m_store->get_num_free_blocks() <= m_queued_stores.size()) {
             if (m_reclamation_paused) {
                 ++m_statistics.num_failed;
                 return;
@@ -156,25 +158,47 @@ void KVCacheOffloadCache::run_writer() {
             continue;
         }
 
-        // Only this thread pops, and deque never invalidates references to existing elements,
-        // so the front entry stays readable while the mutex is released for the write.
-        const QueuedStore& front = m_queued_stores.front();
-        const std::size_t hash = front.hash;
-        const bool reclaimed = front.reclaimed;
+        // Everything queued so far goes to the store in one call. Only this thread pops, and deque never invalidates
+        // references to existing elements, so these entries stay readable while the mutex is released for the write.
+        std::vector<const QueuedStore*> batch;
+        batch.reserve(m_queued_stores.size());
+        for (const QueuedStore& queued : m_queued_stores) {
+            batch.push_back(&queued);
+        }
+        std::vector<bool> already_present(batch.size(), false);
+        std::vector<bool> stored(batch.size(), false);
 
-        bool stored = true;
         const auto write_started = std::chrono::steady_clock::now();
         lock.unlock();
         try {
-            if (!front.chain.empty()) {
-                // Every write is preceded by a probe of its chain from block 0, so the store can place the block.
-                m_store->has_blocks(front.chain);
+            std::vector<std::size_t> hashes;
+            std::vector<const std::vector<uint8_t>*> data;
+            std::vector<std::size_t> to_write;
+            for (std::size_t i = 0; i < batch.size(); ++i) {
+                if (!batch[i]->chain.empty()) {
+                    // Every write is preceded by a probe of its chain from block 0, so the store can place the block.
+                    const std::vector<bool> present = m_store->has_blocks(batch[i]->chain);
+                    // No index here knows what a self-evicting store holds, so the probe also tells whether to skip.
+                    already_present[i] = m_self_evicting && !present.empty() && present.back();
+                }
+                if (!already_present[i]) {
+                    to_write.push_back(i);
+                    hashes.push_back(batch[i]->hash);
+                    data.push_back(&batch[i]->data);
+                }
             }
-            stored = m_store->write_block(hash, front.data);
-            OPENVINO_ASSERT(stored, "KV cache offload store ran out of capacity after reservation for hash ", hash);
+            if (!to_write.empty()) {
+                const std::vector<bool> written = m_store->write_blocks(hashes, data);
+                for (std::size_t i = 0; i < to_write.size(); ++i) {
+                    stored[to_write[i]] = written[i];
+                    if (!written[i]) {
+                        GENAI_WARN("KV cache offload store ran out of capacity after reservation for hash %zu", hashes[i]);
+                    }
+                }
+            }
         } catch (const std::exception& error) {
-            GENAI_WARN("KV cache offload store failed for hash %zu: %s", hash, error.what());
-            stored = false;
+            GENAI_WARN("KV cache offload store failed for a batch of %zu blocks: %s", batch.size(), error.what());
+            std::fill(stored.begin(), stored.end(), false);
         }
         // Stop the clock before re-taking the mutex, so lock contention is not counted as write time.
         const auto write_us = static_cast<std::size_t>(
@@ -184,17 +208,28 @@ void KVCacheOffloadCache::run_writer() {
         // Accumulated only under the mutex, which get_statistics() also takes.
         m_statistics.store_write_us += write_us;
 
-        m_queued_stores.pop_front();
-        if (stored) {
-            publish(hash, reclaimed);
-        } else {
-            ++m_statistics.num_failed;
+        for (std::size_t i = 0; i < batch.size(); ++i) {
+            const std::size_t hash = m_queued_stores.front().hash;
+            const bool reclaimed = m_queued_stores.front().reclaimed;
+            m_queued_stores.pop_front();
+            if (already_present[i]) {
+                ++m_statistics.num_already_present;
+            } else if (stored[i]) {
+                publish(hash, reclaimed);
+            } else {
+                ++m_statistics.num_failed;
+            }
         }
         m_drained_cv.notify_all();
     }
 }
 
 void KVCacheOffloadCache::publish(std::size_t hash, bool reclaimed) {
+    if (m_self_evicting) {
+        // Nothing to index: the store alone knows whether the block is still there.
+        ++m_statistics.num_stored;
+        return;
+    }
     m_insertion_order.push_back(hash);
     m_entries[hash] = Entry{std::prev(m_insertion_order.end())};
     ++m_statistics.num_stored;
@@ -263,6 +298,18 @@ bool KVCacheOffloadCache::persist(std::size_t hash, std::size_t block_index) {
     // Past this wait the mutex stays held, so the writer thread cannot take a slot behind our back.
     m_drained_cv.wait(lock, [this] { return m_queued_stores.empty(); });
 
+    if (m_self_evicting) {
+        if (!m_store->has_block(hash)) {
+            const auto data = m_cache_manager.read_block(block_index);
+            if (!m_store->write_block(hash, data)) {
+                return false;
+            }
+            ++m_statistics.num_stored;
+        }
+        ++m_pin_counts[hash];
+        return true;
+    }
+
     if (m_entries.find(hash) != m_entries.end()) {
         ++m_pin_counts[hash];
         return true;
@@ -293,6 +340,13 @@ bool KVCacheOffloadCache::persist(std::size_t hash, std::size_t block_index) {
 
 bool KVCacheOffloadCache::pin(std::size_t hash) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_self_evicting) {
+        if (!m_store->has_block(hash)) {
+            return false;
+        }
+        ++m_pin_counts[hash];
+        return true;
+    }
     if (m_entries.find(hash) == m_entries.end()) {
         if (m_store_hits.find(hash) == m_store_hits.end()) {
             return false;
@@ -316,6 +370,10 @@ void KVCacheOffloadCache::unpin(std::size_t hash) {
 
 bool KVCacheOffloadCache::contains(std::size_t hash) const {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_self_evicting) {
+        // A self-evicting store may have dropped any block since the last probe, so ask it.
+        return find_queued(hash) != nullptr || m_store->has_block(hash);
+    }
     // The store may hold entries this instance never wrote, e.g. a snapshot taken by an earlier pipeline; probe() finds them.
     return m_entries.find(hash) != m_entries.end() || find_queued(hash) != nullptr ||
            m_store_hits.find(hash) != m_store_hits.end();
@@ -401,7 +459,7 @@ bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
             m_cache_manager.write_block(block_index, queued->data);
         } else {
             auto it = m_entries.find(hash);
-            if (it == m_entries.end() && m_store_hits.find(hash) == m_store_hits.end()) {
+            if (!m_self_evicting && it == m_entries.end() && m_store_hits.find(hash) == m_store_hits.end()) {
                 return false;
             }
             GENAI_INFO("[KV_TRACE] KVCacheOffloadCache load hash=%zu source=disk physical_block=%zu", hash, block_index);
@@ -413,7 +471,8 @@ bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
                 ScopedTimer timer(m_statistics.load_disk_us);
                 if (!m_store->read_block(hash, m_staging)) {
                     m_store_hits.erase(hash);
-                    OPENVINO_ASSERT(it == m_entries.end(),
+                    // A self-evicting store drops blocks behind our back; that is a miss, not a broken index.
+                    OPENVINO_ASSERT(m_self_evicting || it == m_entries.end(),
                                     "KV cache offload index and store are out of sync for hash ",
                                     hash);
                     return false;
@@ -448,7 +507,8 @@ void KVCacheOffloadCache::prefetch(const std::vector<std::size_t>& hashes) {
         if (m_prefetched.find(hash) != m_prefetched.end() || find_queued(hash) != nullptr) {
             continue;
         }
-        if (m_entries.find(hash) != m_entries.end() || m_store_hits.find(hash) != m_store_hits.end()) {
+        if (m_self_evicting || m_entries.find(hash) != m_entries.end() ||
+            m_store_hits.find(hash) != m_store_hits.end()) {
             wanted.push_back(hash);
         }
     }

@@ -48,6 +48,21 @@ public:
      */
     virtual bool write_block(size_t hash, const std::vector<uint8_t>& data) = 0;
 
+    /**
+     * @brief Persists several blocks in one call.
+     * @param data One buffer per entry of @p hashes.
+     * @return Per block, what write_block would have returned.
+     */
+    virtual std::vector<bool> write_blocks(const std::vector<size_t>& hashes,
+                                           const std::vector<const std::vector<uint8_t>*>& data) {
+        std::vector<bool> written;
+        written.reserve(hashes.size());
+        for (size_t i = 0; i < hashes.size(); ++i) {
+            written.push_back(write_block(hashes[i], *data[i]));
+        }
+        return written;
+    }
+
     /// @return false if @p hash has no entry, in which case @p data is left untouched.
     virtual bool read_block(size_t hash, std::vector<uint8_t>& data) const = 0;
 
@@ -85,6 +100,12 @@ public:
     /// Whether blocks live in a third-party plugin that may outlive this pipeline, as opposed to the in-tree
     /// run-scoped file store.
     virtual bool is_plugin_backed() const {
+        return false;
+    }
+
+    /// Whether the store decides by itself which blocks to evict when it is full. The caller then never drops blocks
+    /// to make room, and any block it stored earlier may be gone by the time it asks for it again.
+    virtual bool evicts_itself() const {
         return false;
     }
 };

@@ -43,6 +43,8 @@ public:
     bool has_block(size_t hash) const override;
     std::vector<bool> has_blocks(const std::vector<size_t>& chain) const override;
     bool write_block(size_t hash, const std::vector<uint8_t>& data) override;
+    std::vector<bool> write_blocks(const std::vector<size_t>& hashes,
+                                   const std::vector<const std::vector<uint8_t>*>& data) override;
     bool read_block(size_t hash, std::vector<uint8_t>& data) const override;
     std::vector<bool> read_blocks(const std::vector<size_t>& hashes, std::vector<std::vector<uint8_t>>& data) const override;
     void drop_block(size_t hash) override;
@@ -54,6 +56,10 @@ public:
 
     bool is_plugin_backed() const override {
         return true;
+    }
+
+    bool evicts_itself() const override {
+        return (m_info.capabilities & OV_KVCACHE_CAP_SELF_EVICT) != 0;
     }
 
     /// Whether reads and writes go through the plugin's async entry points.

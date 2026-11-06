@@ -143,6 +143,10 @@ auto cache_offload_config_docstring = R"(
         that no third-party code is ever loaded without an explicit opt-in.
     :type allow_untrusted_store_plugin: bool
 
+    :param store_properties: plugin-specific key/value settings handed to the store plugin when it opens a store, next
+        to the ones the host always passes (block_size_bytes and device, which cannot be overridden).
+    :type store_properties: dict[str, str]
+
     :param store_completed_blocks: also store every block as soon as the forward pass that completed it has finished
         (chunk store), instead of only when the block is about to be overwritten. A background thread writes the
         copied block, so generation does not wait for the store. Defaults to false.
@@ -483,7 +487,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def(py::init([](const std::string& path, size_t capacity_bytes, size_t buffer_slots, bool use_page_cache,
                              size_t linear_attention_capacity_bytes, const std::string& store_library_path,
                              const std::string& store_provider_name, bool allow_untrusted_store_plugin,
-                             bool store_completed_blocks) {
+                             bool store_completed_blocks, const std::map<std::string, std::string>& store_properties) {
                 CacheOffloadConfig config;
                 config.path = path;
                 config.capacity_bytes = capacity_bytes;
@@ -494,6 +498,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 config.store_provider_name = store_provider_name;
                 config.allow_untrusted_store_plugin = allow_untrusted_store_plugin;
                 config.store_completed_blocks = store_completed_blocks;
+                config.store_properties = store_properties;
                 return config; }),
                  py::arg("path") = std::string{},
                  py::arg("capacity_bytes") = 0,
@@ -503,7 +508,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
                  py::arg("store_library_path") = std::string{},
                  py::arg("store_provider_name") = std::string{},
                  py::arg("allow_untrusted_store_plugin") = false,
-                 py::arg("store_completed_blocks") = false)
+                 py::arg("store_completed_blocks") = false,
+                 py::arg("store_properties") = std::map<std::string, std::string>{})
             .def_readwrite("path", &CacheOffloadConfig::path)
             .def_readwrite("capacity_bytes", &CacheOffloadConfig::capacity_bytes)
             .def_readwrite("linear_attention_capacity_bytes", &CacheOffloadConfig::linear_attention_capacity_bytes)
@@ -512,6 +518,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readwrite("store_library_path", &CacheOffloadConfig::store_library_path)
             .def_readwrite("store_provider_name", &CacheOffloadConfig::store_provider_name)
             .def_readwrite("allow_untrusted_store_plugin", &CacheOffloadConfig::allow_untrusted_store_plugin)
+            .def_readwrite("store_properties", &CacheOffloadConfig::store_properties)
             .def_readwrite("store_completed_blocks", &CacheOffloadConfig::store_completed_blocks)
             .def("to_string", &CacheOffloadConfig::to_string);
 

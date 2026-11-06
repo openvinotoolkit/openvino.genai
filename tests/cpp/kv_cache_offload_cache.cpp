@@ -4,8 +4,12 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <filesystem>
+#include <list>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -986,6 +990,158 @@ TEST(TestKVCacheOffloadCache, ProbeReportsEveryBlockOfTheChainInOrderWithOneStor
 
     EXPECT_EQ(offload_cache->probe({11, 22, 33}), (std::vector<bool>{false, true, false}));
     EXPECT_EQ(events, (std::vector<std::string>{"has_blocks 11 22 33"}));
+}
+
+namespace {
+
+/// Keeps at most `max_blocks` blocks and drops the oldest by itself, the way a plugin with OV_KVCACHE_CAP_SELF_EVICT
+/// does. It reports no free blocks at all, so a host that still counted capacity would refuse every write.
+class SelfEvictingStore : public IKVCacheStore {
+public:
+    SelfEvictingStore(size_t block_size, size_t max_blocks) : m_block_size(block_size), m_max_blocks(max_blocks) {}
+
+    bool has_block(size_t hash) const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_blocks.count(hash) != 0;
+    }
+    bool write_block(size_t hash, const std::vector<uint8_t>& data) override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        ++m_num_writes;
+        if (m_blocks.erase(hash) != 0) {
+            m_order.remove(hash);
+        }
+        while (m_blocks.size() >= m_max_blocks) {
+            m_blocks.erase(m_order.front());
+            m_order.pop_front();
+        }
+        m_blocks[hash] = data;
+        m_order.push_back(hash);
+        return true;
+    }
+    bool read_block(size_t hash, std::vector<uint8_t>& data) const override {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto it = m_blocks.find(hash);
+        if (it == m_blocks.end()) {
+            return false;
+        }
+        data = it->second;
+        return true;
+    }
+    void drop_block(size_t) override {
+        ++m_num_host_drops;
+    }
+    size_t get_block_size() const override {
+        return m_block_size;
+    }
+    size_t get_capacity_blocks() const override {
+        return m_max_blocks;
+    }
+    size_t get_num_free_blocks() const override {
+        return 0;
+    }
+    bool is_plugin_backed() const override {
+        return true;
+    }
+    bool evicts_itself() const override {
+        return true;
+    }
+
+    size_t num_writes() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_num_writes;
+    }
+    size_t num_host_drops() const {
+        return m_num_host_drops;
+    }
+
+private:
+    size_t m_block_size;
+    size_t m_max_blocks;
+    mutable std::mutex m_mutex;
+    std::map<size_t, std::vector<uint8_t>> m_blocks;
+    std::list<size_t> m_order;
+    size_t m_num_writes = 0;
+    std::atomic<size_t> m_num_host_drops{0};
+};
+
+struct SelfEvictingCache {
+    SelfEvictingCache(CacheFixture& fixture, size_t max_blocks) {
+        auto owned = std::make_unique<SelfEvictingStore>(fixture.cache_manager->get_block_layout().get_slot_size(),
+                                                         max_blocks);
+        store = owned.get();
+        cache = std::make_unique<KVCacheOffloadCache>(*fixture.cache_manager, std::move(owned), /*max_queued_stores=*/8);
+    }
+
+    SelfEvictingStore* store = nullptr;
+    std::unique_ptr<KVCacheOffloadCache> cache;
+};
+
+}  // namespace
+
+TEST(TestKVCacheOffloadCache, SelfEvictingStoreIsNeverToldToDropBlocksAndKeepsAcceptingWrites) {
+    CacheFixture fixture;
+    SelfEvictingCache offload(fixture, /*max_blocks=*/2);
+
+    for (size_t hash = 1; hash <= 4; ++hash) {
+        fixture.fill_block(0, static_cast<uint8_t>(hash));
+        offload.cache->on_blocks_overwritten(hash, make_block_set(0));
+        offload.cache->flush();
+    }
+
+    EXPECT_EQ(offload.store->num_host_drops(), 0u);
+    EXPECT_EQ(offload.cache->get_statistics().num_failed, 0u);
+    EXPECT_EQ(offload.cache->get_statistics().num_stored, 4u);
+    // The store's own policy decided that the two oldest blocks go, and contains() follows it.
+    EXPECT_FALSE(offload.cache->contains(1));
+    EXPECT_FALSE(offload.cache->contains(2));
+    EXPECT_TRUE(offload.cache->contains(3));
+    EXPECT_TRUE(offload.cache->contains(4));
+}
+
+TEST(TestKVCacheOffloadCache, LoadingABlockTheSelfEvictingStoreDroppedIsAMiss) {
+    CacheFixture fixture;
+    SelfEvictingCache offload(fixture, /*max_blocks=*/2);
+    std::vector<uint8_t> newest;
+    for (size_t hash = 1; hash <= 3; ++hash) {
+        newest = fixture.fill_block(0, static_cast<uint8_t>(hash * 10));
+        offload.cache->on_blocks_overwritten(hash, make_block_set(0));
+        offload.cache->flush();
+    }
+
+    fixture.fill_block(1, /*seed=*/0);
+    EXPECT_FALSE(offload.cache->load_into(/*hash=*/1, /*block_index=*/1));
+    ASSERT_TRUE(offload.cache->load_into(/*hash=*/3, /*block_index=*/1));
+    EXPECT_EQ(fixture.cache_manager->read_block(1), newest);
+}
+
+TEST(TestKVCacheOffloadCache, SelfEvictingStoreIsNotWrittenTwiceForTheSameBlock) {
+    CacheFixture fixture;
+    SelfEvictingCache offload(fixture, /*max_blocks=*/4);
+    fixture.fill_block(0, /*seed=*/5);
+
+    offload.cache->on_blocks_overwritten(/*hash=*/9, make_block_set(0));
+    offload.cache->flush();
+    offload.cache->on_blocks_overwritten(/*hash=*/9, make_block_set(0));
+    offload.cache->flush();
+
+    EXPECT_EQ(offload.store->num_writes(), 1u);
+    EXPECT_EQ(offload.cache->get_statistics().num_already_present, 1u);
+}
+
+TEST(TestKVCacheOffloadCache, SelfEvictingStorePersistsAndPinsThroughTheStore) {
+    CacheFixture fixture;
+    SelfEvictingCache offload(fixture, /*max_blocks=*/2);
+    const auto expected = fixture.fill_block(0, /*seed=*/21);
+
+    ASSERT_TRUE(offload.cache->persist(/*hash=*/70, /*block_index=*/0));
+    ASSERT_TRUE(offload.cache->persist(/*hash=*/70, /*block_index=*/0));
+    EXPECT_EQ(offload.store->num_writes(), 1u);
+    EXPECT_TRUE(offload.cache->pin(70));
+    EXPECT_FALSE(offload.cache->pin(71));
+
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(offload.cache->read(70, restored));
+    EXPECT_EQ(restored, expected);
 }
 
 TEST(TestKVCacheOffloadCache, WarmPrefixCacheStillFindsBlocksThatReachTheSourceAfterTheProbe) {

@@ -192,6 +192,29 @@ m_capacity_blocks' failed ... ABI store reported more used blocks than its capac
 sure `capacity_bytes` is large enough for your plugin's real per-block storage overhead, for the
 same reason.
 
+#### Plugin settings and plugin-side eviction
+
+- `CacheOffloadConfig.store_properties` (a string-to-string map; `"store_properties": {...}` in the `llm_bench`
+  cache offload JSON) reaches the plugin in `OvKVCacheStoreOpenOptions.properties`, after the two entries
+  the host always adds (`block_size_bytes`, `device`; the host ignores attempts to override those). The host
+  does not interpret the rest. The sample plugin logs every extra property it receives when it opens a store.
+- A provider that advertises `OV_KVCACHE_CAP_SELF_EVICT` owns eviction. The host then does not drop blocks to free
+  capacity and does not count blocks against `capacity_bytes`; it asks the plugin (`has_blocks`, reads) whenever
+  it needs to know whether a block is still there and treats a block that disappeared as a miss. A block of a
+  saved session snapshot may disappear too, in which case `restore_state()` reports that the block is missing.
+  The sample's `sample-self-evict-memory` provider shows the contract: it keeps `capacity_bytes / block_bytes`
+  blocks and evicts the oldest one when a write finds it full.
+- The host writes the blocks queued by the writer thread in one `write_blocks` call (at most `buffer_slots` per
+  call), after probing each block's chain from block 0.
+
+Checked on Qwen3.5-9B / GPU with `sample-self-evict-memory` (and `"store_properties": {"tier": "ssd-test",
+"policy": "lru"}`, both of which the plugin logged on open): with room for every block the `llm_bench` P2 run
+takes 925 ms against 3375 ms for P0 with identical output hashes; with a store of 250 blocks the plugin evicts
+the oldest blocks, which are the start of P0's prefix, so nothing is warmed for P2 (3069 ms), the output is
+still identical and the host reports no failed store. The session snapshot check passes with the same
+provider (restore 752 ms against 4567 ms). Which block a plugin evicts first decides how much of a prefix
+survives, which is why the choice belongs to the plugin.
+
 ## Scenario 2: Session snapshot save/restore
 
 Session snapshot shares Scenario 1's machinery: `save_state()` writes the request's blocks to the

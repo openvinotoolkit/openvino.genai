@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -52,6 +53,12 @@ struct CacheOffloadConfig {
     bool allow_untrusted_store_plugin = false;
 
     /**
+     * Plugin-specific key/value settings handed to the store plugin when it opens a store, next to the ones the host
+     * always passes (`block_size_bytes`, `device`; those two cannot be overridden). The host does not interpret them.
+     */
+    std::map<std::string, std::string> store_properties;
+
+    /**
      * Also stores every block as soon as the forward pass that completed it has finished (chunk store), instead of
      * only when the block is about to be overwritten. The block is copied out right after the pass and a
      * background thread writes it, so generation does not wait for the store. A block still stays in the device
@@ -66,7 +73,7 @@ struct CacheOffloadConfig {
                buffer_slots == other.buffer_slots && use_page_cache == other.use_page_cache &&
                store_library_path == other.store_library_path && store_provider_name == other.store_provider_name &&
                allow_untrusted_store_plugin == other.allow_untrusted_store_plugin &&
-               store_completed_blocks == other.store_completed_blocks;
+               store_properties == other.store_properties && store_completed_blocks == other.store_completed_blocks;
     }
 
     std::string to_string() const {
@@ -82,6 +89,11 @@ struct CacheOffloadConfig {
         oss << "    store_provider_name: " << (store_provider_name.empty() ? std::string("<default>") : store_provider_name)
             << "\n";
         oss << "    allow_untrusted_store_plugin: " << std::boolalpha << allow_untrusted_store_plugin << "\n";
+        oss << "    store_properties: {";
+        for (const auto& [key, value] : store_properties) {
+            oss << " " << key << "=" << value;
+        }
+        oss << " }\n";
         oss << "    store_completed_blocks: " << std::boolalpha << store_completed_blocks << "\n";
         oss << "  }";
         return oss.str();

@@ -165,6 +165,12 @@ typedef uint64_t OvKVCacheCapabilities;
 #define OV_KVCACHE_CAP_REGISTER_HOST_MEMORY (1ull << 2)   ///< provider `register_host_memory` implemented
 #define OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT (1ull << 3)  ///< open reports `store_semantics_fingerprint`
 #define OV_KVCACHE_CAP_ASYNC_IO (1ull << 4)               ///< async read/write submit + wait + cancel
+/// The plugin owns eviction: `write_blocks` never fails with `OV_KVCACHE_ERR_CAPACITY` for lack of space but makes
+/// room by its own policy, so the host never calls `drop_blocks` to free capacity, does not count blocks against
+/// `capacity_bytes` and treats `has_blocks` / `read_blocks` as the only truth about what is stored. Any block may
+/// disappear between two calls, including blocks of a saved session snapshot (restoring it then fails with a
+/// clear error). `stats` is informational. `drop_blocks` is still required.
+#define OV_KVCACHE_CAP_SELF_EVICT (1ull << 5)
 
 // -----------------------------------------------------------------------------
 // Async completion (optional; OV_KVCACHE_CAP_ASYNC_IO)

@@ -379,3 +379,50 @@ TEST(TestAbiFileStoreProvider, OverwritingAnExistingKeyReplacesItsContents) {
     ASSERT_TRUE(store->read_block(1, actual));
     EXPECT_EQ(actual, make_block(9));
 }
+
+TEST(TestAbiFileStoreProvider, WriteBlocksStoresTheWholeBatchInOneAsyncSubmission) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    const std::string block_size_str = std::to_string(BLOCK_SIZE);
+    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
+    OvKVCacheStoreOpenOptions options{};
+    options.capacity_bytes = BLOCK_SIZE * 4;
+    options.properties = properties;
+    options.property_count = 1;
+    OvKVCacheStoreOpenResult opened{};
+    ASSERT_EQ(provider->vtable->open(provider->self, nullptr, &options, &opened), OV_KVCACHE_OK);
+
+    AsyncSpy::inner = opened.vtable;
+    AsyncSpy::submitted = AsyncSpy::terminal_waits = AsyncSpy::sync_reads = AsyncSpy::sync_writes = 0;
+    AsyncSpy::pending_once = 0;
+    OvKVCacheStoreVTable spied = *opened.vtable;
+    spied.write_blocks_async = &AsyncSpy::write_async;
+    spied.wait = &AsyncSpy::wait;
+
+    AbiKVCacheStore store(&spied, opened.store, "kv", BLOCK_SIZE, 4, {provider->capabilities, std::nullopt});
+    const std::vector<uint8_t> first = make_block(1);
+    const std::vector<uint8_t> second = make_block(2);
+    const std::vector<uint8_t> third = make_block(3);
+    EXPECT_EQ(store.write_blocks({1, 2, 3}, {&first, &second, &third}), (std::vector<bool>{true, true, true}));
+    EXPECT_EQ(AsyncSpy::submitted, 1u);
+
+    std::vector<std::vector<uint8_t>> data;
+    EXPECT_EQ(store.read_blocks({1, 2, 3}, data), (std::vector<bool>{true, true, true}));
+    EXPECT_EQ(data[0], first);
+    EXPECT_EQ(data[2], third);
+}
+
+TEST(TestAbiFileStoreProvider, WriteBlocksReportsWhichBlocksFoundNoRoom) {
+    auto store = open_store(/*num_blocks=*/2);
+    const std::vector<uint8_t> first = make_block(1);
+    const std::vector<uint8_t> second = make_block(2);
+    const std::vector<uint8_t> third = make_block(3);
+
+    EXPECT_EQ(store->write_blocks({1, 2, 3}, {&first, &second, &third}), (std::vector<bool>{true, true, false}));
+    EXPECT_TRUE(store->write_blocks({}, {}).empty());
+}
+
+TEST(TestAbiFileStoreProvider, FileStoreDoesNotEvictByItself) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    EXPECT_EQ(provider->capabilities & OV_KVCACHE_CAP_SELF_EVICT, 0u);
+    EXPECT_FALSE(open_store(/*num_blocks=*/2)->evicts_itself());
+}

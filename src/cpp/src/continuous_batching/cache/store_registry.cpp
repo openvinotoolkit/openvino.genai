@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <vector>
 
 #ifdef _WIN32
 #    ifndef WIN32_LEAN_AND_MEAN
@@ -160,13 +161,20 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     }
 
     const std::string block_size_str = std::to_string(layout.get_slot_size());
-    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}, {"device", device.c_str()}};
+    std::vector<OvKVCacheProperty> properties = {{"block_size_bytes", block_size_str.c_str()}, {"device", device.c_str()}};
+    for (const auto& [key, value] : config.store_properties) {
+        if (key == "block_size_bytes" || key == "device") {
+            GENAI_WARN("KV cache store property '%s' is set by the host and cannot be overridden; ignoring it", key.c_str());
+            continue;
+        }
+        properties.push_back({key.c_str(), value.c_str()});
+    }
 
     OvKVCacheStoreOpenOptions options{};
     options.directory = config.path.empty() ? nullptr : config.path.c_str();
     options.capacity_bytes = config.capacity_bytes;
-    options.properties = properties;
-    options.property_count = 2;
+    options.properties = properties.data();
+    options.property_count = properties.size();
     const OvKVCacheGroupInfo group_info{group.c_str(),
                                         static_cast<uint32_t>(group.size()),
                                         static_cast<uint32_t>(block_tokens),
