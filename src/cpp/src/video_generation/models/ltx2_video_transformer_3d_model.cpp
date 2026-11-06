@@ -392,8 +392,11 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
                                                                   int64_t num_frames,
                                                                   int64_t height,
                                                                   int64_t width,
-                                                                  int64_t audio_num_frames) {
+                                                                  int64_t audio_num_frames,
+                                                                  int64_t text_seq_len) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
+    OPENVINO_ASSERT(text_seq_len == -1 || text_seq_len > 0,
+                    "'text_seq_len' must be -1 or a positive value, got ", text_seq_len);
 
     const int64_t patch_size = m_config.patch_size;
     const int64_t patch_size_t = m_config.patch_size_t;
@@ -446,10 +449,13 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
             shape[0] = batch_size;
             shape[sequence_axis] = is_video_rope(rope_input->module) ? video_sequence_length : audio_num_frames;
         } else if (input_name == "encoder_hidden_states" || input_name == "audio_encoder_hidden_states") {
-            // The connector output sequence length is model-internal, keep it dynamic
-            name_to_shape[input_name] = {batch_size, -1, name_to_shape[input_name][2]};
+            // Text length: the caller's value when given, else the model's own dimension. Never turn a static axis
+            // dynamic: that makes the model uncompilable on devices that need static shapes (NPU).
+            const auto seq_len = text_seq_len > 0 ? ov::Dimension(text_seq_len) : name_to_shape[input_name][1];
+            name_to_shape[input_name] = {batch_size, seq_len, name_to_shape[input_name][2]};
         } else if (input_name == "encoder_attention_mask" || input_name == "audio_encoder_attention_mask") {
-            name_to_shape[input_name] = {batch_size, -1};
+            const auto seq_len = text_seq_len > 0 ? ov::Dimension(text_seq_len) : name_to_shape[input_name][1];
+            name_to_shape[input_name] = {batch_size, seq_len};
         }
     }
 
