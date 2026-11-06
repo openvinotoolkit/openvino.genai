@@ -33,42 +33,42 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
     return it->second.as<ov::genai::ModelDesc>().model;
 }
 
-// With the main model on NPU, NPUW_PA selects the NPU PA front-end, which runs under continuous batching.
-// It is read from the language model's compile properties and must agree with ATTENTION_BACKEND.
-// ATTENTION_BACKEND=PA and a scheduler config are both explicit PA requests, which on NPU only NPUW_PA serves.
-bool requests_npuw_pa(const ov::AnyMap& user_properties,
-                      const ov::AnyMap& properties,
-                      const std::string& device,
-                      const std::string& attention_backend,
-                      bool has_draft_model) {
+// With the main model on NPU, NPUW_PA=YES selects the NPU PA front-end, which runs under continuous batching.
+// It is read from the language model's compile properties, the ones continuous batching compiles with.
+// Without it the NPU runs the stateful pipeline, so explicit PA requests are rejected instead of ignored.
+bool use_npuw_pa(const std::string& device,
+                 const ov::AnyMap& user_properties,
+                 const ov::AnyMap& properties,
+                 const std::string& attention_backend) {
+    if (device != "NPU") {
+        return false;
+    }
     const auto model_properties = ov::genai::utils::get_model_properties(properties, "language_model", device);
-    const bool npuw_pa = ov::genai::utils::is_property_enabled(model_properties, "NPUW_PA");
-    OPENVINO_ASSERT(!npuw_pa || !has_draft_model,
+    if (!ov::genai::utils::is_property_enabled(model_properties, "NPUW_PA")) {
+        const bool pa_backend_requested =
+            user_properties.count("ATTENTION_BACKEND") > 0 && attention_backend == ov::genai::PA_BACKEND;
+        OPENVINO_ASSERT(!pa_backend_requested,
+                        "ATTENTION_BACKEND=PA on NPU needs NPUW_PA=YES. Set NPUW_PA=YES, or remove ATTENTION_BACKEND "
+                        "to use the stateful NPU pipeline.");
+        OPENVINO_ASSERT(user_properties.count(ov::genai::scheduler_config.name()) == 0,
+                        "A scheduler config on NPU needs NPUW_PA=YES. Set NPUW_PA=YES, or remove the scheduler "
+                        "config to use the stateful NPU pipeline.");
+        return false;
+    }
+    OPENVINO_ASSERT(properties.count(ov::genai::utils::DRAFT_MODEL_ARG_NAME) == 0,
                     "NPUW_PA=YES does not support speculative decoding. Remove the draft model or NPUW_PA.");
-    OPENVINO_ASSERT(!npuw_pa || attention_backend == ov::genai::PA_BACKEND,
+    OPENVINO_ASSERT(attention_backend == ov::genai::PA_BACKEND,
                     "NPUW_PA=YES needs ATTENTION_BACKEND=PA, but ATTENTION_BACKEND is '",
                     attention_backend,
                     "'. Remove ATTENTION_BACKEND or set it to PA.");
-    const bool pa_backend_requested =
-        user_properties.count("ATTENTION_BACKEND") > 0 && attention_backend == ov::genai::PA_BACKEND;
-    OPENVINO_ASSERT(npuw_pa || !pa_backend_requested,
-                    "ATTENTION_BACKEND=PA on NPU needs NPUW_PA=YES. Set NPUW_PA=YES, or remove ATTENTION_BACKEND to "
-                    "use the stateful NPU pipeline.");
-    OPENVINO_ASSERT(npuw_pa || user_properties.count(ov::genai::scheduler_config.name()) == 0,
-                    "A scheduler config on NPU needs NPUW_PA=YES. Set NPUW_PA=YES, or remove the scheduler config to "
-                    "use the stateful NPU pipeline.");
-    return npuw_pa;
+    return true;
 }
 
 bool should_use_stateful_pipeline(bool is_npu_requested,
-                                  bool npuw_pa,
                                   bool has_draft_model,
                                   const std::string& attention_backend,
                                   const std::shared_ptr<ov::Model>& main_model,
                                   const ov::AnyMap& properties) {
-    if (npuw_pa) {
-        return false;  // the NPU PA front-end runs under continuous batching
-    }
     if (is_npu_requested) {
         return true;
     }
@@ -292,18 +292,21 @@ ov::genai::LLMPipeline::LLMPipeline(
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    const bool npuw_pa =
-        device == "NPU" && requests_npuw_pa(user_properties, properties, device, attention_backend, has_draft_model);
-    if (should_use_stateful_pipeline(is_npu_requested,
-                                     npuw_pa,
-                                     has_draft_model,
-                                     attention_backend,
-                                     model,
-                                     properties)) {
+    if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
+        // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
+        auto [device_properties, scheduler_config] =
+            utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
+                                                              tokenizer,
+                                                              scheduler_config,
+                                                              device,
+                                                              device_properties,
+                                                              generation_config,
+                                                              models_path);
+    } else if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
-    } else if (npuw_pa || utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        // NPUW_PA=YES is such an explicit request even when ATTENTION_BACKEND is left at its default
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
@@ -359,18 +362,21 @@ ov::genai::LLMPipeline::LLMPipeline(
     erase_gguf_tokenizer_metadata(model);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    const bool npuw_pa =
-        device == "NPU" && requests_npuw_pa(user_properties, properties, device, attention_backend, has_draft_model);
-    if (should_use_stateful_pipeline(is_npu_requested,
-                                     npuw_pa,
-                                     has_draft_model,
-                                     attention_backend,
-                                     model,
-                                     properties)) {
+    if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
+        // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
+        auto [device_properties, scheduler_config] =
+            utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
+                                                              tokenizer,
+                                                              scheduler_config,
+                                                              device,
+                                                              device_properties,
+                                                              generation_config,
+                                                              models_path);
+    } else if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
-    } else if (npuw_pa || utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        // NPUW_PA=YES is such an explicit request even when ATTENTION_BACKEND is left at its default
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
@@ -414,23 +420,25 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
 
-    const bool npuw_pa =
-        device == "NPU" && requests_npuw_pa(user_properties, properties, device, attention_backend, has_draft_model);
-    if (should_use_stateful_pipeline(is_npu_requested,
-                                     npuw_pa,
-                                     has_draft_model,
-                                     attention_backend,
-                                     model,
-                                     properties)) {
+    if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
+        // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
+        auto [device_properties, scheduler_config] =
+            utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
+                                                              tokenizer,
+                                                              scheduler_config,
+                                                              device,
+                                                              device_properties,
+                                                              generation_config);
+    } else if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(
             model,
             tokenizer,
             device,
             properties,
             generation_config);
-    } else if (npuw_pa || utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        // NPUW_PA=YES is such an explicit request even when ATTENTION_BACKEND is left at its default
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config);
     } else if (attention_backend == PA_BACKEND) {
