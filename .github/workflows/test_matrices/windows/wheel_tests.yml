@@ -141,7 +141,7 @@
 # Test timed out on Windows. Ticket: 198295
 # - name: Video Generation
 #   cmd: |-
-#     # LTX-2.3 export support landed after the optimum-intel pin in tests/python_tests/requirements.txt
+#     # LTX-2.3 and LTX-Video 0.9.5 export support landed after the pin in tests/python_tests/requirements.txt
 #     python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8"
 #     python -m pytest -s -v tests/python_tests/test_video_generation.py tests/python_tests/test_ltx2_rope.py --override-ini cache_dir=/mount/caches/pytest/
 #   timeout: 60
