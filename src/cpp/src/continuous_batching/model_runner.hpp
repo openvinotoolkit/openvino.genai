@@ -1016,16 +1016,19 @@ public:
                         }
                         auto ihs_shape = ihs.get_shape();
                         size_t num_tokens = ihs_shape.at(0);
+                        // The sampler has not advanced the processed count yet, so it is the position
+                        // of the first token in this slice.
+                        const size_t first_position = sequence_group->get_num_processed_tokens();
                         if (num_tokens > 1) {
                             // Prefill: slice the batch tensor into per-token tensors so that
                             // the accumulated vector is indexed by absolute token position.
                             for (size_t t = 0; t < num_tokens; ++t) {
                                 const auto [start_coord, end_coord] = ov::genai::utils::make_roi(ihs_shape, 0, t, t + 1);
                                 ov::Tensor token_hs(ihs, start_coord, end_coord);
-                                sequence->update_intermediate_hidden_state(token_hs);
+                                sequence->set_intermediate_hidden_state(first_position + t, token_hs);
                             }
                         } else {
-                            sequence->update_intermediate_hidden_state(ihs);
+                            sequence->set_intermediate_hidden_state(first_position, ihs);
                         }
                     }
                 }
