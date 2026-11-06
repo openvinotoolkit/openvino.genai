@@ -110,5 +110,6 @@ updates:
           - ">=1.0.0"
     groups:
       pip-dependencies:
+        group-by: dependency-name
         patterns:
           - "*"
