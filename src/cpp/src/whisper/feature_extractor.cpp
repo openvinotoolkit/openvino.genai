@@ -347,14 +347,16 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
                                               const std::vector<float>& mel_filter,
                                               const std::vector<float>& sin_vals,
                                               const std::vector<float>& cos_vals,
-                                              const bool pad_to_max_duration) {
+                                              const bool pad_to_max_duration,
+                                              const bool center,
+                                              const std::optional<float>& global_log_mel_max) {
     // Hanning window (Use cosf to eliminate difference)
     // ref: https://pytorch.org/docs/stable/generated/torch.hann_window.html
     // ref: https://github.com/openai/whisper/blob/main/whisper/audio.py#L147
     std::vector<float> hann;
     hann_window(n_fft, true, hann);
 
-    const size_t reflect_pad_size = n_fft / 2;
+    const size_t reflect_pad_size = center ? n_fft / 2 : 0;
     const size_t minimum_length = pad_to_max_duration ? n_samples : raw_speech.size();
     auto padded_raw_speech = pad(raw_speech, minimum_length, reflect_pad_size);
 
@@ -402,10 +404,12 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
     }
 
     // clamping and normalization
-    double mmax = -1e20;
-    for (int i = 0; i < features.feature_size * features.n_frames; i++) {
-        if (features.data[i] > mmax) {
-            mmax = features.data[i];
+    double mmax = global_log_mel_max.value_or(-1e20f);
+    if (!global_log_mel_max.has_value()) {
+        for (int i = 0; i < features.feature_size * features.n_frames; i++) {
+            if (features.data[i] > mmax) {
+                mmax = features.data[i];
+            }
         }
     }
 
@@ -451,16 +455,18 @@ WhisperFeatureExtractor::WhisperFeatureExtractor(const std::filesystem::path& pr
 }
 
 WhisperFeatureExtractor::WhisperFeatureExtractor(size_t feature_size,
-                                                 size_t sampling_rate,
-                                                 size_t n_fft,
-                                                 size_t hop_length)
+                                                                                                 size_t sampling_rate,
+                                                                                                 size_t n_fft,
+                                                                                                 size_t hop_length,
+                                                                                                 std::optional<float> global_log_mel_max)
     : feature_size(feature_size),
       sampling_rate(sampling_rate),
       hop_length(hop_length),
       n_fft(n_fft),
       chunk_length(0),
       n_samples(0),
-      nb_max_frames(0) {
+            nb_max_frames(0),
+            global_log_mel_max(global_log_mel_max) {
     fill_sin_cos_table(sin_vals, cos_vals, n_fft);
     init_mel_filter();
 }
@@ -485,6 +491,9 @@ void WhisperFeatureExtractor::init_parameters(const std::filesystem::path& prepr
     read_json_param(data, "chunk_length", chunk_length);
     read_json_param(data, "n_samples", n_samples);
     read_json_param(data, "nb_max_frames", nb_max_frames);
+    if (data.contains("global_log_mel_max") && data.at("global_log_mel_max").is_number()) {
+        global_log_mel_max = data.at("global_log_mel_max").get<float>();
+    }
 };
 
 void WhisperFeatureExtractor::init_mel_filter() {
@@ -498,7 +507,16 @@ void WhisperFeatureExtractor::init_mel_filter() {
     }
 }
 
-WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech, bool pad_to_max_duration) {
+WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech,
+                                                 bool pad_to_max_duration,
+                                                 bool center) {
+    if (!center) {
+        OPENVINO_ASSERT(raw_speech.size() >= n_fft,
+                        "raw_speech too short for non-centered STFT: size=",
+                        raw_speech.size(),
+                        ", required >= ",
+                        n_fft);
+    }
     OPENVINO_ASSERT(raw_speech.size() > n_fft / 2,
                     "raw_speech too short for reflect padding: size=",
                     raw_speech.size(),
@@ -515,7 +533,9 @@ WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_s
                                          mel_filter,
                                          sin_vals,
                                          cos_vals,
-                                         pad_to_max_duration);
+                                         pad_to_max_duration,
+                                         center,
+                                         global_log_mel_max);
 }
 
 }  // namespace genai
