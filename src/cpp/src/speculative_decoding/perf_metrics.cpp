@@ -140,6 +140,9 @@ ov::genai::SDPerModelsPerfMetrics::SDPerModelsPerfMetrics() : num_accepted_token
     raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
     main_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
     draft_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    draft_step_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    draft_markov_head_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    draft_sampling_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 }
 
 size_t ov::genai::SDPerModelsPerfMetrics::get_num_accepted_tokens() {
@@ -219,6 +222,9 @@ void ov::genai::SDPerModelsPerfMetrics::evaluate_statistics(std::optional<TimePo
     }
     main_model_metrics.evaluate_statistics(start_time);
     draft_model_metrics.evaluate_statistics(start_time);
+    draft_step_metrics.evaluate_statistics(start_time);
+    draft_markov_head_metrics.evaluate_statistics(start_time);
+    draft_sampling_metrics.evaluate_statistics(start_time);
 
     m_evaluated = true;
 }
@@ -230,12 +236,18 @@ ov::genai::SDPerModelsPerfMetrics ov::genai::SDPerModelsPerfMetrics::operator+(c
 
     result.main_model_metrics = main_model_metrics + right.main_model_metrics;
     result.draft_model_metrics = draft_model_metrics + right.draft_model_metrics;
+    result.draft_step_metrics = draft_step_metrics + right.draft_step_metrics;
+    result.draft_markov_head_metrics = draft_markov_head_metrics + right.draft_markov_head_metrics;
+    result.draft_sampling_metrics = draft_sampling_metrics + right.draft_sampling_metrics;
 
     // Keep aggregated accepted-token count even when token timestamps are unavailable after accumulation.
     result.num_accepted_tokens = num_accepted_tokens + right.num_accepted_tokens;
     result.raw_metrics.m_new_token_times.clear();
     result.main_model_metrics.raw_metrics.m_new_token_times.clear();
     result.draft_model_metrics.raw_metrics.m_new_token_times.clear();
+    result.draft_step_metrics.raw_metrics.m_new_token_times.clear();
+    result.draft_markov_head_metrics.raw_metrics.m_new_token_times.clear();
+    result.draft_sampling_metrics.raw_metrics.m_new_token_times.clear();
 
     result.m_evaluated = false;
     return result;

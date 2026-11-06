@@ -140,6 +140,7 @@ protected:
     class ContinuousBatchingForSpeculativeDecodingImpl;
     class ContinuousBatchingForEagle3DecodingImpl;
     class ContinuousBatchingForMtpDecodingImpl;
+    class ContinuousBatchingForDFlashDecodingImpl;
     class ContinuousBatchingForPromptLookupImpl;
     class SpeculativeDecodingImpl;
     class Eagle3DecodingImpl;
@@ -152,6 +153,7 @@ protected:
     friend class ContinuousBatchingForPromptLookupImpl;
     friend class ContinuousBatchingForEagle3DecodingImpl;
     friend class ContinuousBatchingForMtpDecodingImpl;
+    friend class ContinuousBatchingForDFlashDecodingImpl;
     friend class SpeculativeDecodingImpl;
     friend class Eagle3DecodingImpl;
     friend class DFlashDecodingImpl;
