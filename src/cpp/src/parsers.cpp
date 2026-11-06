@@ -274,7 +274,12 @@ public:
             return;
         }
         auto res = JsonContainer::array();
-        res.push_back(JsonContainer::from_json_string(msg_content.substr(json_start, json_end - json_start + 1)));
+        try {
+            res.push_back(JsonContainer::from_json_string(msg_content.substr(json_start, json_end - json_start + 1)));
+        } catch (const ov::Exception&) {
+            // Braces that are not a JSON tool call, e.g. code in the answer: leave the message as it is.
+            return;
+        }
         message["tool_calls"] = res;
     }
 };
