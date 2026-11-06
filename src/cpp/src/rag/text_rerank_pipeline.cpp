@@ -111,9 +111,11 @@ std::shared_ptr<Model> apply_qwen3_postprocessing(std::shared_ptr<Model> model,
         auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
 
         if (auto matmul = ov::as_type_ptr<op::v0::MatMul>(node.get_node_shared_ptr())) {
-            if (!matmul->get_transpose_a() && matmul->get_transpose_b() &&
-                matmul->input_value(0).get_partial_shape().rank().is_static() &&
-                matmul->input_value(0).get_partial_shape().rank().get_length() == 3) {
+            const auto act_rank = matmul->input_value(0).get_partial_shape().rank();
+            const auto wei_rank = matmul->input_value(1).get_partial_shape().rank();
+            // Gather(axis=0) below must select vocabulary rows, so only plain [V, H] weights qualify.
+            if (!matmul->get_transpose_a() && matmul->get_transpose_b() && act_rank.is_static() &&
+                act_rank.get_length() == 3 && wei_rank.is_static() && wei_rank.get_length() == 2) {
                 // Slice hidden states to the last token [B, 1, H] before lm_head MatMul
                 auto last_hidden = std::make_shared<op::v8::Slice>(matmul->input_value(0), start, stop, step, axis);
 
