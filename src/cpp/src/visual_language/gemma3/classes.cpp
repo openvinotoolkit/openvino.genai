@@ -14,7 +14,10 @@ clip_image_f32 preprocess_clip_image_gemma3(const clip_image_u8& image, const Pr
 
     // Resize
     clip_image_u8 resized_image;
-    bilinear_resize(image, resized_image, config.size_width, config.size_height);
+    if (config.pad_to_target)
+        resized_image = resize_and_pad_image(image, {config.size_width, config.size_height}, 0, true);
+    else
+        bilinear_resize(image, resized_image, config.size_width, config.size_height);
 
     // Normalize
     clip_ctx ctx;
@@ -49,6 +52,14 @@ EncodedImage VisionEncoderGemma3::encode(const ov::Tensor& image, const ov::AnyM
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
     return {std::move(image_features)};
+}
+
+InputsEmbedderGemma3::InputsEmbedderGemma3(const VLMModels& models,
+                                           const Tokenizer& tokenizer,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties) {
+    patch_chat_template();
 }
 
 InputsEmbedderGemma3::InputsEmbedderGemma3(
@@ -99,11 +110,11 @@ NormalizedPrompt InputsEmbedderGemma3::normalize_prompt(const std::string& promp
 
         std::string expanded_tag;
         expanded_tag.reserve(2 + start_of_image.size() + num_image_tokens * image_token.size() + end_of_image.size() + 2);
-        expanded_tag = "\n\n" + start_of_image;
+        expanded_tag = m_vlm_config.image_separator + start_of_image;
         for (size_t i = 0; i < num_image_tokens; i++) {
             expanded_tag += image_token;
         }
-        expanded_tag += end_of_image + "\n\n";
+        expanded_tag += end_of_image + m_vlm_config.image_separator;
 
         size_t pos = unified_prompt.find(start_of_image, search_offset);
         OPENVINO_ASSERT(pos != std::string::npos, "Failed to find image token in prompt during normalization");
@@ -111,6 +122,39 @@ NormalizedPrompt InputsEmbedderGemma3::normalize_prompt(const std::string& promp
         search_offset = pos + expanded_tag.size();
     }
     return {std::move(unified_prompt), std::move(images_sequence), {}};
+}
+
+ov::Tensor InputsEmbedderGemma3::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
+    auto input_ids = IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
+    m_vision_token_mask = ov::Tensor(ov::element::i64, input_ids.get_shape());
+    auto* mask = m_vision_token_mask.data<int64_t>();
+    std::fill_n(mask, m_vision_token_mask.get_size(), 0);
+    if (prompt.find(m_vlm_config.start_of_image) == std::string::npos)
+        return input_ids;
+
+    const auto start_tokenizer_time = std::chrono::steady_clock::now();
+    const auto token_id = [this](const std::string& token) {
+        const auto encoded = m_tokenizer.encode(token, ov::genai::add_special_tokens(false)).input_ids;
+        OPENVINO_ASSERT(encoded.get_size() == 1, "Gemma3 image token must encode to one token: ", token);
+        return encoded.data<const int64_t>()[0];
+    };
+    const auto start_of_image_id = token_id(m_vlm_config.start_of_image);
+    const auto image_token_id = token_id(m_vlm_config.image_soft_token);
+    const auto end_of_image_id = token_id(m_vlm_config.end_of_image);
+    metrics.raw_metrics.tokenization_durations.back() +=
+        ov::genai::MicroSeconds(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_tokenizer_time));
+
+    const auto* ids = input_ids.data<const int64_t>();
+    bool inside_image = false;
+    for (size_t i = 0; i < input_ids.get_size(); ++i) {
+        if (ids[i] == start_of_image_id)
+            inside_image = true;
+        else if (ids[i] == end_of_image_id)
+            inside_image = false;
+        else
+            mask[i] = inside_image && ids[i] == image_token_id;
+    }
+    return input_ids;
 }
 
 void InputsEmbedderGemma3::patch_chat_template() {
@@ -158,26 +202,14 @@ ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(
         return inputs_embeds;
     }
 
-    auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.image_soft_token, ov::genai::add_special_tokens(false)).input_ids;
-    auto end_tokenizer_time = std::chrono::steady_clock::now();
-    OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
-    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-
-    auto inputs_embeds = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
-
-    const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    const ov::Shape& shape = input_ids.get_shape();
-    size_t num_elements = input_ids.get_size();
-    ov::Tensor token_type_ids(ov::element::i64, shape);
-    int64_t* token_type_data = token_type_ids.data<int64_t>();
-    for (size_t i = 0; i < num_elements; ++i) {
-        token_type_data[i] = (input_ids_data[i] == image_token_id) ? 1 : 0;
-    }
+    OPENVINO_ASSERT(input_ids.get_size() <= m_vision_token_mask.get_size(),
+                    "Gemma3 vision mask is shorter than input IDs");
+    ov::Tensor token_type_ids(ov::element::i64, input_ids.get_shape());
+    std::copy_n(m_vision_token_mask.data<const int64_t>() + m_vision_token_mask.get_size() - input_ids.get_size(),
+                input_ids.get_size(),
+                token_type_ids.data<int64_t>());
     m_lm_extra_inputs["token_type_ids"] = token_type_ids;
-
-    return inputs_embeds;
+    return utils::merge_text_and_image_embeddings_llava(token_type_ids, text_embeds, image_embeds, 1);
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma3::get_lm_extra_inputs() const {
@@ -185,15 +217,11 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma3::get_lm_
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma3::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
-    // position_ids in Gemma3 are 1-indexed
-    // https://github.com/huggingface/optimum-intel/blob/v1.24.0/optimum/intel/openvino/modeling_visual_language.py#L874-L876
-    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + 1);
+    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + m_vlm_config.position_ids_offset);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma3::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
-    // position_ids in Gemma3 are 1-indexed
-    // https://github.com/huggingface/optimum-intel/blob/v1.24.0/optimum/intel/openvino/modeling_visual_language.py#L874-L876
-    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + 1);
+    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + m_vlm_config.position_ids_offset);
 }
 
 } // namespace ov::genai

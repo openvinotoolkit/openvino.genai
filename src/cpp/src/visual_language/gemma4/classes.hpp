@@ -30,6 +30,10 @@ private:
 
 class InputsEmbedderGemma4 : public InputsEmbedder::IInputsEmbedder {
 public:
+    InputsEmbedderGemma4(const VLMModels& models,
+                         const Tokenizer& tokenizer,
+                         const std::string& device,
+                         const ov::AnyMap& properties);
     InputsEmbedderGemma4(const VLMConfig& vlm_config,
                          const std::filesystem::path& model_dir,
                          const Tokenizer& tokenizer,

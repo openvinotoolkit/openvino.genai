@@ -61,6 +61,13 @@ use PA/default; native SDPA attention masks currently support batch one. The Opt
 Gemma-3 reference requires Transformers 5.0, matching the regular LLM job. The existing reader
 suite separately retains its model/quantization and native-tokenizer coverage.
 
+The VLM cases convert pinned tiny Gemma-3, Gemma-4, unified Gemma-4, Qwen3.5,
+Qwen3.5 MoE and Muse Glimmer checkpoints into language/projector GGUF pairs under
+`~/gguf_models/genai_vlm_tests/`. They cover CPU image, video and Gemma-4 audio
+generation with SDPA and PA. Image/streaming and chat checks reuse `test_vlm_pipeline.py`
+helpers; these VLM checks cover integration and backend agreement, not Optimum output parity.
+A strict xfail tracks pending Muse Glimmer video handling.
+
 This suite validates GenAI integration rather than standalone frontend translation.
 OpenVINO frontend tests should check graph conversion, operators and metadata handling
 in the OpenVINO repository. These tests additionally exercise GenAI's reader selection,
@@ -98,6 +105,10 @@ normalization weights around one (Gemma applies its own offset). MoE fixtures se
 two of four experts. The runner reloads the finalized GGUFs and independently produces
 greedy token IDs and log probabilities using llama.cpp CPU, with OpenVINO disabled in
 that build. Both sides use F32 inference/KV caches and no dynamic quantization.
+
+LFM3 conversion uses the Python converter from revision
+`604cc430239c76ff636c443e3400bf552b750421` without building another native backend.
+
 GenAI checks prefill/decode with SDPA, PA and automatic selection, plus concurrent
 PA requests with chunked prefill. Inputs include a sliding-window-boundary case.
 The fixtures have no text vocabulary, so an auxiliary tokenizer only satisfies the

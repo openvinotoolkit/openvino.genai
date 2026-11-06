@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <set>
 #include <map>
 #include <tuple>
 #include <unordered_map>
@@ -44,6 +45,9 @@ const ov::AnyMap& gguf_tokenizer_metadata_from_model(const std::shared_ptr<ov::M
 ///        the whole vocabulary (tens of MB for large ones) and nothing reads it once the Tokenizer
 ///        is built, so hand ownership to the Tokenizer rather than copying and keeping both.
 ov::AnyMap take_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model);
+
+// Token ids that end generation, as llama.cpp determines them from the GGUF vocabulary.
+std::set<int64_t> gguf_stop_token_ids(const ov::AnyMap& tokenizer_metadata);
 
 /// \brief Drop that metadata without reading it, for callers that build the Tokenizer some other
 ///        way. No-op if absent.
