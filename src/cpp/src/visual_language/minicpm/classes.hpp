@@ -24,7 +24,10 @@ class VisionEncoderMiniCPM : public VisionEncoder {
     // VLM config
     VLMConfig m_vlm_config;
 
-    ov::Tensor resample(const ov::Tensor& encoded_image, const ImageSize& target_size, size_t pad_to_max);
+    EncodedImage encode_features(const ov::Tensor& image,
+                                 const ov::AnyMap& config_map,
+                                 ov::Tensor& slices,
+                                 ImageSize& slices_target_size);
 
     ResampledImage resample_encoded_image(const EncodedImage& image, const ov::Tensor& slices, const ImageSize& target_sizes);
 public:
@@ -40,9 +43,21 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
+
+    ov::Tensor resample(const ov::Tensor& features,
+                        const ImageSize& target_size,
+                        size_t pad_to_max,
+                        const std::vector<size_t>& temporal_ids = {});
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
+    std::vector<int64_t> m_vision_token_ids;
+
+    void encode_vision_token_ids();
+
+    ov::Tensor resample_video_group(const EncodedVideo& video, size_t group_index, size_t pad_to_max);
 
 public:
     InputsEmbedderMiniCPM(
@@ -62,10 +77,31 @@ public:
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
 
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings,
+                                 const std::vector<size_t>& image_sequence,
+                                 const std::vector<size_t>& videos_sequence,
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) override;
+
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}) override;
+
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images
+    ) const override;
+
+    NormalizedPrompt normalize_prompt(
+        const std::string& prompt,
+        size_t base_image_id,
+        size_t base_video_id,
+        const std::vector<EncodedImage>& images,
+        const std::vector<EncodedVideo>& videos
     ) const override;
 
 };
