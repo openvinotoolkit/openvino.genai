@@ -22,6 +22,15 @@ DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE = 400
 DEFAULT_SPEECH_PROMPT = "Transcribe this audio."
 
 
+def _get_output_token_size(processor, text, use_genai):
+    if use_genai:
+        return processor.encode(text).input_ids.size
+    tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else processor
+    output = tokenizer(text, return_tensors="pt")
+    tokens = output["input_ids"] if "input_ids" in output else output
+    return tokens[0].numel()
+
+
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     result_md5_list = []
     pipe = input_param["pipe"]
@@ -132,10 +141,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         log.debug('latency of all infers:')
         [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
 
-    tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else processor
-    out_data = tokenizer(result_text, return_tensors="pt")
-    out_tokens = out_data["input_ids"] if "input_ids" in out_data else out_data
-    out_token_size = out_tokens[0].numel()
+    out_token_size = _get_output_token_size(processor, result_text, use_genai)
 
     result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if len(md5_list[num]) == 0:
