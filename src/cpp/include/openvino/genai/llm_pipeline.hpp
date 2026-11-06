@@ -406,6 +406,21 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
 /**
+* @brief speculative_type property selects a speculative decoding type when constructing a pipeline from a path.
+* Set "mtp" to use the multi-token prediction (MTP) layers embedded in the main model,
+* or in the model given by draft_model_path. The main model can be a GGUF file whose metadata
+* declares `<arch>.nextn_predict_layers`, or an IR directory with openvino_mtp_model.xml.
+*/
+static constexpr ov::Property<std::string> speculative_type{"speculative_type"};
+
+/**
+* @brief draft_model_path property loads a draft model from a GGUF file or an IR directory.
+* The draft is created with the device and properties of the main model. A GGUF draft must contain MTP layers.
+* Use draft_model() instead to configure the draft device or properties separately.
+*/
+static constexpr ov::Property<std::filesystem::path> draft_model_path{"draft_model_path"};
+
+/**
 * @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
 * Set `true` to activate this mode.
 * And create LLMPipeline instance with this config.

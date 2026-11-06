@@ -5,6 +5,7 @@
 
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
 
+#include "circular_buffer_queue.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "logger.hpp"
 #include "speculative_decoding/mtp_model_transforms.hpp"
@@ -29,6 +30,16 @@ void validate_mtp_generation_config(const GenerationConfig& config) {
                     "MTP speculative decoding requires num_assistant_tokens > 0.");
 }
 
+// Matches the llama.cpp --spec-draft-n-max default.
+constexpr size_t MTP_DEFAULT_NUM_ASSISTANT_TOKENS = 3;
+
+GenerationConfig with_default_num_assistant_tokens(GenerationConfig config) {
+    if (!config.num_assistant_tokens.has_value() && config.assistant_confidence_threshold == 0.f) {
+        config.num_assistant_tokens = MTP_DEFAULT_NUM_ASSISTANT_TOKENS;
+    }
+    return config;
+}
+
 // Align hidden[t] with embed(token[t+1]).
 ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
     const auto shape = input_embeds.get_shape();
@@ -41,7 +52,22 @@ ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
     return shifted;
 }
 
+ov::Tensor copy_tensor(const ov::Tensor& tensor) {
+    ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
+    tensor.copy_to(copy);
+    return copy;
+}
+
 }  // namespace
+
+ov::Tensor ContinuousBatchingPipeline::MtpDecodingImpl::embed_prompt_ids(const ov::Tensor& input_ids) {
+    const auto shape = input_ids.get_shape();
+    OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1 && shape[1] > 0,
+                    "MTP token input expects shape [1, seq_len], got ", shape);
+    auto embedding_model = m_inputs_embedder->get_embedding_model();
+    CircularBufferQueueElementGuard<EmbeddingsRequest> guard(embedding_model->get_request_queue().get());
+    return copy_tensor(embedding_model->infer(guard.get(), input_ids));
+}
 
 ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                             const ov::genai::ModelDesc& draft_model_desc,
@@ -147,9 +173,18 @@ GenerationConfig ContinuousBatchingPipeline::MtpDecodingImpl::make_draft_generat
 GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
-    const ov::genai::GenerationConfig& sampling_params,
+    const ov::genai::GenerationConfig& user_sampling_params,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
+    if (input_ids.get_element_type() == ov::element::i64) {
+        // Pre-tokenized input (e.g. LLMPipeline::generate(EncodedInputs)); both MTP models consume embeddings.
+        return add_request(request_id,
+                           embed_prompt_ids(input_ids),
+                           user_sampling_params,
+                           prompt_ids.has_value() ? prompt_ids : std::optional<ov::Tensor>(copy_tensor(input_ids)),
+                           std::move(lm_extra_inputs));
+    }
+    const auto sampling_params = with_default_num_assistant_tokens(user_sampling_params);
     validate_mtp_generation_config(sampling_params);
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
@@ -211,7 +246,8 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_p
 GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     uint64_t request_id,
     const std::string& prompt,
-    const ov::genai::GenerationConfig& sampling_params) {
+    const ov::genai::GenerationConfig& user_sampling_params) {
+    const auto sampling_params = with_default_num_assistant_tokens(user_sampling_params);
     validate_mtp_generation_config(sampling_params);
 
     // Text-only serving path.

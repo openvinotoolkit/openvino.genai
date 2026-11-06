@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "gtest/gtest.h"
 #include "openvino/genai/gguf.hpp"
 
@@ -74,4 +75,15 @@ TEST(GGUFTokenizer, SentencePieceControlTokensUseTheirVocabularyIds) {
 
 TEST(GGUFTokenizer, MetadataRejectsModelsWithoutTokenizerInfo) {
     EXPECT_THROW(ov::genai::GGUFTokenizerParameters::from_model(nullptr), ov::Exception);
+}
+
+TEST(GGUFTokenizer, BonsaiThinkingTemplateAcceptsAnOmittedFlag) {
+    ov::genai::GGUFTokenizer tokenizer(sentencepiece_config());
+    tokenizer.set_chat_template(ov::genai::patch_gguf_chat_template(
+        "{% if enable_thinking is undefined or enable_thinking is true %}thinking{% else %}plain{% endif %}"));
+    EXPECT_EQ(tokenizer.apply_chat_template({}, false), "thinking");
+    for (const bool thinking : {false, true}) {
+        const ov::genai::JsonContainer context{{"enable_thinking", thinking}};
+        EXPECT_EQ(tokenizer.apply_chat_template({}, false, {}, std::nullopt, context), thinking ? "thinking" : "plain");
+    }
 }

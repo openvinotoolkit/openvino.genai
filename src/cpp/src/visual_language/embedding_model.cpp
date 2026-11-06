@@ -40,6 +40,15 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::genai::EmbeddingsRequest>> in
 namespace ov {
 namespace genai {
 
+EmbeddingsModel::EmbeddingsModel(const std::shared_ptr<ov::Model>& model,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    auto embedding_properties = utils::get_model_properties(properties, "text_embeddings", device);
+    embedding_properties.erase("sampler_num_threads");
+    auto compiled = utils::singleton_core().compile_model(model, device, embedding_properties);
+    m_embeddings_requests_queue = init(compiled);
+}
+
 EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
                                  const float scale_emb,
                                  const std::string& device,

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -61,6 +62,12 @@ struct ModelDesc {
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
 
 ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
+
+/// Replaces speculative_type and draft_model_path with a draft_model descriptor created
+/// with the main model device and properties.
+ov::AnyMap resolve_draft_model_request(const std::filesystem::path& models_path,
+                                       const std::string& device,
+                                       const ov::AnyMap& properties);
 
 }  // namespace genai
 }  // namespace ov

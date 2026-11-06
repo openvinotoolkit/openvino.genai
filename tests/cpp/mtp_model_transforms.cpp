@@ -3,9 +3,14 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <unordered_set>
+
 #include "openvino/op/add.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/convert.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/runtime/core.hpp"
@@ -143,17 +148,121 @@ TEST(MtpModelTransforms, GraftLmHeadAddsLogitsResult) {
     EXPECT_GE(count_ops<ov::op::v0::Constant>(mtp_model), 2u);
 }
 
+TEST(MtpModelTransforms, GraftPreservesCheckpointDraftHead) {
+    std::vector<float> main_weights(VOCAB * HIDDEN, 0.1f);
+    std::vector<float> draft_weights(VOCAB * HIDDEN, 0.2f);
+    auto main_model = make_main_model(main_weights);
+    auto draft_model = make_main_model(draft_weights);
+    const auto output = draft_model->output("logits").get_node_shared_ptr();
+    graft_lm_head_on_mtp(draft_model, main_model);
+    EXPECT_EQ(draft_model->get_results().size(), 2);
+    EXPECT_EQ(draft_model->output("logits").get_node_shared_ptr(), output);
+}
+
+TEST(MtpModelTransforms, GraftSharesPackedWeightStorageAndRetainsLifetime) {
+    auto mtp_model = make_mtp_model();
+    std::weak_ptr<ov::Node> source_packed_weight;
+    std::weak_ptr<ov::Node> source_scales;
+    std::shared_ptr<ov::op::v0::Constant> cloned_packed_weight;
+    std::shared_ptr<ov::op::v0::Constant> cloned_scales;
+    {
+        auto main_model = make_main_model(std::vector<float>(VOCAB * HIDDEN, 0.1f));
+        std::vector<uint8_t> packed_data(VOCAB * HIDDEN / 4, 0xe4);
+        auto packed_weight =
+            std::make_shared<ov::op::v0::Constant>(ov::element::u2, ov::Shape{VOCAB, HIDDEN}, packed_data.data());
+        auto scales = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{VOCAB, 1}, 0.25f);
+        packed_weight->set_friendly_name("packed_lm_head");
+        packed_weight->get_rt_info()["storage_tag"] = std::string("packed_source");
+        packed_weight->output(0).set_names({"packed_lm_head_data"});
+        packed_weight->output(0).get_rt_info()["tensor_tag"] = std::string("packed_tensor");
+        scales->set_friendly_name("lm_head_scales");
+        scales->get_rt_info()["storage_tag"] = std::string("scales_source");
+        scales->output(0).set_names({"lm_head_scales_data"});
+        auto converted_weight = std::make_shared<ov::op::v0::Convert>(packed_weight, ov::element::f32);
+        auto decompressed_weight = std::make_shared<ov::op::v1::Multiply>(converted_weight, scales);
+        decompressed_weight->get_rt_info()["decompression_tag"] = std::string("source");
+        decompressed_weight->input(0).get_rt_info()["input_tag"] = std::string("packed_input");
+        auto main_matmul =
+            ov::as_type_ptr<ov::op::v0::MatMul>(main_model->get_results()[0]->input_value(0).get_node_shared_ptr());
+        ASSERT_TRUE(main_matmul);
+        main_matmul->input(1).replace_source_output(decompressed_weight);
+        main_model->validate_nodes_and_infer_types();
+        source_packed_weight = packed_weight;
+        source_scales = scales;
+
+        graft_lm_head_on_mtp(mtp_model, main_model);
+        bool transpose_weight = false;
+        auto cloned_weight = extract_tied_lm_head_weight(mtp_model, transpose_weight).get_node_shared_ptr();
+        auto cloned_multiply = ov::as_type_ptr<ov::op::v1::Multiply>(cloned_weight);
+        ASSERT_TRUE(cloned_multiply);
+        auto cloned_convert = ov::as_type_ptr<ov::op::v0::Convert>(cloned_multiply->get_input_node_shared_ptr(0));
+        ASSERT_TRUE(cloned_convert);
+        cloned_packed_weight = ov::as_type_ptr<ov::op::v0::Constant>(cloned_convert->get_input_node_shared_ptr(0));
+        cloned_scales = ov::as_type_ptr<ov::op::v0::Constant>(cloned_multiply->get_input_node_shared_ptr(1));
+        ASSERT_TRUE(cloned_packed_weight);
+        ASSERT_TRUE(cloned_scales);
+        EXPECT_NE(cloned_multiply, decompressed_weight);
+        EXPECT_NE(cloned_convert, converted_weight);
+        EXPECT_NE(cloned_packed_weight, packed_weight);
+        EXPECT_NE(cloned_scales, scales);
+        EXPECT_EQ(cloned_packed_weight->get_data_ptr(), packed_weight->get_data_ptr());
+        EXPECT_EQ(cloned_scales->get_data_ptr(), scales->get_data_ptr());
+        EXPECT_EQ(cloned_packed_weight->get_element_type(), ov::element::u2);
+        EXPECT_EQ(cloned_packed_weight->get_shape(), (ov::Shape{VOCAB, HIDDEN}));
+        EXPECT_EQ(cloned_packed_weight->get_rt_info().at("storage_tag").as<std::string>(), "packed_source");
+        EXPECT_EQ(cloned_packed_weight->output(0).get_names(), packed_weight->output(0).get_names());
+        EXPECT_EQ(cloned_packed_weight->output(0).get_rt_info().at("tensor_tag").as<std::string>(), "packed_tensor");
+        EXPECT_EQ(cloned_multiply->get_rt_info().at("decompression_tag").as<std::string>(), "source");
+        EXPECT_EQ(cloned_multiply->input(0).get_rt_info().at("input_tag").as<std::string>(), "packed_input");
+
+        cloned_packed_weight->set_friendly_name("draft_packed_weight");
+        cloned_packed_weight->get_rt_info()["storage_tag"] = std::string("draft");
+        cloned_packed_weight->output(0).set_names({"draft_packed_data"});
+        cloned_packed_weight->output(0).get_rt_info()["tensor_tag"] = std::string("draft_tensor");
+        EXPECT_EQ(packed_weight->get_friendly_name(), "packed_lm_head");
+        EXPECT_EQ(packed_weight->get_rt_info().at("storage_tag").as<std::string>(), "packed_source");
+        EXPECT_EQ(packed_weight->output(0).get_names(), (std::unordered_set<std::string>{"packed_lm_head_data"}));
+        EXPECT_EQ(packed_weight->output(0).get_rt_info().at("tensor_tag").as<std::string>(), "packed_tensor");
+        EXPECT_EQ(packed_weight->output(0).get_target_inputs().size(), 1u);
+        EXPECT_EQ(scales->get_friendly_name(), "lm_head_scales");
+        EXPECT_EQ(scales->get_rt_info().at("storage_tag").as<std::string>(), "scales_source");
+        EXPECT_EQ(scales->output(0).get_names(), (std::unordered_set<std::string>{"lm_head_scales_data"}));
+        EXPECT_EQ(scales->output(0).get_target_inputs().size(), 1u);
+    }
+    EXPECT_TRUE(source_packed_weight.expired());
+    EXPECT_TRUE(source_scales.expired());
+    const auto* packed_bytes = cloned_packed_weight->get_data_ptr<uint8_t>();
+    for (size_t i = 0; i < cloned_packed_weight->get_byte_size(); ++i) {
+        EXPECT_EQ(packed_bytes[i], 0xe4);
+    }
+    for (const auto scale : cloned_scales->cast_vector<float>()) {
+        EXPECT_EQ(scale, 0.25f);
+    }
+    EXPECT_NO_THROW(mtp_model->validate_nodes_and_infer_types());
+}
+
 TEST(MtpModelTransforms, GraftedLogitsMatchTiedWeightMatmul) {
     std::vector<float> weights_data(VOCAB * HIDDEN);
     for (size_t i = 0; i < weights_data.size(); ++i) {
         weights_data[i] = static_cast<float>((i * 7) % 11) * 0.05f - 0.2f;
     }
     auto main_model = make_main_model(weights_data);
+    bool transpose_weight = false;
+    auto source_weight = extract_tied_lm_head_weight(main_model, transpose_weight).get_node_shared_ptr();
+    source_weight->set_friendly_name("source_lm_head");
+    source_weight->get_rt_info()["source_tag"] = std::string("source");
+    source_weight->output(0).set_names({"source_lm_head_data"});
+    source_weight->output(0).get_rt_info()["tensor_tag"] = std::string("source_tensor");
     auto mtp_model = make_mtp_model();
     graft_lm_head_on_mtp(mtp_model, main_model);
 
     ov::Core core;
     auto mtp_req = core.compile_model(mtp_model, "CPU").create_infer_request();
+    EXPECT_EQ(source_weight->get_friendly_name(), "source_lm_head");
+    EXPECT_EQ(source_weight->get_rt_info().at("source_tag").as<std::string>(), "source");
+    EXPECT_EQ(source_weight->output(0).get_names(), (std::unordered_set<std::string>{"source_lm_head_data"}));
+    EXPECT_EQ(source_weight->output(0).get_rt_info().at("tensor_tag").as<std::string>(), "source_tensor");
+    EXPECT_EQ(source_weight->output(0).get_target_inputs().size(), 1u);
 
     const size_t seq_len = 3;
     std::vector<float> hidden_in(seq_len * HIDDEN);
@@ -175,8 +284,7 @@ TEST(MtpModelTransforms, GraftedLogitsMatchTiedWeightMatmul) {
             for (size_t h = 0; h < HIDDEN; ++h) {
                 expected += hidden_data[t * HIDDEN + h] * weights_data[v * HIDDEN + h];
             }
-            EXPECT_NEAR(logits_data[t * VOCAB + v], expected, 1e-4f)
-                << "Mismatch at token " << t << ", vocab " << v;
+            EXPECT_NEAR(logits_data[t * VOCAB + v], expected, 1e-4f) << "Mismatch at token " << t << ", vocab " << v;
         }
     }
 }
