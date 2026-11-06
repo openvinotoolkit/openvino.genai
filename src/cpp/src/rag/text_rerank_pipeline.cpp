@@ -110,6 +110,36 @@ std::shared_ptr<Model> apply_qwen3_postprocessing(std::shared_ptr<Model> model,
         auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
         auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
 
+        if (auto matmul = ov::as_type_ptr<op::v0::MatMul>(node.get_node_shared_ptr())) {
+            if (!matmul->get_transpose_a() && matmul->get_transpose_b() &&
+                matmul->input_value(0).get_partial_shape().rank().is_static() &&
+                matmul->input_value(0).get_partial_shape().rank().get_length() == 3) {
+                // Slice hidden states to the last token [B, 1, H] before lm_head MatMul
+                auto last_hidden = std::make_shared<op::v8::Slice>(matmul->input_value(0), start, stop, step, axis);
+
+                // Gather the 'yes' and 'no' weight rows [1, H] and fold (w_yes - w_no) at compile time
+                auto wei = matmul->input_value(1);
+                auto w_axis =
+                    std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+                auto idx_true = std::make_shared<op::v0::Constant>(ov::element::i64,
+                                                                   ov::Shape{1},
+                                                                   std::vector<int64_t>{params.token_true_id});
+                auto idx_false = std::make_shared<op::v0::Constant>(ov::element::i64,
+                                                                    ov::Shape{1},
+                                                                    std::vector<int64_t>{params.token_false_id});
+                auto w_true = std::make_shared<op::v8::Gather>(wei, idx_true, w_axis);
+                auto w_false = std::make_shared<op::v8::Gather>(wei, idx_false, w_axis);
+                auto w_diff = std::make_shared<op::v1::Subtract>(w_true, w_false);
+
+                // Compute 1-row score logit [B, 1, 1] and apply Sigmoid(logit_yes - logit_no)
+                auto score_mm = std::make_shared<op::v0::MatMul>(last_hidden, w_diff, false, true);
+                auto squeeze_axes =
+                    std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{2}, std::vector<int64_t>{1, 2});
+                auto squeezed = std::make_shared<op::v0::Squeeze>(score_mm, squeeze_axes);
+                return std::make_shared<op::v0::Sigmoid>(squeezed);
+            }
+        }
+
         auto last_token_slice = std::make_shared<op::v8::Slice>(node, start, stop, step, axis);
 
         auto squeeze = std::make_shared<op::v0::Squeeze>(last_token_slice, axis);
