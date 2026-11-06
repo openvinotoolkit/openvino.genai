@@ -2699,6 +2699,8 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 # test-id's are of the form:
 # "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
+    # mistral3 text-only case
+    "*tiny-random-mistral3/PA/CPP/text-only": "CVS-199308",
     # muse glimmer
     "*tiny-random-muse-glimmer/*/CPP/image*": "CVS-192673",
     "*tiny-random-muse-glimmer/*/CPP/video*": "CVS-192673",
