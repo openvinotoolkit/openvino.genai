@@ -157,7 +157,7 @@ std::unique_ptr<AudioEncoderGemma4> create_audio_encoder(const std::shared_ptr<o
 }  // namespace
 
 std::unique_ptr<AudioEncoderGemma4> AudioEncoderGemma4::create(const std::shared_ptr<ov::Model>& model,
-                                                               VLMModelType model_type,
+                                                               const VLMModelType& model_type,
                                                                const std::string& device,
                                                                const ov::AnyMap& properties) {
     return create_audio_encoder(model, model_type, {}, device, properties);

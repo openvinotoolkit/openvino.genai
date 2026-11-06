@@ -18,7 +18,7 @@ public:
     virtual ov::Tensor encode(const ov::Tensor& audio) = 0;
 
     static std::unique_ptr<AudioEncoderGemma4> create(const std::shared_ptr<ov::Model>& model,
-                                                      VLMModelType model_type,
+                                                      const VLMModelType& model_type,
                                                       const std::string& device,
                                                       const ov::AnyMap& properties);
 

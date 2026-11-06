@@ -8,9 +8,12 @@
 #include "openvino/core/model.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "visual_language/vlm_models.hpp"
 
 namespace ov::genai {
+inline constexpr ov::Property<std::string> mmproj_path{"mmproj_path"};
+
 struct GGUFMultimodalModels {
     std::shared_ptr<ov::Model> language;
     VLMModels vlm;

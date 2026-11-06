@@ -171,8 +171,8 @@ private:
                                const Tokenizer& tokenizer,
                                const SchedulerConfig& scheduler_config,
                                const std::string& device,
-                               const ov::AnyMap& properties,
-                               const GenerationConfig& generation_config);
+                               const ov::AnyMap& properties = {},
+                               const GenerationConfig& generation_config = {});
 
     // Uses preloaded language model to avoid redundant read_model() during pipeline initialization.
     ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
