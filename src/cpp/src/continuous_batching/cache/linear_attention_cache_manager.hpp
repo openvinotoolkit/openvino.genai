@@ -54,6 +54,8 @@ class LinearAttentionCacheManager : public ICacheManager {
 
     std::string m_device;
     ov::RemoteContext m_context;  ///< Valid only on GPU; empty on CPU.
+    size_t m_num_execution_devices = 1;
+
     std::vector<StateTableGroup> m_groups;
     size_t m_num_cache_tensors = 0;
     size_t m_num_allocated_blocks = 0;
@@ -126,6 +128,7 @@ public:
         std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
         OPENVINO_ASSERT(!execution_devices.empty(), "Continuous batching: no execution devices found");
         m_device = execution_devices[0];
+        m_num_execution_devices = execution_devices.size();
 
         const bool all_gpu = std::all_of(execution_devices.begin(), execution_devices.end(),
             [](const std::string& d) { return d.find("GPU") != std::string::npos; });
@@ -204,13 +207,20 @@ public:
             return;
         m_num_allocated_blocks = num_blocks;
 
+        // On GPU, one extra block is appended past the logical block range. The block manager
+        // never hands it out, nothing ever writes to it, and it is kept permanently zero so that
+        // zero_blocks() can reset a block with a device->device copy. See zero_blocks().
+        const size_t alloc_blocks = m_context ? num_blocks + 1 : num_blocks;
+
         for (auto& group : m_groups) {
             for (size_t layer_idx : group.sorted_indices) {
                 auto& info = group.layers.at(layer_idx);
-                ov::Shape shape = make_shape(info.partial_shape, num_blocks);
+                ov::Shape shape = make_shape(info.partial_shape, alloc_blocks);
 
                 if (m_context) {
                     ov::Tensor new_tensor = m_context.create_tensor(info.precision, shape);
+
+                    zero_whole_remote_tensor(new_tensor, info.precision, shape);
 
                     if (info.tensor) {
                         const size_t rank = shape.size();
@@ -234,6 +244,31 @@ public:
                 m_request.set_tensor(info.full_name, info.tensor);
             }
         }
+    }
+
+    /// Zeroes a freshly created GPU state tensor with one host->device copy, made before any
+    /// inference is in flight. The GPU plugin does not zero-initialize remote tensors.
+    ///
+    /// On HETERO, a remote tensor holds one full copy per device, and a host-source copy reads
+    /// device i's data starting i * strides[0] bytes into the host buffer (and the public
+    /// RemoteTensor::copy_from passes an empty ROI shape that HETERO indexes out of bounds). So the
+    /// copy goes through a full-range ROI with an explicit shape, and the host source is a
+    /// correctly-shaped ROI of a zeroed buffer padded with one spare block per execution device,
+    /// keeping every device's read inside allocated, zeroed memory.
+    void zero_whole_remote_tensor(const ov::Tensor& tensor, const ov::element::Type& precision, const ov::Shape& shape) {
+        OPENVINO_ASSERT(precision.bitwidth() >= 8,
+                        "Linear attention GPU state zeroing requires a byte-addressable precision, got ", precision);
+        const size_t rank = shape.size();
+        ov::Shape padded_shape = shape;
+        padded_shape[0] += m_num_execution_devices;
+        ov::Tensor host_backing(precision, padded_shape);
+        std::memset(host_backing.data(), 0, host_backing.get_byte_size());
+
+        const ov::Coordinate begin(rank, 0);
+        const ov::Coordinate end(shape.begin(), shape.end());
+        ov::Tensor host_src(host_backing, begin, end);
+        ov::RemoteTensor dst_all(tensor, begin, end);
+        dst_all.copy_from(host_src);
     }
 
     void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) override {
@@ -275,6 +310,34 @@ public:
                 const size_t rank = shape.size();
                 ov::Shape block_shape = shape;
                 block_shape[0] = 1;
+
+                // GPU: reset the block with a device->device copy from the reserved all-zero block
+                // that lives inside the same remote tensor. A per-block host->device ROI copy is not
+                // safe here: on HETERO each device's copy reads i * strides[0] bytes into the
+                // one-block host buffer, i.e. past its end. Skipping the reset is not an option
+                // either, since a recycled block still holds the previous sequence's state.
+                if (m_context) {
+                    const size_t zero_source = m_num_allocated_blocks;
+                    OPENVINO_ASSERT(zero_source < shape[0],
+                                    "Linear attention zero-source block is missing from the allocation");
+                    ov::Coordinate src_start(rank, 0), src_end = shape;
+                    src_start[0] = zero_source;
+                    src_end[0] = zero_source + 1;
+                    ov::RemoteTensor src_roi(info.tensor, src_start, src_end);
+
+                    for (size_t block_index : block_indices) {
+                        OPENVINO_ASSERT(block_index < m_num_allocated_blocks,
+                                        "Linear attention block index ", block_index,
+                                        " is out of allocated range ", m_num_allocated_blocks);
+                        ov::Coordinate dst_start(rank, 0), dst_end = shape;
+                        dst_start[0] = block_index;
+                        dst_end[0] = block_index + 1;
+
+                        ov::RemoteTensor dst_roi(info.tensor, dst_start, dst_end);
+                        dst_roi.copy_from(src_roi);
+                    }
+                    continue;
+                }
 
                 ov::Tensor zero_block(info.precision, block_shape);
                 std::memset(zero_block.data(), 0, zero_block.get_byte_size());
