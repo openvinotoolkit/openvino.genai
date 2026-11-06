@@ -15,8 +15,8 @@ namespace genai {
 /**
  * @brief Configuration parameters required by the Qwen3 forced aligner.
  *
- * Reads forced-aligner-specific fields from config.json. Encoder parameters are handled
- * separately by Qwen3ASRConfig.
+ * Reads forced-aligner-specific fields from config.json. Audio encoder parameters are handled
+ * separately by VLMConfig.
  */
 class Qwen3ForcedAlignerConfig {
 public:
