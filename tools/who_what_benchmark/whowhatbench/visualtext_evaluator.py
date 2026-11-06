@@ -22,6 +22,7 @@ from .utils import (
 )
 from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
 
+
 DEF_VIDEO_FRAMES_AMOUNT = 10
 DEF_VIDEO_FRAMES_AMOUNT_GEMMA4 = 32
 
@@ -77,6 +78,11 @@ class VisualTextEvaluator(TextEvaluator):
             long_prompt=long_prompt,
         )
 
+        if not set(self.metrics_list) <= {"similarity", "divergency"}:
+            raise ValueError(
+                "Unsupported metrics were requested, supported metrics for current model-type are - 'similarity', 'divergency'"
+            )
+
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
             predictions = pd.read_csv(model_or_data, keep_default_na=False)
@@ -90,17 +96,8 @@ class VisualTextEvaluator(TextEvaluator):
         all_metrics_per_prompt = {}
         all_metrics = {}
 
-        if self.similarity:
-            metric_dict, metric_per_question = self.similarity.evaluate(
-                self.gt_data, predictions
-            )
-            all_metrics.update(metric_dict)
-            all_metrics_per_prompt.update(metric_per_question)
-
-        if self.divergency:
-            metric_dict, metric_per_question = self.divergency.evaluate(
-                self.gt_data, predictions
-            )
+        for metric in self.score_evaluators_list:
+            metric_dict, metric_per_question = metric.evaluate(self.gt_data, predictions)
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
