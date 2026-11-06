@@ -34,7 +34,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     use_case = args["use_case"]
 
     default_language = {"qwen3-asr": "English", "fun-asr": "English", "sense-voice": "auto"}.get(
-        use_case.model_type, "<|en|>"
+        use_case.model_type, "en"
     )
     speech_language = input_param["speech_param"].get("language", default_language)
     ret_timestamps = input_param["speech_param"].get("timestamp", True)
