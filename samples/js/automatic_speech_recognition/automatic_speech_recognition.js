@@ -48,8 +48,8 @@ async function main() {
     // Cache compiled models on disk for GPU and NPU to save time on the next run.
     properties['CACHE_DIR'] = 'asr_cache';
   }
-  // Whisper word timestamps require this constructor property.
-  // Also enable generationConfig.word_timestamps below.
+  // To enable Whisper word timestamps, uncomment both this constructor property
+  // and generationConfig.word_timestamps below.
   // properties.word_timestamps = true;
 
   const pipeline = await ASRPipeline(modelDir, device, properties);

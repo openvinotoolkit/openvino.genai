@@ -66,7 +66,6 @@ Output:
 
 ```text
  How are you doing today?
-timestamps: [0.00, 2.00] text:  How are you doing today?
 ```
 
 ### Standalone Forced-aligner word timestamps

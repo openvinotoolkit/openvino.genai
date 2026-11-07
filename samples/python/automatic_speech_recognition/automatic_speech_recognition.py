@@ -31,8 +31,8 @@ def main():
         # next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache()
 
-    # Whisper word timestamps require this constructor property.
-    # Also enable config.word_timestamps below.
+    # To enable Whisper word timestamps, uncomment both this constructor property
+    # and config.word_timestamps below.
     # ov_config["word_timestamps"] = True
 
     pipe = openvino_genai.ASRPipeline(args.model_dir, args.device, **ov_config)
@@ -47,7 +47,7 @@ def main():
 
     # Whisper-specific options
     config.task = "transcribe"  # Or "translate". Multilingual Whisper only.
-    config.return_timestamps = True
+    # config.return_timestamps = True
 
     # Word timestamps:
     # - Whisper: enable the constructor property above.
