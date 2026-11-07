@@ -472,15 +472,18 @@ ov::Tensor make_hidden_rows(size_t rows, float first) {
     return tensor;
 }
 
+// The target's tokens and its rows, which end at its processed length.
 ov::genai::GeneratedSequences target_step(const std::vector<int64_t>& tokens,
                                           size_t num_processed_tokens,
                                           const ov::Tensor& hidden_states) {
+    ov::genai::GeneratedSequence sequence(tokens,
+                                          std::vector<float>(tokens.size(), 0.0f),
+                                          num_processed_tokens,
+                                          hidden_states);
+    const size_t rows = hidden_states ? hidden_states.get_shape()[0] : 0;
+    sequence.hidden_states_first_position = num_processed_tokens - std::min(rows, num_processed_tokens);
     ov::genai::GeneratedSequences sequences;
-    sequences.emplace(0,
-                      ov::genai::GeneratedSequence(tokens,
-                                                   std::vector<float>(tokens.size(), 0.0f),
-                                                   num_processed_tokens,
-                                                   hidden_states));
+    sequences.emplace(0, std::move(sequence));
     return sequences;
 }
 
@@ -641,7 +644,9 @@ TEST_F(DFlashCBPipelineTest, PartialRejectionKeepsAcceptedRowsAndRewindsTheBlock
     draft.finish_window(group, {20, 21, 22});
 
     // the target accepted 20, rejected 21 and corrected it to 30; it exported rows for [17, 20, 21, 22]
-    auto result = draft.update_request(0, target_step({7, 17, 20, 30}, 11, make_hidden_rows(4, 100.0f)), true);
+    auto target = target_step({7, 17, 20, 30}, 11, make_hidden_rows(4, 100.0f));
+    target.at(0).hidden_states_first_position = 9;
+    auto result = draft.update_request(0, target, true);
 
     ASSERT_EQ(result.removed_tokens_cnt, 2);
     ASSERT_EQ(result.inserted_tokens_cnt, 1);
@@ -677,6 +682,24 @@ TEST_F(DFlashCBPipelineTest, FullRejectionTakesOnlyTheSeedRow) {
     ASSERT_EQ(result.removed_tokens_cnt, 3);
     ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 30, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
     ASSERT_EQ(draft.window(group).context_rows, 1);
+}
+
+TEST(DFlashTargetRows, CountsTheRowsUpToTheProcessedLength) {
+    // the target exported rows for [17, 20, 21, 22] at positions [9, 13), accepted 20 and corrected 21 to 30
+    ov::genai::GeneratedSequence target({7, 17, 20, 30}, std::vector<float>(4, 0.0f), 11, make_hidden_rows(4, 100.0f));
+    target.hidden_states_first_position = 9;
+    EXPECT_EQ(ov::genai::detail::count_target_rows_up_to_processed_length(target), 2);
+
+    // a recompute that has not reached the rows
+    target.num_processed_tokens = 4;
+    EXPECT_EQ(ov::genai::detail::count_target_rows_up_to_processed_length(target), 0);
+
+    // the target accepted all candidates
+    target.num_processed_tokens = 13;
+    EXPECT_EQ(ov::genai::detail::count_target_rows_up_to_processed_length(target), 4);
+
+    target.hidden_states = ov::Tensor();
+    EXPECT_EQ(ov::genai::detail::count_target_rows_up_to_processed_length(target), 0);
 }
 
 TEST_F(DFlashCBPipelineTest, DeferredTargetPublishesNoNewRows) {

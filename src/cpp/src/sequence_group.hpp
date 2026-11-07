@@ -67,6 +67,7 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
+    size_t m_hidden_state_first_position = 0;
     // When enabled, one intermediate hidden state is kept per token position
     // (prefill batches are sliced into per-token tensors before accumulation)
     static constexpr size_t kMaxAccumulatedHiddenStates = 512;
@@ -105,6 +106,7 @@ class Sequence {
         m_draft_proposals(seq.m_draft_proposals),
         m_grouped_id(id),
         m_hidden_state(seq.m_hidden_state),
+        m_hidden_state_first_position(seq.m_hidden_state_first_position),
         m_accumulate_hidden_states(seq.m_accumulate_hidden_states),
         m_hidden_state_cap_warned(seq.m_hidden_state_cap_warned),
         m_all_intermediate_hidden_states(seq.m_all_intermediate_hidden_states),
@@ -185,12 +187,18 @@ public:
         }
     }
 
-    void update_hidden_state(const ov::Tensor& tensor) {
+    // first_position is the token position of the first row.
+    void update_hidden_state(const ov::Tensor& tensor, size_t first_position = 0) {
         m_hidden_state = tensor;
+        m_hidden_state_first_position = first_position;
     }
 
     ov::Tensor get_hidden_state() const {
         return m_hidden_state;
+    }
+
+    size_t get_hidden_state_first_position() const {
+        return m_hidden_state_first_position;
     }
 
     void set_tree_metadata(TreeMetaData metadata) {

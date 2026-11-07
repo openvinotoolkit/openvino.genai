@@ -41,6 +41,10 @@ DFlashDraftWindow make_dflash_draft_window(const SequenceGroup& request,
                                            size_t target_processed_tokens,
                                            size_t candidate_position_offset);
 
+// The target's hidden-state rows up to its processed length. The target publishes the rows of all the tokens its
+// forward ran, so after a rejection the rows of the removed candidates follow them.
+size_t count_target_rows_up_to_processed_length(const GeneratedSequence& target);
+
 }  // namespace detail
 
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
