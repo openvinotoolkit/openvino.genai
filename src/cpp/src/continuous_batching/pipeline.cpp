@@ -21,6 +21,7 @@
 #include "speculative_decoding/dflash_model_transforms.hpp"
 #include "speculative_decoding/mtp_model_transforms.hpp"
 #include "utils.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/multimodal_inputs.hpp"
@@ -47,6 +48,22 @@ float get_load_time(std::chrono::steady_clock::time_point start_time) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
+void assert_supported_add_request_lora_mode(const std::optional<AdapterConfig>& adapters) {
+    if (adapters && static_cast<bool>(*adapters)) {
+        const auto mode = adapters->get_mode();
+        OPENVINO_ASSERT(mode != AdapterConfig::MODE_DYNAMIC && mode != AdapterConfig::MODE_AUTO && mode != AdapterConfig::MODE_STATIC_RANK,
+            "MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported in the add_request() + step() flow. "
+            "Use MODE_STATIC or MODE_FUSE instead.");
+    }
+}
+
+// The restriction applies to the public add_request() + step() flow only; generate() applies the adapters itself.
+void assert_supported_add_request_lora_modes(const std::optional<AdapterConfig>& pipeline_adapters,
+                                             const GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_mode(pipeline_adapters);
+    assert_supported_add_request_lora_mode(sampling_params.adapters);
+}
+
 } // namespace
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
@@ -68,7 +85,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path,
         utils::get_model_properties(properties_without_draft_model, "language_model"));
-    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
@@ -136,7 +153,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
     auto model = language_model;
-    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
@@ -204,7 +221,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path,
         utils::get_model_properties(properties_without_draft_model, "language_model"));
-    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
     auto generation_config = utils::from_config_json_if_exists(models_path);
@@ -264,7 +281,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, model_config_dir_path);
     auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
-    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     if (!model_config_dir_path.empty()) {
         properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = model_config_dir_path;
     }
@@ -272,7 +289,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     std::shared_ptr<InputsEmbedder> embedder;
     if (!model_config_dir_path.empty() && std::filesystem::exists(model_config_dir_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
-        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, device, non_adapter_properties.fork());
+        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, tokenizer, device, non_adapter_properties.fork());
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -522,19 +539,33 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, input_ids, sampling_params);
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, prompt, images, sampling_params);
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
+}
+
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                                         const std::string& prompt,
+                                                         const std::vector<ov::Tensor>& images,
+                                                         const std::vector<ov::Tensor>& videos,
+                                                         const std::vector<ov::Tensor>& audios,
+                                                         const ov::genai::GenerationConfig& sampling_params) {
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), sampling_params);
+    return m_impl->add_request(request_id, prompt, images, videos, {}, audios, sampling_params);
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(
@@ -545,6 +576,8 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     ov::genai::OptionalGenerationConfig generation_config = utils::get_config_from_map(properties_map);
     OPENVINO_ASSERT(generation_config.has_value(),
         "\"generation_config\" property is required in add_request with properties map");
+
+    assert_supported_add_request_lora_modes(m_impl->get_pipeline_adapters(), generation_config.value());
 
     const auto multimodal_inputs = extract_multimodal_inputs(properties_map);
 
@@ -558,6 +591,7 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
         multimodal_inputs.images.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos.value_or(std::vector<ov::Tensor>{}),
         multimodal_inputs.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+        multimodal_inputs.audios.value_or(std::vector<ov::Tensor>{}),
         generation_config.value()
     );
 }
@@ -631,9 +665,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-    OPENVINO_ASSERT(properties.has_vision_properties(),
-        "Vision properties are required for VLM generate with properties map. "
-        "Use the text-only generate overload for LLM requests.");
+    OPENVINO_ASSERT(properties.has_media_properties(),
+                    "Media properties are required for VLM generate with properties map. "
+                    "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
         prompts,
@@ -675,9 +709,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
 
-    OPENVINO_ASSERT(properties.has_vision_properties(),
-        "Vision properties are required for VLM generate with properties map. "
-        "Use the text-only generate overload for LLM requests.");
+    OPENVINO_ASSERT(properties.has_media_properties(),
+                    "Media properties are required for VLM generate with properties map. "
+                    "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
         histories,

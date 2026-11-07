@@ -9,6 +9,7 @@
 #include "openvino/genai/text_streamer.hpp"
 
 #include "utils.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 
 namespace ov::genai {
 
@@ -63,7 +64,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (!m_use_full_chat_history)
         m_cache_state.seq_length_axis = kv_pos.seq_len;
 
-    auto [filtered_properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+    auto filtered_properties_without_gguf = gguf_utils::extract_gguf_properties(properties).rest;
     auto filtered_properties = extract_adapters_from_properties(filtered_properties_without_gguf, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
@@ -489,8 +490,19 @@ EncodedResults StatefulLLMPipeline::generate(
     if (m_is_npu) {
         max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_model_runner.get_compiled_model());
     }
-    ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
-                                                                                requests, position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, max_kv_cache_size);
+    ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(
+        m_model_runner,
+        input_ids,
+        concatenated_attention_mask,
+        streamer_ptr,
+        m_sampler,
+        requests,
+        position_ids,
+        m_cache_state,
+        nullptr,
+        std::nullopt,
+        max_kv_cache_size
+    );
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 

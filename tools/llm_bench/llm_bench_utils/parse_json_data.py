@@ -60,8 +60,9 @@ def parse_image_json_data(json_data_list):
             if param in json_data:
                 image_param[param] = json_data[param]
 
-        if 'guidance_scale' in json_data:
-            image_param['guidance_scale'] = float(json_data['guidance_scale'])
+        for param in ["guidance_scale", "strength"]:
+            if param in json_data:
+                image_param[param] = float(json_data[param])
 
         image_param_list.append(image_param)
     return image_param_list
@@ -78,6 +79,9 @@ def parse_video_json_data(json_data_list):
         for param in ["guidance_scale", "guidance_rescale"]:
             if param in json_data:
                 video_param[param] = float(json_data[param])
+
+        if "media" in json_data:
+            video_param["media"] = json_data["media"]
 
         video_param_list.append(video_param)
     return video_param_list

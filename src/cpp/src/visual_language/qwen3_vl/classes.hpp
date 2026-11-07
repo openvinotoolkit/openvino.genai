@@ -122,4 +122,6 @@ void fill_video_metadata(EncodedVideo& encoded_video,
                          size_t total_num_frames,
                          const VideoProcessorConfig& video_config);
 
+std::vector<float> calculate_video_timestamps(const VideoMetadata& video_metadata, size_t temporal_patch_size);
+
 }  // namespace ov::genai

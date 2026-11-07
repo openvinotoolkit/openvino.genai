@@ -242,6 +242,9 @@ void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& propert
     if (auto target_layer_ids = get_rt_info_value<std::string>(model, {"dflash", "target_layer_ids"})) {
         properties["dflash_target_layer_ids"] = parse_layer_ids(*target_layer_ids);
     }
+    if (auto offset = get_rt_info_value<std::string>(model, {"dflash", "candidate_position_offset"})) {
+        properties["dflash_candidate_position_offset"] = static_cast<size_t>(std::stoul(*offset));
+    }
 }
 
 DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
@@ -267,6 +270,18 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
     info.target_layer_ids = layers_it->second.as<std::vector<int32_t>>();
     config.erase(layers_it);
     OPENVINO_ASSERT(!info.target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
+
+    auto offset_it = config.find("dflash_candidate_position_offset");
+    if (offset_it != config.end()) {
+        info.candidate_position_offset = offset_it->second.as<size_t>();
+        OPENVINO_ASSERT(info.candidate_position_offset == 0 || info.candidate_position_offset == 1,
+                        "DFlash candidate_position_offset must be 0 or 1, got ",
+                        info.candidate_position_offset,
+                        ".");
+        config.erase(offset_it);
+    } else {
+        info.candidate_position_offset = 1;
+    }
 
     return info;
 }

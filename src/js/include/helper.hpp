@@ -13,6 +13,8 @@
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
+#include "openvino/genai/rag/embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -48,6 +50,20 @@ using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory>;
  */
 template <typename TargetType>
 TargetType js_to_cpp(const Napi::Env& env, const Napi::Value& value);
+
+/**
+ * @brief Convert a JS argument and assign it to a field only when the argument is defined (not undefined or null).
+ * @tparam TargetType destination C++ data type deduced from field
+ * @param env Napi::Env of the current call
+ * @param value the JS value to convert
+ * @param field destination overwritten only when value is defined
+ */
+template <typename TargetType>
+void set_if_defined(const Napi::Env& env, const Napi::Value& value, TargetType& field) {
+    if (!value.IsUndefined() && !value.IsNull()) {
+        field = js_to_cpp<TargetType>(env, value);
+    }
+}
 
 /** @brief  A template specialization for TargetType ov::Any */
 template <>
@@ -139,6 +155,14 @@ ov::genai::WhisperGenerationConfig js_to_cpp<ov::genai::WhisperGenerationConfig>
 template <>
 ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(const Napi::Env& env,
                                                                                const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::OmniTalkerSpeechConfig */
+template <>
+ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(const Napi::Env& env,
+                                                                               const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::vector<ov::genai::VideoMetadata> */
+template <>
+std::vector<ov::genai::VideoMetadata> js_to_cpp<std::vector<ov::genai::VideoMetadata>>(const Napi::Env& env,
+                                                                                       const Napi::Value& value);
 template <>
 ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
                                                                               const Napi::Value& value);
@@ -208,6 +232,11 @@ template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env,
                                                                 const ov::genai::EmbeddingResults& embedding_result);
 
+/** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::EmbedResult */
+template <>
+Napi::Value cpp_to_js<ov::genai::EmbedResult, Napi::Value>(const Napi::Env& env,
+                                                           const ov::genai::EmbedResult& embed_result);
+
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::string> */
 template <>
 Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& env,
@@ -242,6 +271,20 @@ template <>
 Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
     const Napi::Env& env,
     const std::vector<std::pair<size_t, float>>& rerank_results);
+
+/**
+ * @brief  A template specialization for TargetType Napi::Value and SourceType ov::Any.
+ * An empty ov::Any maps to null. Throws for unsupported stored types.
+ */
+template <>
+Napi::Value cpp_to_js<ov::Any, Napi::Value>(const Napi::Env& env, const ov::Any& value);
+
+template <>
+Napi::Value cpp_to_js<ov::AnyMap, Napi::Value>(const Napi::Env& env, const ov::AnyMap& value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::AnyMap>, Napi::Value>(const Napi::Env& env,
+                                                            const std::vector<ov::AnyMap>& value);
 
 template <>
 Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor);
@@ -349,6 +392,8 @@ Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::stri
 Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults& results);
 
 Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results);
+
+Napi::Object to_omni_decoded_result(const Napi::Env& env, const ov::genai::OmniDecodedResults& results);
 
 Napi::Object to_whisper_decoded_result(const Napi::Env& env, const ov::genai::WhisperDecodedResults& results);
 

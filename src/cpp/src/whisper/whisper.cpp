@@ -114,6 +114,10 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         }
 
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
+        if (token.empty()) {
+            // Empty terminator pushed by notify_handle_final()/notify_handle_oom() to unblock readers.
+            return;
+        }
 
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
         if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
@@ -158,6 +162,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         raw_metrics.m_sampling_durations.emplace_back(
             ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     }
+    sequence_group->notify_handle();
     stream_generated_tokens();
 
     // "Generation" phase
@@ -231,6 +236,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
             raw_metrics.m_sampling_durations.emplace_back(
                 ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         }
+        sequence_group->notify_handle();
     }
 
     stream_generated_tokens();
@@ -288,7 +294,7 @@ ov::Tensor encode(ov::InferRequest& request,
     // reset input tensor
     auto devices = request.get_compiled_model().get_property(ov::execution_devices);
     OPENVINO_ASSERT(devices.size() > 0, "No execution devices found!");
-    size_t batch_size = (devices[0] == "NPU") ? 1 : 0;
+    size_t batch_size = (devices[0].rfind("NPU", 0) == 0) ? 1 : 0;
     request.set_tensor("input_features", ov::Tensor(ov::element::f32, {batch_size, feature_size, nb_max_frames}));
 
     return request.get_tensor("last_hidden_state");

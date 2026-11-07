@@ -59,6 +59,10 @@ public:
         m_attention_backend = attention_backend;
     }
 
+    const std::string& get_attention_backend() const {
+        return m_attention_backend;
+    }
+
     void set_load_time(float load_time_ms) {
         m_load_time_ms = load_time_ms;
     }

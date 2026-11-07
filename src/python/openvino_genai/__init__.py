@@ -82,12 +82,13 @@ from .py_openvino_genai import (
 from .py_openvino_genai import ChatHistory
 
 # Tokenizers
-from .py_openvino_genai import TokenizedInputs, Tokenizer
+from .py_openvino_genai import GGUFTokenizer, TokenizedInputs, Tokenizer
 
 # ASR pipeline
 from .py_openvino_genai import (
     ASRDecodedResultChunk,
     ASRDecodedResults,
+    ASRForcedAligner,
     ASRGenerationConfig,
     ASRPerfMetrics,
     ASRPipeline,
@@ -103,9 +104,12 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     CLIPTextModel,
     CLIPTextModelWithProjection,
+    Gemma3TextEncoder,
     Qwen3TextEncoder,
     Qwen2_5_VLForConditionalGeneration,
+    Qwen3VLForConditionalGeneration,
     QwenImageTransformer2DModel,
+    QwenImage21Transformer2DModel,
     T5EncoderModel,
     UNet2DConditionModel,
     Flux2Transformer2DModel,
@@ -130,6 +134,11 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     LTXVideoTransformer3DModel,
     AutoencoderKLLTXVideo,
+    LTX2VideoTransformer3DModel,
+    AutoencoderKLLTX2Video,
+    AutoencoderKLLTX2Audio,
+    LTX2TextConnectors,
+    LTX2Vocoder,
     Image2VideoPipeline,
     Text2VideoPipeline,
     VideoGenerationConfig,
@@ -141,6 +150,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     ContinuousBatchingPipeline,
     GenerationFinishReason,
+    GenerationHandle,
     GenerationResult,
     GenerationStatus,
     SchedulerConfig,

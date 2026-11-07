@@ -26,10 +26,17 @@ FetchContent_Declare(indicators
     URL_HASH SHA256=70da7a693ff7a6a283850ab6d62acf628eea17d386488af8918576d0760aef7b)
 FetchContent_MakeAvailable(indicators)
 
-# create main sample executable
-add_executable(text2video text2video.cpp imwrite_video.cpp)
+if(NOT TARGET dr_libs)
+    FetchContent_Declare(dr_libs
+        URL https://github.com/mackron/dr_libs/archive/da35f9d6c7374a95353fd1df1d394d44ab66cf01.tar.gz
+        URL_HASH SHA256=2704d347f480ca1bc92233fb01747e4550cc8031735b6ea62ca9990ebb8851ae)
+    FetchContent_MakeAvailable(dr_libs)
+endif()
 
-target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
+# create main sample executable
+add_executable(text2video text2video.cpp imwrite_video.cpp save_audio.cpp)
+
+target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 ov_genai_link_opencv(text2video core imgproc videoio imgcodecs)
 target_link_libraries(text2video PRIVATE openvino::genai indicators::indicators)
 

@@ -198,6 +198,7 @@ TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
     model->set_rt_info(std::string("151669"), {"dflash", "mask_token_id"});
     model->set_rt_info(std::string("1,12,23,34,45"), {"dflash", "target_layer_ids"});
 
+    // Verify default legacy candidate_position_offset when omitted
     ov::AnyMap properties;
     ov::genai::utils::dflash::apply_dflash_rt_info(model, properties);
 
@@ -210,7 +211,24 @@ TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
     ASSERT_TRUE(rt_info.dflash_mode);
     ASSERT_EQ(rt_info.mask_token_id, 151669);
     ASSERT_EQ(rt_info.target_layer_ids, (std::vector<int32_t>{1, 12, 23, 34, 45}));
+    ASSERT_EQ(rt_info.candidate_position_offset, 1);
     ASSERT_TRUE(properties.empty());
+
+    // Verify explicit candidate_position_offset
+    model->set_rt_info(std::string("0"), {"dflash", "candidate_position_offset"});
+    ov::genai::utils::dflash::apply_dflash_rt_info(model, properties);
+    ASSERT_EQ(properties.at("dflash_candidate_position_offset").as<size_t>(), 0);
+
+    auto deepspec_rt_info = ov::genai::utils::dflash::extract_dflash_info_from_config(properties);
+    ASSERT_EQ(deepspec_rt_info.candidate_position_offset, 0);
+    ASSERT_TRUE(properties.empty());
+
+    // Verify invalid values throw in extraction
+    properties["dflash_mode"] = true;
+    properties["dflash_mask_token_id"] = int64_t(151669);
+    properties["dflash_target_layer_ids"] = std::vector<int32_t>{1, 12, 23, 34, 45};
+    properties["dflash_candidate_position_offset"] = size_t(2);
+    EXPECT_THROW(ov::genai::utils::dflash::extract_dflash_info_from_config(properties), ov::Exception);
 }
 
 TEST(DFlashModelTransforms, FallsBackToEagle3LayerPatternWithoutAnnotations) {
@@ -361,24 +379,37 @@ TEST(DFlashCBHiddenState, TruncatesRejectedTail) {
 }
 
 TEST(DFlashCBDraftInputs, BuildsSeedMaskBlock) {
-    auto input_ids = ov::genai::dflash_cb::build_draft_input_ids(42, 99, 3);
+    auto input_ids_default = ov::genai::dflash_cb::build_draft_input_ids(42, 99, 3);
+    ASSERT_EQ(input_ids_default.get_shape(), ov::Shape({1, 4}));
+    ASSERT_EQ(int64_tensor_values(input_ids_default), (std::vector<int64_t>{42, 99, 99, 99}));
 
-    ASSERT_EQ(input_ids.get_shape(), ov::Shape({1, 4}));
-    ASSERT_EQ(int64_tensor_values(input_ids), (std::vector<int64_t>{42, 99, 99, 99}));
+    auto input_ids_deepspec = ov::genai::dflash_cb::build_draft_input_ids(42, 99, 3, /*candidate_position_offset=*/0);
+    ASSERT_EQ(input_ids_deepspec.get_shape(), ov::Shape({1, 3}));
+    ASSERT_EQ(int64_tensor_values(input_ids_deepspec), (std::vector<int64_t>{42, 99, 99}));
 }
 
 TEST(DFlashCBDraftInputs, BuildsPositionIdsFromCommittedLength) {
-    auto position_ids = ov::genai::dflash_cb::build_draft_position_ids(5, 2, 3);
+    auto position_ids_default = ov::genai::dflash_cb::build_draft_position_ids(5, 2, 3);
+    ASSERT_EQ(position_ids_default.get_shape(), ov::Shape({1, 6}));
+    ASSERT_EQ(int64_tensor_values(position_ids_default), (std::vector<int64_t>{5, 6, 7, 8, 9, 10}));
 
-    ASSERT_EQ(position_ids.get_shape(), ov::Shape({1, 6}));
-    ASSERT_EQ(int64_tensor_values(position_ids), (std::vector<int64_t>{5, 6, 7, 8, 9, 10}));
+    auto position_ids_deepspec =
+        ov::genai::dflash_cb::build_draft_position_ids(5, 2, 3, /*candidate_position_offset=*/0);
+    ASSERT_EQ(position_ids_deepspec.get_shape(), ov::Shape({1, 5}));
+    ASSERT_EQ(int64_tensor_values(position_ids_deepspec), (std::vector<int64_t>{5, 6, 7, 8, 9}));
 }
 
 TEST(DFlashCBDraftInputs, BuildsAttentionMaskForFullDraftContext) {
-    auto attention_mask = ov::genai::dflash_cb::build_draft_attention_mask(5, 2, 3);
+    auto attention_mask_default = ov::genai::dflash_cb::build_draft_attention_mask(5, 2, 3);
+    ASSERT_EQ(attention_mask_default.get_shape(), ov::Shape({1, 11}));
+    ASSERT_EQ(int64_tensor_values(attention_mask_default),
+              (std::vector<int64_t>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
 
-    ASSERT_EQ(attention_mask.get_shape(), ov::Shape({1, 11}));
-    ASSERT_EQ(int64_tensor_values(attention_mask), (std::vector<int64_t>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+    auto attention_mask_deepspec =
+        ov::genai::dflash_cb::build_draft_attention_mask(5, 2, 3, /*candidate_position_offset=*/0);
+    ASSERT_EQ(attention_mask_deepspec.get_shape(), ov::Shape({1, 10}));
+    ASSERT_EQ(int64_tensor_values(attention_mask_deepspec),
+              (std::vector<int64_t>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
 }
 
 TEST(DFlashCBVlmPromptIds, BuildsPlaceholderPromptIds) {
@@ -396,6 +427,54 @@ TEST(DFlashCBGenerationConfig, DefaultsAssistantTokensToFive) {
     ov::genai::dflash_cb::ensure_num_assistant_tokens_is_set(config);
 
     ASSERT_EQ(config.num_assistant_tokens, ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS);
+}
+
+TEST(DFlashCBGenerationConfig, PreservesUnsetMaxNewTokensForDraft) {
+    ov::genai::GenerationConfig config;
+    ov::genai::dflash_cb::ensure_num_assistant_tokens_is_set(config);
+    auto draft_config = config;
+
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(draft_config, config);
+
+    ASSERT_EQ(draft_config.max_new_tokens, SIZE_MAX);
+}
+
+TEST(DFlashCBGenerationConfig, ExtendsFiniteActiveLimitForDraft) {
+    constexpr size_t assistant_tokens = ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS;
+
+    ov::genai::GenerationConfig max_new_tokens_config;
+    max_new_tokens_config.max_new_tokens = 10;
+    max_new_tokens_config.num_assistant_tokens = assistant_tokens;
+    auto max_new_tokens_draft_config = max_new_tokens_config;
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(max_new_tokens_draft_config,
+                                                              max_new_tokens_config);
+    ASSERT_EQ(max_new_tokens_draft_config.max_new_tokens, 10 + assistant_tokens);
+
+    ov::genai::GenerationConfig max_length_config;
+    max_length_config.max_length = 100;
+    max_length_config.num_assistant_tokens = assistant_tokens;
+    auto max_length_draft_config = max_length_config;
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(max_length_draft_config, max_length_config);
+    ASSERT_EQ(max_length_draft_config.max_length, 100 + assistant_tokens);
+}
+
+TEST(DFlashCBGenerationConfig, PreservesFiniteLimitWhenHeadroomWouldOverflow) {
+    constexpr size_t assistant_tokens = ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS;
+
+    ov::genai::GenerationConfig max_new_tokens_config;
+    max_new_tokens_config.max_new_tokens = SIZE_MAX - 2;
+    max_new_tokens_config.num_assistant_tokens = assistant_tokens;
+    auto max_new_tokens_draft_config = max_new_tokens_config;
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(max_new_tokens_draft_config,
+                                                              max_new_tokens_config);
+    ASSERT_EQ(max_new_tokens_draft_config.max_new_tokens, max_new_tokens_config.max_new_tokens);
+
+    ov::genai::GenerationConfig max_length_config;
+    max_length_config.max_length = SIZE_MAX - 2;
+    max_length_config.num_assistant_tokens = assistant_tokens;
+    auto max_length_draft_config = max_length_config;
+    ov::genai::dflash_cb::add_draft_assistant_token_headroom(max_length_draft_config, max_length_config);
+    ASSERT_EQ(max_length_draft_config.max_length, max_length_config.max_length);
 }
 
 TEST(DFlashCBGenerationConfig, PreservesExplicitAssistantTokens) {

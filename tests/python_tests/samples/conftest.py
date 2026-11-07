@@ -7,6 +7,7 @@ import json
 import pytest
 import shutil
 import logging
+import uuid
 import requests
 from importlib import metadata
 from pathlib import Path
@@ -152,6 +153,18 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
         "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
     },
+    "tiny-random-qwen3-tts": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-tts",
+        "convert_args": ["--trust-remote-code"],
+    },
+    "tiny-random-qwen3-tts-customvoice": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-tts-customvoice",
+        "convert_args": ["--trust-remote-code"],
+    },
+    "tiny-random-qwen3-tts-voicedesign": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-tts-voicedesign",
+        "convert_args": ["--trust-remote-code"],
+    },
     "Qwen3-1.7B": {
         "name": "Qwen/Qwen3-1.7B",
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
@@ -176,6 +189,14 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
         "convert_args": ["--trust-remote-code"],
     },
+    "tiny-random-ltx2": {
+        "name": "optimum-intel-internal-testing/tiny-random-ltx2",
+        "convert_args": ["--trust-remote-code"],
+    },
+    "tiny-random-ltx2.3": {
+        "name": "optimum-intel-internal-testing/tiny-random-ltx2.3",
+        "convert_args": ["--trust-remote-code"],
+    },
     "tiny-random-flux": {
         "name": "optimum-intel-internal-testing/tiny-random-flux",
         "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
@@ -186,6 +207,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-qwen3-vl": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-gemma4": {
+        "name": "optimum-intel-internal-testing/tiny-random-gemma4",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
     "tiny-random-qwen3-omni": {
@@ -455,11 +480,18 @@ def download_test_content(request):
         if not os.path.exists(file_path):
             logger.info(f"Downloading test content from {file_url} to {file_path}...")
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            response = requests.get(file_url, stream=True)
-            response.raise_for_status()
-            with open(file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            temp_path = f"{file_path}.tmp_{uuid.uuid4().hex[:8]}"
+            try:
+                response = requests.get(file_url, stream=True)
+                response.raise_for_status()
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                os.replace(temp_path, file_path)
+            except Exception:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                raise
             logger.info(f"Downloaded test content to {file_path}")
         else:
             logger.info(f"Test content already exists at {file_path}")

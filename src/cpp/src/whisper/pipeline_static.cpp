@@ -287,6 +287,10 @@ void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> stre
     }
 
     std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
+    if (token.empty()) {
+        // Empty terminator pushed by notify_handle_final()/notify_handle_oom() to unblock readers.
+        return;
+    }
 
     auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
     if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
@@ -325,6 +329,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
         raw_metrics.m_sampling_durations.emplace_back(
             ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     }
+    sequence_group->notify_handle();
     stream_generated_tokens(streamer, handle, return_timestamps);
 
     prepare_decoder_with_past(models.decoder_with_past, models.decoder, init_ids.size());
@@ -350,6 +355,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
             raw_metrics.m_sampling_durations.emplace_back(
                 ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         }
+        sequence_group->notify_handle();
         stream_generated_tokens(streamer, handle, return_timestamps);
     }
 
@@ -1056,6 +1062,9 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
                                                               const ov::AnyMap& properties)
     : WhisperPipelineImplBase{models_path}
     , m_sampler(m_tokenizer) {
+    GENAI_WARN("The use of \"StaticWhisperPipeline\" on NPU is deprecated and will be removed"
+               "in future major release. Use StatefulWhisperPipeline instead (used by default now).");
+
     ov::AnyMap properties_copy = properties;
     m_generation_config.update_generation_config(properties_copy);
     erase_whisper_generation_config_keys(properties_copy);

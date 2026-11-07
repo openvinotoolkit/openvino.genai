@@ -103,21 +103,27 @@ AutoencoderKLQwenImage AutoencoderKLQwenImage::clone() {
 }
 
 AutoencoderKLQwenImage& AutoencoderKLQwenImage::reshape(int batch_size, int height, int width) {
-    OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
+    reshape_encoder(batch_size, height, width);
+    return reshape_decoder(batch_size, height, width);
+}
 
-    const size_t vae_scale_factor = get_vae_scale_factor();
-
-    OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
-                    (width % vae_scale_factor == 0 || width < 0),
-                    "Both 'width' and 'height' must be divisible by ", vae_scale_factor);
-
+AutoencoderKLQwenImage& AutoencoderKLQwenImage::reshape_encoder(int batch_size, int height, int width) {
     if (m_encoder_model) {
+        check_reshape_dimensions(height, width);
         ov::PartialShape input_shape = m_encoder_model->input(0).get_partial_shape();
         // Encoder: (B, 3, 1, H, W)
         std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], 1, height, width}}};
         m_encoder_model->reshape(idx_to_shape);
     }
 
+    return *this;
+}
+
+AutoencoderKLQwenImage& AutoencoderKLQwenImage::reshape_decoder(int batch_size, int height, int width) {
+    OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
+    check_reshape_dimensions(height, width);
+
+    const size_t vae_scale_factor = get_vae_scale_factor();
     const int lat_h = height / vae_scale_factor;
     const int lat_w = width / vae_scale_factor;
 
@@ -127,6 +133,14 @@ AutoencoderKLQwenImage& AutoencoderKLQwenImage::reshape(int batch_size, int heig
     m_decoder_model->reshape(idx_to_shape);
 
     return *this;
+}
+
+void AutoencoderKLQwenImage::check_reshape_dimensions(int height, int width) const {
+    const size_t vae_scale_factor = get_vae_scale_factor();
+
+    OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
+                    (width % vae_scale_factor == 0 || width < 0),
+                    "Both 'width' and 'height' must be divisible by ", vae_scale_factor);
 }
 
 AutoencoderKLQwenImage& AutoencoderKLQwenImage::compile(const std::string& device, const ov::AnyMap& properties) {

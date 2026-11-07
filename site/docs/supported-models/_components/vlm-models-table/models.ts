@@ -33,6 +33,16 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'LFM3VL',
+    models: [
+      {
+        name: 'LFM3-VL',
+        links: ['https://huggingface.co/LiquidAI/LFM3-VL-2B'],
+        notesLink: '#lfm3-vl-notes',
+      },
+    ],
+  },
+  {
     architecture: 'LLaVA',
     models: [
       {
@@ -108,6 +118,43 @@ export const VLM_MODELS: VLMModelType[] = [
         name: 'MiniCPM-V-2_6',
         links: ['https://huggingface.co/openbmb/MiniCPM-V-2_6'],
       },
+      {
+        name: 'MiniCPM-V-4_5',
+        links: ['https://huggingface.co/openbmb/MiniCPM-V-4_5'],
+        notesLink: '#minicpm-v-4_5-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'MiniCPMV4_7',
+    models: [
+      {
+        name: 'MiniCPM-V-4.7',
+        links: [
+          'https://huggingface.co/openbmb/MiniCPM-V-4.7-1B',
+          'https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B',
+        ],
+        notesLink: '#minicpmv4_7-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'MiniCPMOcrForConditionalGeneration',
+    models: [
+      {
+        name: 'MiniCPM-OCR-1.0',
+        links: ['https://huggingface.co/openbmb/MiniCPM-OCR-1.0'],
+      },
+    ],
+  },
+  {
+    architecture: 'MiniCPMV4_6ForConditionalGeneration',
+    models: [
+      {
+        name: 'MiniCPM-V-4.6',
+        links: ['https://huggingface.co/openbmb/MiniCPM-V-4.6'],
+        notesLink: '#minicpmv4_6-notes',
+      },
     ],
   },
   {
@@ -125,6 +172,18 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'Muse-Glimmer',
         links: ['https://huggingface.co/meta-models/Muse-Glimmer-30B'],
+      },
+    ],
+  },
+  {
+    architecture: 'Mistral3ForConditionalGeneration',
+    models: [
+      {
+        name: 'Mistral3',
+        links: [
+          'https://huggingface.co/mistralai/Ministral-3-3B-Reasoning-2512',
+        ],
+        notesLink: '#mistral3-notes',
       },
     ],
   },

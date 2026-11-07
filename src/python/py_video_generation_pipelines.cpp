@@ -34,11 +34,21 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("num_inference_steps", &ov::genai::VideoGenerationConfig::num_inference_steps)
         .def_readwrite("max_sequence_length", &ov::genai::VideoGenerationConfig::max_sequence_length)
         .def_readwrite("taylorseer_config", &ov::genai::VideoGenerationConfig::taylorseer_config)
-        .def_readwrite("adapters", &ov::genai::VideoGenerationConfig::adapters);
+        .def_readwrite("adapters", &ov::genai::VideoGenerationConfig::adapters)
+        .def_readwrite("audio_guidance_scale", &ov::genai::VideoGenerationConfig::audio_guidance_scale)
+        .def_readwrite("stg_scale", &ov::genai::VideoGenerationConfig::stg_scale)
+        .def_readwrite("audio_stg_scale", &ov::genai::VideoGenerationConfig::audio_stg_scale)
+        .def_readwrite("modality_scale", &ov::genai::VideoGenerationConfig::modality_scale)
+        .def_readwrite("audio_modality_scale", &ov::genai::VideoGenerationConfig::audio_modality_scale)
+        .def_readwrite("audio_guidance_rescale", &ov::genai::VideoGenerationConfig::audio_guidance_rescale)
+        .def_readwrite("spatio_temporal_guidance_blocks",
+                       &ov::genai::VideoGenerationConfig::spatio_temporal_guidance_blocks);
 
     py::class_<ov::genai::VideoGenerationResult>(m, "VideoGenerationResult")
         .def_readonly("video", &ov::genai::VideoGenerationResult::video)
-        .def_readonly("perf_metrics", &ov::genai::VideoGenerationResult::performance_stat);
+        .def_readonly("perf_metrics", &ov::genai::VideoGenerationResult::performance_stat)
+        .def_readonly("audio", &ov::genai::VideoGenerationResult::audio)
+        .def_readonly("audio_sample_rate", &ov::genai::VideoGenerationResult::audio_sample_rate);
 
     py::class_<ov::genai::Text2VideoPipeline>(m, "Text2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {

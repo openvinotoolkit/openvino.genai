@@ -4,6 +4,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Type
+import logging
 import subprocess  # nosec B404
 import tempfile
 
@@ -36,6 +37,8 @@ from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 
 from utils.constants import OV_MODEL_FILENAME, OV_MODEL_INDEX
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -367,7 +370,11 @@ def export_with_optimum_cli(model_id: str, model_task: str, output_dir: Path, tr
     if trust_remote_code:
         command.append("--trust-remote-code")
 
-    retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8"))
+    try:
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8"))
+    except subprocess.CalledProcessError as error:
+        logger.exception(f"optimum-cli returned {error.returncode}. Stdout:\n{error.stdout}\nStderr:\n{error.stderr}")
+        raise
 
 
 def download_and_convert_model_class(

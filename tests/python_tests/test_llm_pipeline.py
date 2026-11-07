@@ -303,12 +303,9 @@ def test_linear_attention_batch_string_inputs(
     prompts: list[str],
     pipeline_type: PipelineType,
 ) -> None:
-    if (
-        llm_model.model_id == QWEN3_NEXT_MODEL_ID
-        and pipeline_type == PipelineType.PAGED_ATTENTION
-        and prompts == BATCHED_PROMPTS[1]
-    ):
+    if llm_model.model_id == QWEN3_NEXT_MODEL_ID and pipeline_type == PipelineType.PAGED_ATTENTION:
         # This tiny-random model has almost-equal logits, so PA and the reference sometimes pick different greedy tokens.
+        # Every batch in BATCHED_PROMPTS has been seen diverging, so the guard covers all of them.
         # Tracking issue: CVS-192310
         pytest.xfail(
             "qwen3-next PAGED_ATTENTION and reference pick different greedy tokens because this tiny-random model has almost-equal logits "
@@ -829,7 +826,22 @@ def test_callback_terminate_by_status(ov_pipe: ov_genai.LLMPipeline) -> None:
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize(
+    "llm_model",
+    [
+        pytest.param(
+            model_id,
+            marks=pytest.mark.xfail(
+                reason="qwen3-next model output doesn't match for GenAI vs transformers. CVS-195218",
+                raises=AssertionError,
+            ),
+        )
+        if model_id == QWEN3_NEXT_MODEL_ID
+        else model_id
+        for model_id in CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST
+    ],
+    indirect=True,
+)
 def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,

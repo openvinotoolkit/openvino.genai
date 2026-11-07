@@ -1,7 +1,12 @@
-name: macOS (14, Python 3.11)
+name: macOS (15, Python 3.11)
 on:
   workflow_dispatch:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   merge_group:
   push:
     branches:
@@ -30,6 +35,7 @@ jobs:
   smart_ci:
     name: Smart CI
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false || github.run_attempt > 1 || contains(github.event.pull_request.labels.*.name, 'enable_ci_for_draft_pr')
     outputs:
       affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
       changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
@@ -101,7 +107,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       CMAKE_GENERATOR: Ninja
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -221,11 +227,15 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14-xlarge
+    runs-on: macos-15-xlarge
     env:
       CCACHE_DIR: ${{ github.workspace }}/ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       CMAKE_C_COMPILER_LAUNCHER: ccache
+      # Normalize workspace paths and volatile time macros so ccache hits across runs.
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: 'true'
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
@@ -286,7 +296,12 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+          # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps ccache warm.
+          build_reqs=()
+          while IFS= read -r req; do build_reqs+=("$req"); done < <(python -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
+          python -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
+
+          python -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache" \
               --config-settings=override=cmake.generator="Ninja" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
@@ -326,7 +341,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -383,7 +398,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
@@ -467,7 +482,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -526,7 +541,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -575,7 +590,7 @@ jobs:
       - name: Setup NodeJS
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 21
+          node-version: 22
 
       - name: Install GenAI NPM package
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -614,7 +629,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -664,8 +679,9 @@ jobs:
       - name: gtests unit tests
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
+          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching ${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="-AddSecondInputTest.*:LLMPipelineBackendRealModel*"
+          ${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure
         env:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
@@ -690,7 +706,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai

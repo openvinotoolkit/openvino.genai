@@ -4,7 +4,6 @@
 #pragma once
 
 #include <filesystem>
-#include <list>
 #include <map>
 #include <random>
 #include <string>
@@ -40,6 +39,8 @@ struct Qwen3OmniSpeechConfig {
     int64_t image_token_id = -1;
     int64_t video_token_id = -1;
     size_t num_code_groups = 16;
+    /// Waveform samples one codec frame decodes to, once past the code2wav warmup.
+    size_t code2wav_samples_per_frame = 1920;
     size_t talker_hidden_size = 1024;
     std::map<std::string, int64_t> speaker_ids;
 
@@ -93,7 +94,7 @@ public:
     /// @brief Generate speech from thinker generation results.
     /// @param full_token_ids All token IDs from the full sequence (prompt + generated).
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
-    /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
+    /// @param speech_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
     /// @param talker_speech_config Speech generation knobs. Reads `audio_chunk_frames`, `speaker`
     ///                              (variant: name or embedding tensor), `max_new_tokens`, `rng_seed`,
     ///                              and the `talker_*` / `cp_*` optional sampling overrides. Unset
@@ -104,7 +105,7 @@ public:
     ///       ov::InferRequests across talker and CodePredictor sampling.
     TalkerResults generate_speech(const std::vector<int64_t>& full_token_ids,
                                  const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                 const OmniSpeechStreamerVariant& audio_streamer,
+                                 const OmniSpeechStreamerVariant& speech_streamer,
                                  const OmniTalkerSpeechConfig& talker_speech_config);
 
     /// @brief Return precomputed speaker embedding for the named speaker. Throws if the model
@@ -129,12 +130,6 @@ private:
     ov::InferRequest m_talker_projections;  // dual-output: text_projection + hidden_projection
     ov::InferRequest m_code_predictor;
     ov::InferRequest m_code2wav;
-
-    // LRU cache for talker token embeddings to avoid redundant inference.
-    // Bounded to kMaxEmbeddingCacheSize entries; evicts least recently used on overflow.
-    static constexpr size_t kMaxEmbeddingCacheSize = 256;
-    std::list<std::pair<int64_t, ov::Tensor>> m_embedding_lru_list;
-    std::unordered_map<int64_t, std::list<std::pair<int64_t, ov::Tensor>>::iterator> m_embedding_lru_map;
 
     // Pre-allocated scratch buffers reused across generate_speech() calls
     std::vector<float> m_talker_buf;
@@ -218,6 +213,17 @@ private:
 
     /// @brief Convert codec codes to waveform.
     ov::Tensor codes_to_wav(const ov::Tensor& codes);
+
+    /// @brief Stack frames [begin, end) of codes into m_stack_codes_buf.
+    /// @return m_stack_codes_buf with shape [1, num_code_groups, end - begin].
+    ov::Tensor stack_codes_range(const std::vector<std::vector<int64_t>>& codes, size_t begin, size_t end);
+
+    /// @brief Convert frames [begin, end) of codes to waveform for one streamed chunk.
+    /// @param left_context_frames Up to this many frames before begin are decoded as context and then dropped.
+    ov::Tensor decode_chunk(const std::vector<std::vector<int64_t>>& codes,
+                            size_t begin,
+                            size_t end,
+                            size_t left_context_frames);
 
     /// @brief Reset talker KV cache state.
     void reset_talker();

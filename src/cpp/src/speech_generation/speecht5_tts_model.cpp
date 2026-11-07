@@ -191,9 +191,20 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
         }
         auto waveform = vocoder(m_vocoder, spectrogram, raw_perf_metrics);
 
-        gen_speech_res.perf_metrics.num_generated_samples += waveform.get_size();
+        // The vocoder request reuses its output buffer (remote device memory on the remote-context
+        // path, request-owned storage otherwise), so any later inference — the next batch entry or a
+        // later generate() call — would overwrite this waveform. Snapshot it into owned host memory
+        // before the next inference (C++ Core Guidelines R.1).
+        ov::Tensor waveform_copy(ov::element::f32, waveform.get_shape());
+        if (waveform.is<ov::RemoteTensor>()) {
+            waveform.as<ov::RemoteTensor>().copy_to(waveform_copy);
+        } else {
+            waveform.copy_to(waveform_copy);
+        }
 
-        gen_speech_res.speeches.push_back(waveform);
+        gen_speech_res.perf_metrics.num_generated_samples += waveform_copy.get_size();
+
+        gen_speech_res.speeches.push_back(waveform_copy);
         m_decoder->reset_state();
     }
 

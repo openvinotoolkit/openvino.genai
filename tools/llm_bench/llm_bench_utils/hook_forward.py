@@ -151,7 +151,7 @@ class StableDiffusionHook:
             self.new_main_model(pipe)
         if pipe.vae_decoder.request:
             self.new_vae_decoder(pipe)
-        if pipe.vae_encoder.request:
+        if pipe.vae_encoder is not None and pipe.vae_encoder.request:
             self.new_vae_encoder(pipe)
 
 

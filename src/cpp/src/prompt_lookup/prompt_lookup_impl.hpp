@@ -41,7 +41,7 @@ public:
         m_tokenizer = tokenizer;
         m_inputs_embedder = embedder;
         m_model_input_type = ModelInputType::EMBEDDINGS;
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
         m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
         m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model,
                                                                              m_inputs_embedder,
@@ -55,12 +55,15 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
                                  std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const ov::genai::GenerationConfig& sampling_params) override;
+
+    std::optional<AdapterConfig> get_pipeline_adapters() const override {
+        return m_pipeline->get_pipeline_adapters();
+    }
 
     bool has_non_finished_requests() override;
 
@@ -70,7 +73,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;

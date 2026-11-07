@@ -59,6 +59,9 @@ public:
     size_t pooling_kernel_size = 3;
     size_t max_soft_tokens = 280;
 
+    // mistral3 (pixtral) specific config params
+    size_t longest_edge = 1540;
+
     struct {
         size_t num_crops = 4;
         size_t num_img_tokens = 144;
@@ -74,6 +77,12 @@ public:
     size_t min_patches = 2;
     size_t max_patches = 6;
     std::array<uint8_t, 3> background_color{127, 127, 127};
+
+    // MiniCPM-V 4.7 specific params
+    /// @brief Window kernel size for ViT window attention merge (config.json vision_config.window_kernel_size)
+    size_t window_kernel_size = 2;
+    /// @brief Merge kernel size for downsample MLP merge (config.json merge_kernel_size)
+    size_t merge_kernel_size = 2;
 
     // molmo2 (allenai/MolmoWeb-4B) specific params
     /// @brief Maximum number of overlapping high-resolution crops per image.

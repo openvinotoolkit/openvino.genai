@@ -5,6 +5,7 @@ type ImageGenerationModelType = {
   inpainting: boolean;
   loraSupport: boolean;
   links: string[];
+  notesLink?: string;
 };
 
 export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
@@ -129,6 +130,17 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
     links: [
       'https://huggingface.co/Qwen/Qwen-Image',
     ],
+  },
+  {
+    architecture: 'Qwen-Image-2.1',
+    textToImage: true,
+    imageToImage: true,
+    inpainting: false,
+    loraSupport: false,
+    links: [
+      'https://huggingface.co/Qwen/Qwen-Image-2.1',
+    ],
+    notesLink: '#qwen-image-2_1-notes',
   },
   {
     architecture: 'Z-Image',

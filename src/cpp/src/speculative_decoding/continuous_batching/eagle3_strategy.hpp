@@ -61,7 +61,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
@@ -71,7 +70,6 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
                                  std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
 
@@ -83,6 +81,9 @@ protected:
     void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
                                     const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const override;
     void update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor);
+    void prepare_inputs_embedder(const GenerationConfig& sampling_params) const override;
+    std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
+        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const override;
     ov::Tensor create_draft_input(const ov::Tensor& original_input);
     // Creates draft model input by removing the first token from the original input sequence.
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);

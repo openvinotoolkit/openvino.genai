@@ -108,7 +108,6 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct, monkeypatch, cap
         tokenizer=tokenizer,
         test_data=data_dict,
         generation_config=generation_config,
-        generation_config_base=generation_config,
         max_new_tokens=test_struct.max_new_tokens,
         seqs_per_request=seqs_per_request,
     )

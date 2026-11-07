@@ -218,6 +218,10 @@ And then run the sample:
 
 `./image2image ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
 
+Models conditioned on a set of reference images, such as Qwen-Image 2.1, accept several images. They are referred to as `Picture 1`, `Picture 2` and so on in the prompt:
+
+`./image2image ./qwen-image-2.1-ov 'Put the cat from Picture 2 next to the capybara from Picture 1' capybara.png cat.png`
+
 The resulting image is:
 
    ![](./imageimage.bmp)
@@ -380,7 +384,7 @@ if (image_path.empty()) {
 
 ## Export and import compiled models
 
-`ov::genai::Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported.
+`ov::genai::Text2ImagePipeline`, `ov::genai::Image2ImagePipeline`, and `ov::genai::InpaintingPipeline` support exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Currently, only the Stable Diffusion XL model is supported.
 
 ```cpp
 // export models

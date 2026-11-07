@@ -14,6 +14,8 @@ namespace ov::genai {
 
 enum class VLMModelType {
     MINICPM,
+    MINICPMV4_6,
+    MINICPM_OCR,
     LLAVA,
     NANOLLAVA,
     LLAVA_NEXT,
@@ -26,14 +28,19 @@ enum class VLMModelType {
     QWEN3_VL,
     QWEN3_5,
     QWEN3_5_MOE,
+    QWEN4_EXP,
     GEMMA3,
     GEMMA3N,
     GEMMA4,
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    QWEN3_ASR,
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
+    MINICPMV4_7,
+    MISTRAL3,
+    LFM3_VL,
     MOLMO2,
 };
 
@@ -116,6 +123,12 @@ public:
     std::string video_token = "<|video|>";
     /// @brief A string token denoting end of image embeddings for Gemma4 model.
     std::string eoi_token = "<image|>";
+    /// @brief A string token denoting start of audio embeddings for Gemma4 model.
+    std::string boa_token = "<|audio>";
+    /// @brief A placeholder for audio embeddings in text for Gemma4 model.
+    std::string audio_token = "<|audio|>";
+    /// @brief A string token denoting end of audio embeddings for Gemma4 model.
+    std::string eoa_token = "<audio|>";
 
     /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
     size_t hidden_size_per_layer_input = 0;
@@ -130,11 +143,23 @@ public:
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";
 
+    // MiniCPM-V 4.7 specific config
+    /// @brief Image size for num_patches_per_side calculation in vision embeddings.
+    size_t vision_config_image_size = 980;
+    /// @brief Window kernel size for ViT window attention merge.
+    size_t vision_config_window_kernel_size = 2;
+    /// @brief Merge kernel size for downsample MLP merge.
+    size_t merge_kernel_size = 2;
+
     // Qwen3-VL specific config
     /// @brief Number of position embeddings in vision encoder for Qwen3-VL model.
     size_t vision_config_num_position_embeddings = 2304;
     /// @brief DeepStack visual indexes for Qwen3-VL model.
     std::vector<size_t> vision_config_deepstack_visual_indexes;
+
+    // qwen4_exp specific config
+    /// @brief EOS token ID for qwen4_exp model.
+    int64_t text_config_eos_token_id = -1;
 
     // Qwen3-Omni specific config
     /// @brief Whether audio output (speech) is enabled.
@@ -147,6 +172,9 @@ public:
     size_t audio_config_n_window_infer = 200;
     /// @brief Talker: number of codec quantizer groups.
     size_t talker_num_code_groups = 16;
+    /// @brief Code2Wav: upsampling factors. Their product is the number of waveform samples per codec frame.
+    std::vector<size_t> code2wav_config_upsample_rates = {8, 5, 4, 3};
+    std::vector<size_t> code2wav_config_upsampling_ratios = {2, 2};
     // Codec special token IDs (model-specific; -1 until loaded from talker_config in config.json)
     int64_t talker_codec_bos_id = -1;
     int64_t talker_codec_eos_token_id = -1;

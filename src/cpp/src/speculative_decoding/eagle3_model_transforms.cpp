@@ -380,6 +380,7 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
             auto cloned_param = std::make_shared<ov::op::v0::Parameter>(cache_precision, param->get_partial_shape());
             cloned_param->set_friendly_name(name);
             cloned_param->output(0).set_names({name});
+            cloned_param->get_rt_info() = param->get_rt_info();
             // Clone runtime info from paged_attention op if found
             if (paged_attention_op) {
                 for (const auto& [key, value] : paged_attention_op->get_rt_info()) {
@@ -398,6 +399,7 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
             auto cloned_param = std::make_shared<ov::op::v0::Parameter>(cache_precision, param->get_partial_shape());
             cloned_param->set_friendly_name(name);
             cloned_param->output(0).set_names({name});
+            cloned_param->get_rt_info() = param->get_rt_info();
             // Clone runtime info from paged_attention op if found
             if (paged_attention_op) {
                 for (const auto& [key, value] : paged_attention_op->get_rt_info()) {

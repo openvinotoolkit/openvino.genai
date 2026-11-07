@@ -32,7 +32,12 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     // note that ignore_eos is not present in HF GenerationConfig
     read_json_param(data, "ignore_eos", ignore_eos);
     read_json_param(data, "min_new_tokens", min_new_tokens);
-    read_json_param(data, "stop_strings", stop_strings);
+    // HF allows stop_strings to be a single string or a list of strings
+    if (data.contains("stop_strings") && data["stop_strings"].is_string()) {
+        stop_strings.insert(data["stop_strings"].get<std::string>());
+    } else {
+        read_json_param(data, "stop_strings", stop_strings);
+    }
     // note that include_stop_str_in_output is not present in HF GenerationConfig
     read_json_param(data, "include_stop_str_in_output", include_stop_str_in_output);
     // note that stop_token_ids is not present in HF GenerationConfig, but some generation_config.json define
@@ -372,6 +377,10 @@ void GenerationConfig::validate() const {
         // OPENVINO_ASSERT(diversity_penalty == 0.0f, "'diversity_penalty' is set to ", diversity_penalty, " (default is 0.0f), which is supported only by beam search sampling");
         // OPENVINO_ASSERT(length_penalty == 1.0f, "'length_penalty' is set to ", length_penalty, " (default is 1.0f), which is supported only by beam search sampling");
     }
+
+    OPENVINO_ASSERT(!num_assistant_tokens.has_value() || num_assistant_tokens.value() <= 100,
+                    "'num_assistant_tokens' must be less than or equal to 100, but got ",
+                    num_assistant_tokens.value());
 
     // tree search (EAGLE)
     if (is_tree_search()) {

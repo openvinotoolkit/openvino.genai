@@ -16,6 +16,12 @@ allow-licenses:
   - "LGPL-2.0-or-later"
   - "LicenseRef-scancode-proprietary-license"
   - "LicenseRef-scancode-unicode"
+  # Numpy licenses
+  - "Zlib"
+  - "CC0-1.0"
+  # Torch licenses
+  - "Apache-2.0 WITH LLVM-exception"
+  - "BSL-1.0"
 fail-on-scopes:
   - "runtime"
   - "development"
@@ -31,3 +37,4 @@ allow-dependencies-licenses:
   - "pkg:npm/flatted" # Docs site (dependency of dependency)
   - "pkg:pypi/PyGithub" # Dependencies of the workflow rerunner script
   - "pkg:pypi/psycopg2-binary"
+  - "pkg:pypi/tqdm" # MPL-2.0 AND MIT

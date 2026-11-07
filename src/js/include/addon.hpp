@@ -3,14 +3,21 @@
 
 #pragma once
 
+#include <memory>
+
 #include <napi.h>
 
 typedef Napi::Function (*Prototype)(Napi::Env);
 
+class CallbackEnvironment;
+
 struct AddonData {
+    std::shared_ptr<CallbackEnvironment> callback_environment;
     Napi::FunctionReference core;
     Napi::FunctionReference vlm_pipeline;
+    Napi::FunctionReference omni_pipeline;
     Napi::FunctionReference text_rerank_pipeline;
+    Napi::FunctionReference embedding_pipeline;
     Napi::FunctionReference whisper_pipeline;
     Napi::FunctionReference asr_pipeline;
     Napi::FunctionReference text2image_pipeline;

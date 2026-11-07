@@ -46,9 +46,8 @@ public:
     // Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
     std::map<std::string, int64_t> lang_to_id;
 
-    // If `true` the pipeline will return word-level timestamps.
-    // When enabled ov::genai::word_timestamps(true) property should be passed to ASRPipeline constructor:
-    // ASRPipeline("model_path", "CPU", ov::genai::word_timestamps(true));
+    // If `true`, requests word-level timestamps.
+    // Whisper requires the word_timestamps property; Qwen3-ASR requires a forced aligner.
     bool word_timestamps = false;
 
     // Encoder attention alignment heads used for word-level timestamps prediction.
@@ -85,6 +84,12 @@ public:
 
     std::optional<std::string> context = std::nullopt;
 
+    // SenseVoiceSmall parameters
+
+    // Whether to apply inverse text normalization (ITN), rendering recognized text in written
+    // form (digits, dates, punctuation) rather than spelled-out spoken words.
+    bool use_itn = false;
+
     using GenerationConfig::update_generation_config;
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
@@ -118,5 +123,6 @@ static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_
 static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
 static constexpr ov::Property<std::string> hotwords{"hotwords"};
 static constexpr ov::Property<std::string> context{"context"};
+static constexpr ov::Property<bool> use_itn{"use_itn"};
 
 }  // namespace ov::genai

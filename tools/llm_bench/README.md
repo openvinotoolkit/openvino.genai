@@ -152,14 +152,14 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 
 ## 5. Running on 2-Socket Platforms
 
-The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--load_config` option to modify behavior.
+The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--ov_config` option to modify behavior.
 
 | OpenVINO Version    | Behaviors                                       |
 |:--------------------|:------------------------------------------------|
 | Before 2024.0.0     | streams.num(1) <br>execute on 2 sockets.        |
 | 2024.0.0            | streams.num(1) <br>execute on the same socket as the APP is running on. |
 
-For example, `--load_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
+For example, `--ov_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
 ```json
 {
   "INFERENCE_NUM_THREADS": <NUMBER>
@@ -225,7 +225,7 @@ python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_cha
 python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
 ```
 
-> **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
+> **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, minicpmv4-7, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
 
 ### Image Generation Models
 ```sh
@@ -282,14 +282,46 @@ python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --tas
 
 # Qwen3-Omni text-to-speech
 python benchmark.py -m models/qwen3-omni/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice Ethan
+
+# Qwen3-TTS
+# Install following packages for optimum export:
+pip install qwen-tts transformers==4.57.3 torch==2.11.0 torchaudio==2.11.0
+
+# Qwen3-TTS Base
+# convert model to OpenVINO IR format
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base models/qwen3-tts-base
+# Optional: provide explicit reference audio. Note: It must be 24 kHz.
+wget https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav
+# Run benchmark.py (xvector mode, no ref text)
+python benchmark.py -m models/qwen3-tts-base/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_ref_audio clone.wav
+# Run benchmark.py with additional ref text (ICL mode)
+python benchmark.py -m models/qwen3-tts-base/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_ref_audio clone.wav --speech_ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
+# If --speech_ref_audio is omitted for Qwen3-TTS Base, benchmark.py uses the default
+# clone.wav URL and default reference text above automatically.
+
+# Qwen3-TTS CustomVoice
+# convert model to OpenVINO IR format
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --trust-remote-code models/qwen3-tts-customvoice/
+# Run benchmark.py (defaults to speaker Ryan when --speech_voice is omitted)
+python benchmark.py -m models/qwen3-tts-customvoice/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_instruct "Speak with a calm and clear narration style."
+
+# Qwen3-TTS VoiceDesign
+optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --trust-remote-code models/qwen3-tts-voicedesign/
+# Run benchmark.py
+python benchmark.py -m models/qwen3-tts-voicedesign/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_instruct "Male, 17 years old, tenor range"
+# If --speech_instruct is omitted for Qwen3-TTS VoiceDesign, benchmark.py uses a default instruction.
 ```
 
 **Some additional parameters:**
 - `--vocoder_path`: Path to vocoder model
-- `--speech_voice`: Voice to use for Kokoro (default `af_heart`) and Qwen3-Omni (default `Ethan`)
-- `--speech_language`: Language for Kokoro models. One of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`
+- `--speech_voice`: Voice to use for Kokoro (default `af_heart`), Qwen3-Omni (default `Ethan`), and Qwen3-TTS CustomVoice (default `Ryan`).
+- `--speech_language`: Language for Kokoro models (one of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`) and for Qwen3-TTS variants (default `Auto`).
+  For Qwen3-TTS, supported values are: `Auto`, `Chinese`, `English`, `Japanese`, `Korean`, `German`, `French`, `Russian`, `Portuguese`, `Spanish`, `Italian`.
+- `--speech_instruct`: Instruction text for Qwen3-TTS VoiceDesign/CustomVoice. For VoiceDesign, defaults to a built-in instruction when omitted.
+- `--speech_ref_audio`: Optional reference WAV file path for Qwen3-TTS Base (24 kHz). If omitted, a default reference audio URL is used.
+- `--speech_ref_text`: Optional reference transcript for Qwen3-TTS Base ICL mode. If omitted together with `--speech_ref_audio`, a default transcript is used.
 
-> **Supported Text to Speech model types:** speecht5, kokoro, qwen3-omni
+> **Supported Text to Speech model types:** speecht5, kokoro, qwen3-omni, qwen3-tts
 
 ### Speech to Text models
 ```sh
@@ -381,6 +413,11 @@ python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --
 ### Video Generation Models
 ```sh
 python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --task text-to-video
+```
+
+Image-to-video requires an input image (`-i`/`--media`) and a model directory containing a `vae_encoder`. The prompt should describe how the input image animates:
+```sh
+python benchmark.py -m models/LTX-Video/FP16 -i input.png -p "The camera slowly pushes in as the scene comes to life with gentle, natural motion." --num_frames 5 -n 2 --num_steps 25 --task image-to-video
 ```
 
 **Some additional parameters:**

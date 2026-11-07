@@ -2,6 +2,11 @@ name: Manylinux 2_28
 on:
   workflow_dispatch:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   merge_group:
   push:
     branches:
@@ -42,6 +47,7 @@ jobs:
   smart_ci:
     name: Smart CI
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false || github.run_attempt > 1 || contains(github.event.pull_request.labels.*.name, 'enable_ci_for_draft_pr')
     outputs:
       affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
       changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
@@ -145,6 +151,12 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -177,7 +189,7 @@ jobs:
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          for py_version in "3.10" "3.11" "3.12" "3.13"
+          for py_version in "3.11" "3.12" "3.13"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
 
@@ -260,6 +272,12 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -300,7 +318,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13']
     defaults:
       run:
         shell: bash
@@ -318,8 +336,16 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       SRC_DIR: ${{ github.workspace }}/src
       OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
+      # Per-Python-version cache prefix so each matrix leg keeps its own sccache entries.
+      SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28/py${{ matrix.python-version }}
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -343,13 +369,27 @@ jobs:
           build_type: Release
           save_to: ${{ github.workspace }}
 
+      - name: Clean sccache stats
+        run: ${SCCACHE_PATH} --zero-stats
+
       - name: Build GenAI Wheel
         run: |
           python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
-          $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+          # Put the interpreter's console-scripts dir on PATH so CMake's find_program locates pybind11-stubgen with --no-build-isolation.
+          export PATH="$(dirname "$python_exec_path"):$PATH"
+
+          # Install build requirements read from pyproject so the list isn't duplicated here; --no-build-isolation skips pip's auto build-deps and a stable OpenVINO path keeps sccache warm.
+          mapfile -t build_reqs < <(python3.11 -c "import sys, tomllib; print('\n'.join(tomllib.load(open(sys.argv[1], 'rb'))['build-system']['requires']))" "${{ env.SRC_DIR }}/pyproject.toml")
+          $python_exec_path -m pip install "${build_reqs[@]}" ${{ needs.openvino_download.outputs.ov_wheel_source }}
+
+          $python_exec_path -m pip wheel -v --no-deps --no-build-isolation --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Show sccache stats
+        run: ${SCCACHE_PATH} --show-stats
 
       - name: Upload GenAI Wheel
         if: ${{ always() }}
@@ -383,6 +423,12 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

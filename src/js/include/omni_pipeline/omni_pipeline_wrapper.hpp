@@ -1,0 +1,23 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#include <napi.h>
+
+#include "include/base/pipeline_state.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
+
+class OmniPipelineWrapper : public Napi::ObjectWrap<OmniPipelineWrapper> {
+public:
+    OmniPipelineWrapper(const Napi::CallbackInfo& info);
+
+    static Napi::Function get_class(Napi::Env env);
+
+    Napi::Value init(const Napi::CallbackInfo& info);
+    Napi::Value generate(const Napi::CallbackInfo& info);
+
+private:
+    std::shared_ptr<ov::genai::OmniPipeline> pipe = nullptr;
+    std::shared_ptr<PipelineState> state = std::make_shared<PipelineState>();
+};
