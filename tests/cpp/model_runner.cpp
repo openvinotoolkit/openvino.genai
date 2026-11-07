@@ -6,7 +6,9 @@
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/convert.hpp"
 #include "openvino/op/parameter.hpp"
+#include "openvino/op/reshape.hpp"
 
 #include "visual_language/inputs_embedder.hpp"
 #include "continuous_batching/model_runner.hpp"
@@ -345,4 +347,73 @@ TEST(TestModelRunnerDFlashDraft, batched_windows_use_their_own_rows) {
               (std::vector<int64_t>{9, 10, 11, 15, 16, 17}));
     EXPECT_EQ(first->get_output_seq_len(), 3);
     EXPECT_EQ(second->get_output_seq_len(), 3);
+}
+
+namespace {
+
+// A target that exports the id of every scheduled token as its hidden row.
+std::shared_ptr<ov::Model> create_dummy_hidden_state_export_model() {
+    ov::ParameterVector params;
+    auto add_input = [&](const std::string& name, const ov::element::Type& type, const ov::PartialShape& pshape) {
+        auto p = std::make_shared<ov::op::v0::Parameter>(type, pshape);
+        p->output(0).get_tensor().set_names({name});
+        params.push_back(p);
+    };
+    add_input("input_ids", ov::element::i64, ov::PartialShape::dynamic(1));
+    add_input("position_ids", ov::element::i64, ov::PartialShape::dynamic(1));
+    add_input("past_lens", ov::element::i32, ov::PartialShape::dynamic(1));
+    add_input("subsequence_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+    add_input("block_indices", ov::element::i32, ov::PartialShape::dynamic(1));
+    add_input("block_indices_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+    add_input("max_context_len", ov::element::i32, ov::PartialShape{});
+
+    auto logits = ov::op::v0::Constant::create(ov::element::f32, {1, 1, 8}, {0.0f});
+    logits->output(0).get_tensor().set_names({"logits"});
+    auto rows = std::make_shared<ov::op::v0::Convert>(params[0], ov::element::f32);
+    auto hidden = std::make_shared<ov::op::v1::Reshape>(
+        rows, ov::op::v0::Constant::create(ov::element::i64, {3}, {-1, 1, 1}), false);
+    hidden->output(0).get_tensor().set_names({"last_hidden_state"});
+    return std::make_shared<ov::Model>(ov::OutputVector{logits, hidden}, params);
+}
+
+}  // namespace
+
+TEST(TestModelRunnerHiddenStateExport, unscheduled_sequence_keeps_its_rows) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(create_dummy_hidden_state_export_model(), "CPU").create_infer_request();
+    ModelRunner runner(request, /*block_size=*/4, /*num_decoder_layers=*/1);
+    runner.enable_hidden_state_export(true);
+
+    const std::vector<int64_t> first_prompt = {1, 2, 3};
+    const std::vector<int64_t> second_prompt = {4, 5, 6};
+    auto first = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {3}, const_cast<int64_t*>(first_prompt.data())), utils::get_greedy_config());
+    auto second = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {3}, const_cast<int64_t*>(second_prompt.data())), utils::get_greedy_config());
+    const auto first_sequence = first->get_running_sequences()[0];
+    const auto second_sequence = second->get_running_sequences()[0];
+    first->schedule_tokens(3);
+    second->schedule_tokens(3);
+    const ContinuousBatchingScheduler::Output::LinearAttentionPagingData no_linear_attention;
+    std::ignore = runner.forward(
+        {first, second},
+        make_output_for_sequences({{first_sequence->get_id(), no_linear_attention},
+                                   {second_sequence->get_id(), no_linear_attention}},
+                                  6));
+    first->finish_iteration();
+    second->finish_iteration();
+
+    // the next forward runs only the second request, into the output the first request's rows came from
+    second_sequence->append_token(9, 0.0f);
+    second->schedule_tokens(1);
+    ContinuousBatchingScheduler::Output second_only;
+    second_only.m_scheduled_sequence_groups_ids = {1};
+    second_only.m_total_num_scheduled_tokens = 1;
+    second_only.set_kv_block_tables(second_sequence->get_id(), {BlocksPerLayer{std::make_shared<CacheBlock>(0)}});
+    std::ignore = runner.forward({first, second}, second_only);
+
+    EXPECT_EQ(tensor_values<float>(first_sequence->get_hidden_state()), (std::vector<float>{1, 2, 3}));
+    EXPECT_EQ(first_sequence->get_hidden_state_first_position(), 0);
+    EXPECT_EQ(tensor_values<float>(second_sequence->get_hidden_state()), (std::vector<float>{9}));
+    EXPECT_EQ(second_sequence->get_hidden_state_first_position(), 3);
 }
