@@ -608,10 +608,7 @@ def load_visual_text_model(
                 # actually advertises. This stays generic: it is driven by the
                 # model's own ``auto_map`` metadata, not by a hard-coded id.
                 auto_map = getattr(config, "auto_map", None) or {}
-                if (
-                    "AutoModelForImageTextToText" in auto_map
-                    and "AutoModelForVision2Seq" not in auto_map
-                ):
+                if "AutoModelForImageTextToText" in auto_map and "AutoModelForVision2Seq" not in auto_map:
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText

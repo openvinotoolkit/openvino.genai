@@ -370,9 +370,7 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Muse Glimmer. Minimum required is 5.15.0."
         )
-    if model_id == MODEL_MOLMO2 and (
-        is_transformers_version("<", "4.57.0") or is_transformers_version(">=", "4.58.0")
-    ):
+    if model_id == MODEL_MOLMO2 and (is_transformers_version("<", "4.57.0") or is_transformers_version(">=", "4.58.0")):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Molmo2. Required is >= 4.57.0 and < 4.58.0."
         )
