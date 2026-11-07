@@ -298,21 +298,41 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
             auto updated_seq_info = update_sequence_info[request_id];
             m_sd_metrics.update_draft_generated_len(request_id, updated_seq_info.inserted_tokens_cnt);
 
+            // A main step that does not schedule the request validates none of the candidates; a later step rejects
+            // or accepts them.
+            auto window_it = m_validation_windows.find(request_id);
+            if (window_it == m_validation_windows.end() && updated_seq_info.inserted_tokens_cnt > 0) {
+                window_it = m_validation_windows.emplace(request_id, UpdateRequestResult{}).first;
+            }
             // Prompt phase or draft-only update without main-model validation.
-            if (updated_seq_info.inserted_tokens_cnt == 0 || !main_generated_requests.count(request_id)) {
+            if (window_it == m_validation_windows.end()) {
                 continue;
             }
-            OPENVINO_ASSERT(updated_seq_info.inserted_tokens_cnt >= updated_seq_info.removed_tokens_cnt,
+            if (!main_generated_requests.count(request_id)) {
+                m_validation_windows.erase(window_it);
+                continue;
+            }
+            window_it->second.inserted_tokens_cnt += updated_seq_info.inserted_tokens_cnt;
+            window_it->second.removed_tokens_cnt += updated_seq_info.removed_tokens_cnt;
+            if (m_main_pipeline->has_candidates_to_validate(request_id)) {
+                continue;
+            }
+            const UpdateRequestResult window = window_it->second;
+            m_validation_windows.erase(window_it);
+            OPENVINO_ASSERT(window.inserted_tokens_cnt >= window.removed_tokens_cnt,
                             "Speculative decoding removed more draft tokens than were inserted.");
-            m_perf_metrics.num_draft_tokens += updated_seq_info.inserted_tokens_cnt;
-            m_perf_metrics.num_accepted_tokens +=
-                updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt;
+            m_perf_metrics.num_draft_tokens += window.inserted_tokens_cnt;
+            m_perf_metrics.num_accepted_tokens += window.inserted_tokens_cnt - window.removed_tokens_cnt;
             float acceptance_rate =
-                1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
+                1 - static_cast<float>(window.removed_tokens_cnt) / window.inserted_tokens_cnt;
             m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
-            m_sd_metrics.update_draft_accepted_tokens(
-                request_id,
-                (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
+            m_sd_metrics.update_draft_accepted_tokens(request_id,
+                                                      (window.inserted_tokens_cnt - window.removed_tokens_cnt));
+        }
+        // A request whose draft request ended leaves no window to a later request with the same id.
+        for (auto window_it = m_validation_windows.begin(); window_it != m_validation_windows.end();) {
+            window_it = draft_generated_requests.count(window_it->first) ? std::next(window_it)
+                                                                         : m_validation_windows.erase(window_it);
         }
 
         const auto step_end = std::chrono::steady_clock::now();
@@ -349,6 +369,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_main_pipeline->fail_pipeline(error);
         m_draft_pipeline->fail_pipeline(error);
         m_draft_generations.clear();
+        m_validation_windows.clear();
         std::rethrow_exception(error);
     }
 }
