@@ -47,7 +47,7 @@ def main():
 
     # Whisper-specific options
     config.task = "transcribe"  # Or "translate". Multilingual Whisper only.
-    config.return_timestamps = True
+    # config.return_timestamps = True
 
     # Word timestamps:
     # - Whisper: enable the constructor property above.

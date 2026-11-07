@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) try {
 
     // Whisper-specific options
     config.task = "transcribe";  // Or "translate". Multilingual Whisper only.
-    config.return_timestamps = true;
+    // config.return_timestamps = true;
 
     // Word timestamps:
     // - Whisper: enable the constructor property above.
