@@ -1,12 +1,14 @@
+from typing import TYPE_CHECKING, Any, Union
+
 import numpy as np
+import torch
 from transformers import (
     AutoImageProcessor,
     PretrainedConfig,
     PreTrainedTokenizer,
 )
+
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
-from typing import TYPE_CHECKING, Optional, Union, Any
-import torch
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -26,7 +28,7 @@ class Molmo2InputsPreprocessor(VLMInputsPreprocessor):
     inputs instead of assembling image tokens manually.
     """
 
-    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
+    def __init__(self, chat_mode: bool = False, model: Any | None = None):
         super().__init__(chat_mode)
         # Token id emitted for image patches in the tokenized sequence.
         default_patch_id = 151938
@@ -41,12 +43,12 @@ class Molmo2InputsPreprocessor(VLMInputsPreprocessor):
     def preprocess_inputs(
         self,
         text: str,
-        image: Optional[Union["Image", list["Image"]]] = None,
-        processor: Optional[AutoImageProcessor] = None,
-        tokenizer: Optional[PreTrainedTokenizer] = None,
-        config: Optional[PretrainedConfig] = None,
-        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
-        audio: Optional[np.ndarray] = None,
+        image: Union["Image", list["Image"]] | None = None,
+        processor: AutoImageProcessor | None = None,
+        tokenizer: PreTrainedTokenizer | None = None,
+        config: PretrainedConfig | None = None,
+        video: Union["VideoInput", list["VideoInput"]] | None = None,
+        audio: np.ndarray | None = None,
     ):
         if processor is None:
             raise ValueError("Processor is required.")
@@ -104,21 +106,36 @@ class Molmo2InputsPreprocessor(VLMInputsPreprocessor):
             return inputs
 
         image_token_id = getattr(model.config, "image_patch_id", self.def_image_token_id)
+        new_image_tokens = full_tokenized_chat[0].tolist()[prefix_len:].count(image_token_id)
 
-        full_tokenized_chat_list = full_tokenized_chat[0].tolist()
+        # Every image contributes image_num_crops[i] crops and one "<im_patch>" token per pooled patch: the
+        # low-resolution grid plus the high-resolution grid of image_grids[i] = (resized_h, resized_w, h, w).
+        grids = inputs["image_grids"]
+        num_crops = inputs["image_num_crops"]
+        pooled = (grids[:, 0] * grids[:, 1] + grids[:, 2] * grids[:, 3]).tolist()
+        total_images = len(pooled)
 
-        total_image_num = inputs["pixel_values"].shape[0]
-        total_image_tokens = full_tokenized_chat_list.count(image_token_id)
-        img_token_per_image = total_image_tokens // total_image_num if total_image_num > 0 else 0
+        # The images whose tokens are not cached yet are the last ones of the conversation.
+        new_images, tokens = 0, 0
+        while new_images < total_images and tokens < new_image_tokens:
+            new_images += 1
+            tokens += pooled[total_images - new_images]
+        if tokens != new_image_tokens:
+            raise ValueError(
+                f"Cannot align Molmo2 image inputs with the cached prefix: {new_image_tokens} new image tokens do not "
+                f"correspond to whole images (image token counts: {pooled})"
+            )
+        if new_images == total_images:
+            return inputs
+        if new_images == 0:
+            for key in ("pixel_values", "image_token_pooling", "image_grids", "image_num_crops"):
+                inputs.pop(key, None)
+            return inputs
 
-        new_inputs_ids = full_tokenized_chat_list[prefix_len:]
-        new_image_tokens = new_inputs_ids.count(image_token_id)
-        new_image_num = new_image_tokens // img_token_per_image if img_token_per_image > 0 else 0
-        if new_image_num < total_image_num:
-            if new_image_num == 0:
-                del inputs["pixel_values"]
-            else:
-                cached_image_num = total_image_num - new_image_num
-                inputs["pixel_values"] = inputs["pixel_values"][cached_image_num:]
-
+        new_crops = int(num_crops[total_images - new_images :].sum())
+        new_pooled = sum(pooled[total_images - new_images :])
+        inputs["pixel_values"] = inputs["pixel_values"][-new_crops:]
+        inputs["image_token_pooling"] = inputs["image_token_pooling"][-new_pooled:]
+        inputs["image_grids"] = grids[total_images - new_images :]
+        inputs["image_num_crops"] = num_crops[total_images - new_images :]
         return inputs

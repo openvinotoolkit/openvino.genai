@@ -11,6 +11,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "continuous_batching/timer.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
@@ -355,6 +357,77 @@ std::vector<size_t> sample_frames(size_t total_frames, float fps, const std::str
     return linspace_int(static_cast<double>(total_frames - 1), std::min(num_frames, total_frames));
 }
 
+
+// normalize_prompt runs before the pipeline sets the prompt formatting, so it cannot decide where the visual tokens go
+// and whether the "User:" role prefix is added. It expands every placeholder in place and wraps the expansion in
+// these markers; apply_chat_template_tokenize finishes the layout once the formatting is known. The markers are
+// control characters that never reach the tokenizer.
+constexpr char kSegmentStart = '\x1e';
+constexpr char kSegmentEnd = '\x1f';
+constexpr char kImageSegment = 'i';
+constexpr char kVideoSegment = 'v';
+// Marks the start of a user turn in the output of the Molmo2 chat template (see patch_chat_template).
+constexpr char kUserTurn = '\x02';
+
+std::string wrap_segment(char type, const std::string& tokens) {
+    return std::string(1, kSegmentStart) + type + tokens + kSegmentEnd;
+}
+
+// Splits text into the concatenated visual segments and the remaining text (both without markers).
+std::pair<std::string, std::string> split_segments(const std::string& text) {
+    std::string visual, rest;
+    for (size_t pos = 0; pos < text.size();) {
+        if (text[pos] == kSegmentStart) {
+            const size_t end = text.find(kSegmentEnd, pos);
+            OPENVINO_ASSERT(end != std::string::npos, "Molmo2: unterminated visual segment in the prompt");
+            visual.append(text, pos + 2, end - pos - 2);
+            pos = end + 1;
+        } else {
+            rest += text[pos++];
+        }
+    }
+    return {visual, rest};
+}
+
+// Types (kImageSegment / kVideoSegment) of the visual segments in prompt order.
+std::vector<char> segment_types(const std::string& text) {
+    std::vector<char> types;
+    for (size_t pos = text.find(kSegmentStart); pos != std::string::npos; pos = text.find(kSegmentStart, pos + 1)) {
+        OPENVINO_ASSERT(pos + 1 < text.size(), "Molmo2: malformed visual segment in the prompt");
+        types.push_back(text[pos + 1]);
+    }
+    return types;
+}
+
+// Molmo2 layout of a (possibly templated) prompt. Text produced by the Molmo2 chat template marks every user turn:
+// its visual tokens go in front of the "User: " prefix, as Molmo2Processor does. Raw and already templated prompts
+// keep the visual tokens where the placeholders were and get no role text.
+std::string finalize_prompt(const std::string& text) {
+    size_t turn = text.find(kUserTurn);
+    if (turn == std::string::npos) {
+        std::string out;
+        for (size_t pos = 0; pos < text.size();) {
+            if (text[pos] == kSegmentStart) {
+                pos += 2;
+            } else if (text[pos] == kSegmentEnd) {
+                ++pos;
+            } else {
+                out += text[pos++];
+            }
+        }
+        return out;
+    }
+    std::string out = split_segments(text.substr(0, turn)).second;
+    while (turn != std::string::npos) {
+        const size_t next = text.find(kUserTurn, turn + 1);
+        const std::string chunk = text.substr(turn + 1, next == std::string::npos ? std::string::npos : next - turn - 1);
+        auto [visual, rest] = split_segments(chunk);
+        out += visual + "User: " + rest;
+        turn = next;
+    }
+    return out;
+}
+
 } // namespace
 
 EncodedImage VisionEncoderMolmo2::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -490,7 +563,17 @@ void InputsEmbedderMolmo2::read_molmo2_configs(const std::filesystem::path& conf
             value = json.at(key).get<std::decay_t<decltype(value)>>();
         }
     };
+    // Molmo2Processor saves its options in processor_config.json, the image processor config does not hold them.
+    const ProcessorConfig& image_config = m_vision_encoder->get_processor_config();
+    m_image_use_col_tokens = image_config.molmo2_image_use_col_tokens;
+    m_use_single_crop_col_tokens = image_config.molmo2_use_single_crop_col_tokens;
+    m_use_single_crop_start_token = image_config.molmo2_use_single_crop_start_token;
     const nlohmann::json processor = read_json("processor_config.json");
+    read(processor, "image_use_col_tokens", m_image_use_col_tokens);
+    read(processor, "use_single_crop_start_token", m_use_single_crop_start_token);
+    if (processor.contains("use_single_crop_col_tokens") && !processor.at("use_single_crop_col_tokens").is_null()) {
+        m_use_single_crop_col_tokens = processor.at("use_single_crop_col_tokens").get<bool>() ? 1 : 0;
+    }
     read(processor, "video_use_col_tokens", m_video_use_col_tokens);
     read(processor, "use_frame_special_tokens", m_use_frame_special_tokens);
     const nlohmann::json video = read_json("video_preprocessor_config.json");
@@ -500,18 +583,15 @@ void InputsEmbedderMolmo2::read_molmo2_configs(const std::filesystem::path& conf
     read(video, "sampling_fps", m_sampling_fps);
 }
 
-bool InputsEmbedderMolmo2::has_token_type_ids() const {
-    return true;
-}
-
 void InputsEmbedderMolmo2::patch_chat_template() {
-    // Molmo2 places all image special tokens at the very front of the sequence, before the "User:"
-    // role prefix, and separates turns without additional markers. The normalized prompt produced by
-    // normalize_prompt already contains the expanded image tokens and the "User:" prefix, so the
-    // chat template only needs to concatenate message contents and append the assistant cue.
+    // The Molmo2 processor template places the visual tokens of a turn in front of its "User:" role prefix and
+    // separates turns without additional markers. GenAI renders messages with string contents, which the checkpoint
+    // template would put after the role prefix, so it is replaced by an equivalent template: user turns are marked
+    // and apply_chat_template_tokenize lays them out as "<visual tokens>User: <text>".
     const std::string molmo2_template =
         "{% for message in messages %}"
         "{% if message['role'] == 'assistant' %} {{ message['content'] }}"
+        "{% elif message['role'] == 'user' %}" + std::string(1, kUserTurn) + "{{ message['content'] }}"
         "{% else %}{{ message['content'] }}{% endif %}"
         "{% endfor %}"
         "{% if add_generation_prompt %} Assistant:{% endif %}";
@@ -525,15 +605,12 @@ std::string InputsEmbedderMolmo2::build_image_tokens(size_t resized_h, size_t re
     const std::string& im_patch = m_vlm_config.molmo2_im_patch;
     const std::string& im_col = m_vlm_config.molmo2_im_col;
     const std::string& low_res_im_start = m_vlm_config.molmo2_low_res_im_start;
-    const ProcessorConfig m_processor_config = m_vision_encoder->get_processor_config();
 
     std::string result;
     // Low-resolution (global) section.
     {
-        bool use_col = m_processor_config.molmo2_use_single_crop_col_tokens < 0
-                           ? m_processor_config.molmo2_image_use_col_tokens
-                           : (m_processor_config.molmo2_use_single_crop_col_tokens != 0);
-        const std::string& start_tok = m_processor_config.molmo2_use_single_crop_start_token ? low_res_im_start : im_start;
+        bool use_col = m_use_single_crop_col_tokens < 0 ? m_image_use_col_tokens : (m_use_single_crop_col_tokens != 0);
+        const std::string& start_tok = m_use_single_crop_start_token ? low_res_im_start : im_start;
         result += start_tok;
         for (size_t r = 0; r < resized_h; ++r) {
             for (size_t c = 0; c < resized_w; ++c) result += im_patch;
@@ -543,7 +620,7 @@ std::string InputsEmbedderMolmo2::build_image_tokens(size_t resized_h, size_t re
     }
     // High-resolution section.
     {
-        bool use_col = m_processor_config.molmo2_image_use_col_tokens;
+        bool use_col = m_image_use_col_tokens;
         result += im_start;
         for (size_t r = 0; r < high_h; ++r) {
             for (size_t c = 0; c < high_w; ++c) result += im_patch;
@@ -620,49 +697,91 @@ NormalizedPrompt InputsEmbedderMolmo2::normalize_prompt(const std::string& promp
     const std::string& image_tag = m_vlm_config.image_token;  // "<|image|>"
     const std::string& video_tag = m_vlm_config.video_token;  // "<|video|>"
     auto [with_images, images_sequence] = normalize(prompt, image_tag, image_tag, base_image_id, images.size());
-    auto [normalized, videos_sequence] = normalize(with_images, video_tag, video_tag, base_video_id, videos.size(), VisionType::VIDEO);
+    auto [normalized, videos_sequence] = normalize(with_images, video_tag, video_tag, base_video_id, videos.size(), ModalityType::VIDEO);
 
-    // Molmo2's chat template moves all visual inputs in front of the "User:" role prefix: drop the tags from the text.
-    std::string text_part;
+    // Expand every placeholder in place into a marked visual segment, see finalize_prompt for the final layout.
+    std::string unified_prompt;
+    size_t next_image = 0, next_video = 0;
     for (size_t pos = 0; pos < normalized.size();) {
         const size_t image_pos = normalized.find(image_tag, pos);
         const size_t video_pos = normalized.find(video_tag, pos);
         const size_t found = std::min(image_pos, video_pos);
         if (found == std::string::npos) {
-            text_part.append(normalized, pos, std::string::npos);
+            unified_prompt.append(normalized, pos, std::string::npos);
             break;
         }
-        text_part.append(normalized, pos, found - pos);
-        pos = found + (found == image_pos ? image_tag.size() : video_tag.size());
+        unified_prompt.append(normalized, pos, found - pos);
+        if (found == image_pos) {
+            const EncodedImage& enc = images.at(images_sequence.at(next_image++) - base_image_id);
+            unified_prompt += wrap_segment(kImageSegment,
+                                           build_image_tokens(enc.resized_source_size.height,
+                                                              enc.resized_source_size.width,
+                                                              static_cast<size_t>(enc.patches_grid.first),
+                                                              static_cast<size_t>(enc.patches_grid.second)));
+            pos = found + image_tag.size();
+        } else {
+            unified_prompt += wrap_segment(kVideoSegment, build_video_tokens(videos.at(videos_sequence.at(next_video++) - base_video_id)));
+            pos = found + video_tag.size();
+        }
     }
-
-    std::string unified_prompt;
-    for (size_t new_image_id : images_sequence) {
-        const EncodedImage& enc = images.at(new_image_id - base_image_id);
-        unified_prompt += build_image_tokens(enc.resized_source_size.height, enc.resized_source_size.width,
-                                             static_cast<size_t>(enc.patches_grid.first),
-                                             static_cast<size_t>(enc.patches_grid.second));
-    }
-    for (size_t new_video_id : videos_sequence) {
-        unified_prompt += build_video_tokens(videos.at(new_video_id - base_video_id));
-    }
-    unified_prompt += "User: ";
-    unified_prompt += text_part;
     return {std::move(unified_prompt), std::move(images_sequence), std::move(videos_sequence)};
 }
 
+ov::Tensor InputsEmbedderMolmo2::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
+    ManualTimer encode_timer("Encode");
+    encode_timer.start();
+    std::string text = prompt;
+    TimePoint template_end_time;
+    bool apply_template = false;
+    if (!m_is_chat_conversation && m_prompt_formatting == PromptFormatting::NeedsTemplate) {
+        ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+        constexpr bool add_generation_prompt = true;
+        text = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+        template_end_time = std::chrono::steady_clock::now();
+        apply_template = true;
+    }
+    text = finalize_prompt(text);
+
+    // Like Molmo2Processor, the tokenizer itself adds no special tokens and the sequence starts with a single BOS
+    // token (the EOS token when the tokenizer has no BOS). Adding it here, before get_encoded_input_ids aligns the
+    // tokens with the chat history, keeps the cache-state bookkeeping in sync with the embedded sequence: in an
+    // incremental chat the full history is encoded, so only the first turn brings the BOS into the KV cache.
+    const bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : false;
+    ov::Tensor encoded = m_tokenizer.encode(text, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
+    int64_t bos = m_tokenizer.get_bos_token_id();
+    if (bos < 0) {
+        bos = m_tokenizer.get_eos_token_id();
+    }
+    const size_t length = encoded.get_size();
+    const int64_t* encoded_data = encoded.data<const int64_t>();
+    ov::Tensor input_ids = encoded;
+    if (bos >= 0 && (length == 0 || encoded_data[0] != bos)) {
+        input_ids = ov::Tensor(ov::element::i64, ov::Shape{1, length + 1});
+        int64_t* ids = input_ids.data<int64_t>();
+        ids[0] = bos;
+        std::copy_n(encoded_data, length, ids + 1);
+    }
+    encode_timer.end();
+    if (apply_template) {
+        metrics.raw_metrics.chat_template_durations.emplace_back(
+            PerfMetrics::get_microsec(template_end_time - encode_timer.get_start_time()));
+        metrics.raw_metrics.tokenization_durations.emplace_back(
+            PerfMetrics::get_microsec(encode_timer.get_end_time() - template_end_time));
+    } else {
+        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+    }
+    return input_ids;
+}
+
 ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
-    OPENVINO_THROW(
-        "[InputsEmbedderMolmo2] get_inputs_embeds is not supported for Molmo2 models because "
-        "token_type_ids are required to build the prefill bidirectional image attention mask. "
-        "Use get_inputs_embeds_with_token_type_ids instead.");
+    return get_inputs_embeds(prompt, images, {}, metrics, recalculate_merged_embeddings, image_sequence, {}, {});
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::get_inputs_embeds_with_token_type_ids(const std::string& unified_prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds_with_token_type_ids(unified_prompt, images, {}, metrics, recalculate_merged_embeddings, image_sequence, {}, {});
+const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderMolmo2::get_lm_extra_inputs() const {
+    return m_lm_extra_inputs;
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::get_inputs_embeds_with_token_type_ids(
+ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(
     const std::string& unified_prompt,
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos,
@@ -671,37 +790,28 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::get_inputs_embeds_with_t
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    // Vision features in prompt order: images first, then videos (see normalize_prompt).
+    // The media embedded now are the last visual segments of the prompt (with a chat history, the earlier turns are
+    // either in the KV cache or re-embedded together with their media). Their order in the prompt, which may
+    // interleave images and videos across turns, decides the order of the vision features.
+    const std::vector<char> types = segment_types(unified_prompt);
+    const size_t num_media = image_sequence.size() + videos_sequence.size();
+    OPENVINO_ASSERT(types.size() >= num_media,
+                    "Molmo2: the prompt has ", types.size(), " visual segments, but ", num_media, " media are embedded");
     std::vector<const ov::Tensor*> vision_features;
-    for (size_t id : image_sequence) vision_features.push_back(&images.at(id).resized_source);
-    for (size_t id : videos_sequence) vision_features.push_back(&videos.at(id).video_features);
-    return merge_embeddings(unified_prompt, vision_features, metrics);
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::merge_embeddings(const std::string& unified_prompt,
-                                                                         const std::vector<const ov::Tensor*>& vision_features,
-                                                                         VLMPerfMetrics& metrics) {
-    // Tokenize the normalized prompt (no BOS is added by the tokenizer for the templated path).
-    ov::Tensor encoded_input_ids = get_encoded_input_ids(unified_prompt, metrics);
-    const size_t base_len = encoded_input_ids.get_size();
-
-    // Molmo2 prepends a single BOS token at the very start of the sequence, mirroring the reference
-    // Molmo2Processor.insert_bos. Every prompt embedded outside of an incremental chat (including the continuous
-    // batching pipeline, which re-embeds the whole templated history on each turn) is a complete sequence and gets the
-    // BOS. In an incremental chat (VLMPipeline start_chat) later turns extend the existing KV cache, so the BOS belongs
-    // only to the first prefill (m_prev_hist_length == 0, set by get_encoded_input_ids); adding it on every turn would
-    // leave untracked tokens in the KV cache that the chat rollback cannot trim.
-    const int64_t molmo_bos = 151645;
-    const bool prepend_bos = !m_is_chat_conversation || m_prev_hist_length == 0;
-    const size_t seq_len = prepend_bos ? base_len + 1 : base_len;
-    ov::Tensor input_ids(ov::element::i64, ov::Shape{1, seq_len});
-    int64_t* ids = input_ids.data<int64_t>();
-    if (prepend_bos) {
-        ids[0] = molmo_bos;
-        std::memcpy(ids + 1, encoded_input_ids.data<int64_t>(), base_len * sizeof(int64_t));
-    } else {
-        std::memcpy(ids, encoded_input_ids.data<int64_t>(), base_len * sizeof(int64_t));
+    size_t next_image = 0, next_video = 0;
+    for (size_t i = types.size() - num_media; i < types.size(); ++i) {
+        if (types[i] == kImageSegment) {
+            OPENVINO_ASSERT(next_image < image_sequence.size(), "Molmo2: more image segments in the prompt than images");
+            vision_features.push_back(&images.at(image_sequence[next_image++]).resized_source);
+        } else {
+            OPENVINO_ASSERT(next_video < videos_sequence.size(), "Molmo2: more video segments in the prompt than videos");
+            vision_features.push_back(&videos.at(videos_sequence[next_video++]).video_features);
+        }
     }
+
+    ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+    const size_t seq_len = input_ids.get_size();
+    const int64_t* ids = input_ids.data<const int64_t>();
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
@@ -725,49 +835,41 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMolmo2::merge_embeddings(const s
     };
     ov::Tensor token_type_ids(ov::element::i64, ov::Shape{1, seq_len});
     int64_t* tt = token_type_ids.data<int64_t>();
+    size_t num_patches = 0;
     for (size_t i = 0; i < seq_len; ++i) {
-        int64_t id = ids[i];
-        tt[i] = std::find(image_token_ids.begin(), image_token_ids.end(), id) != image_token_ids.end() ? 1 : 0;
+        tt[i] = std::find(image_token_ids.begin(), image_token_ids.end(), ids[i]) != image_token_ids.end() ? 1 : 0;
+        num_patches += ids[i] == patch_id ? 1 : 0;
     }
+    m_lm_extra_inputs["token_type_ids"] = token_type_ids;
 
-    if (vision_features.empty()) {
-        return {inputs_embeds, token_type_ids};
+    // Like the reference implementation, the number of "<im_patch>" tokens must match the vision features exactly.
+    size_t num_rows = 0;
+    for (const ov::Tensor* features : vision_features) {
+        num_rows += features->get_shape().at(1);
     }
+    OPENVINO_ASSERT(num_patches == num_rows,
+                    "Molmo2: the prompt has ", num_patches, " image patch tokens, but the vision encoders produced ",
+                    num_rows, " embeddings");
 
-    // Additive merge: Molmo2 adds pooled image / frame features to the "<im_patch>" placeholder embeddings.
-    // Concatenate the vision embeddings in prompt order and add each row at the next "<im_patch>" position.
+    // Additive merge: Molmo2 adds pooled image / frame features to the "<im_patch>" placeholder embeddings in order.
     float* embeds_data = inputs_embeds.data<float>();
-    size_t cur_image = 0;                  // index into vision_features
-    const float* cur_vision = vision_features.at(0)->data<const float>();
-    size_t cur_vision_rows = vision_features.at(0)->get_shape().at(1);
-    size_t cur_row = 0;
-
+    size_t feature = 0, row = 0;
     for (size_t i = 0; i < seq_len; ++i) {
         if (ids[i] != patch_id) {
             continue;
         }
-        // Advance to the next image that still has rows.
-        while (cur_vision != nullptr && cur_row >= cur_vision_rows) {
-            ++cur_image;
-            if (cur_image >= vision_features.size()) {
-                cur_vision = nullptr;
-                break;
-            }
-            cur_vision = vision_features.at(cur_image)->data<const float>();
-            cur_vision_rows = vision_features.at(cur_image)->get_shape().at(1);
-            cur_row = 0;
+        while (row >= vision_features.at(feature)->get_shape().at(1)) {
+            ++feature;
+            row = 0;
         }
-        OPENVINO_ASSERT(cur_vision != nullptr,
-                        "Molmo2: number of image placeholder tokens exceeds available vision embeddings");
         float* dst = embeds_data + i * hidden;
-        const float* srow = cur_vision + cur_row * hidden;
+        const float* src = vision_features[feature]->data<const float>() + row * hidden;
         for (size_t h = 0; h < hidden; ++h) {
-            dst[h] += srow[h];
+            dst[h] += src[h];
         }
-        ++cur_row;
+        ++row;
     }
-
-    return {inputs_embeds, token_type_ids};
+    return inputs_embeds;
 }
 
 } // namespace ov::genai

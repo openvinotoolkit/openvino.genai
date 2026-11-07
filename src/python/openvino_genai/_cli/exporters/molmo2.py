@@ -20,7 +20,6 @@ import json
 import logging
 import tempfile
 from pathlib import Path
-from typing import List, Optional
 
 import openvino as ov
 
@@ -44,7 +43,7 @@ logger = logging.getLogger(__name__)
 _ALLOW_PATTERNS = ["*.json", "*.safetensors", "*.py", "*.jinja", "*.txt"]
 
 
-def _processor_chat_template(model_dir: Path) -> Optional[str]:
+def _processor_chat_template(model_dir: Path) -> str | None:
     if (model_dir / "chat_template.jinja").is_file():
         return (model_dir / "chat_template.jinja").read_text(encoding="utf-8")
     if (model_dir / "chat_template.json").is_file():
@@ -67,7 +66,7 @@ def _patch_text_model_for_export(text_model) -> None:
     import torch
     from torch import nn
 
-    def split_linear(linear: nn.Linear, sizes: List[int]) -> List[nn.Linear]:
+    def split_linear(linear: nn.Linear, sizes: list[int]) -> list[nn.Linear]:
         layers, start = [], 0
         for size in sizes:
             # Row slices of the fused weight are views: the split layers share its memory instead of copying it.
@@ -183,7 +182,7 @@ def _build_export_modules():
     class KVCache:
         """Minimal cache built from the flat past key/value inputs; collects the updated tensors as outputs."""
 
-        def __init__(self, keys: List[torch.Tensor], values: List[torch.Tensor]):
+        def __init__(self, keys: list[torch.Tensor], values: list[torch.Tensor]):
             self.keys = list(keys)
             self.values = list(values)
 
@@ -291,7 +290,10 @@ class Molmo2Exporter(NativeExporter):
                 torch.randint(0, num_crops * num_patches, (2, 7, 4)),
             ),
             # The pooling window differs between images (2x2) and video frames (3x3).
-            dynamic_shapes={"images": {0: dynamic, 1: dynamic}, "pooled_patches_idx": {0: dynamic, 1: dynamic, 2: dynamic}},
+            dynamic_shapes={
+                "images": {0: dynamic, 1: dynamic},
+                "pooled_patches_idx": {0: dynamic, 1: dynamic, 2: dynamic},
+            },
         )
         save_submodel(
             convert_exported_program(ep, ["images", "pooled_patches_idx"], ["last_hidden_state"]),
@@ -330,8 +332,7 @@ class Molmo2Exporter(NativeExporter):
             + [f"past_key_values.{name}" for name in kv_names],
             ["logits"] + [f"present.{name}" for name in kv_names],
         )
-        if not args.disable_stateful:
-            make_stateful(language_model)
+        make_stateful(language_model)
         del ep, model
         gc.collect()
 

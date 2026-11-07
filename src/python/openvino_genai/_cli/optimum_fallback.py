@@ -10,7 +10,6 @@ import os
 import sys
 from functools import partial
 from importlib import metadata
-from typing import List, Optional
 
 from openvino_genai._cli.uv_env import (
     cache_dir,
@@ -30,7 +29,16 @@ logger = logging.getLogger(__name__)
 _OPTIMUM_INTEL_SPEC_ENV = "GENAI_CLI_OPTIMUM_INTEL_SPEC"
 # Heavy (and ABI-coupled) distributions that always come from the user's environment. uv overlays install the whole
 # dependency closure of what they provide, so optimum-intel itself is not overlaid with `uv run --with`.
-_ENVIRONMENT_PROVIDED = {"torch", "torchvision", "torchaudio", "openvino", "openvino-tokenizers", "openvino-genai", "nncf", "numpy"}
+_ENVIRONMENT_PROVIDED = {
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "openvino",
+    "openvino-tokenizers",
+    "openvino-genai",
+    "nncf",
+    "numpy",
+}
 
 
 def _is_optimum_intel_available() -> bool:
@@ -40,7 +48,7 @@ def _is_optimum_intel_available() -> bool:
         return False
 
 
-def _provide_optimum_intel(argv: List[str]) -> int:
+def _provide_optimum_intel(argv: list[str]) -> int:
     """Re-runs genai-cli with optimum-intel available, leaving the user's environment untouched.
 
     optimum-intel and optimum (pure Python) are installed without dependencies into a cached directory added to
@@ -62,7 +70,7 @@ def _provide_optimum_intel(argv: List[str]) -> int:
     return reexec_with(overlay, argv, pythonpath=target)
 
 
-def _transformers_requirement(model_type: Optional[str], task: str) -> Optional[str]:
+def _transformers_requirement(model_type: str | None, task: str) -> str | None:
     """Range of transformers versions optimum-intel supports for ``model_type``, or None if unconstrained."""
     if model_type is None:
         return None
@@ -101,7 +109,7 @@ def _transformers_requirement(model_type: Optional[str], task: str) -> Optional[
     return "transformers" + ",".join(specifiers)
 
 
-def export_with_optimum_intel(model_type: Optional[str], task: str, export_argv: List[str], argv: List[str]) -> int:
+def export_with_optimum_intel(model_type: str | None, task: str, export_argv: list[str], argv: list[str]) -> int:
     """Runs ``optimum-cli export openvino <export_argv>`` with the transformers version supported for the model."""
     if not _is_optimum_intel_available():
         logger.info(f"Model type `{model_type}` is not converted natively by genai-cli, falling back to optimum-intel")

@@ -17,7 +17,6 @@ import logging
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
-from typing import List, Optional
 
 from openvino_genai._cli.args import add_export_openvino_args
 
@@ -37,7 +36,7 @@ def _build_parser() -> ArgumentParser:
     return parser
 
 
-def _read_model_config(model: str, cache_dir: Optional[str]) -> Optional[dict]:
+def _read_model_config(model: str, cache_dir: str | None) -> dict | None:
     """Reads config.json of a local or Hub model as plain JSON (no remote code is run)."""
     path = Path(model)
     if path.is_dir():
@@ -45,17 +44,20 @@ def _read_model_config(model: str, cache_dir: Optional[str]) -> Optional[dict]:
         if not config_path.is_file():
             return None
     else:
-        try:
-            from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download
+        from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
 
+        try:
             config_path = Path(hf_hub_download(model, "config.json", cache_dir=cache_dir))
-        except Exception as error:
+        except (EntryNotFoundError, HfHubHTTPError, OSError, ValueError) as error:
+            # No config.json (e.g. a diffusers repository), offline or not a valid repository id: let the fallback
+            # (optimum-intel) handle the model and report the problem.
             logger.debug(f"Cannot download config.json of {model}: {error}")
             return None
     return json.loads(config_path.read_text(encoding="utf-8"))
 
 
-def _export_openvino(parser: ArgumentParser, args, argv: List[str], export_argv: List[str]) -> int:
+def _export_openvino(parser: ArgumentParser, args, argv: list[str], export_argv: list[str]) -> int:
     from openvino_genai._cli.exporters import get_native_exporter
     from openvino_genai._cli.uv_env import installed_version, is_satisfied, reexec_with
 
@@ -79,12 +81,14 @@ def _export_openvino(parser: ArgumentParser, args, argv: List[str], export_argv:
         )
         return reexec_with([transformers_requirement], argv)
 
-    logger.info(f"Exporting `{model_type}` with the native genai-cli exporter (transformers {installed_version('transformers')})")
+    logger.info(
+        f"Exporting `{model_type}` with the native genai-cli exporter (transformers {installed_version('transformers')})"
+    )
     exporter_cls(args).export()
     return 0
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = _build_parser()
     args = parser.parse_args(argv)

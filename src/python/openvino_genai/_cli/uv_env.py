@@ -19,9 +19,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterable
 from importlib import metadata
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ _OVERLAY_ENV = "GENAI_CLI_UV_OVERLAY"
 _BASE_PREFIX_ENV = "GENAI_CLI_BASE_PREFIX"
 
 
-def installed_version(distribution: str) -> Optional[str]:
+def installed_version(distribution: str) -> str | None:
     try:
         return metadata.version(distribution)
     except metadata.PackageNotFoundError:
@@ -74,9 +74,7 @@ def cache_dir() -> Path:
     return Path(root) / "openvino_genai" / "genai-cli"
 
 
-def compile_requirements(
-    requirements: List[str], no_deps: bool = False, exclude: Iterable[str] = ()
-) -> Dict[str, str]:
+def compile_requirements(requirements: list[str], no_deps: bool = False, exclude: Iterable[str] = ()) -> dict[str, str]:
     """Resolves requirements with ``uv pip compile`` (metadata only, nothing is installed).
 
     Distributions in ``exclude`` are dropped from the resolution together with their own dependencies.
@@ -92,7 +90,7 @@ def compile_requirements(
             overrides = Path(tmp) / "overrides.txt"
             overrides.write_text("".join(f"{name}; sys_platform == 'never'\n" for name in exclude))
             cmd += ["--override", str(overrides)]
-        result = subprocess.run(cmd, input="\n".join(requirements), capture_output=True, text=True)
+        result = subprocess.run(cmd, input="\n".join(requirements), capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"uv cannot resolve {requirements}:\n{result.stderr}")
     pins = {}
@@ -103,7 +101,7 @@ def compile_requirements(
     return pins
 
 
-def pinned_version(requirement: str) -> Optional[str]:
+def pinned_version(requirement: str) -> str | None:
     """``X`` for a ``name==X`` requirement, None otherwise (e.g. for direct URL requirements)."""
     from packaging.requirements import Requirement
 
@@ -118,7 +116,7 @@ def resolve_pinned_version(requirement: str) -> str:
     return compile_requirements([requirement], no_deps=True)[_normalize(Requirement(requirement).name)]
 
 
-def install_to_target(requirements: List[str], target: Path) -> None:
+def install_to_target(requirements: list[str], target: Path) -> None:
     """Installs exact requirements without their dependencies into ``target`` (a directory for PYTHONPATH)."""
     marker = target / ".genai-cli-complete"
     if marker.is_file():
@@ -128,7 +126,7 @@ def install_to_target(requirements: List[str], target: Path) -> None:
     marker.touch()
 
 
-def reexec_with(requirements: List[str], argv: List[str], pythonpath: Optional[Path] = None) -> int:
+def reexec_with(requirements: list[str], argv: list[str], pythonpath: Path | None = None) -> int:
     """Runs ``genai-cli <argv>`` again in a uv overlay providing ``requirements``; returns its exit code.
 
     A requirement replaces an already overlaid requirement on the same distribution.

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from argparse import Namespace
-from typing import Tuple
 
 from openvino_genai._cli.exporters.common import validate_weight_compression_args
 
@@ -12,7 +11,7 @@ class NativeExporter:
 
     MODEL_TYPE: str
     # Tasks the exporter produces; the first one is used for `--task auto`.
-    TASKS: Tuple[str, ...]
+    TASKS: tuple[str, ...]
     # The transformers version the model is exported with, provided by a uv overlay when not installed.
     TRANSFORMERS_VERSION: str
     # Whether the modeling code is only available as remote code in the model repository.
@@ -34,6 +33,19 @@ class NativeExporter:
             raise ValueError(
                 f"`{cls.MODEL_TYPE}` models are implemented by custom code in the model repository. Please read that "
                 "code and pass --trust-remote-code to allow running it."
+            )
+        # OpenVINO GenAI pipelines need stateful language models (they always feed beam_idx), and the native exporters
+        # build the graphs themselves, so optimum-intel's model customization options do not apply.
+        unsupported = {
+            "--disable-stateful": args.disable_stateful,
+            "--model-kwargs": args.model_kwargs is not None,
+            "--pad-token-id": args.pad_token_id is not None,
+        }
+        rejected = [option for option, used in unsupported.items() if used]
+        if rejected:
+            raise ValueError(
+                f"{', '.join(rejected)} {'is' if len(rejected) == 1 else 'are'} not supported by the native "
+                f"`{cls.MODEL_TYPE}` exporter."
             )
         validate_weight_compression_args(args)
 

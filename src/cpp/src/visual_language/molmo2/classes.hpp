@@ -56,17 +56,18 @@ public:
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
 
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {},
+                                 const std::vector<size_t>& videos_sequence = {},
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
-        const std::string& prompt,
-        const std::vector<ov::genai::EncodedImage>& images,
-        const std::vector<ov::genai::EncodedVideo>& videos,
-        ov::genai::VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings = true,
-        const std::vector<size_t>& image_sequence = {},
-        const std::vector<size_t>& videos_sequence = {},
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
+    /// @brief token_type_ids of the last embedded sequence: image and frame special tokens are marked with 1, so the
+    /// language model attends between them bidirectionally at prefill.
+    const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos,
                                                        const std::vector<VideoMetadata>& videos_metadata = {}) override;
@@ -77,11 +78,14 @@ public:
                                       const std::vector<EncodedImage>& images,
                                       const std::vector<EncodedVideo>& videos) const override;
 
-    bool has_token_type_ids() const override;
-
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
     NormalizedPrompt normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const override;
+
+protected:
+    /// @brief Finishes the Molmo2 prompt layout once the prompt formatting is known (normalize_prompt runs before
+    /// it is set) and prepends the BOS token, so the cache-state bookkeeping sees the exact embedded sequence.
+    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
 
 private:
     /// @brief Build the run of image special tokens for a single image grid, mirroring
@@ -96,11 +100,10 @@ private:
     /// (video_preprocessor_config.json) options.
     void read_molmo2_configs(const std::filesystem::path& config_dir);
 
-    /// @brief Shared implementation of the image and image+video embedding merge.
-    std::pair<ov::Tensor, ov::Tensor> merge_embeddings(const std::string& prompt,
-                                                       const std::vector<const ov::Tensor*>& vision_features,
-                                                       VLMPerfMetrics& metrics);
-
+    /// @brief Molmo2Processor options from processor_config.json (the image processor config does not hold them).
+    bool m_image_use_col_tokens = true;
+    int m_use_single_crop_col_tokens = -1;  // -1: follow m_image_use_col_tokens
+    bool m_use_single_crop_start_token = false;
     bool m_video_use_col_tokens = false;
     bool m_use_frame_special_tokens = true;
     std::string m_frame_sample_mode = "uniform_last_frame";
@@ -108,8 +111,11 @@ private:
     float m_max_fps = 2.0f;
     float m_sampling_fps = 2.0f;
 
-    /// @brief Replace the tokenizer chat template with a Molmo2 template that keeps image tokens
-    /// (already embedded in the normalized prompt) in front of the "User:" role prefix.
+    std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
+
+    /// @brief Replace the tokenizer chat template with a Molmo2 template that marks user turns, so that
+    /// apply_chat_template_tokenize can move the visual tokens of every user turn in front of its "User:" prefix,
+    /// as the Molmo2 processor does.
     void patch_chat_template();
 };
 

@@ -11,9 +11,10 @@ consume optimum-intel exports.
 import gc
 import logging
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 import numpy as np
 import openvino as ov
@@ -33,7 +34,7 @@ _WEIGHT_FILE_SUFFIXES = (".safetensors", ".bin", ".pt", ".pth", ".ckpt", ".msgpa
 _WEIGHT_INDEX_FILES = ("model.safetensors.index.json", "pytorch_model.bin.index.json")
 
 
-def torch_export(model, args: tuple = (), kwargs: Optional[Dict[str, Any]] = None, dynamic_shapes=None):
+def torch_export(model, args: tuple = (), kwargs: dict[str, Any] | None = None, dynamic_shapes=None):
     """Captures ``model`` with torch.export (no TorchScript involved)."""
     import torch
 
@@ -59,7 +60,9 @@ def convert_exported_program(ep, input_names: Sequence[str], output_names: Seque
         )
     # Dimensions that torch.export kept static (e.g. hidden size) stay static in the OpenVINO model.
     user_inputs = set(ep.graph_signature.user_inputs)
-    example_inputs = [node.meta["val"] for node in ep.graph.nodes if node.op == "placeholder" and node.name in user_inputs]
+    example_inputs = [
+        node.meta["val"] for node in ep.graph.nodes if node.op == "placeholder" and node.name in user_inputs
+    ]
     for parameter, example in zip(ov_model.get_parameters(), example_inputs):
         dims = [dim if isinstance(dim, int) else -1 for dim in example.shape]
         parameter.set_partial_shape(ov.PartialShape(dims))
@@ -83,7 +86,9 @@ def make_stateful(ov_model: ov.Model, batch_dim: int = 0) -> None:
     kv_outputs = [port for port in ov_model.outputs if port.get_any_name().startswith("present")]
     main_input = ov_model.input("inputs_embeds" if "inputs_embeds" in ov_model.input(0).get_names() else "input_ids")
 
-    beam_idx = opset13.parameter(name="beam_idx", dtype=ov.Type.i32, shape=ov.PartialShape([main_input.get_partial_shape()[0]]))
+    beam_idx = opset13.parameter(
+        name="beam_idx", dtype=ov.Type.i32, shape=ov.PartialShape([main_input.get_partial_shape()[0]])
+    )
     beam_idx.output(0).get_tensor().add_names({"beam_idx"})
     ov_model.add_parameters([beam_idx])
     for kv_input in kv_inputs:
@@ -114,13 +119,13 @@ class WeightCompressionConfig:
     """Weight-only compression parameters, a subset of nncf.compress_weights arguments."""
 
     mode: str
-    ratio: Optional[float] = None
-    group_size: Optional[int] = None
-    all_layers: Optional[bool] = None
-    awq: Optional[bool] = None
-    sensitivity_metric: Optional[str] = None
-    backup_precision: Optional[str] = None
-    group_size_fallback: Optional[str] = None
+    ratio: float | None = None
+    group_size: int | None = None
+    all_layers: bool | None = None
+    awq: bool | None = None
+    sensitivity_metric: str | None = None
+    backup_precision: str | None = None
+    group_size_fallback: str | None = None
 
     def compress(self, ov_model: ov.Model) -> ov.Model:
         import nncf
@@ -145,10 +150,24 @@ class WeightCompressionConfig:
 INT8_SYM_CONFIG = WeightCompressionConfig(mode="int8_sym", ratio=1.0, group_size=-1)
 INT8_ASYM_CONFIG = WeightCompressionConfig(mode="int8_asym", ratio=1.0, group_size=-1)
 # optimum-intel's default 4-bit config, used when --weight-format int4 comes without other compression arguments.
-_DEFAULT_4BIT_CONFIG = {"ratio": 1.0, "sym": False, "group_size": 128, "all_layers": None, "group_size_fallback": "ignore"}
+_DEFAULT_4BIT_CONFIG = {
+    "ratio": 1.0,
+    "sym": False,
+    "group_size": 128,
+    "all_layers": None,
+    "group_size_fallback": "ignore",
+}
 
 # Options that need a calibration dataset, which native exporters do not collect yet.
-_DATA_AWARE_OPTIONS = ("dataset", "num_samples", "scale_estimation", "gptq", "lora_correction", "quantization_statistics_path", "smooth_quant_alpha")
+_DATA_AWARE_OPTIONS = (
+    "dataset",
+    "num_samples",
+    "scale_estimation",
+    "gptq",
+    "lora_correction",
+    "quantization_statistics_path",
+    "smooth_quant_alpha",
+)
 
 
 def validate_weight_compression_args(args) -> None:
@@ -161,7 +180,9 @@ def validate_weight_compression_args(args) -> None:
             f"Data-aware compression ({', '.join(data_aware)}) is not supported by the native genai-cli exporter yet."
         )
     if args.sensitivity_metric not in (None, "weight_quantization_error"):
-        raise ValueError(f"--sensitivity-metric {args.sensitivity_metric} requires a dataset, which is not supported yet.")
+        raise ValueError(
+            f"--sensitivity-metric {args.sensitivity_metric} requires a dataset, which is not supported yet."
+        )
     if args.weight_format is None and not no_compression_parameter_provided(args):
         raise ValueError(
             "Some compression parameters are provided, but the weight format is not specified. "
@@ -169,7 +190,7 @@ def validate_weight_compression_args(args) -> None:
         )
 
 
-def weight_compression_config_from_args(args) -> Optional[WeightCompressionConfig]:
+def weight_compression_config_from_args(args) -> WeightCompressionConfig | None:
     """The compression requested on the command line, None for floating-point (or unspecified) weight formats."""
     weight_format = args.weight_format
     if weight_format in (None, "fp32", "fp16"):
@@ -211,8 +232,8 @@ def count_weights(ov_model: ov.Model) -> int:
 
 
 def resolve_compression(
-    ov_model: ov.Model, weight_format: Optional[str], compression: Optional[WeightCompressionConfig]
-) -> Optional[WeightCompressionConfig]:
+    ov_model: ov.Model, weight_format: str | None, compression: WeightCompressionConfig | None
+) -> WeightCompressionConfig | None:
     """The compression a submodel gets: the requested one or, without a weight format, int8_asym for submodels with
     more than 1B weights (like optimum-intel)."""
     if weight_format is None and count_weights(ov_model) >= _MAX_UNCOMPRESSED_SIZE:
@@ -223,8 +244,8 @@ def resolve_compression(
 def save_submodel(
     ov_model: ov.Model,
     path: Path,
-    weight_format: Optional[str],
-    compression: Optional[WeightCompressionConfig],
+    weight_format: str | None,
+    compression: WeightCompressionConfig | None,
 ) -> None:
     """Compresses (if requested or if the submodel is large) and saves a submodel.
 
@@ -246,12 +267,14 @@ def copy_model_files(src_dir: Path, output: Path) -> None:
         if not src.is_file() or src.suffix in _WEIGHT_FILE_SUFFIXES or src.name in _WEIGHT_INDEX_FILES:
             continue
         dst = output / src.name
+        if dst.exists() and dst.samefile(src):
+            continue  # exporting into the checkpoint directory itself
         # Hub cache files are read-only: copy the content only and replace files of a previous export.
         dst.unlink(missing_ok=True)
         shutil.copyfile(src, dst)
 
 
-def convert_tokenizer(model_dir: Path, output: Path, chat_template: Optional[str] = None) -> None:
+def convert_tokenizer(model_dir: Path, output: Path, chat_template: str | None = None) -> None:
     """Converts the Hugging Face tokenizer to openvino_tokenizer.xml / openvino_detokenizer.xml."""
     from openvino_tokenizers import convert_tokenizer as ov_convert_tokenizer
     from transformers import AutoTokenizer
@@ -267,7 +290,7 @@ def convert_tokenizer(model_dir: Path, output: Path, chat_template: Optional[str
     ov.save_model(ov_detokenizer, output / OV_DETOKENIZER_NAME)
 
 
-def resolve_model_dir(model: str, cache_dir: Optional[str], allow_patterns: List[str]) -> Path:
+def resolve_model_dir(model: str, cache_dir: str | None, allow_patterns: list[str]) -> Path:
     """Local directory with the checkpoint, downloading only the files matching ``allow_patterns`` from the Hub."""
     path = Path(model)
     if path.is_dir():
