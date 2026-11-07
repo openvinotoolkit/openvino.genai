@@ -723,6 +723,19 @@ TEST_F(DFlashCBPipelineTest, MissedWindowLeavesTheRequestToTheTarget) {
     ASSERT_EQ(group->get_generation_stream()->get_status(), ov::genai::GenerationStatus::STOP);
 }
 
+TEST_F(DFlashCBPipelineTest, MissedWindowRunsWithTheRowsOfADeferredTarget) {
+    DraftInstance draft;
+    auto group = start_with_block(draft);
+    draft.drop_window(group);
+
+    // the target did not run the request either, and still publishes the rows of its last forward
+    draft.update_request(0, target_step({7, 17}, 9, make_hidden_rows(1, 50.0f)), true);
+
+    ASSERT_EQ(group->get_generation_stream()->get_status(), ov::genai::GenerationStatus::RUNNING);
+    ASSERT_EQ(draft.window(group).committed_rows, 8);
+    ASSERT_EQ(draft.window(group).context_rows, 1);
+}
+
 TEST_F(DFlashCBPipelineTest, WindowCutAtTheSeedKeepsDrafting) {
     DraftInstance draft;
     auto group = start_with_block(draft);
