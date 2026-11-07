@@ -104,7 +104,22 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
                 num_processed_tokens = 0;
             }
             // Publish an initialized empty tensor for unscheduled sequences.
-            const ov::Tensor hidden_state = sequence->get_hidden_state();
+            ov::Tensor hidden_state = sequence->get_hidden_state();
+            if (dflash_mode_enabled && m_is_validation_mode_enabled && hidden_state) {
+                // The DFlash draft reads the rows up to the processed length; after a rejection, the rows of the
+                // removed candidates that ran follow them.
+                const size_t first_position = sequence->get_hidden_state_first_position();
+                const size_t hidden_rows = hidden_state.get_shape()[0];
+                const size_t kept_rows = num_processed_tokens > first_position
+                                             ? std::min(num_processed_tokens - first_position, hidden_rows)
+                                             : 0;
+                if (kept_rows == 0) {
+                    hidden_state = ov::Tensor{};
+                } else if (kept_rows < hidden_rows) {
+                    auto [roi_begin, roi_end] = utils::make_roi(hidden_state.get_shape(), 0, 0, kept_rows);
+                    hidden_state = ov::Tensor(hidden_state, roi_begin, roi_end);
+                }
+            }
             generated_request.insert({{sequence_id,
                                        {sequence->get_generated_ids(),
                                         sequence->get_generated_log_probs(),
@@ -434,8 +449,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         logit_processor.update_generated_len(sequence->get_generated_len());
     }
 
-    // Plan the window. The target's rows end at its processed length, and their last removed_tokens_cnt
-    // rows belong to rejected candidates.
+    // Plan the window. The target's rows end at its processed length.
     const detail::DFlashDraftWindow window =
         detail::make_dflash_draft_window(*request, target.num_processed_tokens, m_dflash_candidate_position_offset);
     const size_t hidden_rows = target.hidden_states ? target.hidden_states.get_shape()[0] : 0;
@@ -446,7 +460,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         m_scheduler->clear_expected_num_scheduled_tokens(request_id);
     }
     request->set_num_validated_tokens(0);
-    if (hidden_rows < result.removed_tokens_cnt + window.context_rows) {
+    if (hidden_rows < window.context_rows) {
         // The rows no longer reach the committed positions because an earlier window did not run, and the
         // draft cannot rebuild them. The draft request stops; the speculative step removes it, and the target
         // continues the request without speculation.
@@ -458,9 +472,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
 
     // Schedule the window: its target rows, the mask placeholders, and the processed length.
     if (window.context_rows > 0) {
-        const size_t rows_end = hidden_rows - result.removed_tokens_cnt;
         auto [roi_begin, roi_end] =
-            utils::make_roi(target.hidden_states.get_shape(), 0, rows_end - window.context_rows, rows_end);
+            utils::make_roi(target.hidden_states.get_shape(), 0, hidden_rows - window.context_rows, hidden_rows);
         // The view is read by the next draft forward, before the next target inference overwrites it.
         m_model_runner->set_initial_hidden_state(request_id,
                                                  ov::Tensor(target.hidden_states, roi_begin, roi_end));

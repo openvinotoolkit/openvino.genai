@@ -1148,7 +1148,8 @@ public:
                 for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                     Sequence::Ptr sequence = running_sequences[seq_idx];
                     sequence->update_hidden_state(
-                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()),
+                        sequence_group->get_num_processed_tokens());
                     if (m_has_intermediate_hidden_states_output) {
                         auto ihs = _get_intermediate_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id());
                         if (ihs.get_size() == 0) {
