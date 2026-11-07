@@ -183,6 +183,9 @@ protected:
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
+    // The candidates of every request that the main model has not validated in full: their window counts in the
+    // acceptance metrics after the last of them is validated.
+    std::map<uint64_t, UpdateRequestResult> m_validation_windows;
 
     void reset_generate_metrics() {
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();

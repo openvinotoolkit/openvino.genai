@@ -406,6 +406,26 @@ def test_rejects_a_token_budget_below_the_validation_window(model_pair):
         _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4[:1], [config])
 
 
+@pytest.mark.parametrize("model_pair", [QWEN3_DEEPSPEC], indirect=True)
+def test_counts_candidates_validated_in_a_later_step(model_pair):
+    # A budget of 9 fits two validation windows of the 4 requests, and the target validates the others in a later
+    # step. The drafts and the outputs do not depend on the budget, so neither do the accepted tokens. The target
+    # accepts some candidates of the tiny DeepSpec draft, and none of the DFlash one.
+    config = _greedy_config(num_assistant_tokens=3, max_new_tokens=30)
+
+    def generate(max_num_batched_tokens):
+        scheduler_config = _scheduler_config(dynamic_split_fuse=True, max_num_batched_tokens=max_num_batched_tokens)
+        results = _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4, [config] * len(PROMPTS_4))
+        metrics = results[0].extended_perf_metrics
+        return (
+            [result.m_generation_ids for result in results],
+            metrics.get_num_draft_tokens(),
+            metrics.get_num_accepted_tokens(),
+        )
+
+    assert generate(9) == generate(256)
+
+
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
 def test_chunked_prefill_matches_target(model_pair):
     # 16 tokens split the prompts over several steps and fit the 1 + BLOCK_NUM_ASSISTANT_TOKENS rows of the

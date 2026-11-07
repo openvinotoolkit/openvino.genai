@@ -813,6 +813,14 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::i
     return m_requests.empty();
 }
 
+bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::has_candidates_to_validate(
+    uint64_t request_id) const {
+    const auto it = std::find_if(m_requests.begin(), m_requests.end(), [request_id](const SequenceGroup::Ptr& request) {
+        return request->get_request_id() == request_id;
+    });
+    return it != m_requests.end() && (*it)->get_num_tokens_to_validate() > 0;
+}
+
 size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_processed_tokens_per_iteration() {
     return m_batch_size;
 }

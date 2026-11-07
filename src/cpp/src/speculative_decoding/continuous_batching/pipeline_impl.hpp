@@ -78,6 +78,8 @@ public:
     UpdateRequestResult update_request(uint64_t request_id,
                                        const GeneratedSequences& candidates,
                                        bool is_update_logit_processor);
+    // Whether the next step of the request still validates candidates: the step that got them did not run them.
+    bool has_candidates_to_validate(uint64_t request_id) const;
     void sync_generated_embeddings();
     bool is_requests_empty();
 
