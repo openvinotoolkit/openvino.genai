@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 import openvino as ov
 
-from openvino_genai._cli.args import no_compression_parameter_provided
+from openvino_genai._cli.args import WEIGHT_FORMATS, no_compression_parameter_provided
 
 logger = logging.getLogger(__name__)
 
@@ -183,11 +183,52 @@ def validate_weight_compression_args(args) -> None:
         raise ValueError(
             f"--sensitivity-metric {args.sensitivity_metric} requires a dataset, which is not supported yet."
         )
-    if args.weight_format is None and not no_compression_parameter_provided(args):
+    weight_format = args.weight_format
+    if weight_format is not None and weight_format not in WEIGHT_FORMATS:
+        raise ValueError(
+            f"--weight-format {weight_format} is not supported by the native genai-cli exporter, "
+            f"supported formats: {', '.join(WEIGHT_FORMATS)}."
+        )
+    if weight_format is None and not no_compression_parameter_provided(args):
         raise ValueError(
             "Some compression parameters are provided, but the weight format is not specified. "
             "Please provide it with --weight-format argument."
         )
+    # Options the selected format does not implement are rejected instead of being silently dropped.
+    if weight_format in ("fp32", "fp16"):
+        ignored = _provided_options(args, _4BIT_ONLY_OPTIONS + ("sym",))
+    elif weight_format == "int8":
+        ignored = _provided_options(args, _4BIT_ONLY_OPTIONS)
+        # The values int8 per-channel compression uses anyway are accepted.
+        ignored = [
+            option
+            for option in ignored
+            if not (option == "--ratio" and args.ratio == 1.0)
+            and not (option == "--group-size" and args.group_size == -1)
+        ]
+    else:
+        ignored = []
+    if ignored:
+        raise ValueError(
+            f"{', '.join(ignored)} {'is' if len(ignored) == 1 else 'are'} not applicable to "
+            f"--weight-format {weight_format}."
+        )
+
+
+# Compression options that only 4-bit (mixed-precision, grouped) weight formats implement.
+_4BIT_ONLY_OPTIONS = (
+    "ratio",
+    "group_size",
+    "group_size_fallback",
+    "backup_precision",
+    "all_layers",
+    "awq",
+    "sensitivity_metric",
+)
+
+
+def _provided_options(args, names: Sequence[str]) -> list[str]:
+    return [f"--{name.replace('_', '-')}" for name in names if getattr(args, name) is not None]
 
 
 def weight_compression_config_from_args(args) -> WeightCompressionConfig | None:

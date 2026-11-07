@@ -37,6 +37,9 @@ testing = ["pytest>=6.0"]
 # does not convert natively.
 export = [
     "torch>=2.6",
+    # Always taken from this environment (never overlaid, it is ABI-coupled with torch); optimum-intel and the
+    # processors of many VLMs need it.
+    "torchvision",
     "transformers",
     "huggingface_hub",
     "nncf",

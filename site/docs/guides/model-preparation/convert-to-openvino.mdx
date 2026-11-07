@@ -55,6 +55,46 @@ For downloading pre-converted models, see [Download Pre-Converted OpenVINO Model
 
     :::
 
+## Converting Models with genai-cli {#genai-cli}
+
+OpenVINO GenAI ships its own export tool, `genai-cli`, with the same options as `optimum-cli export openvino`.
+Some models (see the table below) are converted natively by `genai-cli` and do not need `optimum-intel` at all;
+every other model is exported through `optimum-intel` with the same command line.
+
+1. Install OpenVINO GenAI with the export dependencies (`torch`, `torchvision`, `transformers`, `nncf` and `uv`):
+    ```bash
+    pip install openvino-genai[export]
+    ```
+
+2. Export a model. For example, Molmo2 (`allenai/MolmoWeb-4B`) compressed to INT4:
+    ```bash
+    genai-cli export -m allenai/MolmoWeb-4B --trust-remote-code --weight-format int4 MolmoWeb-4B-ov-int4
+    ```
+    The output directory contains the OpenVINO IRs, the converted tokenizer and detokenizer, and the configuration
+    files the GenAI pipelines read, so it can be passed to `VLMPipeline` directly.
+
+| Model type | Architecture | Converted by | transformers version |
+|------------|--------------|--------------|----------------------|
+| `molmo2` | `Molmo2ForConditionalGeneration` | `genai-cli` (native) | 4.57.6 |
+| Any other | | `optimum-intel` | Supported by `optimum-intel` for the model |
+
+:::info How genai-cli provides dependencies
+
+- **transformers version.** Every model is exported with the `transformers` version it is known to work with.
+  If the installed version differs, `genai-cli` runs the export again in an ephemeral environment created by
+  [`uv`](https://docs.astral.sh/uv/) on top of the active one (`uv run --with transformers==<version>`).
+  The active virtual environment is never modified; the overlays are cached by `uv`.
+- **Fallback exports.** For models without a native exporter, `genai-cli` runs `optimum-cli export openvino` with
+  the same arguments. If `optimum-intel` is not installed, it is downloaded (without dependencies) to
+  `~/.cache/openvino_genai/genai-cli`, and `torch`, `openvino` and `nncf` are taken from the active environment.
+  Set `GENAI_CLI_OPTIMUM_INTEL_SPEC` to export with another `optimum-intel` version, for example
+  `optimum-intel @ git+https://github.com/huggingface/optimum-intel.git`.
+- **Native exporters** support FP32, FP16 and data-free weight compression (`int8`, `int4`, `mxfp4`, `nf4`, `cb4`,
+  with `--ratio`, `--group-size`, `--sym`, `--awq` and the other data-free options). Data-aware compression
+  (`--dataset`), full quantization (`--quant-mode`), `--disable-stateful` and `--model-kwargs` are rejected for them.
+
+:::
+
 ## Converting Models from ModelScope
 
 ModelScope models need to be downloaded first, then converted to OpenVINO IR format.

@@ -19,7 +19,6 @@ from openvino_genai._cli.uv_env import (
     is_satisfied,
     pinned_version,
     reexec_with,
-    resolve_pinned_version,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,10 +69,10 @@ def _provide_optimum_intel(argv: list[str]) -> int:
     return reexec_with(overlay, argv, pythonpath=target)
 
 
-def _transformers_requirement(model_type: str | None, task: str) -> str | None:
-    """Range of transformers versions optimum-intel supports for ``model_type``, or None if unconstrained."""
+def _model_transformers_specifiers(model_type: str | None, task: str) -> list[str]:
+    """Bounds of the transformers versions optimum-intel's export config for ``model_type`` declares, if any."""
     if model_type is None:
-        return None
+        return []
     from optimum.exporters.openvino import model_configs  # noqa: F401 (registers the OpenVINO export configs)
     from optimum.exporters.tasks import TasksManager
 
@@ -87,7 +86,7 @@ def _transformers_requirement(model_type: str | None, task: str) -> str | None:
         except KeyError:
             continue
     if not constructors:
-        return None
+        return []
     constructor = constructors.get(task) or next(iter(constructors.values()))
     config_cls = constructor.func if isinstance(constructor, partial) else constructor
 
@@ -98,15 +97,36 @@ def _transformers_requirement(model_type: str | None, task: str) -> str | None:
         specifiers.append(f">={min_version}")
     if max_version is not None:
         specifiers.append(f"<={max_version}")
-    if not specifiers:
-        return None
-    # optimum-intel itself supports a limited transformers range, the pinned version must satisfy it too.
-    from packaging.requirements import Requirement
+    return specifiers
 
-    for requirement in map(Requirement, metadata.requires("optimum-intel") or []):
-        if requirement.name == "transformers" and requirement.marker is None:
-            specifiers += [str(spec) for spec in requirement.specifier]
-    return "transformers" + ",".join(specifiers)
+
+def _transformers_requirement(model_type: str | None, task: str) -> str | None:
+    """Range of transformers versions to export ``model_type`` with, or None if unconstrained.
+
+    It is the transformers requirement of the installed optimum-intel (and optimum) distributions, narrowed by the
+    bounds of the model's export config when optimum-intel declares them.
+    """
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+
+    specifiers = []
+    for distribution in ("optimum-intel", "optimum"):
+        for requirement in map(Requirement, metadata.requires(distribution) or []):
+            if canonicalize_name(requirement.name) == "transformers" and requirement.marker is None:
+                specifiers += [str(spec) for spec in requirement.specifier]
+    specifiers += _model_transformers_specifiers(model_type, task)
+    return "transformers" + ",".join(specifiers) if specifiers else None
+
+
+def _overlay_for_transformers(transformers_requirement: str) -> list[str]:
+    """The overlay that switches to ``transformers_requirement``: transformers and its light dependencies resolved
+    together with the installed optimum and optimum-intel, so that no pin of the previous overlay (e.g.
+    huggingface-hub 1.x for transformers 5) is kept for a transformers version it is not compatible with."""
+    requirements = [
+        f"{name}=={installed_version(name)}" for name in ("optimum-intel", "optimum") if installed_version(name)
+    ]
+    pins = compile_requirements([*requirements, transformers_requirement], exclude=_ENVIRONMENT_PROVIDED)
+    return [requirement for name, requirement in pins.items() if name not in ("optimum-intel", "optimum")]
 
 
 def export_with_optimum_intel(model_type: str | None, task: str, export_argv: list[str], argv: list[str]) -> int:
@@ -121,7 +141,7 @@ def export_with_optimum_intel(model_type: str | None, task: str, export_argv: li
             f"optimum-intel supports `{model_type}` with {transformers_range}, "
             f"transformers {installed_version('transformers')} is active."
         )
-        return reexec_with([resolve_pinned_version(transformers_range)], argv)
+        return reexec_with(_overlay_for_transformers(transformers_range), argv, replace_overlay=True)
 
     logger.info(
         f"Exporting `{model_type}` with optimum-intel {installed_version('optimum-intel')} "

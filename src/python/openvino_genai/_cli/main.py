@@ -57,13 +57,20 @@ def _read_model_config(model: str, cache_dir: str | None) -> dict | None:
     return json.loads(config_path.read_text(encoding="utf-8"))
 
 
-def _export_openvino(parser: ArgumentParser, args, argv: list[str], export_argv: list[str]) -> int:
+def native_exporter_for_model(model: str, library: str | None = None, cache_dir: str | None = None):
+    """``(model_type, exporter class)`` for ``model`` (Hub id or local path); the exporter class is None when genai-cli
+    exports the model through optimum-intel."""
     from openvino_genai._cli.exporters import get_native_exporter
+
+    config = _read_model_config(model, cache_dir)
+    model_type = config.get("model_type") if config else None
+    return model_type, get_native_exporter(model_type, library)
+
+
+def _export_openvino(parser: ArgumentParser, args, argv: list[str], export_argv: list[str]) -> int:
     from openvino_genai._cli.uv_env import installed_version, is_satisfied, reexec_with
 
-    config = _read_model_config(args.model, args.cache_dir)
-    model_type = config.get("model_type") if config else None
-    exporter_cls = get_native_exporter(model_type, args.library)
+    model_type, exporter_cls = native_exporter_for_model(args.model, args.library, args.cache_dir)
     if exporter_cls is None:
         from openvino_genai._cli.optimum_fallback import export_with_optimum_intel
 

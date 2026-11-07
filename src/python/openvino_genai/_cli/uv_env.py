@@ -109,13 +109,6 @@ def pinned_version(requirement: str) -> str | None:
     return specifiers[0].version if len(specifiers) == 1 and specifiers[0].operator == "==" else None
 
 
-def resolve_pinned_version(requirement: str) -> str:
-    """Resolves a requirement range (e.g. ``transformers>=4.51,<=5.2.99``) to ``name==<newest matching release>``."""
-    from packaging.requirements import Requirement
-
-    return compile_requirements([requirement], no_deps=True)[_normalize(Requirement(requirement).name)]
-
-
 def install_to_target(requirements: list[str], target: Path) -> None:
     """Installs exact requirements without their dependencies into ``target`` (a directory for PYTHONPATH)."""
     marker = target / ".genai-cli-complete"
@@ -126,19 +119,21 @@ def install_to_target(requirements: list[str], target: Path) -> None:
     marker.touch()
 
 
-def reexec_with(requirements: list[str], argv: list[str], pythonpath: Path | None = None) -> int:
+def reexec_with(
+    requirements: list[str], argv: list[str], pythonpath: Path | None = None, replace_overlay: bool = False
+) -> int:
     """Runs ``genai-cli <argv>`` again in a uv overlay providing ``requirements``; returns its exit code.
 
-    A requirement replaces an already overlaid requirement on the same distribution.
+    A requirement replaces an already overlaid requirement on the same distribution. With ``replace_overlay`` the
+    overlay of the parent genai-cli process is dropped and ``requirements`` form the whole new overlay.
     """
     from packaging.requirements import Requirement
 
-    overlay = {_normalize(Requirement(req).name): req for req in json.loads(os.environ.get(_OVERLAY_ENV, "[]"))}
-    changed = False
+    previous = {_normalize(Requirement(req).name): req for req in json.loads(os.environ.get(_OVERLAY_ENV, "[]"))}
+    overlay = {} if replace_overlay else dict(previous)
     for req in requirements:
-        name = _normalize(Requirement(req).name)
-        changed |= overlay.get(name) != req
-        overlay[name] = req
+        overlay[_normalize(Requirement(req).name)] = req
+    changed = overlay != previous
     if not changed and pythonpath is None:
         raise RuntimeError(
             f"genai-cli is already running in a uv overlay with {list(overlay.values())}, but the requirements "

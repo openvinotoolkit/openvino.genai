@@ -65,6 +65,12 @@ def test_native_export_reexecutes_with_pinned_transformers(tmp_path, monkeypatch
         (["--trust-remote-code", "--weight-format", "int4", "--dataset", "contextual"], "--dataset"),
         (["--trust-remote-code", "--ratio", "0.8"], "--weight-format"),
         (["--trust-remote-code", "--task", "text-generation"], "text-generation"),
+        # Formats only optimum-intel implements, and options the selected format would silently ignore.
+        (["--trust-remote-code", "--weight-format", "int2"], "--weight-format int2"),
+        (["--trust-remote-code", "--weight-format", "fp16", "--ratio", "0.8"], "--ratio"),
+        (["--trust-remote-code", "--weight-format", "fp32", "--sym"], "--sym"),
+        (["--trust-remote-code", "--weight-format", "int8", "--group-size", "64"], "--group-size"),
+        (["--trust-remote-code", "--weight-format", "int8", "--backup-precision", "none"], "--backup-precision"),
     ],
 )
 def test_native_exporter_rejects_unsupported_options(tmp_path, monkeypatch, capsys, options, message):
@@ -74,6 +80,118 @@ def test_native_exporter_rejects_unsupported_options(tmp_path, monkeypatch, caps
         cli_main.main(["export", "-m", str(model_dir), *options, str(tmp_path / "out")])
     assert error.value.code == 2
     assert message in capsys.readouterr().err
+
+
+def test_fallback_accepts_weight_formats_validated_by_optimum_intel(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(optimum_fallback, "export_with_optimum_intel", lambda *args: calls.append(args) or 0)
+    model_dir = _checkpoint(tmp_path, "qwen2")
+    argv = ["export", "-m", str(model_dir), "--weight-format", "int2", str(tmp_path / "out")]
+
+    assert cli_main.main(argv) == 0
+    assert calls[0][2] == argv[1:]
+
+
+def test_native_exporter_accepts_options_the_format_implements(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(uv_env, "is_satisfied", lambda requirement: False)
+    monkeypatch.setattr(uv_env, "reexec_with", lambda requirements, argv: calls.append(argv) or 0)
+    model_dir = _checkpoint(tmp_path, "molmo2")
+    for options in (
+        ["--weight-format", "int8", "--sym", "--group-size", "-1", "--ratio", "1.0"],
+        ["--weight-format", "int4", "--ratio", "0.8", "--group-size", "64", "--backup-precision", "none"],
+        ["--weight-format", "fp16"],
+    ):
+        assert cli_main.main(["export", "-m", str(model_dir), "--trust-remote-code", *options, "out"]) == 0
+    assert len(calls) == 3
+
+
+def _fake_requires(requirements: dict[str, list[str]]):
+    return lambda distribution: requirements.get(distribution, [])
+
+
+def test_fallback_keeps_optimum_intel_transformers_constraint_without_model_bounds(monkeypatch):
+    monkeypatch.setattr(
+        optimum_fallback.metadata,
+        "requires",
+        _fake_requires(
+            {
+                "optimum-intel": ["transformers<5.6,>=4.45", "torch; extra == 'tests'"],
+                "optimum": ["transformers>=4.29"],
+            }
+        ),
+    )
+    monkeypatch.setattr(optimum_fallback, "_model_transformers_specifiers", lambda model_type, task: [])
+    requirement = optimum_fallback._transformers_requirement(None, "auto")
+    assert requirement is not None
+    from packaging.requirements import Requirement
+
+    specifier = Requirement(requirement).specifier
+    assert specifier.contains("5.5.4") and not specifier.contains("5.6.0") and not specifier.contains("4.44.0")
+
+    monkeypatch.setattr(optimum_fallback, "_model_transformers_specifiers", lambda model_type, task: ["<=4.57.6"])
+    specifier = Requirement(optimum_fallback._transformers_requirement("molmo2", "auto")).specifier
+    assert specifier.contains("4.57.6") and not specifier.contains("5.0.0")
+
+
+def test_fallback_resolves_a_new_overlay_when_switching_transformers(monkeypatch):
+    """A transformers switch must not keep pins (e.g. huggingface-hub 1.x) of the previous overlay."""
+    compiled, captured = [], {}
+    monkeypatch.setattr(
+        optimum_fallback, "installed_version", lambda name: {"optimum-intel": "2.2.0", "optimum": "2.1.0"}.get(name)
+    )
+
+    def fake_compile(requirements, exclude=()):
+        compiled.append((requirements, set(exclude)))
+        return {
+            "optimum-intel": "optimum-intel==2.2.0",
+            "optimum": "optimum==2.1.0",
+            "transformers": "transformers==4.57.6",
+            "huggingface-hub": "huggingface-hub==0.36.2",
+        }
+
+    monkeypatch.setattr(optimum_fallback, "compile_requirements", fake_compile)
+    overlay = optimum_fallback._overlay_for_transformers("transformers>=4.57,<4.58")
+    assert compiled[0][0] == ["optimum-intel==2.2.0", "optimum==2.1.0", "transformers>=4.57,<4.58"]
+    assert "torch" in compiled[0][1]
+    assert sorted(overlay) == ["huggingface-hub==0.36.2", "transformers==4.57.6"]
+
+    monkeypatch.setattr(uv_env, "find_uv", lambda: "uv")
+    monkeypatch.setattr(uv_env.subprocess, "call", lambda cmd, env: captured.update(cmd=cmd, env=env) or 0)
+    monkeypatch.setenv("GENAI_CLI_UV_OVERLAY", json.dumps(["transformers==5.15.0", "huggingface-hub==1.20.0"]))
+    uv_env.reexec_with(overlay, ["export"], replace_overlay=True)
+    assert sorted(json.loads(captured["env"]["GENAI_CLI_UV_OVERLAY"])) == sorted(overlay)
+    assert "huggingface-hub==1.20.0" not in captured["cmd"]
+
+
+def test_test_exports_use_genai_cli_for_native_models(monkeypatch):
+    from utils import export
+
+    monkeypatch.setattr(
+        cli_main,
+        "native_exporter_for_model",
+        lambda model, library=None, cache_dir=None: (model, object() if model == "molmo2" else None),
+    )
+    export.native_genai_cli_model_type.cache_clear()
+    try:
+        assert export.export_command("molmo2", "out", ["--trust-remote-code"])[:4] == [
+            sys.executable,
+            "-m",
+            "openvino_genai._cli",
+            "export",
+        ]
+        assert export.export_command("qwen2", "out", ["--weight-format", "fp16"]) == [
+            "optimum-cli",
+            "export",
+            "openvino",
+            "--model",
+            "qwen2",
+            "--weight-format",
+            "fp16",
+            "out",
+        ]
+    finally:
+        export.native_genai_cli_model_type.cache_clear()
 
 
 def test_reexec_command_overlays_requirements(monkeypatch):

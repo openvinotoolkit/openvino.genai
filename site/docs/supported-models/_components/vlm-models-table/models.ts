@@ -163,6 +163,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'Molmo2',
         links: ['https://huggingface.co/allenai/MolmoWeb-4B'],
+        notesLink: '#molmo2-notes',
       },
     ],
   },

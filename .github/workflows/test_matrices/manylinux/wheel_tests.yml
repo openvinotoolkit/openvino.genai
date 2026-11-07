@@ -193,6 +193,14 @@
   components:
     - tokenizers
 
+- name: genai-cli tests
+  cmd: |-
+    # The nightly test exports a model in a uv overlay; the others check dispatch, validation and overlays offline.
+    python -m pytest -v ./tests/python_tests/test_genai_cli.py -m "not nightly"
+  timeout: 15
+  components:
+    - genai_cli
+
 - name: API tests
   cmd: |-
     # lfm2 conversion fails in CI: CVS-195736

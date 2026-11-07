@@ -23,6 +23,7 @@ namespace {
 // Faithful port of Molmo2ImageProcessor.select_tiling (image_processing_molmo2.py).
 // Divides an image of size [h, w] into up to max_num_crops tiles of size patch_size.
 std::pair<int, int> select_tiling(int h, int w, int patch_size, int max_num_crops) {
+    OPENVINO_ASSERT(max_num_crops >= 1, "Molmo2 preprocessing: max_crops must be at least 1, got ", max_num_crops);
     std::vector<std::pair<int, int>> tilings;
     for (int i = 1; i <= max_num_crops; ++i) {
         for (int j = 1; j <= max_num_crops; ++j) {
@@ -139,6 +140,8 @@ void append_patches(const std::vector<float>& img, int H, int W, int patch,
 // by (pool_h, pool_w), then group into [out_h, out_w, pool_h * pool_w].
 std::vector<int64_t> arange_for_pooling(const std::vector<int64_t>& idx, int H, int W,
                                         int pool_h, int pool_w, int& out_h, int& out_w) {
+    OPENVINO_ASSERT(pool_h > 0 && pool_w > 0,
+                    "Molmo2 preprocessing: pooling_size must be positive, got [", pool_h, ", ", pool_w, "]");
     out_h = (H + pool_h - 1) / pool_h;
     out_w = (W + pool_w - 1) / pool_w;
     int h_pad = out_h * pool_h - H;
@@ -195,8 +198,15 @@ Molmo2Preprocessed preprocess_molmo2_image(const clip_image_u8& img, const Proce
     const std::array<float, 3> mean = cfg.image_mean;
     const std::array<float, 3> stdev = cfg.image_std;
 
+    OPENVINO_ASSERT(patch > 0 && base_h % patch == 0,
+                    "Molmo2 preprocessing: the image size ", base_h, " must be a positive multiple of patch_size ", patch);
+    OPENVINO_ASSERT(max_crops >= 1, "Molmo2 preprocessing: max_crops must be at least 1, got ", max_crops);
     const int crop_size = base_h;
     const int crop_patches = base_h / patch;          // e.g. 27
+    // The margins are masked inside a crop, at least one patch of every crop must remain.
+    OPENVINO_ASSERT(left_margin >= 0 && right_margin >= 0 && left_margin + right_margin < crop_patches,
+                    "Molmo2 preprocessing: overlap_margins [", left_margin, ", ", right_margin,
+                    "] must be non-negative and leave patches in a crop of ", crop_patches, " patches");
     const int crop_window_patches = crop_patches - (right_margin + left_margin);
     const int crop_window_size = crop_window_patches * patch;
     const int total_margin_pixels = patch * (right_margin + left_margin);
@@ -481,6 +491,9 @@ EncodedVideo VisionEncoderMolmo2::encode_frames(const std::vector<ov::Tensor>& f
     const int patch = static_cast<int>(config.patch_size);
     const int pool_h = static_cast<int>(config.molmo2_pooling_h);
     const int pool_w = static_cast<int>(config.molmo2_pooling_w);
+    OPENVINO_ASSERT(patch > 0 && base_h >= patch && base_w >= patch,
+                    "Molmo2 video preprocessing: the frame size [", base_h, ", ", base_w,
+                    "] must be at least one positive patch_size ", patch);
     const int crop_patches_h = base_h / patch;
     const int crop_patches_w = base_w / patch;
     const size_t n_patches = static_cast<size_t>(crop_patches_h) * crop_patches_w;

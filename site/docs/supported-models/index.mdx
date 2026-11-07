@@ -94,6 +94,17 @@ pip install timm einops
 
 The model requires `transformers>=5.20` for the export with `optimum-cli` and `--trust-remote-code` argument.
 
+#### Molmo2 {#molmo2-notes}
+
+Molmo2 is exported natively by [`genai-cli`](../guides/model-preparation/convert-to-openvino.mdx#genai-cli), `optimum-cli` does not support it yet:
+
+```bash
+pip install openvino-genai[export]
+genai-cli export -m allenai/MolmoWeb-4B --trust-remote-code --weight-format int4 MolmoWeb-4B-ov-int4
+```
+
+The model is implemented by remote code that requires `transformers==4.57.6`; `genai-cli` provides it automatically.
+
 #### MiniCPM-V-4_5 {#minicpm-v-4_5-notes}
 
 The model requires `transformers<5.0` for the export with `optimum-cli`.

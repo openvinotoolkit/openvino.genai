@@ -12,6 +12,9 @@ import json
 from argparse import ArgumentParser
 from pathlib import Path
 
+# Weight formats the native exporters implement (a subset of the ones optimum-intel accepts).
+WEIGHT_FORMATS = ("fp32", "fp16", "int8", "int4", "mxfp4", "nf4", "cb4")
+
 
 def _default_cache_dir() -> str:
     try:
@@ -56,14 +59,17 @@ def add_export_openvino_args(parser: ArgumentParser) -> None:
             "machine arbitrary code present in the model repository."
         ),
     )
+    # No `choices`: optimum-intel keeps adding weight formats (e.g. int2 and int3), so unknown values are forwarded to
+    # it as is and validated there; native exporters check the formats they implement in validate_args.
     optional_group.add_argument(
         "--weight-format",
         type=str,
-        choices=["fp32", "fp16", "int8", "int4", "mxfp4", "nf4", "cb4"],
+        metavar="{" + ",".join(WEIGHT_FORMATS) + ",...}",
         default=None,
         help=(
             "The weight format of the exported model. Option 'cb4' represents a codebook with 16 fixed fp8 values in "
-            "E4M3 format."
+            "E4M3 format. Formats added to optimum-intel later (e.g. int2, int3) are accepted for models exported "
+            "through optimum-intel."
         ),
     )
     optional_group.add_argument(

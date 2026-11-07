@@ -72,6 +72,7 @@ from utils.generation_config import (
 )
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
+from utils.export import export_with_genai_cli, genai_cli_can_provide_transformers, native_genai_cli_model_type
 from utils.media_tags import ModalityType, get_media_inputs_kwargs, get_universal_tag
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 from utils.hugging_face import download_and_convert_model
@@ -184,7 +185,6 @@ if is_transformers_version("<", "5.0"):
     # minicpmv, internvl_chat architectures are deprecating support for transformers >= v5 by optimum-intel
     # gemma3, llava-next, llava fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
-    # molmo2 (allenai/MolmoWeb-4B) remote code requires transformers >= 4.57, < 4.58
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
         "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
@@ -193,7 +193,6 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-llava-next",
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
-        MODEL_MOLMO2,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
         *VIDEO_MODEL_IDS,
     ]
@@ -207,6 +206,14 @@ else:
         "optimum-intel-internal-testing/tiny-random-mistral3",
         *VIDEO_MODEL_IDS,
     ]
+# Models genai-cli exports natively: genai-cli provides the transformers version each of them needs (molmo2
+# remote code requires 4.57.x), so they are tested with any installed transformers.
+GENAI_CLI_NATIVE_MODEL_IDS = [MODEL_MOLMO2]
+MODEL_IDS += GENAI_CLI_NATIVE_MODEL_IDS
+# optimum-intel cannot export these models yet, so there is no optimum-intel reference to compare with.
+OPTIMUM_INTEL_UNSUPPORTED_MODEL_IDS = {
+    MODEL_MOLMO2,  # huggingface/optimum-intel#1950
+}
 
 ADD_REQUEST_MODEL_IDS = [
     MODEL_IDS[0],
@@ -370,10 +377,12 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Muse Glimmer. Minimum required is 5.15.0."
         )
-    if model_id == MODEL_MOLMO2 and (is_transformers_version("<", "4.57.0") or is_transformers_version(">=", "4.58.0")):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of Molmo2. Required is >= 4.57.0 and < 4.58.0."
-        )
+    if (
+        model_id in GENAI_CLI_NATIVE_MODEL_IDS
+        and not genai_cli_can_provide_transformers()
+        and (is_transformers_version("<", "4.57.0") or is_transformers_version(">=", "4.58.0"))
+    ):
+        pytest.skip("genai-cli needs uv to export Molmo2 with transformers 4.57.x (pip install openvino-genai[export])")
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
@@ -474,6 +483,11 @@ def _get_ov_model(model_id: str) -> str:
 
     def convert_to_temp(temp_dir: Path) -> None:
         model_cached = retry_request(lambda: snapshot_download(model_id))
+        if native_genai_cli_model_type(model_cached) is not None:
+            # genai-cli converts the model natively (IRs, tokenizers and processor files) with the transformers
+            # version it pins, so the installed transformers and optimum-intel are not involved.
+            export_with_genai_cli(model_cached, temp_dir, ["--trust-remote-code"])
+            return
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -497,7 +511,6 @@ def _get_ov_model(model_id: str) -> str:
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
-                    MODEL_MOLMO2,
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
                 },
             )
@@ -2798,7 +2811,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
     from fnmatch import fnmatch
 
     if models is None:
-        models = MODEL_IDS
+        models = [model_id for model_id in MODEL_IDS if model_id not in OPTIMUM_INTEL_UNSUPPORTED_MODEL_IDS]
 
     params = []
 

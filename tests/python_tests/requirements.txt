@@ -7,6 +7,8 @@ hf_transfer==0.1.9
 # tqdm 4.70.0 thread_map fails on generators, which breaks snapshot_download for repos with >1000 files
 tqdm==4.69.1
 gguf==0.19.0
+# genai-cli provides the transformers version a natively exported model needs (e.g. molmo2) with uv
+uv==0.12.23
 
 # rag requirements
 langchain_community==0.4.2
