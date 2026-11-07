@@ -47,10 +47,6 @@ Output:
 
 ```
  How are you doing today?
-timestamps: [0.00, 2.00] text:  How are you doing today?
-[0.00, 0.xx]:
-[0.xx, 0.xx]: How
-...
 ```
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.

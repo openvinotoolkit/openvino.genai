@@ -48,21 +48,27 @@ async function main() {
     // Cache compiled models on disk for GPU and NPU to save time on the next run.
     properties['CACHE_DIR'] = 'asr_cache';
   }
-  // Word timestamps supported by Whisper models only.
-  // Must be passed to the ASRPipeline constructor as a property.
-  properties.word_timestamps = true;
+  // Whisper word timestamps require this constructor property.
+  // Also enable generationConfig.word_timestamps below.
+  // properties.word_timestamps = true;
 
   const pipeline = await ASRPipeline(modelDir, device, properties);
 
-  // If the language is known in advance it can be specified in the generation config.
-  // In the form of "<|en|>" for Whisper models. Supported by multilingual models only.
-  // In the form of "English" for Qwen3-ASR models.
-  // Whisper model parameters (task, return_timestamps, word_timestamps) are ignored for Qwen3-ASR models.
   const generationConfig = {
-    language: '<|en|>',
-    task: 'transcribe',
-    return_timestamps: true,
-    word_timestamps: true,
+    // Optional language hints:
+    // - Multilingual Whisper: 'en'
+    // - Qwen3-ASR: 'English'
+    // - Fun-ASR-Nano: '英文'
+    // language: 'en',
+
+    // Whisper-specific options
+    task: 'transcribe', // Or 'translate'. Multilingual Whisper only.
+    // return_timestamps: true,
+
+    // Word timestamps are currently supported only for Whisper in JS;
+    // the JS binding does not expose the Qwen3 forced aligner.
+    // Also enable the constructor property above.
+    // word_timestamps: true,
   };
 
   // Pipeline expects normalized audio with a sample rate of 16 kHz.
