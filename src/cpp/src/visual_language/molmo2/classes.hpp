@@ -82,9 +82,22 @@ public:
 
     NormalizedPrompt normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const override;
 
+    /// @brief Render a chat history with the checkpoint chat template, which is kept as exported. Like
+    /// Molmo2Processor, the media of every message are passed as typed content items, so the template decides where
+    /// their placeholders go (in front of the first "User:" turn, numbered "Image N" for several images); every
+    /// placeholder it emits is replaced by the visual tokens of the corresponding medium. A template that does not
+    /// emit one placeholder per medium renders string contents, the visual tokens then stay in place.
+    std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt) override;
+
+    void update_chat_history(const std::string& decoded_results,
+                             const ov::genai::GenerationStatus generation_finish_status) override;
+
+    void finish_chat() override;
+
 protected:
     /// @brief Finishes the Molmo2 prompt layout once the prompt formatting is known (normalize_prompt runs before
-    /// it is set) and prepends the BOS token, so the cache-state bookkeeping sees the exact embedded sequence.
+    /// it is set), tokenizes it and prepends the BOS token before get_encoded_input_ids registers the sequence, so the
+    /// cache-state bookkeeping sees the exact embedded sequence.
     ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
 
 private:
@@ -113,10 +126,14 @@ private:
 
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
 
-    /// @brief Replace the tokenizer chat template with a Molmo2 template that marks user turns, so that
-    /// apply_chat_template_tokenize can move the visual tokens of every user turn in front of its "User:" prefix,
-    /// as the Molmo2 processor does.
-    void patch_chat_template();
+    /// @brief Types of the visual segments (images / videos) of the last tokenized text, in token order.
+    std::vector<char> m_segment_types;
+    /// @brief Vision features of the images / videos of the current conversation, in conversation order, and their
+    /// state before the last get_inputs_embeds (restored when the pipeline drops a cancelled turn).
+    std::vector<ov::Tensor> m_conversation_images;
+    std::vector<ov::Tensor> m_conversation_videos;
+    std::vector<ov::Tensor> m_previous_conversation_images;
+    std::vector<ov::Tensor> m_previous_conversation_videos;
 };
 
 } // namespace ov::genai

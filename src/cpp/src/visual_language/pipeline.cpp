@@ -404,7 +404,7 @@ public:
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
 
             const auto template_start = std::chrono::steady_clock::now();
-            unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
+            unified_prompt = m_inputs_embedder->apply_chat_template(m_history, true);
             PerfMetrics::emplace_duration(raw_counters.chat_template_durations, template_start);
 
             if (m_use_full_chat_history) {
@@ -664,7 +664,7 @@ public:
         }
 
         const auto template_start = std::chrono::steady_clock::now();
-        std::string templated_history = m_tokenizer.apply_chat_template(
+        std::string templated_history = m_inputs_embedder->apply_chat_template(
             processed_chat_data.normalized_history,
             true
         );

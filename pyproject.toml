@@ -44,7 +44,7 @@ export = [
     "huggingface_hub",
     "nncf",
     "packaging",
-    "uv",
+    "uv>=0.13.4",  # GHSA-hq85-5cpj-mr62: older bundled CA stores trust a compromised root
 ]
 
 [project.scripts]
