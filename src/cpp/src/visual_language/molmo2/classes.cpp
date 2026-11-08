@@ -619,12 +619,17 @@ void InputsEmbedderMolmo2::read_molmo2_configs(const std::filesystem::path& conf
     const nlohmann::json video =
         processor.contains("video_processor") ? processor.at("video_processor") : read_json("video_preprocessor_config.json");
     read(video, "frame_sample_mode", m_frame_sample_mode);
-    read(video, "num_frames", m_num_frames);
+    // num_frames is checked as a JSON integer: converting a negative value to size_t would give a huge frame limit.
+    if (video.contains("num_frames") && !video.at("num_frames").is_null()) {
+        const nlohmann::json& num_frames = video.at("num_frames");
+        OPENVINO_ASSERT(num_frames.is_number_unsigned() && num_frames.get<uint64_t>() > 0,
+                        "Molmo2 video preprocessing: num_frames must be a positive integer, got ", num_frames.dump());
+        m_num_frames = num_frames.get<size_t>();
+    }
     read(video, "max_fps", m_max_fps);
     read(video, "sampling_fps", m_sampling_fps);
     // sample_frames divides by the frame rates and selects up to num_frames frames: invalid values would make it select
     // no frames or never stop adding indices. A non-positive max_fps disables the frame rate limit.
-    OPENVINO_ASSERT(m_num_frames > 0, "Molmo2 video preprocessing: num_frames must be positive, got ", m_num_frames);
     OPENVINO_ASSERT(std::isfinite(m_sampling_fps) && m_sampling_fps > 0.0f,
                     "Molmo2 video preprocessing: sampling_fps must be a positive number, got ", m_sampling_fps);
     OPENVINO_ASSERT(std::isfinite(m_max_fps),
@@ -757,9 +762,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderMolmo2::encode_videos(const s
     for (size_t i = 0; i < videos.size(); ++i) {
         const size_t total_frames = videos[i].get_shape().at(0);
         VideoMetadata metadata = i < videos_metadata.size() ? videos_metadata[i] : VideoMetadata{};
-        OPENVINO_ASSERT(std::isfinite(metadata.fps),
-                        "Molmo2: the video fps must be a finite number, got ", metadata.fps);
-        if (metadata.fps <= 0.0f) {
+        // VideoMetadata::fps is 0 when unknown; other values are used as given, so a negative rate is rejected.
+        OPENVINO_ASSERT(std::isfinite(metadata.fps) && metadata.fps >= 0.0f,
+                        "Molmo2: the video fps must be a non-negative finite number (0 if unknown), got ", metadata.fps);
+        if (metadata.fps == 0.0f) {
             // Without metadata the frames are treated as sampled at the model's sampling rate.
             metadata.fps = m_sampling_fps;
         }

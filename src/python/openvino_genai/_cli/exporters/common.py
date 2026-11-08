@@ -251,12 +251,14 @@ def weight_compression_config_from_args(args) -> WeightCompressionConfig | None:
 
     params = dict(_DEFAULT_4BIT_CONFIG)
     if not (weight_format == "int4" and no_compression_parameter_provided(args)):
+        # Like optimum-cli, the "ignore" fallback belongs to the preset only: customized settings pass the requested
+        # policy through, and NNCF applies its default ("error") when none is given.
         params.update(
             ratio=args.ratio if args.ratio is not None else 1.0,
             sym=args.sym or False,
             group_size=args.group_size,
             all_layers=args.all_layers,
-            group_size_fallback=args.group_size_fallback or _DEFAULT_4BIT_CONFIG["group_size_fallback"],
+            group_size_fallback=args.group_size_fallback,
         )
     if weight_format == "int4":
         mode = "int4_sym" if params["sym"] else "int4_asym"

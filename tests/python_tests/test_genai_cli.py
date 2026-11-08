@@ -287,6 +287,18 @@ def test_weight_compression_defaults():
         _export_args("-m", "m", "--weight-format", "int4", "--sym", "--ratio", "0.8", "--group-size", "64", "out")
     )
     assert (custom.mode, custom.group_size, custom.ratio) == ("int4_sym", 64, 0.8)
+    # The "ignore" fallback belongs to the int4 preset only, customized settings get the NNCF default ("error").
+    assert custom.group_size_fallback is None
+
+
+def test_customized_int4_keeps_the_nncf_group_size_fallback_default(monkeypatch):
+    import nncf
+
+    captured = {}
+    monkeypatch.setattr(nncf, "compress_weights", lambda model, **kwargs: captured.update(kwargs) or model)
+    args = _export_args("-m", "m", "--weight-format", "int4", "--group-size", "64", "out")
+    weight_compression_config_from_args(args).compress("model")
+    assert "advanced_parameters" not in captured
 
 
 @pytest.mark.parametrize(
@@ -467,6 +479,81 @@ def test_optimum_intel_is_provided_without_changing_the_environment(tmp_path, mo
     assert target.parent == tmp_path / "openvino_genai" / "genai-cli"
     # Only the requirements the environment does not satisfy are overlaid.
     assert reexecuted == [(["transformers==4.57.6"], ["export", "-m", "model", "out"], target)]
+
+
+_DEPENDENCY_GIT = "fork-dependency @ git+https://example.com/fork-dependency.git@0123456789abcdef"
+
+
+@pytest.mark.parametrize("installed, overlaid", [(None, True), (_DEPENDENCY_GIT, False)])
+def test_optimum_intel_overlay_keeps_direct_url_dependencies(tmp_path, monkeypatch, installed, overlaid):
+    # A direct URL pin has no version to compare: it is overlaid unless installed from the same source.
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    pins = {"optimum-intel": "optimum-intel==2.2.0", "optimum": "optimum==2.3.0", "fork-dependency": _DEPENDENCY_GIT}
+    reexecuted = []
+    monkeypatch.setattr(optimum_fallback, "compile_requirements", lambda reqs, exclude=(): pins)
+    monkeypatch.setattr(optimum_fallback, "install_to_target", lambda packages, target: None)
+    monkeypatch.setattr(
+        optimum_fallback, "reexec_with", lambda reqs, argv, pythonpath=None: reexecuted.append(reqs) or 0
+    )
+    monkeypatch.setattr(optimum_fallback, "installed_version", lambda name: None)
+    monkeypatch.setattr(
+        optimum_fallback, "installed_requirement", lambda name: installed if name == "fork-dependency" else None
+    )
+    optimum_fallback._provide_optimum_intel(["export"])
+    assert reexecuted == [[_DEPENDENCY_GIT] if overlaid else []]
+
+
+@pytest.mark.parametrize("distribution_satisfied", [False, True])
+def test_fallback_imports_export_configs_only_with_supported_transformers(monkeypatch, distribution_satisfied):
+    # optimum-intel's export configs are imported for the checkpoint-specific bounds: with a transformers version
+    # optimum-intel does not support, the overlay for its own requirement is created first.
+    reexecuted, inspected = [], []
+    monkeypatch.setattr(optimum_fallback, "_is_optimum_intel_available", lambda: True)
+    monkeypatch.setattr(optimum_fallback, "_distribution_transformers_requirement", lambda: "transformers<5")
+    monkeypatch.setattr(
+        optimum_fallback,
+        "is_satisfied",
+        lambda requirement: distribution_satisfied and requirement == "transformers<5",
+    )
+    monkeypatch.setattr(
+        optimum_fallback,
+        "_model_transformers_specifiers",
+        lambda model_config, task: inspected.append(model_config) or ["<=4.57.6"],
+    )
+    monkeypatch.setattr(optimum_fallback, "_overlay_for_transformers", lambda requirement: [requirement])
+    monkeypatch.setattr(
+        optimum_fallback, "reexec_with", lambda reqs, argv, replace_overlay=False: reexecuted.append(reqs) or 0
+    )
+    assert optimum_fallback.export_with_optimum_intel({"model_type": "llama"}, "auto", [], ["export"]) == 0
+    if distribution_satisfied:
+        assert inspected == [{"model_type": "llama"}]
+        assert reexecuted == [["transformers<5,<=4.57.6"]]
+    else:
+        assert inspected == []
+        assert reexecuted == [["transformers<5"]]
+
+
+def test_molmo2_hub_download_includes_pytorch_weights():
+    from huggingface_hub.utils import filter_repo_objects
+
+    from openvino_genai._cli.exporters import molmo2
+
+    files = [
+        "config.json",
+        "model-00001-of-00002.safetensors",
+        "model.safetensors.index.json",
+        "pytorch_model.bin",
+        "pytorch_model-00001-of-00002.bin",
+        "pytorch_model.bin.index.json",
+        "modeling_molmo2.py",
+        "chat_template.jinja",
+        "merges.txt",
+        "model_and_optim/__0_0.distcp",  # training checkpoints of MolmoWeb repositories
+        "model_and_optim/.metadata",
+        "config.yaml",
+    ]
+    downloaded = set(filter_repo_objects(files, allow_patterns=molmo2._ALLOW_PATTERNS))
+    assert downloaded == set(files) - {"model_and_optim/__0_0.distcp", "model_and_optim/.metadata", "config.yaml"}
 
 
 def test_uv_resolves_requirements_without_excluded_distributions():

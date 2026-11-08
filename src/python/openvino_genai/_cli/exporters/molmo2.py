@@ -39,8 +39,10 @@ from openvino_genai._cli.exporters.common import (
 
 logger = logging.getLogger(__name__)
 
-# Checkpoint files needed for the export; MolmoWeb repositories also hold large training checkpoints.
-_ALLOW_PATTERNS = ["*.json", "*.safetensors", "*.py", "*.jinja", "*.txt"]
+# Checkpoint files needed for the export, with the weights saved by save_pretrained either as safetensors or as PyTorch
+# .bin files (safe_serialization=False). MolmoWeb repositories also hold large training checkpoints
+# (model_and_optim/*.distcp) that are not downloaded.
+_ALLOW_PATTERNS = ["*.json", "*.safetensors", "pytorch_model*.bin", "*.py", "*.jinja", "*.txt"]
 
 
 def _processor_chat_template(model_dir: Path) -> str | None:

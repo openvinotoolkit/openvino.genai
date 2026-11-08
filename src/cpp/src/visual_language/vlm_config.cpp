@@ -105,6 +105,8 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // molmo2 (allenai/MolmoWeb-4B): image special token ids are stored at the top level of config.json
     if (model_type == VLMModelType::MOLMO2) {
         read_json_param(parsed, "text_config.hidden_size", hidden_size);
+        // The ViT patch size; InputsEmbedderMolmo2::encode_images passes it to the image preprocessing.
+        read_json_param(parsed, "vit_config.image_patch_size", vision_config_patch_size);
         read_json_param(parsed, "image_patch_id", molmo2_image_patch_id);
         read_json_param(parsed, "image_col_id", molmo2_image_col_id);
         read_json_param(parsed, "image_start_token_id", molmo2_image_start_token_id);

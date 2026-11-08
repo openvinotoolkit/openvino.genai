@@ -17,7 +17,7 @@ import numpy as np
 import openvino
 import pytest
 from huggingface_hub import snapshot_download
-from openvino_genai import ChatHistory, GenerationConfig, Tokenizer, VLMPipeline
+from openvino_genai import ChatHistory, GenerationConfig, Tokenizer, VideoMetadata, VLMPipeline
 from openvino_genai._cli import uv_env
 from openvino_genai._cli.exporters.molmo2 import Molmo2Exporter
 
@@ -270,6 +270,8 @@ def _config_dir(molmo2_dir: Path, config_dir: Path, config_file: str, options: d
         ("video_preprocessor_config.json", {"pooling_size": "3x3"}, "pooling_size"),
         ("video_preprocessor_config.json", {"sampling_fps": -2}, "sampling_fps"),
         ("video_preprocessor_config.json", {"num_frames": 0}, "num_frames"),
+        ("video_preprocessor_config.json", {"num_frames": -1}, "num_frames"),  # not a huge size_t frame limit
+        ("video_preprocessor_config.json", {"num_frames": 2.5}, "num_frames"),
     ],
 )
 def test_malformed_preprocessing_config_is_rejected(
@@ -278,6 +280,32 @@ def test_malformed_preprocessing_config_is_rejected(
     config_dir = _config_dir(molmo2_dir, tmp_path / "config", config_file, options)
     with pytest.raises(RuntimeError, match=message):
         VLMPipeline(molmo2_models, Tokenizer(molmo2_dir), config_dir, "CPU")
+
+
+def test_negative_video_fps_is_rejected(
+    molmo2_pipe: Callable[[str], VLMPipeline], synthetic_video_32x32_tensor: openvino.Tensor
+):
+    # VideoMetadata.fps is 0 when unknown; a negative rate is invalid instead of a request for the default rate.
+    metadata = VideoMetadata()
+    metadata.fps = -1.0
+    with pytest.raises(RuntimeError, match="fps must be a non-negative"):
+        molmo2_pipe("PA").generate(
+            "Describe.", videos=[synthetic_video_32x32_tensor], videos_metadata=[metadata], generation_config=_config()
+        )
+
+
+def test_vit_patch_size_is_read_from_config(
+    molmo2_dir: Path, molmo2_models: dict, tmp_path: Path, cat_tensor: openvino.Tensor
+):
+    # The image preprocessing uses the patch size of the ViT (vit_config.image_patch_size), not a default of 14: with
+    # 16 the 378 pixel crops of the tiny model are no longer a multiple of the patch size.
+    vit_config = json.loads((molmo2_dir / "config.json").read_text(encoding="utf-8"))["vit_config"]
+    config_dir = _config_dir(
+        molmo2_dir, tmp_path / "config", "config.json", {"vit_config": {**vit_config, "image_patch_size": 16}}
+    )
+    pipe = VLMPipeline(molmo2_models, Tokenizer(molmo2_dir), config_dir, "CPU")
+    with pytest.raises(RuntimeError, match="patch_size 16"):
+        pipe.generate("Describe.", images=[cat_tensor], generation_config=_config())
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

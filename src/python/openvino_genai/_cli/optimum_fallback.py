@@ -65,9 +65,21 @@ def _provide_optimum_intel(argv: list[str]) -> int:
     overlay = [
         requirement
         for name, requirement in pins.items()
-        if name not in ("optimum-intel", "optimum") and installed_version(name) != pinned_version(requirement)
+        if name not in ("optimum-intel", "optimum") and not _is_installed(name, requirement)
     ]
     return reexec_with(overlay, argv, pythonpath=target)
+
+
+def _is_installed(distribution: str, pinned_requirement: str) -> bool:
+    """Whether the environment has the distribution a pinned ``name==X`` or ``name @ url`` requirement selects."""
+    from packaging.requirements import Requirement
+
+    version = pinned_version(pinned_requirement)
+    if version is not None:
+        return installed_version(distribution) == version
+    # A direct URL requirement is satisfied only by an installation from the same source.
+    installed = installed_requirement(distribution)
+    return installed is not None and Requirement(installed).url == Requirement(pinned_requirement).url
 
 
 def _export_config_for_checkpoint(constructor, model_config: dict):
@@ -125,12 +137,8 @@ def _model_transformers_specifiers(model_config: dict | None, task: str) -> list
     return specifiers
 
 
-def _transformers_requirement(model_config: dict | None, task: str) -> str | None:
-    """Range of transformers versions to export the checkpoint with, or None if unconstrained.
-
-    It is the transformers requirement of the installed optimum-intel (and optimum) distributions, narrowed by the
-    bounds of the checkpoint's export config when optimum-intel declares them.
-    """
+def _distribution_transformers_requirement() -> str | None:
+    """The transformers requirement of the installed optimum-intel and optimum distributions, None if unconstrained."""
     from packaging.requirements import Requirement
     from packaging.utils import canonicalize_name
 
@@ -139,8 +147,28 @@ def _transformers_requirement(model_config: dict | None, task: str) -> str | Non
         for requirement in map(Requirement, metadata.requires(distribution) or []):
             if canonicalize_name(requirement.name) == "transformers" and requirement.marker is None:
                 specifiers += [str(spec) for spec in requirement.specifier]
+    return "transformers" + ",".join(specifiers) if specifiers else None
+
+
+def _transformers_requirement(model_config: dict | None, task: str) -> str | None:
+    """Range of transformers versions to export the checkpoint with, or None if unconstrained.
+
+    It is the transformers requirement of the installed optimum-intel (and optimum) distributions, narrowed by the
+    bounds of the checkpoint's export config when optimum-intel declares them. The export configs are imported from
+    optimum-intel, so this runs with a transformers version satisfying _distribution_transformers_requirement only.
+    """
+    distribution_requirement = _distribution_transformers_requirement()
+    specifiers = [distribution_requirement.removeprefix("transformers")] if distribution_requirement else []
     specifiers += _model_transformers_specifiers(model_config, task)
     return "transformers" + ",".join(specifiers) if specifiers else None
+
+
+def _reexec_with_transformers(transformers_range: str, model_type: str | None, argv: list[str]) -> int:
+    logger.info(
+        f"optimum-intel supports `{model_type}` with {transformers_range}, "
+        f"transformers {installed_version('transformers')} is active."
+    )
+    return reexec_with(_overlay_for_transformers(transformers_range), argv, replace_overlay=True)
 
 
 def _overlay_for_transformers(transformers_requirement: str) -> list[str]:
@@ -167,13 +195,14 @@ def export_with_optimum_intel(model_config: dict | None, task: str, export_argv:
         logger.info(f"Model type `{model_type}` is not converted natively by genai-cli, falling back to optimum-intel")
         return _provide_optimum_intel(argv)
 
+    # The checkpoint-specific bounds come from optimum-intel's export configs: import them only with a transformers
+    # version optimum-intel supports, an incompatible one can fail the import before the overlay is created.
+    distribution_range = _distribution_transformers_requirement()
+    if distribution_range is not None and not is_satisfied(distribution_range):
+        return _reexec_with_transformers(distribution_range, model_type, argv)
     transformers_range = _transformers_requirement(model_config, task)
     if transformers_range is not None and not is_satisfied(transformers_range):
-        logger.info(
-            f"optimum-intel supports `{model_type}` with {transformers_range}, "
-            f"transformers {installed_version('transformers')} is active."
-        )
-        return reexec_with(_overlay_for_transformers(transformers_range), argv, replace_overlay=True)
+        return _reexec_with_transformers(transformers_range, model_type, argv)
 
     logger.info(
         f"Exporting `{model_type}` with optimum-intel {installed_version('optimum-intel')} "
