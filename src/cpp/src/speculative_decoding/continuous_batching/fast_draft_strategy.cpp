@@ -343,20 +343,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_to_validation_wind
     if (window.main_request != main_request) {
         window = ValidationWindow{};
         window.main_request = main_request;
-        window.is_tree = main_request->get_sampling_parameters().is_tree_search();
-        const size_t generated_len = main_request->get_running_sequences().front()->get_generated_len();
-        OPENVINO_ASSERT(generated_len >= num_candidates, "The main request has fewer tokens than candidates.");
-        window.first_position = generated_len - num_candidates;
+        for (const auto& sequence : main_request->get_running_sequences()) {
+            window.num_accepted_before[sequence->get_grouped_id()] = sequence->get_num_accepted_candidates();
+        }
     }
     window.num_candidates += num_candidates;
-    if (window.is_tree) {
-        return;
-    }
-    for (const auto& sequence : main_request->get_running_sequences()) {
-        const auto& generated_ids = sequence->get_generated_ids();
-        window.candidates[sequence->get_grouped_id()].assign(generated_ids.begin() + window.first_position,
-                                                             generated_ids.end());
-    }
 }
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::count_validated_windows() {
@@ -381,24 +372,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::count_validated_window
             // A finished request validated the rest of its candidates; a stopped one or one out of memory did not.
             num_accepted = window.num_candidates;
             for (const auto& sequence : main_sequences) {
-                if (window.is_tree) {
-                    // The path starts at the root, the token before the candidates.
-                    const size_t path_len = sequence->get_tree_metadata().validated_indices.size();
-                    num_accepted = std::min(*num_accepted, path_len > 0 ? path_len - 1 : 0);
+                const auto before_it = window.num_accepted_before.find(sequence->get_grouped_id());
+                if (before_it == window.num_accepted_before.end()) {
                     continue;
                 }
-                const auto candidates_it = window.candidates.find(sequence->get_grouped_id());
-                if (candidates_it == window.candidates.end()) {
-                    continue;
-                }
-                const std::vector<int64_t>& candidates = candidates_it->second;
-                const auto& generated_ids = sequence->get_generated_ids();
-                size_t num_kept = 0;
-                while (num_kept < candidates.size() && window.first_position + num_kept < generated_ids.size() &&
-                       generated_ids[window.first_position + num_kept] == candidates[num_kept]) {
-                    ++num_kept;
-                }
-                num_accepted = std::min(*num_accepted, num_kept);
+                num_accepted = std::min(*num_accepted, sequence->get_num_accepted_candidates() - before_it->second);
             }
         }
         if (num_accepted.has_value()) {

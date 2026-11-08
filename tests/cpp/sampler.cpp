@@ -1129,6 +1129,24 @@ TEST(SamplerValidationMode, lifts_min_new_tokens_mask_for_tree_bonus_token) {
     EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 2, 3, 4}));
 }
 
+// A stop token that the main model accepts on a tree path ends the path without a bonus token, and the sampler
+// counts it with the candidates before it.
+TEST(SamplerValidationMode, counts_the_stop_token_accepted_on_a_tree_path) {
+    auto group = make_tree_validation_group(0, {1, 4, 3});
+    std::vector<float> logits = {
+        0, 5.f, 0, 0, 0,
+        0, 0, 0, 0, 5.f,
+        0, 0, 0, 5.f, 0,
+        5.f, 0, 0, 0, 0,
+    };
+    Sampler sampler;
+    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
+
+    const auto sequence = group->get_sequences().front();
+    EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{0, 1, 4}));
+    EXPECT_EQ(sequence->get_num_accepted_candidates(), 2u);
+}
+
 // Accepted candidates report the main model's log-probabilities, and the sequence score must follow them.
 TEST(SamplerValidationMode, accepted_candidates_update_sequence_score) {
     auto config = ov::genai::utils::get_greedy_config();
