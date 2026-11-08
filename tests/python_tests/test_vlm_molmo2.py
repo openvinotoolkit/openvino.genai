@@ -196,6 +196,60 @@ def test_chat_recomputes_cached_images_when_an_image_is_added(
     assert second.scores == pytest.approx(reference.scores, abs=1e-4)
 
 
+_PA_IMAGE_BLOCKS_ISSUE = (
+    "CVS-199398: PagedAttention restricts the bidirectional attention of an image token to its contiguous run of image "
+    "tokens, Molmo2 extends it to all image tokens of the prefill"
+)
+
+
+@pytest.mark.parametrize(
+    "prompt, media",
+    [
+        pytest.param("<|image|>User: Describe. Assistant:", ["image"], id="one image"),
+        pytest.param("<|image|><|image|>User: Compare. Assistant:", ["image", "image"], id="adjacent images"),
+        pytest.param(
+            "Image 1<|image|>Image 2<|image|>User: Compare. Assistant:",
+            ["image", "image"],
+            id="text between images",
+            marks=pytest.mark.xfail(reason=_PA_IMAGE_BLOCKS_ISSUE, raises=AssertionError, strict=True),
+        ),
+        pytest.param(
+            "<|video|>User: Describe. Assistant:",
+            ["video"],
+            id="video",  # timestamp text between the frames
+            marks=pytest.mark.xfail(reason=_PA_IMAGE_BLOCKS_ISSUE, raises=AssertionError, strict=True),
+        ),
+    ],
+)
+def test_paged_attention_matches_sdpa(
+    molmo2_dir: Path,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+    prompt: str,
+    media: list[str],
+):
+    # The SDPA language model matches Hugging Face (test_exported_language_model_matches_hugging_face): Molmo2 image
+    # tokens attend to all image tokens of the prefill. Greedy texts of the tiny model do not depend on the image
+    # states, so the backends are compared by beam search scores (log probabilities), with f32 everywhere.
+    images = iter([cat_tensor, car_tensor])
+    inputs = {"images": [], "videos": []}
+    for kind in media:
+        if kind == "image":
+            inputs["images"].append(next(images))
+        else:
+            inputs["videos"].append(synthetic_video_32x32_tensor)
+    beam_search = GenerationConfig(max_new_tokens=4, num_beams=2, num_return_sequences=1, apply_chat_template=False)
+    results = {
+        backend: VLMPipeline(
+            molmo2_dir, "CPU", ATTENTION_BACKEND=backend, KV_CACHE_PRECISION="f32", INFERENCE_PRECISION_HINT="f32"
+        ).generate(prompt, generation_config=beam_search, **inputs)
+        for backend in BACKENDS
+    }
+    assert results["PA"].scores == pytest.approx(results["SDPA"].scores, abs=1e-4)
+    assert results["PA"].texts == results["SDPA"].texts
+
+
 def _config_dir(molmo2_dir: Path, config_dir: Path, config_file: str, options: dict) -> Path:
     """A copy of the configuration files of the model with ``options`` set in ``config_file``."""
     config_dir.mkdir()
