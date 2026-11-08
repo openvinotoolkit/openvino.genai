@@ -426,6 +426,21 @@ def test_counts_candidates_validated_in_a_later_step(model_pair):
     assert generate(9) == generate(256)
 
 
+@pytest.mark.parametrize("model_pair", [QWEN3_DEEPSPEC], indirect=True)
+def test_counts_the_window_that_ends_a_request(model_pair):
+    # Without dynamic split fuse the first draft window holds only prompt rows, so with 4 new tokens each request drafts
+    # one candidate after its second token: only one fits before the last token. A candidate the target accepts ends
+    # the request, and its window counts all the same.
+    config = _greedy_config(num_assistant_tokens=3, max_new_tokens=4)
+    scheduler_config = _scheduler_config(dynamic_split_fuse=False)
+
+    results = _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4, [config] * len(PROMPTS_4))
+
+    metrics = results[0].extended_perf_metrics
+    assert metrics.get_num_draft_tokens() == len(PROMPTS_4)
+    assert metrics.get_num_accepted_tokens() > 0
+
+
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
 def test_chunked_prefill_matches_target(model_pair):
     # 16 tokens split the prompts over several steps and fit the 1 + BLOCK_NUM_ASSISTANT_TOKENS rows of the
