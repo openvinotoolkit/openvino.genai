@@ -183,9 +183,27 @@ protected:
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
-    // The candidates of every request that the main model has not validated in full: their window counts in the
-    // acceptance metrics after the last of them is validated.
-    std::map<uint64_t, UpdateRequestResult> m_validation_windows;
+    // The candidates of a request that the main model has not validated in full: the window counts in the acceptance
+    // metrics after the last of them is validated, also when the main request finished or the draft request ended.
+    struct ValidationWindow {
+        // Kept until the window counts, which can be after the main pipeline removed the request.
+        SequenceGroup::Ptr main_request;
+        size_t num_candidates = 0;
+        // The candidates of each main sequence by grouped id, from this generated position on. The main model
+        // accepted the ones its sequence still starts with there.
+        size_t first_position = 0;
+        std::map<uint64_t, std::vector<int64_t>> candidates;
+        // The candidates of a tree have no such order, so the draft reports the ones the main model removed.
+        bool is_tree = false;
+        size_t num_removed = 0;
+    };
+    std::map<uint64_t, ValidationWindow> m_validation_windows;
+
+    // Adds the candidates that update_request() just put in the main request to the window of the request.
+    void add_to_validation_window(uint64_t request_id, size_t num_candidates);
+    // Counts the windows whose candidates the main model validated in this step in the acceptance metrics.
+    void count_validated_windows(const GeneratedRequests& draft_generated_requests,
+                                 const std::map<int64_t, UpdateRequestResult>& update_sequence_info);
 
     void reset_generate_metrics() {
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
