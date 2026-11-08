@@ -45,15 +45,21 @@ SpeechGenerationOutput SpeechGenerationHandleImpl::read_all() {
     OPENVINO_ASSERT(!(is_stopped() || is_cancelled()) || m_generation_stream->can_read(),
                     "SpeechGenerationHandle cannot be used after it is stopped / cancelled.");
     std::vector<float> samples;
+    SpeechGenerationOutput result;
     GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
     while (get_status() == GenerationStatus::RUNNING || m_generation_stream->can_read()) {
         SpeechGenerationOutput chunk = read();
         const float* chunk_data = chunk.waveform.data<const float>();
         samples.insert(samples.end(), chunk_data, chunk_data + chunk.waveform.get_size());
         finish_reason = chunk.finish_reason;
+        if (chunk.speaker_embedding) {
+            result.speaker_embedding = chunk.speaker_embedding;
+        }
+        if (chunk.ref_codec_ids) {
+            result.ref_codec_ids = chunk.ref_codec_ids;
+        }
     }
 
-    SpeechGenerationOutput result;
     result.waveform = ov::Tensor(ov::element::f32, ov::Shape{samples.size()});
     std::copy(samples.begin(), samples.end(), result.waveform.data<float>());
     result.finish_reason = finish_reason;

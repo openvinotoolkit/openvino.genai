@@ -1116,6 +1116,240 @@ std::string Qwen3TTSCodecEngine::normalize_speaker(const std::string& speaker) c
     return to_lower(speaker);
 }
 
+Qwen3TTSCodecEngine::VoiceClonePrefillResult Qwen3TTSCodecEngine::build_voice_clone_prefill(
+    const std::string& text,
+    const std::string& ref_text,
+    const ov::Tensor& speaker_embedding,
+    const ov::Tensor& ref_codec_ids,
+    const SpeechGenerationConfig& generation_config) {
+    OPENVINO_ASSERT(is_base_model(), "Qwen3 voice-clone prompt generation is supported only for Base models");
+    OPENVINO_ASSERT(!ref_text.empty(), "Qwen3 voice-clone ICL mode requires a non-empty reference transcript");
+    OPENVINO_ASSERT(speaker_embedding, "Qwen3 voice-clone ICL mode requires a speaker embedding");
+    OPENVINO_ASSERT(ref_codec_ids, "Qwen3 voice-clone ICL mode requires reference codec ids");
+    OPENVINO_ASSERT(ref_codec_ids.get_element_type() == ov::element::i64,
+                    "Qwen3 voice-clone ref_code tensor must have element type i64");
+    OPENVINO_ASSERT(ref_codec_ids.get_shape().size() == 2 || ref_codec_ids.get_shape().size() == 3,
+                    "Qwen3 voice-clone prompt expects ref_code shaped [T, G] or [1, T, G]");
+
+    const std::string language = normalize_text_language(generation_config.language);
+    const std::string speaker = normalize_speaker(generation_config.speaker);
+
+    const std::string ref_turn = "<|im_start|>assistant\n" + ref_text + "<|im_end|>\n";
+    const std::string target_turn = "<|im_start|>assistant\n" + text + "<|im_end|>\n<|im_start|>assistant\n";
+
+    const ov::Tensor ref_input_ids = tokenizer().encode(ref_turn).input_ids;
+    const ov::Tensor target_input_ids = tokenizer().encode(target_turn).input_ids;
+    OPENVINO_ASSERT(ref_input_ids.get_element_type() == ov::element::i64 &&
+                        target_input_ids.get_element_type() == ov::element::i64,
+                    "Qwen3-TTS tokenizer must produce i64 input_ids tensor");
+    OPENVINO_ASSERT(ref_input_ids.get_shape().size() == 2 && ref_input_ids.get_shape()[0] == 1 &&
+                        target_input_ids.get_shape().size() == 2 && target_input_ids.get_shape()[0] == 1,
+                    "Expected input_ids shape [1, T]");
+
+    const size_t ref_ids_len = ref_input_ids.get_shape()[1];
+    const size_t target_ids_len = target_input_ids.get_shape()[1];
+    OPENVINO_ASSERT(ref_ids_len > 5, "Qwen3 voice-clone reference transcript tokenized too short");
+    OPENVINO_ASSERT(target_ids_len > 8, "Qwen3 voice-clone target text tokenized too short");
+    const int64_t* ref_ids = ref_input_ids.data<const int64_t>();
+    const int64_t* target_ids = target_input_ids.data<const int64_t>();
+
+    const std::vector<int64_t> role_ids(target_ids, target_ids + 3);
+    std::vector<int64_t> icl_content_ids;
+    icl_content_ids.reserve((ref_ids_len - 5) + (target_ids_len - 8));
+    icl_content_ids.insert(icl_content_ids.end(), ref_ids + 3, ref_ids + (ref_ids_len - 2));
+    icl_content_ids.insert(icl_content_ids.end(), target_ids + 3, target_ids + (target_ids_len - 5));
+
+    const auto speaker_and_codec_prefill = make_speaker_and_codec_prefill_ids(language, speaker);
+    const ov::Tensor codec_prefill_embed0 = infer_embedding_seq(m_talker_embedding, speaker_and_codec_prefill);
+    const ov::Tensor codec_pad_embed = infer_embedding_seq(m_talker_embedding, {m_ids.codec_pad_id});
+    const ov::Tensor codec_bos_embed = infer_embedding_seq(m_talker_embedding, {m_ids.codec_bos_id});
+    const SpecialEmbeds special_embeds = infer_special_embeds();
+    const size_t hidden = special_embeds.hidden;
+
+    const ov::Tensor normalized_speaker_embedding =
+        normalize_external_speaker_embedding(speaker_embedding, codec_prefill_embed0.get_shape()[2]);
+    const ov::Tensor codec_input_no_bos = concat_embed({codec_prefill_embed0,
+                                                        normalized_speaker_embedding,
+                                                        codec_pad_embed});
+    OPENVINO_ASSERT(codec_input_no_bos.get_shape()[2] == hidden,
+                    "Qwen3 talker embedding hidden size (", codec_input_no_bos.get_shape()[2],
+                    ") must match talker text embedding hidden size (", hidden, ")");
+
+    const ov::Shape ref_code_shape = ref_codec_ids.get_shape();
+    const bool ref_code_rank3 = ref_code_shape.size() == 3;
+    OPENVINO_ASSERT(!ref_code_rank3 || ref_code_shape[0] == 1,
+                    "Qwen3 voice-clone ref_code rank-3 tensor must have batch dimension 1");
+    const size_t ref_len = ref_code_rank3 ? ref_code_shape[1] : ref_code_shape[0];
+    const size_t num_code_groups = ref_code_rank3 ? ref_code_shape[2] : ref_code_shape[1];
+    OPENVINO_ASSERT(ref_len > 0, "Qwen3 voice-clone ref_code must contain at least one frame");
+    OPENVINO_ASSERT(num_code_groups == m_ids.num_code_groups,
+                    "Qwen3 voice-clone ref_code group count mismatch. Expected ",
+                    m_ids.num_code_groups,
+                    ", got ",
+                    num_code_groups);
+
+    ov::Tensor ref_code_embed(ov::element::f32, ov::Shape{1, ref_len, hidden});
+    std::fill_n(ref_code_embed.data<float>(), ref_code_embed.get_size(), 0.0f);
+    const int64_t* codes = ref_codec_ids.data<const int64_t>();
+    for (size_t group = 0; group < num_code_groups; ++group) {
+        std::vector<int64_t> group_ids(ref_len);
+        for (size_t frame = 0; frame < ref_len; ++frame) {
+            group_ids[frame] = codes[frame * num_code_groups + group];
+        }
+
+        const ov::Tensor group_embed = group == 0
+            ? infer_embedding_seq(m_talker_embedding, group_ids)
+            : infer_predictor_embedding_seq(group_ids, static_cast<int64_t>(group - 1));
+        OPENVINO_ASSERT(group_embed.get_shape() == ov::Shape({1, ref_len, hidden}),
+                        "Qwen3 voice-clone ref_code group embedding shape mismatch. Expected [1,",
+                        ref_len,
+                        ",",
+                        hidden,
+                        "], got ",
+                        group_embed.get_shape());
+        const float* group_ptr = group_embed.data<const float>();
+        float* ref_ptr = ref_code_embed.data<float>();
+        for (size_t i = 0; i < ref_len * hidden; ++i) {
+            ref_ptr[i] += group_ptr[i];
+        }
+    }
+
+    const ov::Tensor role_embed = infer_embedding_seq(m_talker_text_embedding, role_ids);
+    const ov::Tensor content_embed = infer_embedding_seq(m_talker_text_embedding, icl_content_ids);
+    const ov::Tensor text_embed_with_eos = concat_embed({content_embed, special_embeds.eos});
+    const size_t text_eos_len = text_embed_with_eos.get_shape()[1];
+
+    const size_t codec_input_len = codec_input_no_bos.get_shape()[1];
+    ov::Tensor codec_input_part(ov::element::f32, ov::Shape{1, codec_input_len, hidden});
+    for (size_t i = 0; i < codec_input_len; ++i) {
+        const float* source = codec_input_no_bos.data<const float>() + i * hidden;
+        float* destination = codec_input_part.data<float>() + i * hidden;
+        const float* blend = (i == codec_input_len - 1)
+            ? special_embeds.bos.data<const float>()
+            : special_embeds.pad.data<const float>();
+        for (size_t h = 0; h < hidden; ++h) {
+            destination[h] = source[h] + blend[h];
+        }
+    }
+
+    const ov::Tensor codec_bos_plus_ref = concat_embed({codec_bos_embed, ref_code_embed});
+    const size_t codec_side_len = codec_bos_plus_ref.get_shape()[1];
+    ov::Tensor icl_input_embed;
+    ov::Tensor trailing_text_hidden;
+    if (generation_config.non_streaming_mode) {
+        const ov::Tensor codec_pad_for_text = infer_embedding_seq(
+            m_talker_embedding,
+            std::vector<int64_t>(text_eos_len, m_ids.codec_pad_id));
+        ov::Tensor text_side(ov::element::f32, ov::Shape{1, text_eos_len, hidden});
+        for (size_t i = 0; i < text_side.get_size(); ++i) {
+            text_side.data<float>()[i] = text_embed_with_eos.data<const float>()[i] +
+                                         codec_pad_for_text.data<const float>()[i];
+        }
+
+        ov::Tensor codec_side(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+        for (size_t i = 0; i < codec_side_len; ++i) {
+            const float* source = codec_bos_plus_ref.data<const float>() + i * hidden;
+            float* destination = codec_side.data<float>() + i * hidden;
+            const float* pad = special_embeds.pad.data<const float>();
+            for (size_t h = 0; h < hidden; ++h) {
+                destination[h] = source[h] + pad[h];
+            }
+        }
+
+        icl_input_embed = concat_embed({text_side, codec_side});
+    } else if (text_eos_len > codec_side_len) {
+        ov::Tensor overlap(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+        for (size_t i = 0; i < codec_side_len; ++i) {
+            const float* text_ptr = text_embed_with_eos.data<const float>() + i * hidden;
+            const float* codec_ptr = codec_bos_plus_ref.data<const float>() + i * hidden;
+            float* destination = overlap.data<float>() + i * hidden;
+            for (size_t h = 0; h < hidden; ++h) {
+                destination[h] = text_ptr[h] + codec_ptr[h];
+            }
+        }
+        icl_input_embed = overlap;
+        trailing_text_hidden = ov::Tensor(text_embed_with_eos,
+                                          ov::Coordinate{0, codec_side_len, 0},
+                                          ov::Coordinate{1, text_eos_len, hidden});
+    } else {
+        ov::Tensor text_padded(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+        if (text_eos_len > 0) {
+            std::copy_n(text_embed_with_eos.data<const float>(),
+                        text_embed_with_eos.get_size(),
+                        text_padded.data<float>());
+        }
+        for (size_t i = text_eos_len; i < codec_side_len; ++i) {
+            std::copy_n(special_embeds.pad.data<const float>(),
+                        hidden,
+                        text_padded.data<float>() + i * hidden);
+        }
+
+        ov::Tensor overlap(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+        for (size_t i = 0; i < codec_side_len; ++i) {
+            const float* text_ptr = text_padded.data<const float>() + i * hidden;
+            const float* codec_ptr = codec_bos_plus_ref.data<const float>() + i * hidden;
+            float* destination = overlap.data<float>() + i * hidden;
+            for (size_t h = 0; h < hidden; ++h) {
+                destination[h] = text_ptr[h] + codec_ptr[h];
+            }
+        }
+        icl_input_embed = overlap;
+        trailing_text_hidden = special_embeds.pad;
+    }
+
+    VoiceClonePrefillResult result;
+    result.prefill.talker_prefill = prepend_instruct_embed(
+        concat_embed({role_embed, codec_input_part, icl_input_embed}), generation_config.instruct);
+    result.prefill.tts_pad = special_embeds.pad;
+    result.prefill.trailing_text_hidden = trailing_text_hidden;
+    result.ref_codec_ids = ref_codec_ids;
+    return result;
+}
+
+std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer_with_reference(
+    const ov::Tensor& ref_codec_ids,
+    const std::vector<int64_t>& generated_codes) {
+    OPENVINO_ASSERT(ref_codec_ids.get_element_type() == ov::element::i64,
+                    "Qwen3 Base ref_codec_ids tensor must have element type i64");
+    const ov::Shape ref_shape = ref_codec_ids.get_shape();
+    OPENVINO_ASSERT(ref_shape.size() == 2 || ref_shape.size() == 3,
+                    "Qwen3 Base ref_codec_ids tensor is expected to have shape [T, G] or [1, T, G]");
+    const bool rank3 = ref_shape.size() == 3;
+    OPENVINO_ASSERT(!rank3 || ref_shape[0] == 1,
+                    "Qwen3 Base ref_codec_ids rank-3 tensor must have batch dimension 1");
+
+    const size_t ref_frames = rank3 ? ref_shape[1] : ref_shape[0];
+    const size_t ref_groups = rank3 ? ref_shape[2] : ref_shape[1];
+    OPENVINO_ASSERT(ref_groups == m_ids.num_code_groups,
+                    "Qwen3 Base ref_codec_ids group count mismatch. Expected ",
+                    m_ids.num_code_groups,
+                    ", got ",
+                    ref_groups);
+
+    std::vector<int64_t> codes;
+    const int64_t* ref_ptr = ref_codec_ids.data<const int64_t>();
+    codes.reserve(ref_frames * ref_groups + generated_codes.size());
+    for (size_t frame = 0; frame < ref_frames; ++frame) {
+        for (size_t group = 0; group < ref_groups; ++group) {
+            codes.push_back(ref_ptr[frame * ref_groups + group]);
+        }
+    }
+    codes.insert(codes.end(), generated_codes.begin(), generated_codes.end());
+
+    std::vector<float> waveform = decode_speech_tokenizer(codes);
+    const size_t generated_frames = generated_codes.size() / m_ids.num_code_groups;
+    const size_t total_frames = ref_frames + generated_frames;
+    const size_t cut_samples = static_cast<size_t>(
+        (static_cast<double>(ref_frames) / static_cast<double>(std::max<size_t>(total_frames, 1))) *
+        static_cast<double>(waveform.size()));
+    if (cut_samples >= waveform.size()) {
+        waveform.clear();
+    } else {
+        waveform.erase(waveform.begin(), waveform.begin() + static_cast<std::ptrdiff_t>(cut_samples));
+    }
+    return waveform;
+}
+
 Qwen3TTSCodecEngine::PrefillResult Qwen3TTSCodecEngine::build_prefill(const ov::Tensor& input_ids_tensor,
                                                                       const ov::Tensor& effective_speaker_embedding,
                                                                       const SpeechGenerationConfig& generation_config,

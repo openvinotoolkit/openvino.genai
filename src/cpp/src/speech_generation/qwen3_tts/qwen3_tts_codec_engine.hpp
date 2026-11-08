@@ -158,6 +158,11 @@ public:
         ov::Tensor trailing_text_hidden;
     };
 
+    struct VoiceClonePrefillResult {
+        PrefillResult prefill;
+        ov::Tensor ref_codec_ids;
+    };
+
     // Builds the talker prefill embedding for the non-ICL path (CustomVoice / VoiceDesign / Base
     // x-vector). Shared by the SDPA driver (Qwen3TTSImpl) and the continuous-batching driver.
     // `input_ids_tensor` is the already-tokenized "<|im_start|>assistant\n...<|im_start|>assistant\n"
@@ -169,6 +174,15 @@ public:
                                const std::string& language,
                                const std::string& speaker,
                                bool base_model);
+
+    VoiceClonePrefillResult build_voice_clone_prefill(const std::string& text,
+                                                      const std::string& ref_text,
+                                                      const ov::Tensor& speaker_embedding,
+                                                      const ov::Tensor& ref_codec_ids,
+                                                      const SpeechGenerationConfig& generation_config);
+
+    std::vector<float> decode_speech_tokenizer_with_reference(const ov::Tensor& ref_codec_ids,
+                                                              const std::vector<int64_t>& generated_codes);
 
 private:
     void init_config(const std::filesystem::path& models_path);

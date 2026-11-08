@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <iostream>
 
 #include "json_utils.hpp"
 #include "kokoro_tts_model.hpp"
@@ -82,13 +83,8 @@ public:
     Qwen3TTSSyncContinuousBatchingAdapter(const std::filesystem::path& models_path,
                                           const std::string& device,
                                           const ov::AnyMap& properties,
-                                          const ov::genai::Tokenizer& tokenizer,
                                           const ov::genai::SchedulerConfig& scheduler_config)
-        : m_models_path(models_path),
-          m_device(device),
-          m_properties(properties),
-          m_tokenizer(tokenizer),
-          m_cb_impl(std::make_shared<ov::genai::Qwen3TTSContinuousBatchingPipelineImpl>(
+                : m_cb_impl(std::make_shared<ov::genai::Qwen3TTSContinuousBatchingPipelineImpl>(
               models_path,
               scheduler_config,
               device,
@@ -97,10 +93,6 @@ public:
     ov::genai::Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                                   const ov::Tensor& speaker_embedding,
                                                   const ov::genai::SpeechGenerationConfig& generation_config) override {
-        if (requires_sdpa(generation_config)) {
-            return get_sdpa_impl().generate(texts, speaker_embedding, generation_config);
-        }
-
         ov::genai::Text2SpeechDecodedResults result;
         result.output_sample_rate = m_cb_impl->get_output_sample_rate();
 
@@ -121,6 +113,12 @@ public:
             auto output = handle->read_all();
             result.perf_metrics.num_generated_samples += output.waveform.get_size();
             result.speeches.push_back(std::move(output.waveform));
+            if (output.speaker_embedding) {
+                result.speaker_embedding = output.speaker_embedding;
+            }
+            if (output.ref_codec_ids) {
+                result.ref_codec_ids = output.ref_codec_ids;
+            }
         }
 
         const auto generation_end = std::chrono::steady_clock::now();
@@ -136,24 +134,7 @@ public:
     }
 
 private:
-    bool requires_sdpa(const ov::genai::SpeechGenerationConfig& generation_config) const {
-        return !generation_config.ref_text.empty() || static_cast<bool>(generation_config.ref_audio) ||
-               static_cast<bool>(generation_config.ref_codec_ids);
-    }
-
-    ov::genai::Qwen3TTSImpl& get_sdpa_impl() {
-        if (!m_sdpa_impl) {
-            m_sdpa_impl = std::make_shared<ov::genai::Qwen3TTSImpl>(m_models_path, m_device, m_properties, m_tokenizer);
-        }
-        return *m_sdpa_impl;
-    }
-
-    std::filesystem::path m_models_path;
-    std::string m_device;
-    ov::AnyMap m_properties;
-    ov::genai::Tokenizer m_tokenizer;
     std::shared_ptr<ov::genai::Qwen3TTSContinuousBatchingPipelineImpl> m_cb_impl;
-    std::shared_ptr<ov::genai::Qwen3TTSImpl> m_sdpa_impl;
 };
 
 }  // namespace
@@ -178,6 +159,8 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
         const bool explicitly_requires_pa = utils::explicitly_requires_paged_attention(properties, is_npu_requested);
         if (is_npu_requested || attention_backend == ov::genai::SDPA_BACKEND) {
             m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, pipeline_properties, tokenizer);
+            std::cout << "[Qwen3-TTS] Selected SDPA backend ("
+                      << (is_npu_requested ? "NPU requested" : "SDPA requested") << ")." << std::endl;
         } else if (explicitly_requires_pa) {
             auto [device_properties, scheduler_config] = utils::extract_scheduler_config(
                 pipeline_properties,
@@ -186,19 +169,20 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
                 root_dir,
                 device,
                 device_properties,
-                tokenizer,
                 scheduler_config);
+            std::cout << "[Qwen3-TTS] Selected PA backend (explicit PA requirement)." << std::endl;
         } else {
             try {
                 m_impl = std::make_shared<Qwen3TTSSyncContinuousBatchingAdapter>(
                     root_dir,
                     device,
                     pipeline_properties,
-                    tokenizer,
                     utils::get_latency_oriented_scheduler_config());
+                std::cout << "[Qwen3-TTS] Selected PA backend (default)." << std::endl;
             } catch (const ov::Exception& exception) {
                 utils::log_paged_attention_fallback(exception);
                 m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, pipeline_properties, tokenizer);
+                std::cout << "[Qwen3-TTS] Selected SDPA backend (PA initialization failed)." << std::endl;
             }
         }
     } else {

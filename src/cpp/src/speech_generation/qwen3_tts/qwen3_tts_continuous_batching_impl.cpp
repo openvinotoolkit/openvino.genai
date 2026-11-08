@@ -106,13 +106,18 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     OPENVINO_ASSERT(generation_config.num_return_sequences == 1,
                     "Qwen3-TTS continuous batching does not support beam search / parallel sampling "
                     "(num_return_sequences must be 1)");
-    OPENVINO_ASSERT(generation_config.ref_text.empty() && !generation_config.ref_audio && !generation_config.ref_codec_ids,
-                    "ref_text/ref_audio/ref_codec_ids voice cloning is not yet supported by "
-                    "Text2SpeechContinuousBatchingPipeline; use Text2SpeechPipeline instead");
 
     const std::string language = m_engine.normalize_text_language(generation_config.language);
     const std::string speaker = m_engine.normalize_speaker(generation_config.speaker);
     const bool base_model = m_engine.is_base_model();
+    const bool has_voice_clone_props = !generation_config.ref_text.empty() ||
+                                       static_cast<bool>(generation_config.ref_codec_ids);
+
+    if (!base_model &&
+        (!generation_config.ref_text.empty() || static_cast<bool>(generation_config.ref_audio) ||
+         static_cast<bool>(generation_config.ref_codec_ids))) {
+        OPENVINO_THROW("ref_text/ref_audio/ref_codec_ids are supported only for Qwen3 Base models");
+    }
 
     if (m_engine.tts_model_type() == "voice_design") {
         OPENVINO_ASSERT(generation_config.speaker.empty(),
@@ -125,13 +130,51 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
                         "Qwen3 CustomVoice does not accept external speaker_embedding. Use 'speaker' property instead.");
         OPENVINO_ASSERT(!speaker.empty(), "Qwen3 CustomVoice requires a non-empty 'speaker' property.");
     } else if (base_model) {
-        OPENVINO_ASSERT(speaker_embedding, "Qwen3 Base requires a 'speaker_embedding' input.");
+        OPENVINO_ASSERT(speaker_embedding || generation_config.ref_audio,
+                        "Qwen3 Base requires a voice source: provide either 'speaker_embedding' or 'ref_audio'.");
     }
 
-    const std::string assistant_text = "<|im_start|>assistant\n" + text + "<|im_end|>\n<|im_start|>assistant\n";
-    auto input_ids_tensor = m_engine.tokenizer().encode(assistant_text).input_ids;
+    std::unique_lock<std::mutex> state_lock{m_request_state_mutex};
+    ov::Tensor effective_speaker_embedding = speaker_embedding;
+    if (base_model && !effective_speaker_embedding && generation_config.ref_audio) {
+        effective_speaker_embedding = m_engine.extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
+    }
 
-    auto prefill = m_engine.build_prefill(input_ids_tensor, speaker_embedding, generation_config, language, speaker, base_model);
+    Qwen3TTSCodecEngine::PrefillResult prefill;
+    ov::Tensor effective_ref_codec_ids;
+    if (has_voice_clone_props) {
+        OPENVINO_ASSERT(!generation_config.ref_text.empty(),
+                        "Qwen3 Base ICL voice cloning requires non-empty 'ref_text'.");
+        OPENVINO_ASSERT(effective_speaker_embedding,
+                        "Qwen3 Base ICL voice cloning requires a speaker source: pass 'speaker_embedding' "
+                        "or provide 'ref_audio'.");
+
+        effective_ref_codec_ids = generation_config.ref_codec_ids;
+        if (!effective_ref_codec_ids && generation_config.ref_audio) {
+            effective_ref_codec_ids = m_engine.extract_qwen3_ref_code_from_audio(generation_config.ref_audio);
+        }
+        OPENVINO_ASSERT(effective_ref_codec_ids,
+                        "Qwen3 Base ICL voice cloning requires reference codec ids: pass 'ref_codec_ids' "
+                        "or provide 'ref_audio' so ref codes can be extracted.");
+
+        auto voice_clone_prefill = m_engine.build_voice_clone_prefill(text,
+                                                                      generation_config.ref_text,
+                                                                      effective_speaker_embedding,
+                                                                      effective_ref_codec_ids,
+                                                                      generation_config);
+        prefill = std::move(voice_clone_prefill.prefill);
+        effective_ref_codec_ids = std::move(voice_clone_prefill.ref_codec_ids);
+    } else {
+        const std::string assistant_text = "<|im_start|>assistant\n" + text +
+                                           "<|im_end|>\n<|im_start|>assistant\n";
+        const ov::Tensor input_ids_tensor = m_engine.tokenizer().encode(assistant_text).input_ids;
+        prefill = m_engine.build_prefill(input_ids_tensor,
+                                         effective_speaker_embedding,
+                                         generation_config,
+                                         language,
+                                         speaker,
+                                         base_model);
+    }
     const size_t prompt_len = prefill.talker_prefill.get_shape()[1];
 
     // Mirror decode_from_prefill()'s max_steps adjustment: the reference implementation computes a
@@ -163,17 +206,20 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
 
     RequestState state;
     state.generation_config = generation_config;
+    state.generation_config.ref_audio = ov::Tensor();
+    state.generation_config.ref_codec_ids = ov::Tensor();
+    state.generation_config.ref_text.clear();
+    state.speaker_embedding = effective_speaker_embedding;
     state.rng.seed(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed)
                                                    : std::random_device{}());
     state.tts_pad = prefill.tts_pad;
     state.trailing_text_hidden = prefill.trailing_text_hidden;
+    state.ref_codec_ids = effective_ref_codec_ids;
     state.stream = SpeechGenerationStream::create();
     SpeechGenerationStream::Ptr stream = state.stream;
 
-    {
-        std::lock_guard<std::mutex> state_lock{m_request_state_mutex};
-        m_request_state.emplace(request_id, std::move(state));
-    }
+    m_request_state.emplace(request_id, std::move(state));
+    state_lock.unlock();
     {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         m_awaiting_requests.push_back(sequence_group);
@@ -296,7 +342,9 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_fra
 void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_request(
     const SequenceGroup::Ptr& sequence_group,
     RequestState& state) {
-    auto waveform = m_engine.decode_speech_tokenizer(state.all_codes);
+    auto waveform = state.ref_codec_ids
+        ? m_engine.decode_speech_tokenizer_with_reference(state.ref_codec_ids, state.all_codes)
+        : m_engine.decode_speech_tokenizer(state.all_codes);
 
     ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
     if (!waveform.empty()) {
@@ -306,6 +354,8 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
     SpeechGenerationOutput output;
     output.waveform = wav_tensor;
     output.finish_reason = sequence_group->get_sequences().front()->get_finish_reason();
+    output.speaker_embedding = state.speaker_embedding;
+    output.ref_codec_ids = state.ref_codec_ids;
     state.stream->push(std::move(output));
 
     SpeechGenerationPerfMetrics perf_metrics;

@@ -18,6 +18,10 @@ struct SpeechGenerationOutput {
     // PCM float32 waveform samples produced since the previous read() call for this request.
     ov::Tensor waveform;
     GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
+    // Resolved Qwen3-TTS Base speaker embedding, when generated from reference audio.
+    ov::Tensor speaker_embedding;
+    // Resolved Qwen3-TTS Base reference codec IDs for ICL voice cloning.
+    ov::Tensor ref_codec_ids;
 };
 
 class SpeechGenerationStream;
@@ -50,7 +54,8 @@ public:
     // Reads audio produced since the previous read() call for this request.
     SpeechGenerationOutput read();
 
-    // Blocks until generation finishes, returning the fully concatenated waveform.
+    // Blocks until generation finishes, returning the fully concatenated waveform and any
+    // resolved Qwen3-TTS Base voice-cloning artifacts.
     SpeechGenerationOutput read_all();
 
     SpeechGenerationPerfMetrics get_perf_metrics() const;

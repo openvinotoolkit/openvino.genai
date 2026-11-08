@@ -349,10 +349,13 @@ void init_speech_generation_pipeline(py::module_& m) {
 
     py::class_<SpeechGenerationOutput>(m,
                                        "SpeechGenerationOutput",
-                                       "One incremental unit of audio produced for a single add_request() session.")
+                                       "One incremental unit of audio produced for a single add_request() session. "
+                                       "The final output also carries resolved Qwen3-TTS Base voice-cloning artifacts.")
         .def(py::init<>())
         .def_readwrite("waveform", &SpeechGenerationOutput::waveform)
-        .def_readwrite("finish_reason", &SpeechGenerationOutput::finish_reason);
+        .def_readwrite("finish_reason", &SpeechGenerationOutput::finish_reason)
+        .def_readwrite("speaker_embedding", &SpeechGenerationOutput::speaker_embedding)
+        .def_readwrite("ref_codec_ids", &SpeechGenerationOutput::ref_codec_ids);
 
     py::class_<SpeechGenerationHandleImpl, std::shared_ptr<SpeechGenerationHandleImpl>>(m, "SpeechGenerationHandle")
         .def("get_status", &SpeechGenerationHandleImpl::get_status)

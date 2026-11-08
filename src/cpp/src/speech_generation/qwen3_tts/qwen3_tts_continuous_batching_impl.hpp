@@ -26,8 +26,9 @@ namespace genai {
 // injection always preempts (append_embeddings() becomes a no-op once every generated id already
 // has a matching entry in get_generated_ids_embeds()).
 //
-// Scope: only the non-ICL prefill (CustomVoice / VoiceDesign / Base x-vector) is supported here;
-// Base ref-audio/ICL voice cloning remains SDPA-only (Text2SpeechPipeline) for now.
+// Supports CustomVoice, VoiceDesign, Base x-vector, and Base ICL voice-cloning prefills. Reference
+// codec IDs are retained per request so final waveform decoding can remove the reference-audio
+// prefix consistently with the SDPA path.
 class ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 public:
     Qwen3TTSContinuousBatchingImpl(const std::filesystem::path& models_path,
@@ -53,8 +54,10 @@ private:
     struct RequestState {
         SpeechGenerationConfig generation_config;
         std::mt19937 rng;
+        ov::Tensor speaker_embedding;
         ov::Tensor tts_pad;
         ov::Tensor trailing_text_hidden;
+        ov::Tensor ref_codec_ids;
         std::vector<int64_t> all_codes;
         SpeechGenerationStream::Ptr stream;
     };
