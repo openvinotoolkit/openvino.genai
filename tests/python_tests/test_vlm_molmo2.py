@@ -237,28 +237,34 @@ def test_patch_token_mismatch_with_vision_embeddings_is_rejected(
 
 
 @pytest.mark.parametrize(
-    "option, value, more_tokens",
+    "media, option, value, more_tokens",
     [
-        ("image_use_col_tokens", False, False),  # no column token after each row of patches
-        ("use_single_crop_col_tokens", True, True),  # the low-resolution crop has them with image_use_col_tokens off
+        ("images", "image_use_col_tokens", False, False),  # no column token after each row of patches
+        # The low-resolution crop has them with image_use_col_tokens off.
+        ("images", "use_single_crop_col_tokens", True, True),
+        ("videos", "video_use_col_tokens", True, True),  # a column token after each row of patches of every frame
     ],
 )
-def test_processor_config_options_change_image_tokens(
+def test_processor_config_options_change_visual_tokens(
     molmo2_dir: Path,
     molmo2_models: dict,
     tmp_path: Path,
     cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+    media: str,
     option: str,
     value: bool,
     more_tokens: bool,
 ):
+    # Molmo2Processor saves these options in processor_config.json, not in the image or video processor configs.
     tokenizer = Tokenizer(molmo2_dir)
+    inputs = {"images": [cat_tensor]} if media == "images" else {"videos": [synthetic_video_32x32_tensor]}
 
     def num_input_tokens(processor_options: dict) -> int:
         name = "-".join(f"{key}-{val}" for key, val in processor_options.items()) or "defaults"
         config_dir = _config_dir(molmo2_dir, tmp_path / name, "processor_config.json", processor_options)
         pipe = VLMPipeline(molmo2_models, tokenizer, config_dir, "CPU")
-        result = pipe.generate("Describe.", images=[cat_tensor], generation_config=_config())
+        result = pipe.generate("Describe.", **inputs, generation_config=_config())
         return result.perf_metrics.get_num_input_tokens()
 
     # use_single_crop_col_tokens only matters when it differs from image_use_col_tokens.
