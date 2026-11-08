@@ -189,12 +189,9 @@ protected:
         // Kept until the window counts, which can be after the main pipeline removed the request.
         SequenceGroup::Ptr main_request;
         size_t num_candidates = 0;
-        // The candidates of each main sequence by grouped id, from this generated position on. The main model
-        // accepted the ones its sequence still starts with there.
-        size_t first_position = 0;
-        std::map<uint64_t, std::vector<int64_t>> candidates;
-        // The candidates of a tree have no such order; the main sequence keeps the path of the ones it accepted.
-        bool is_tree = false;
+        // The candidates that each main sequence, by grouped id, had accepted before the window. The window counts the
+        // ones the sampler accepted, which a matched stop string can remove from the generated tokens.
+        std::map<uint64_t, size_t> num_accepted_before;
     };
     std::map<uint64_t, ValidationWindow> m_validation_windows;
 

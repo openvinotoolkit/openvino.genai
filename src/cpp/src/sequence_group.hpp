@@ -77,6 +77,9 @@ class Sequence {
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
+    // The draft candidates that the main model accepted, counted as it validates them: a matched stop string can
+    // remove accepted candidates from the generated tokens afterwards.
+    size_t m_num_accepted_candidates = 0;
     std::unordered_map<size_t, std::vector<int64_t>> m_prefix_hashes;
     size_t m_prefix_publication_limit = std::numeric_limits<size_t>::max();
     std::function<size_t(size_t, size_t)> m_prefix_hash_provider;
@@ -112,6 +115,7 @@ class Sequence {
         m_all_intermediate_hidden_states(seq.m_all_intermediate_hidden_states),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
+        m_num_accepted_candidates(seq.m_num_accepted_candidates),
         m_prefix_hashes(seq.m_prefix_hashes),
         m_prefix_publication_limit(seq.m_prefix_publication_limit),
         m_prefix_hash_provider(seq.m_prefix_hash_provider),
@@ -329,6 +333,14 @@ public:
         OPENVINO_ASSERT(idx < m_generated_log_probs.size());
         m_cumulative_log_prob += log_prob - m_generated_log_probs[idx];
         m_generated_log_probs[idx] = log_prob;
+    }
+
+    void count_accepted_candidate() {
+        ++m_num_accepted_candidates;
+    }
+
+    size_t get_num_accepted_candidates() const {
+        return m_num_accepted_candidates;
     }
 
     void set_draft_proposal(size_t idx, DraftProposalPtr proposal) {
