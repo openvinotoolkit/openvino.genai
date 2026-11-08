@@ -38,10 +38,15 @@ def torch_export(model, args: tuple = (), kwargs: dict[str, Any] | None = None, 
     """Captures ``model`` with torch.export (no TorchScript involved)."""
     import torch
 
+    from packaging.version import Version
+
     _export_kwargs = {"args": args, "kwargs": kwargs or {}, "dynamic_shapes": dynamic_shapes, "strict": False}
-    # torch.export.export_for_training was deprecated in torch 2.10 and removed in 2.11, where torch.export.export
-    # produces the same training IR.
-    export_for_training = getattr(torch.export, "export_for_training", None) or torch.export.export
+    # Since torch 2.10 torch.export.export produces the training IR, and torch.export.export_for_training is
+    # deprecated (it is removed in 2.11).
+    if Version(torch.__version__).release >= (2, 10):
+        export_for_training = torch.export.export
+    else:
+        export_for_training = torch.export.export_for_training
     with torch.no_grad():
         ep = export_for_training(model, **_export_kwargs)
     return ep
@@ -77,7 +82,8 @@ def convert_exported_program(ep, input_names: Sequence[str], output_names: Seque
 def make_stateful(ov_model: ov.Model, batch_dim: int = 0) -> None:
     """Hides the ``past_key_values.*`` inputs / ``present.*`` outputs of a decoder inside the model as states.
 
-    Adds the ``beam_idx`` input that reorders the cache between generation steps (as optimum-intel does).
+    Adds the ``beam_idx`` input that reorders the cache between generation steps, as
+    ``optimum.exporters.openvino.stateful.fuse_cache_reorder`` does.
     """
     from openvino import opset13
     from openvino._offline_transformations import apply_make_stateful_transformation
@@ -149,7 +155,8 @@ class WeightCompressionConfig:
 
 INT8_SYM_CONFIG = WeightCompressionConfig(mode="int8_sym", ratio=1.0, group_size=-1)
 INT8_ASYM_CONFIG = WeightCompressionConfig(mode="int8_asym", ratio=1.0, group_size=-1)
-# optimum-intel's default 4-bit config, used when --weight-format int4 comes without other compression arguments.
+# optimum.intel.openvino.configuration._DEFAULT_4BIT_WQ_CONFIG, used when --weight-format int4 comes without other
+# compression arguments.
 _DEFAULT_4BIT_CONFIG = {
     "ratio": 1.0,
     "sym": False,
@@ -191,12 +198,15 @@ def validate_weight_compression_args(args) -> None:
         )
     if weight_format is None and not no_compression_parameter_provided(args):
         raise ValueError(
-            "Some compression parameters are provided, but the weight format is not specified. "
+            "Compression parameters are provided without a weight format. "
             "Please provide it with --weight-format argument."
         )
     # Options the selected format does not implement are rejected instead of being silently dropped.
     if weight_format in ("fp32", "fp16"):
         ignored = _provided_options(args, _4BIT_ONLY_OPTIONS + ("sym",))
+    elif weight_format in ("mxfp4", "nf4", "cb4"):
+        # These formats have no zero point, so there is no symmetric variant to select.
+        ignored = _provided_options(args, ("sym",))
     elif weight_format == "int8":
         ignored = _provided_options(args, _4BIT_ONLY_OPTIONS)
         # The values int8 per-channel compression uses anyway are accepted.
@@ -276,7 +286,7 @@ def resolve_compression(
     ov_model: ov.Model, weight_format: str | None, compression: WeightCompressionConfig | None
 ) -> WeightCompressionConfig | None:
     """The compression a submodel gets: the requested one or, without a weight format, int8_asym for submodels with
-    more than 1B weights (like optimum-intel)."""
+    more than 1B weights, as ``optimum.exporters.openvino.__main__._apply_model_size_based_quantization`` does."""
     if weight_format is None and count_weights(ov_model) >= _MAX_UNCOMPRESSED_SIZE:
         return INT8_ASYM_CONFIG
     return compression
@@ -325,7 +335,8 @@ def convert_tokenizer(model_dir: Path, output: Path, chat_template: str | None =
     tokenizer.truncation_side = "left"
     ov_tokenizer, ov_detokenizer = ov_convert_tokenizer(tokenizer, with_detokenizer=True)
     if chat_template is not None:
-        # The processor's chat template (that also lays out images) takes precedence, as in optimum-intel.
+        # The processor's chat template (that also lays out images) takes precedence, as in
+        # optimum.exporters.openvino.__main__.maybe_convert_tokenizers.
         ov_tokenizer.set_rt_info(chat_template, "chat_template")
     ov.save_model(ov_tokenizer, output / OV_TOKENIZER_NAME)
     ov.save_model(ov_detokenizer, output / OV_DETOKENIZER_NAME)

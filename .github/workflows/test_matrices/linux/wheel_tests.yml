@@ -194,8 +194,7 @@
 
 - name: genai-cli tests
   cmd: |-
-    # The nightly test exports a model in a uv overlay; the others check dispatch, validation and overlays offline.
-    python -m pytest -v ./tests/python_tests/test_genai_cli.py -m "not nightly"
+    python -m pytest -v ./tests/python_tests/test_genai_cli.py
   timeout: 15
   components:
     - genai_cli

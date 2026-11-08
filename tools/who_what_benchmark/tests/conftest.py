@@ -195,7 +195,11 @@ def convert_model(model_name: str) -> str:
 
 
 def _export_tool(model: str) -> list[str]:
-    """genai-cli for the models it converts natively, optimum-cli for all others (same export options)."""
+    """genai-cli for the models it converts natively, optimum-cli for all others (same export options).
+
+    Mirrors export_command of tests/python_tests/utils/export.py, which the WWB tests cannot import. WWB can be
+    installed next to an openvino-genai release that has no genai-cli, hence the ImportError fallback.
+    """
     try:
         from openvino_genai._cli.main import native_exporter_for_model
 

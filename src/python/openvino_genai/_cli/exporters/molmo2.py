@@ -262,8 +262,8 @@ class Molmo2Exporter(NativeExporter):
         vit_config = model.config.vit_config
 
         compression = weight_compression_config_from_args(args)
-        # As in optimum-intel, the requested compression applies to the language model, the other (small) models
-        # get int8 weights.
+        # As in optimum.intel.openvino.quantization.OVQuantizer._construct_pipeline_quantization_config, the requested
+        # compression applies to the language model, the other (small) models get int8_sym weights.
         other_compression = INT8_SYM_CONFIG if compression is not None else None
 
         # Every submodel is compressed and saved right after its conversion to keep the peak memory low.
@@ -336,9 +336,9 @@ class Molmo2Exporter(NativeExporter):
         del ep, model
         gc.collect()
 
-        # Like optimum-intel, the language model is compressed in a second pass: the converted floating-point model is
-        # saved and read back, so its weights are memory-mapped from disk instead of staying in process memory next to
-        # the compressed weights.
+        # As in optimum.exporters.openvino.__main__._main_quantize, the language model is compressed in a second pass:
+        # the converted floating-point model is saved and read back, so its weights are memory-mapped from disk instead
+        # of staying in process memory next to the compressed weights.
         lm_path = output / "openvino_language_model.xml"
         language_compression = resolve_compression(language_model, args.weight_format, compression)
         if language_compression is None:

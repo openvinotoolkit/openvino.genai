@@ -4,18 +4,21 @@
 """Tests of the genai-cli export tool (openvino_genai._cli)."""
 
 import json
-import os
-import shutil
 import subprocess  # nosec B404
 import sys
-import textwrap
+from functools import partial
+from importlib import metadata
 from pathlib import Path
 
-import numpy as np
 import pytest
+from openvino_genai import GenerationConfig, LLMPipeline
 from openvino_genai._cli import main as cli_main
 from openvino_genai._cli import optimum_fallback, uv_env
 from openvino_genai._cli.exporters.common import copy_model_files, weight_compression_config_from_args
+from packaging.requirements import Requirement
+
+from utils.export import genai_cli_command
+from utils.network import retry_request
 
 
 def _checkpoint(tmp_path: Path, model_type: str) -> Path:
@@ -29,11 +32,18 @@ def _export_args(*argv: str):
     return cli_main._build_parser().parse_args(["export", *argv])
 
 
-def test_fallback_to_optimum_intel_for_non_native_models(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "weight_format",
+    [
+        "int4",
+        "int2",  # only optimum-intel implements it, it validates the format
+    ],
+)
+def test_fallback_to_optimum_intel_for_non_native_models(tmp_path, monkeypatch, weight_format):
     calls = []
     monkeypatch.setattr(optimum_fallback, "export_with_optimum_intel", lambda *args: calls.append(args) or 0)
     model_dir = _checkpoint(tmp_path, "qwen2")
-    argv = ["export", "-m", str(model_dir), "--weight-format", "int4", str(tmp_path / "out")]
+    argv = ["export", "-m", str(model_dir), "--weight-format", weight_format, str(tmp_path / "out")]
 
     assert cli_main.main(argv) == 0
     model_type, task, export_argv, full_argv = calls[0]
@@ -71,6 +81,10 @@ def test_native_export_reexecutes_with_pinned_transformers(tmp_path, monkeypatch
         (["--trust-remote-code", "--weight-format", "fp32", "--sym"], "--sym"),
         (["--trust-remote-code", "--weight-format", "int8", "--group-size", "64"], "--group-size"),
         (["--trust-remote-code", "--weight-format", "int8", "--backup-precision", "none"], "--backup-precision"),
+        # Formats without a zero point have no symmetric variant.
+        (["--trust-remote-code", "--weight-format", "nf4", "--sym"], "--sym"),
+        (["--trust-remote-code", "--weight-format", "mxfp4", "--sym"], "--sym"),
+        (["--trust-remote-code", "--weight-format", "cb4", "--sym"], "--sym"),
     ],
 )
 def test_native_exporter_rejects_unsupported_options(tmp_path, monkeypatch, capsys, options, message):
@@ -82,28 +96,22 @@ def test_native_exporter_rejects_unsupported_options(tmp_path, monkeypatch, caps
     assert message in capsys.readouterr().err
 
 
-def test_fallback_accepts_weight_formats_validated_by_optimum_intel(tmp_path, monkeypatch):
-    calls = []
-    monkeypatch.setattr(optimum_fallback, "export_with_optimum_intel", lambda *args: calls.append(args) or 0)
-    model_dir = _checkpoint(tmp_path, "qwen2")
-    argv = ["export", "-m", str(model_dir), "--weight-format", "int2", str(tmp_path / "out")]
-
-    assert cli_main.main(argv) == 0
-    assert calls[0][2] == argv[1:]
-
-
-def test_native_exporter_accepts_options_the_format_implements(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--weight-format", "int8", "--sym", "--group-size", "-1", "--ratio", "1.0"],
+        ["--weight-format", "int4", "--ratio", "0.8", "--group-size", "64", "--backup-precision", "none"],
+        ["--weight-format", "fp16"],
+    ],
+)
+def test_native_exporter_accepts_options_the_format_implements(tmp_path, monkeypatch, options):
     calls = []
     monkeypatch.setattr(uv_env, "is_satisfied", lambda requirement: False)
     monkeypatch.setattr(uv_env, "reexec_with", lambda requirements, argv: calls.append(argv) or 0)
     model_dir = _checkpoint(tmp_path, "molmo2")
-    for options in (
-        ["--weight-format", "int8", "--sym", "--group-size", "-1", "--ratio", "1.0"],
-        ["--weight-format", "int4", "--ratio", "0.8", "--group-size", "64", "--backup-precision", "none"],
-        ["--weight-format", "fp16"],
-    ):
-        assert cli_main.main(["export", "-m", str(model_dir), "--trust-remote-code", *options, "out"]) == 0
-    assert len(calls) == 3
+    argv = ["export", "-m", str(model_dir), "--trust-remote-code", *options, "out"]
+    assert cli_main.main(argv) == 0
+    assert calls == [argv]
 
 
 def _fake_requires(requirements: dict[str, list[str]]):
@@ -124,8 +132,6 @@ def test_fallback_keeps_optimum_intel_transformers_constraint_without_model_boun
     monkeypatch.setattr(optimum_fallback, "_model_transformers_specifiers", lambda model_type, task: [])
     requirement = optimum_fallback._transformers_requirement(None, "auto")
     assert requirement is not None
-    from packaging.requirements import Requirement
-
     specifier = Requirement(requirement).specifier
     assert specifier.contains("5.5.4") and not specifier.contains("5.6.0") and not specifier.contains("4.44.0")
 
@@ -168,7 +174,7 @@ def test_test_exports_use_genai_cli_for_native_models(monkeypatch):
     from utils import export
 
     monkeypatch.setattr(
-        cli_main,
+        export,
         "native_exporter_for_model",
         lambda model, library=None, cache_dir=None: (model, object() if model == "molmo2" else None),
     )
@@ -261,81 +267,92 @@ def test_weight_compression_defaults():
     assert (custom.mode, custom.group_size, custom.ratio) == ("int4_sym", 64, 0.8)
 
 
-_MAKE_TINY_MOLMO2 = textwrap.dedent(
-    """
-    import shutil, sys
-    from pathlib import Path
-    import torch
-    from huggingface_hub import snapshot_download
-    from transformers import AutoConfig, AutoModelForImageTextToText
+def test_fallback_reads_model_transformers_bounds_from_optimum_intel():
+    from optimum.exporters.openvino.model_configs import MiniCPMOpenVINOConfig
 
-    src = Path(snapshot_download("allenai/MolmoWeb-4B", allow_patterns=["*.json", "*.py", "*.jinja", "*.txt"]))
-    out = Path(sys.argv[1])
-    torch.manual_seed(0)
-    cfg = AutoConfig.from_pretrained(src, trust_remote_code=True)
-    t, v, a = cfg.text_config, cfg.vit_config, cfg.adapter_config
-    t.hidden_size, t.num_attention_heads, t.num_key_value_heads, t.head_dim = 128, 4, 2, 32
-    t.num_hidden_layers, t.intermediate_size = 2, 256
-    v.hidden_size, v.intermediate_size, v.num_hidden_layers = 64, 128, 2
-    v.num_attention_heads = v.num_key_value_heads = 2
-    v.head_dim = 32
-    a.hidden_size, a.num_attention_heads, a.num_key_value_heads, a.head_dim = 64, 2, 2, 32
-    a.intermediate_size, a.text_hidden_size, a.vit_layers = 128, t.hidden_size, [-1, -2]
-    AutoModelForImageTextToText.from_config(cfg, trust_remote_code=True).float().save_pretrained(out)
-    for f in src.iterdir():
-        if f.is_file() and f.name not in ("config.json", "model.safetensors.index.json"):
-            shutil.copy(f, out / f.name)
-    """
+    expected = [f">={MiniCPMOpenVINOConfig.MIN_TRANSFORMERS_VERSION}"]
+    if getattr(MiniCPMOpenVINOConfig, "MAX_TRANSFORMERS_VERSION", None) is not None:
+        expected.append(f"<={MiniCPMOpenVINOConfig.MAX_TRANSFORMERS_VERSION}")
+    assert optimum_fallback._model_transformers_specifiers("minicpm", "text-generation-with-past") == expected
+    assert optimum_fallback._model_transformers_specifiers("not-a-model-type", "auto") == []
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        None,
+        "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@20390257acb98993f99cdd3bf4df1c983eccadef",
+    ],
 )
-
-
-@pytest.mark.nightly
-@pytest.mark.vlm
-def test_native_molmo2_export_and_inference(tmp_path):
-    """Exports a tiny random Molmo2 with genai-cli and runs it in VLMPipeline (paged attention) on text, image and video."""
-    import openvino as ov
-    import openvino_genai
-
-    uv = shutil.which("uv")
-    if uv is None:
-        pytest.skip("uv is required (pip install openvino-genai[export])")
-    env = {**os.environ, "VIRTUAL_ENV": sys.prefix}
-    tiny = tmp_path / "tiny-random-molmo2"
-    script = tmp_path / "make_tiny_molmo2.py"
-    script.write_text(_MAKE_TINY_MOLMO2)
-    subprocess.run(
-        [uv, "run", "--active", "--no-project", "--with", "transformers==4.57.6", "python", str(script), str(tiny)],
-        check=True,
-        env=env,
+def test_optimum_intel_is_provided_without_changing_the_environment(tmp_path, monkeypatch, spec):
+    if spec is None:
+        monkeypatch.delenv("GENAI_CLI_OPTIMUM_INTEL_SPEC", raising=False)
+    else:
+        monkeypatch.setenv("GENAI_CLI_OPTIMUM_INTEL_SPEC", spec)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    pins = {
+        "optimum-intel": spec or "optimum-intel==2.2.0",
+        "optimum": "optimum==2.3.0",
+        "transformers": "transformers==4.57.6",
+        "packaging": "packaging==24.2",
+    }
+    compiled, installed, reexecuted = [], [], []
+    monkeypatch.setattr(
+        optimum_fallback, "compile_requirements", lambda reqs, exclude=(): compiled.append((reqs, set(exclude))) or pins
+    )
+    monkeypatch.setattr(
+        optimum_fallback, "install_to_target", lambda packages, target: installed.append((packages, target))
+    )
+    monkeypatch.setattr(
+        optimum_fallback,
+        "reexec_with",
+        lambda reqs, argv, pythonpath=None: reexecuted.append((reqs, argv, pythonpath)) or 0,
+    )
+    monkeypatch.setattr(
+        optimum_fallback, "installed_version", lambda name: {"transformers": "5.5.4", "packaging": "24.2"}.get(name)
     )
 
-    ov_dir = tmp_path / "tiny-random-molmo2-ov"
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "openvino_genai._cli",
-            "export",
-            "-m",
-            str(tiny),
-            "--trust-remote-code",
-            "--weight-format",
-            "fp16",
-            str(ov_dir),
-        ],
-        check=True,
-        env=env,
-    )
-    for name in ("language", "text_embeddings", "vision_embeddings"):
-        assert (ov_dir / f"openvino_{name}_model.xml").is_file()
+    assert optimum_fallback._provide_optimum_intel(["export", "-m", "model", "out"]) == 0
+    requirements, excluded = compiled[0]
+    assert requirements == [spec or "optimum-intel"]
+    assert {"torch", "openvino", "nncf"} <= excluded
+    packages, target = installed[0]
+    # optimum-intel and optimum go to a cached directory without their dependencies.
+    assert packages == [pins["optimum-intel"], pins["optimum"]]
+    assert target.parent == tmp_path / "openvino_genai" / "genai-cli"
+    # Only the requirements the environment does not satisfy are overlaid.
+    assert reexecuted == [(["transformers==4.57.6"], ["export", "-m", "model", "out"], target)]
 
-    pipe = openvino_genai.VLMPipeline(
-        ov_dir, "CPU", scheduler_config=openvino_genai.SchedulerConfig(), ATTENTION_BACKEND="PA"
-    )
-    config = openvino_genai.GenerationConfig(max_new_tokens=8, do_sample=False)
-    rng = np.random.default_rng(0)
-    image = ov.Tensor(rng.integers(0, 255, (1, 240, 320, 3), dtype=np.uint8))
-    video = ov.Tensor(rng.integers(0, 255, (6, 240, 320, 3), dtype=np.uint8))
-    for inputs in ({}, {"images": [image]}, {"videos": [video]}):
-        result = pipe.generate("Describe the input.", generation_config=config, **inputs)
-        assert len(result.texts) == 1 and result.texts[0]
+
+def test_uv_resolves_requirements_without_excluded_distributions():
+    pins = uv_env.compile_requirements(["transformers==4.57.6"], exclude=["numpy", "torch"])
+    assert pins["transformers"] == "transformers==4.57.6"
+    assert "huggingface-hub" in pins
+    assert "numpy" not in pins
+
+
+def test_uv_installs_to_target_once(tmp_path, monkeypatch):
+    target = tmp_path / "target"
+    uv_env.install_to_target(["packaging==24.2"], target)
+    assert metadata.Distribution.at(next(target.glob("packaging-24.2.dist-info"))).version == "24.2"
+    # A completed target is reused.
+    monkeypatch.setattr(uv_env.subprocess, "run", lambda *args, **kwargs: pytest.fail("must not install again"))
+    uv_env.install_to_target(["packaging==24.2"], target)
+
+
+def test_fallback_export_matches_optimum_cli(tmp_path):
+    """A model without a native exporter goes through optimum-intel with the command line unchanged."""
+    model_id = "katuni4ka/tiny-random-phi3"
+    options = ["--task", "text-generation-with-past", "--weight-format", "fp16"]
+    genai_cli_dir, optimum_cli_dir = tmp_path / "genai-cli", tmp_path / "optimum-cli"
+    for command in (
+        genai_cli_command(model_id, genai_cli_dir, options),
+        ["optimum-cli", "export", "openvino", "--model", model_id, *options, str(optimum_cli_dir)],
+    ):
+        retry_request(partial(subprocess.run, command, check=True))
+
+    config = GenerationConfig(max_new_tokens=8, do_sample=False)
+    genai_cli_result = LLMPipeline(genai_cli_dir, "CPU").generate("Hello, my name is", config)
+    optimum_cli_result = LLMPipeline(optimum_cli_dir, "CPU").generate("Hello, my name is", config)
+    assert genai_cli_result == optimum_cli_result
+    assert (genai_cli_dir / "openvino_tokenizer.xml").is_file()

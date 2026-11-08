@@ -72,7 +72,7 @@ from utils.generation_config import (
 )
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
-from utils.export import export_with_genai_cli, genai_cli_can_provide_transformers, native_genai_cli_model_type
+from utils.export import export_with_genai_cli, native_genai_cli_model_type
 from utils.media_tags import ModalityType, get_media_inputs_kwargs, get_universal_tag
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 from utils.hugging_face import download_and_convert_model
@@ -377,12 +377,6 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Muse Glimmer. Minimum required is 5.15.0."
         )
-    if (
-        model_id in GENAI_CLI_NATIVE_MODEL_IDS
-        and not genai_cli_can_provide_transformers()
-        and (is_transformers_version("<", "4.57.0") or is_transformers_version(">=", "4.58.0"))
-    ):
-        pytest.skip("genai-cli needs uv to export Molmo2 with transformers 4.57.x (pip install openvino-genai[export])")
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
