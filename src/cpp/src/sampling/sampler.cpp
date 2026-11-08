@@ -1442,6 +1442,7 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
             }
             running_sequence->update_generated_log_prob(candidate_index, verdict.token.m_log_prob);
             running_sequence->clear_draft_proposal(candidate_index);
+            running_sequence->count_accepted_candidate();
             logit_processor.register_new_generated_token(candidate);
             finish_at_stop_token(verdict.token,
                                  running_sequence,

@@ -1750,6 +1750,36 @@ def test_eagle3_counts_the_tree_window_that_ends_a_request():
     assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
 
 
+def test_speculative_decoding_counts_candidates_a_stop_string_removes():
+    # The target drafts for itself, so it accepts every candidate. A stop string in the first window removes the
+    # accepted candidates after it from the output, and its own tokens unless they are included; they count all the same.
+    target_path = download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3").models_path
+    properties = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
+    pipe = ContinuousBatchingPipeline(
+        target_path,
+        SchedulerConfig(),
+        "CPU",
+        {**properties, "draft_model": draft_model(target_path, "CPU", **properties)},
+    )
+    tokenizer = pipe.get_tokenizer()
+    input_ids = tokenizer.encode("What's OpenVINO?").input_ids
+    config = GenerationConfig(do_sample=False, max_new_tokens=30, ignore_eos=True, num_assistant_tokens=5)
+    generated_ids = pipe.generate([input_ids], [config])[0].m_generation_ids[0]
+    # the target generates the first token from the prompt, and the first window drafts the next ones
+    stop_string = tokenizer.decode(generated_ids[1:3])
+    assert stop_string.strip()
+
+    def counts(include_stop_str_in_output):
+        config.stop_strings = {stop_string}
+        config.include_stop_str_in_output = include_stop_str_in_output
+        metrics = pipe.generate([input_ids], [config])[0].extended_perf_metrics
+        return metrics.get_num_draft_tokens(), metrics.get_num_accepted_tokens()
+
+    num_drafted, num_accepted = counts(False)
+    assert num_accepted == num_drafted
+    assert counts(True) == (num_drafted, num_accepted)
+
+
 @pytest.fixture(scope="module")
 def cb_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
     return download_and_convert_model(request.param)
