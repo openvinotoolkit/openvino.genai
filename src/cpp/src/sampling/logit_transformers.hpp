@@ -28,14 +28,14 @@ struct Logits {
     // fast path and the logprobs path — TopKFilter always uses heap selection) with either:
     //   - raw logits unchanged         (T == 1.0 — TemperatureLogitTransform is a no-op)
     //   - logits scaled by 1/T         (T != 1.0 — pure multiply, no max subtraction)
-    // _multinomial_sample owns the max scan and fuses expf() with the CDF scan.
+    // sample_multinomial owns the max scan and fuses expf() with the CDF scan.
     bool m_defer_expf = false;
 
     // Set by FullVocabLogSumExpTransform when logprobs > 0 for multinomial sampling.
     // Holds log(Σ exp(raw_logit_i)) over ALL N vocabulary tokens computed from the original
     // model output, before any penalty, filter, or temperature transform.
     //
-    // After sampling selects token index `idx`, _multinomial_sample reads the unchanged
+    // After sampling selects token index `idx`, sample_multinomial reads the unchanged
     // raw logit from m_data[idx] and computes:
     //   log p_i = m_data[idx] − m_full_vocab_log_sum_exp
     //
@@ -133,7 +133,7 @@ public:
         }
         // m_vector holds normalised probabilities (from Temperature via m_vector or m_data path).
         // Note: TopPFilter truncates but does NOT renormalize — the retained probabilities sum to at most top_p < 1.
-        // _multinomial_sample accounts for this by scaling the random draw by total_weight (not assuming sum == 1).
+        // sample_multinomial accounts for this by scaling the random draw by total_weight (not assuming sum == 1).
         if (!partial_sort_and_resize(logits))
             full_sort_and_resize(logits);
     }
@@ -211,7 +211,7 @@ public:
         //      restore heap order (pop_heap + push_heap = two O(log K) sifts).
         //   3. m_vector ends up with the top_k values in arbitrary heap order.
         //
-        // Downstream code (TemperatureLogitTransform, TopPFilter, _multinomial_sample)
+        // Downstream code (TemperatureLogitTransform, TopPFilter, sample_multinomial)
         // must NOT assume m_vector[0] is the maximum — they all do their own O(K) max scan.
         static const auto min_cmp = [](const Token& a, const Token& b) {
             return a.m_log_prob > b.m_log_prob;  // inverted: makes std::*_heap a min-heap
@@ -256,7 +256,7 @@ protected:
 // Logits::m_full_vocab_log_sum_exp.  Must run first, before m_data is modified or m_vector
 // is created, so it captures the original model logits.
 //
-// After sampling selects a token index `idx`, _multinomial_sample reads m_data[idx] (always the
+// After sampling selects a token index `idx`, sample_multinomial reads m_data[idx] (always the
 // original raw logit as long as downstream transforms operate on m_vector, not m_data) and computes:
 //   log p_i = m_data[idx] − m_full_vocab_log_sum_exp
 //

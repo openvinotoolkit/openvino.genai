@@ -978,7 +978,7 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     return Token(max_value, max_index);
 }
 
-std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine) {
+std::vector<Token> sample_multinomial(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine) {
     std::uniform_real_distribution<float> u(0.0f, 1.0f);
     std::vector<Token> out_tokens;
     out_tokens.reserve(num_tokens_per_sequence);
@@ -989,7 +989,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
         OPENVINO_ASSERT(logits.is_vector_initialized(),
             "Internal error: m_defer_expf=true but m_vector not initialized. "
             "defer_expf requires top_k > 0 which always populates m_vector via TopKFilter.");
-        // m_vector holds K logits in arbitrary heap order — _multinomial_sample does its own max scan.
+        // m_vector holds K logits in arbitrary heap order — sample_multinomial does its own max scan.
         float max_val = logits.m_vector[0].m_log_prob;
         for (size_t i = 1; i < logits.m_size; ++i)
             if (logits.m_vector[i].m_log_prob > max_val)
@@ -1543,7 +1543,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
                     const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
                     is_generate_n_tokens &= (num_tokens_per_sequence > 1);
-                    auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence, rng_engine);
+                    auto sampled_token_ids = sample_multinomial(logit_vector, num_tokens_per_sequence, rng_engine);
                     OPENVINO_ASSERT(sampled_token_ids.size() == num_tokens_per_sequence,
                                    "Multinomial sampler returned unexpected number of tokens");
                     // to create n sequence just in case of `sequence_group->num_total_seqs() == 1` and `sampling_params.num_return_sequences > 1`

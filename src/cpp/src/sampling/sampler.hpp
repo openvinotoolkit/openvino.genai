@@ -49,6 +49,9 @@ inline bool is_stop_token_id_hit_in_sequence_group(SequenceGroup::Ptr sequence_g
 }
 
 std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
+std::vector<Token> sample_multinomial(const Logits& logits,
+                                      size_t num_tokens_per_sequence,
+                                      std::mt19937& rng_engine);
 
 struct SamplerOutput {
     struct AcceptanceResult {
@@ -145,7 +148,6 @@ class Sampler {
 
     Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
     Token _greedy_sample(const Logits& logits, size_t top_logprobs) const;
-    std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr& sequence_group,
                                                  const std::pair<size_t, std::set<std::string>>& stop_strings);
 
