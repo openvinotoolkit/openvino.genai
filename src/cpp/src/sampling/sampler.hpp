@@ -21,6 +21,7 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+#include "sampling/block_row_source.hpp"
 #include "sampling/logit_transformers.hpp"
 #include "sampling/logit_processor.hpp"
 #include "continuous_batching/scheduler.hpp"
@@ -171,6 +172,20 @@ class Sampler {
     SequenceGroupSamplingInfo _sample_block_from_sequence_group(SequenceGroup::Ptr sequence_group,
                                                                 ov::Tensor sequence_group_logits,
                                                                 RequestSamplerContext& context);
+    // Removes the request's placeholder tokens and returns its block, whose rows start at first_row. The block has no
+    // candidates when its window gathered no rows or the request has no token left to draft.
+    SampledBlock _start_block(const SequenceGroup::Ptr& sequence_group, size_t first_row);
+    // Samples the next token of a block from its row with the request's logit processors and appends it.
+    int64_t _sample_block_token(const Sequence::Ptr& sequence,
+                                const ov::genai::GenerationConfig& sampling_params,
+                                Logits logits,
+                                RequestSamplerContext& context);
+    // Appends a token that a row source drew for a block.
+    void _append_block_token(const Sequence::Ptr& sequence, const BlockToken& token, RequestSamplerContext& context);
+    // Samples the blocks of all requests from the rows of m_block_row_source, by request or by position.
+    std::vector<SequenceGroupSamplingInfo> _sample_blocks(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                                          const std::vector<size_t>& first_rows,
+                                                          const ov::Tensor& logits);
 
     // request ID => beam search tracking information (kept separate — has its own mutex)
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
@@ -191,6 +206,9 @@ class Sampler {
     // Rows from the row of the last real token (the seed) to the first gathered row: 1 when the gathered rows start
     // at the first placeholder (DFlash), 0 when they start at the seed (DeepSpec).
     size_t m_block_sampling_start_offset = 1;
+    // the rows block sampling draws from instead of the gathered logits rows
+    std::shared_ptr<BlockRowSource> m_block_row_source;
+
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -226,10 +244,12 @@ public:
     };
 
     // Block sampling: each gathered row of a request yields one token, in row order, and the tokens replace the
-    // request's trailing placeholder tokens. Used by the DFlash draft.
-    void set_block_sampling(size_t start_offset) {
+    // request's trailing placeholder tokens. Used by the DFlash draft. A row source gives the row of each token in
+    // place of the gathered row, and its block ends when it has no row for the next position.
+    void set_block_sampling(size_t start_offset, std::shared_ptr<BlockRowSource> row_source = nullptr) {
         m_block_sampling = true;
         m_block_sampling_start_offset = start_offset;
+        m_block_row_source = std::move(row_source);
     }
 };
 

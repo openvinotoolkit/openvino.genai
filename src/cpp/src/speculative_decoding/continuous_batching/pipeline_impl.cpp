@@ -837,8 +837,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
         const size_t first_candidate_row = window.context_rows + m_dflash_candidate_position_offset;
         if (forwarded_rows > first_candidate_row) {
             // The forward reached candidate rows, so the sampler removed every placeholder and appended the
-            // candidates it sampled.
-            num_candidates += std::min(forwarded_rows - first_candidate_row, window.candidate_rows);
+            // candidates it sampled after the seed. A row source can end a block before its last candidate row.
+            const size_t seed_generated_len =
+                window.committed_rows + window.context_rows + 1 - request->get_prompt_len();
+            num_candidates += running_sequences.front()->get_generated_len() - seed_generated_len;
         } else if (window.block_rows > 0) {
             // The sampler did not run, so the mask placeholders are still in the sequence.
             running_sequences.front()->remove_last_tokens(window.block_rows - 1);
