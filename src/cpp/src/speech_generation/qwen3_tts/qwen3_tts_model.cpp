@@ -118,10 +118,12 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     generated_main.reserve(std::min(max_steps, size_t(8192)));
     all_codes.reserve(std::min(max_steps, size_t(8192)) * m_engine.ids().num_code_groups);
 
-    std::mt19937 rng(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed) : std::random_device{}());
+    std::mt19937 talker_rng(generation_config.rng_seed);
+    std::mt19937 subtalker_rng(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed)
+                                                             : std::random_device{}());
     size_t absolute_pos = talker_prefill.get_shape()[1];
     for (size_t step = 0; step < max_steps; ++step) {
-        int64_t token = m_engine.sample_token_from_logits(logits, generation_config, generated_main, suppress_tokens, rng);
+        int64_t token = m_engine.sample_token_from_logits(logits, generation_config, generated_main, suppress_tokens, talker_rng);
         if (token == m_engine.ids().codec_eos_token_id) {
             break;
         }
@@ -130,7 +132,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         const size_t hs_len = hidden_states.get_shape()[1];
         ov::Tensor past_hidden(hidden_states, ov::Coordinate{0, hs_len - 1, 0}, ov::Coordinate{1, hs_len, hidden});
 
-        auto groups = m_engine.generate_codec_groups(past_hidden, token, generation_config, rng);
+        auto groups = m_engine.generate_codec_groups(past_hidden, token, generation_config, subtalker_rng);
         all_codes.insert(all_codes.end(), groups.begin(), groups.end());
 
         auto token_embed = m_engine.infer_embedding(m_engine.talker_embedding(), groups[0]);
