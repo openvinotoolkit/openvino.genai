@@ -9,7 +9,7 @@ The model is split into the three OpenVINO models consumed by ov::genai::VLMPipe
 * ``openvino_vision_embeddings_model``: the vision backbone (ViT, attention pooling and projector),
   ``images`` [batch, crops, patches, pixels] and ``pooled_patches_idx`` [batch, tokens, pool] -> pooled image
   features ``last_hidden_state`` [tokens, hidden]. The data-dependent crop / pooling-index preparation runs in
-  GenAI's image preprocessing.
+  ov::genai::VisionEncoderMolmo2::encode (src/cpp/src/visual_language/molmo2/classes.cpp).
 * ``openvino_language_model``: the stateful decoder taking ``inputs_embeds``, ``attention_mask``, ``position_ids``,
   ``token_type_ids`` and ``beam_idx``. Image tokens (token_type_ids == 1) attend to each other bidirectionally, so the
   attention mask is built inside the model.

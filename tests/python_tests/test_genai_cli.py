@@ -267,6 +267,62 @@ def test_weight_compression_defaults():
     assert (custom.mode, custom.group_size, custom.ratio) == ("int4_sym", 64, 0.8)
 
 
+@pytest.mark.parametrize(
+    "options, mode",
+    [
+        (["--weight-format", "int8"], "INT8_ASYM"),
+        (["--weight-format", "int8", "--sym"], "INT8_SYM"),
+        (["--weight-format", "int4"], "INT4_ASYM"),
+        (["--weight-format", "int4", "--sym"], "INT4_SYM"),
+        (["--weight-format", "mxfp4"], "MXFP4"),
+        (["--weight-format", "nf4"], "NF4"),
+        (["--weight-format", "cb4"], "CB4"),
+    ],
+)
+def test_weight_format_selects_nncf_mode(monkeypatch, options, mode):
+    import nncf
+
+    captured = {}
+    monkeypatch.setattr(nncf, "compress_weights", lambda model, **kwargs: captured.update(kwargs) or model)
+    weight_compression_config_from_args(_export_args("-m", "m", *options, "out")).compress("model")
+    assert captured["mode"] == getattr(nncf.CompressWeightsMode, mode)
+
+
+def test_compression_options_reach_nncf(monkeypatch):
+    import nncf
+    from nncf.quantization.advanced_parameters import GroupSizeFallbackMode
+
+    captured = {}
+    monkeypatch.setattr(nncf, "compress_weights", lambda model, **kwargs: captured.update(kwargs) or model)
+    args = _export_args(
+        "-m",
+        "m",
+        "--weight-format",
+        "int4",
+        "--ratio",
+        "0.8",
+        "--group-size",
+        "64",
+        "--all-layers",
+        "--awq",
+        "--sensitivity-metric",
+        "weight_quantization_error",
+        "--backup-precision",
+        "int8_sym",
+        "--group-size-fallback",
+        "adjust",
+        "out",
+    )
+    assert weight_compression_config_from_args(args).compress("model") == "model"
+    assert captured["ratio"] == 0.8
+    assert captured["group_size"] == 64
+    assert captured["all_layers"] is True
+    assert captured["awq"] is True
+    assert captured["sensitivity_metric"] == nncf.SensitivityMetric.WEIGHT_QUANTIZATION_ERROR
+    assert captured["backup_mode"] == nncf.BackupMode.INT8_SYM
+    assert captured["advanced_parameters"].group_size_fallback_mode == GroupSizeFallbackMode.ADJUST
+
+
 def test_fallback_reads_model_transformers_bounds_from_optimum_intel():
     from optimum.exporters.openvino.model_configs import MiniCPMOpenVINOConfig
 

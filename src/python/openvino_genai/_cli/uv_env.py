@@ -74,7 +74,7 @@ def cache_dir() -> Path:
     return Path(root) / "openvino_genai" / "genai-cli"
 
 
-def compile_requirements(requirements: list[str], no_deps: bool = False, exclude: Iterable[str] = ()) -> dict[str, str]:
+def compile_requirements(requirements: list[str], exclude: Iterable[str] = ()) -> dict[str, str]:
     """Resolves requirements with ``uv pip compile`` (metadata only, nothing is installed).
 
     Distributions in ``exclude`` are dropped from the resolution together with their own dependencies.
@@ -83,8 +83,6 @@ def compile_requirements(requirements: list[str], no_deps: bool = False, exclude
     from packaging.requirements import Requirement
 
     cmd = [find_uv(), "pip", "compile", "-", "--python", sys.executable, "--no-header", "--no-annotate", "--quiet"]
-    if no_deps:
-        cmd.append("--no-deps")
     with tempfile.TemporaryDirectory() as tmp:
         if exclude:
             overrides = Path(tmp) / "overrides.txt"

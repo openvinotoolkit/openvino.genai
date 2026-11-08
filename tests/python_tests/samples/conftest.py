@@ -98,6 +98,11 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
     },
+    "tiny-random-molmo2": {
+        # Exported by genai-cli (optimum_cli_convert dispatches natively converted models to it).
+        "name": "optimum-intel-internal-testing/tiny-random-molmo2",
+        "convert_args": ["--trust-remote-code"],
+    },
     "InternVL2-1B": {
         "name": "OpenGVLab/InternVL2-1B",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']

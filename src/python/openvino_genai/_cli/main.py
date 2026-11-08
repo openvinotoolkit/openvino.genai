@@ -50,8 +50,8 @@ def _read_model_config(model: str, cache_dir: str | None) -> dict | None:
         try:
             config_path = Path(hf_hub_download(model, "config.json", cache_dir=cache_dir))
         except (EntryNotFoundError, HfHubHTTPError, OSError, ValueError) as error:
-            # No config.json (e.g. a diffusers repository), offline or not a valid repository id: let the fallback
-            # (optimum-intel) handle the model and report the problem.
+            # No config.json (e.g. a diffusers repository), offline or not a valid repository id: let
+            # optimum_fallback.export_with_optimum_intel handle the model and report the problem.
             logger.debug(f"Cannot download config.json of {model}: {error}")
             return None
     return json.loads(config_path.read_text(encoding="utf-8"))

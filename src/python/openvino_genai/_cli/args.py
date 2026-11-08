@@ -18,9 +18,11 @@ WEIGHT_FORMATS = ("fp32", "fp16", "int8", "int4", "mxfp4", "nf4", "cb4")
 
 def _default_cache_dir() -> str:
     try:
-        from huggingface_hub.constants import HUGGINGFACE_HUB_CACHE
+        # HF_HUB_CACHE follows the HF_HUB_CACHE and HF_HOME environment variables, the legacy HUGGINGFACE_HUB_CACHE
+        # constant ignores HF_HUB_CACHE.
+        from huggingface_hub.constants import HF_HUB_CACHE
 
-        return HUGGINGFACE_HUB_CACHE
+        return HF_HUB_CACHE
     except ImportError:
         return str(Path.home() / ".cache" / "huggingface" / "hub")
 
