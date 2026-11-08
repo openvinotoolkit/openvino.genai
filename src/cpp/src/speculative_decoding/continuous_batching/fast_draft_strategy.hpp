@@ -193,17 +193,15 @@ protected:
         // accepted the ones its sequence still starts with there.
         size_t first_position = 0;
         std::map<uint64_t, std::vector<int64_t>> candidates;
-        // The candidates of a tree have no such order, so the draft reports the ones the main model removed.
+        // The candidates of a tree have no such order; the main sequence keeps the path of the ones it accepted.
         bool is_tree = false;
-        size_t num_removed = 0;
     };
     std::map<uint64_t, ValidationWindow> m_validation_windows;
 
     // Adds the candidates that update_request() just put in the main request to the window of the request.
     void add_to_validation_window(uint64_t request_id, size_t num_candidates);
     // Counts the windows whose candidates the main model validated in this step in the acceptance metrics.
-    void count_validated_windows(const GeneratedRequests& draft_generated_requests,
-                                 const std::map<int64_t, UpdateRequestResult>& update_sequence_info);
+    void count_validated_windows();
 
     void reset_generate_metrics() {
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
