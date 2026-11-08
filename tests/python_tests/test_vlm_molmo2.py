@@ -222,6 +222,20 @@ def test_malformed_preprocessing_config_is_rejected(
         VLMPipeline(molmo2_models, Tokenizer(molmo2_dir), config_dir, "CPU")
 
 
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_patch_token_mismatch_with_vision_embeddings_is_rejected(
+    molmo2_dir: Path, molmo2_models: dict, tmp_path: Path, backend: str, cat_tensor: openvino.Tensor
+):
+    # A config whose image_patch_id is not the "<im_patch>" token the processor emits: the text has fewer patch tokens
+    # than the vision encoder produced embeddings. Like the reference implementation, this fails instead of dropping
+    # the surplus embeddings.
+    config = json.loads((molmo2_dir / "config.json").read_text(encoding="utf-8"))
+    config_dir = _config_dir(molmo2_dir, tmp_path / "config", "config.json", {"image_patch_id": config["image_col_id"]})
+    pipe = VLMPipeline(molmo2_models, Tokenizer(molmo2_dir), config_dir, "CPU", ATTENTION_BACKEND=backend)
+    with pytest.raises(RuntimeError, match=r"the text has \d+ image patch tokens, but the vision encoders produced"):
+        pipe.generate("Describe.", images=[cat_tensor], generation_config=_config())
+
+
 @pytest.mark.parametrize(
     "option, value, more_tokens",
     [
