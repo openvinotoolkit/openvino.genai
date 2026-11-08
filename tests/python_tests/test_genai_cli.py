@@ -4,6 +4,7 @@
 """Tests of the genai-cli export tool (openvino_genai._cli)."""
 
 import json
+import os
 import subprocess  # nosec B404
 import sys
 from functools import partial
@@ -588,3 +589,90 @@ def test_fallback_export_matches_optimum_cli(tmp_path):
     optimum_cli_result = LLMPipeline(optimum_cli_dir, "CPU").generate("Hello, my name is", config)
     assert genai_cli_result == optimum_cli_result
     assert (genai_cli_dir / "openvino_tokenizer.xml").is_file()
+
+
+# Installed as sitecustomize.py for the genai-cli processes of test_fallback_installs_optimum_intel_on_demand. The
+# optimum and optimum-intel of the test environment are hidden, as in an environment installed with
+# `pip install openvino-genai[export]` only: the `optimum` namespace package is only found in the genai-cli cache.
+# The process that runs the export records where its modules come from.
+_ENVIRONMENT_PROBE = """
+import atexit
+import importlib.machinery
+import json
+import os
+import sys
+
+_PROVIDED = os.environ["GENAI_CLI_TEST_PROVIDED"]
+
+
+class _OnlyProvidedOptimum:
+    def find_spec(self, name, path=None, target=None):
+        if name != "optimum":
+            return None  # the submodules are searched in optimum.__path__
+        provided = [entry for entry in sys.path if entry.startswith(_PROVIDED)]
+        spec = importlib.machinery.PathFinder.find_spec(name, provided)
+        if spec is None:
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+        # A namespace package path is recomputed from sys.path, keep the provided portions only.
+        spec.submodule_search_locations = list(spec.submodule_search_locations)
+        return spec
+
+
+sys.meta_path.insert(0, _OnlyProvidedOptimum())
+
+
+def _record_origins():
+    if "optimum.commands.optimum_cli" not in sys.modules:
+        return  # not the process that ran the export
+    origins = {}
+    for name in ("torch", "openvino", "nncf", "optimum.intel"):
+        module = sys.modules.get(name)
+        origins[name] = getattr(module, "__file__", None) or next(iter(getattr(module, "__path__", [])), None)
+    with open(os.environ["GENAI_CLI_TEST_ORIGINS"], "w", encoding="utf-8") as file:
+        json.dump(origins, file)
+
+
+atexit.register(_record_origins)
+"""
+
+
+def test_fallback_installs_optimum_intel_on_demand(tmp_path):
+    """Without optimum-intel, genai-cli installs it (and optimum) without dependencies into its cache and exports with
+    them, while torch, OpenVINO and NNCF still come from the environment genai-cli was started from."""
+    import huggingface_hub
+    import nncf
+    import openvino
+    import torch
+
+    probe_dir = tmp_path / "probe"
+    probe_dir.mkdir()
+    (probe_dir / "sitecustomize.py").write_text(_ENVIRONMENT_PROBE, encoding="utf-8")
+    origins_file = tmp_path / "origins.json"
+    cache_home = tmp_path / "cache"  # a clean genai-cli cache
+    provided = cache_home / "openvino_genai" / "genai-cli"
+    uv_cache = subprocess.run([uv_env.find_uv(), "cache", "dir"], capture_output=True, text=True, check=True)
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(filter(None, [str(probe_dir), os.environ.get("PYTHONPATH")])),
+        "GENAI_CLI_TEST_ORIGINS": str(origins_file),
+        "GENAI_CLI_TEST_PROVIDED": str(provided),
+        "XDG_CACHE_HOME": str(cache_home),
+        # XDG_CACHE_HOME moves the uv and Hugging Face caches as well, keep them.
+        "UV_CACHE_DIR": uv_cache.stdout.strip(),
+        "HF_HOME": str(huggingface_hub.constants.HF_HOME),
+    }
+    env.pop("GENAI_CLI_UV_OVERLAY", None)
+    output = tmp_path / "ov"
+    command = genai_cli_command(
+        "katuni4ka/tiny-random-phi3", output, ["--task", "text-generation-with-past", "--weight-format", "fp16"]
+    )
+    retry_request(partial(subprocess.run, command, env=env, check=True))
+
+    origins = json.loads(origins_file.read_text(encoding="utf-8"))
+    assert Path(origins["optimum.intel"]).is_relative_to(provided)
+    for name, module in (("torch", torch), ("openvino", openvino), ("nncf", nncf)):
+        assert Path(origins[name]) == Path(module.__file__), name
+    assert (output / "openvino_model.xml").is_file()
+    assert (output / "openvino_tokenizer.xml").is_file()
+    result = LLMPipeline(output, "CPU").generate("Hello, my name is", GenerationConfig(max_new_tokens=4))
+    assert isinstance(result, str)

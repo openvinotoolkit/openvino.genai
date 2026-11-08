@@ -4419,6 +4419,11 @@ def _molmo2_config_dir(molmo2_dir: Path, config_dir: Path, config_file: str, opt
     [
         ("preprocessor_config.json", {"overlap_margins": [2]}, "overlap_margins"),
         ("preprocessor_config.json", {"pooling_size": [2, -1]}, "pooling_size"),
+        # 2**32 + 2 would wrap around to 2 when narrowed to int.
+        ("preprocessor_config.json", {"pooling_size": [4294967298, 2]}, "pooling_size"),
+        ("preprocessor_config.json", {"pooling_size": [0, 2]}, "pooling_size"),
+        ("preprocessor_config.json", {"max_crops": 100000}, "max_crops"),
+        ("preprocessor_config.json", {"overlap_margins": [2147483647, 2147483647]}, "overlap_margins"),
         ("video_preprocessor_config.json", {"pooling_size": "3x3"}, "pooling_size"),
         ("video_preprocessor_config.json", {"sampling_fps": -2}, "sampling_fps"),
         ("video_preprocessor_config.json", {"num_frames": 0}, "num_frames"),
@@ -4432,6 +4437,53 @@ def test_molmo2_malformed_preprocessing_config_is_rejected(
     config_dir = _molmo2_config_dir(molmo2_dir, tmp_path / "config", config_file, options)
     with pytest.raises(RuntimeError, match=message):
         VLMPipeline(molmo2_models, Tokenizer(molmo2_dir), config_dir, "CPU")
+
+
+@pytest.mark.parametrize(
+    "config_file, options, media, message",
+    [
+        # The pixels are divided by image_std: a zero or negative value must not give non-finite vision inputs.
+        ("preprocessor_config.json", {"image_std": [0, 0.5, 0.5]}, "images", "image_std"),
+        ("preprocessor_config.json", {"image_std": [-0.5, 0.5, 0.5]}, "images", "image_std"),
+        ("video_preprocessor_config.json", {"image_std": [0.5, 0, 0.5]}, "videos", "image_std"),
+        # The tiny model crops have 27x27 patches.
+        ("preprocessor_config.json", {"pooling_size": [28, 2]}, "images", "pooling_size"),
+        ("video_preprocessor_config.json", {"pooling_size": [2, 28]}, "videos", "pooling_size"),
+        ("preprocessor_config.json", {"size": {"height": 1 << 20, "width": 1 << 20}}, "images", "input size"),
+    ],
+)
+def test_molmo2_invalid_preprocessing_config_is_rejected_when_encoding(
+    molmo2_dir: Path,
+    molmo2_models: dict,
+    tmp_path: Path,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+    config_file: str,
+    options: dict,
+    media: str,
+    message: str,
+):
+    # These limits depend on the base crop size, so they are checked when the media are preprocessed.
+    config_dir = _molmo2_config_dir(molmo2_dir, tmp_path / "config", config_file, options)
+    pipe = VLMPipeline(molmo2_models, Tokenizer(molmo2_dir), config_dir, "CPU")
+    inputs = {"images": [cat_tensor]} if media == "images" else {"videos": [synthetic_video_32x32_tensor]}
+    with pytest.raises(RuntimeError, match=message):
+        pipe.generate("Describe.", **inputs, generation_config=_molmo2_config())
+
+
+@pytest.mark.parametrize(
+    "media, shape",
+    [
+        ("images", (1, 1, 1, 1)),  # one byte: reading three channels would go out of bounds
+        ("images", (1, 8, 8, 4)),
+        ("images", (1, 0, 8, 3)),
+        ("videos", (2, 8, 8, 1)),
+    ],
+)
+def test_molmo2_non_rgb_media_are_rejected(molmo2_pipe: Callable[[str], VLMPipeline], media: str, shape: tuple):
+    tensor = openvino.Tensor(np.zeros(shape, dtype=np.uint8))
+    with pytest.raises(RuntimeError, match=r"non-empty u8 RGB tensor of shape \[1, H, W, 3\]"):
+        molmo2_pipe("PA").generate("Describe.", **{media: [tensor]}, generation_config=_molmo2_config())
 
 
 def test_molmo2_negative_video_fps_is_rejected(

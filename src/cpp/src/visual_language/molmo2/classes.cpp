@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <numeric>
 
 #include <nlohmann/json.hpp>
@@ -19,6 +20,24 @@
 
 namespace ov::genai {
 namespace {
+
+// Limits of the Molmo2 preprocessing options. With them every option and the crop arithmetic below fit in int.
+// select_tiling enumerates all tilings of at most max_crops crops.
+constexpr size_t kMaxCrops = 1024;
+// The base (crop) size in pixels; patch_size, overlap_margins and pooling_size are bounded by it.
+constexpr size_t kMaxCropSize = 4096;
+constexpr size_t kMaxInt = static_cast<size_t>(std::numeric_limits<int>::max());
+
+// The RGB image of a single image or video frame: a non-empty u8 tensor of shape [1, H, W, 3]. The resize reads three
+// channels of every pixel, so any other shape would make it read out of bounds.
+clip_image_u8 to_rgb_image(const ov::Tensor& tensor) {
+    const ov::Shape& shape = tensor.get_shape();
+    OPENVINO_ASSERT(tensor.get_element_type() == ov::element::u8 && shape.size() == 4 && shape[0] == 1 &&
+                        shape[1] > 0 && shape[2] > 0 && shape[3] == 3 && shape[1] <= kMaxInt && shape[2] <= kMaxInt,
+                    "Molmo2: an image or video frame must be a non-empty u8 RGB tensor of shape [1, H, W, 3], got ",
+                    tensor.get_element_type(), " ", shape);
+    return tensor_to_clip_image_u8(tensor);
+}
 
 // Faithful port of Molmo2ImageProcessor.select_tiling (image_processing_molmo2.py).
 // Divides an image of size [h, w] into up to max_num_crops tiles of size patch_size.
@@ -74,6 +93,17 @@ std::vector<float> resize_bilinear_norm(const std::vector<uint8_t>& src, int sh,
                                         int out_h, int out_w,
                                         const std::array<float, 3>& mean,
                                         const std::array<float, 3>& stdev) {
+    OPENVINO_ASSERT(sh > 0 && sw > 0 && src.size() == static_cast<size_t>(sh) * static_cast<size_t>(sw) * 3,
+                    "Molmo2 preprocessing: expected a non-empty RGB image of ", sh, "x", sw, " pixels, got ",
+                    src.size(), " bytes");
+    OPENVINO_ASSERT(out_h > 0 && out_w > 0, "Molmo2 preprocessing: invalid resize target ", out_h, "x", out_w);
+    for (size_t c = 0; c < 3; ++c) {
+        // The pixels are divided by image_std: a zero, negative or non-finite value gives invalid vision inputs.
+        OPENVINO_ASSERT(std::isfinite(mean[c]) && std::isfinite(stdev[c]) && stdev[c] > 0.0f,
+                        "Molmo2 preprocessing: image_mean must be finite and image_std finite and positive, got "
+                        "image_mean [", mean[0], ", ", mean[1], ", ", mean[2], "] and image_std [", stdev[0], ", ",
+                        stdev[1], ", ", stdev[2], "]");
+    }
     std::vector<float> out(static_cast<size_t>(out_h) * out_w * 3);
     const double scale_y = static_cast<double>(sh) / out_h;
     const double scale_x = static_cast<double>(sw) / out_w;
@@ -183,14 +213,37 @@ struct Molmo2Preprocessed {
     int n_patches = 0, pixels_per_patch = 0;
 };
 
+// The base (crop) size and patch size of an image or video processor config, checked before they are narrowed to int.
+struct CropGeometry {
+    int height;
+    int width;
+    int patch;
+};
+
+CropGeometry crop_geometry(const ProcessorConfig& cfg, const VisionEncoderMolmo2::PreprocessingOptions& options) {
+    OPENVINO_ASSERT(cfg.size_height >= 1 && cfg.size_height <= kMaxCropSize && cfg.size_width >= 1 &&
+                        cfg.size_width <= kMaxCropSize,
+                    "Molmo2 preprocessing: the input size [", cfg.size_height, ", ", cfg.size_width,
+                    "] must be in [1, ", kMaxCropSize, "]");
+    OPENVINO_ASSERT(cfg.patch_size >= 1 && cfg.patch_size <= std::min(cfg.size_height, cfg.size_width),
+                    "Molmo2 preprocessing: the input size [", cfg.size_height, ", ", cfg.size_width,
+                    "] must be at least one positive patch_size ", cfg.patch_size);
+    const size_t patches = std::min(cfg.size_height, cfg.size_width) / cfg.patch_size;
+    OPENVINO_ASSERT(options.pooling_h <= patches && options.pooling_w <= patches,
+                    "Molmo2 preprocessing: pooling_size [", options.pooling_h, ", ", options.pooling_w,
+                    "] must not exceed the ", patches, " patches of a crop");
+    return {static_cast<int>(cfg.size_height), static_cast<int>(cfg.size_width), static_cast<int>(cfg.patch_size)};
+}
+
 // Port of Molmo2 image_to_patches_and_grids (image branch). Produces the patchified crops, the
 // pooling indices, and the (low-res, high-res) pooled grids for a single image.
 Molmo2Preprocessed preprocess_molmo2_image(const clip_image_u8& img,
                                            const ProcessorConfig& cfg,
                                            const VisionEncoderMolmo2::PreprocessingOptions& options) {
-    const int base_h = static_cast<int>(cfg.size_height);
-    const int base_w = static_cast<int>(cfg.size_width);
-    const int patch = static_cast<int>(cfg.patch_size);
+    const CropGeometry geometry = crop_geometry(cfg, options);
+    const int base_h = geometry.height;
+    const int base_w = geometry.width;
+    const int patch = geometry.patch;
     OPENVINO_ASSERT(base_h == base_w, "Molmo2 expects a square base image input size");
     const int max_crops = static_cast<int>(options.max_crops);
     const int left_margin = static_cast<int>(options.overlap_margin_left);
@@ -205,6 +258,10 @@ Molmo2Preprocessed preprocess_molmo2_image(const clip_image_u8& img,
     OPENVINO_ASSERT(max_crops >= 1, "Molmo2 preprocessing: max_crops must be at least 1, got ", max_crops);
     const int crop_size = base_h;
     const int crop_patches = base_h / patch;          // e.g. 27
+    // Patch indices of the global crop and of all high-resolution crops are int.
+    OPENVINO_ASSERT(static_cast<size_t>(crop_patches) * crop_patches * (options.max_crops + 1) <= kMaxInt,
+                    "Molmo2 preprocessing: max_crops ", max_crops, " with crops of ", crop_patches, "x", crop_patches,
+                    " patches gives too many patches");
     // The margins are masked inside a crop, at least one patch of every crop must remain.
     OPENVINO_ASSERT(left_margin >= 0 && right_margin >= 0 && left_margin + right_margin < crop_patches,
                     "Molmo2 preprocessing: overlap_margins [", left_margin, ", ", right_margin,
@@ -493,33 +550,45 @@ bool has_value(const nlohmann::json& json, const char* key) {
     return json.is_object() && json.contains(key) && !json.at(key).is_null();
 }
 
-void read_size(const nlohmann::json& json, const char* key, size_t& value) {
+bool is_integer_in_range(const nlohmann::json& value, size_t min, size_t max) {
+    return value.is_number_unsigned() && value.get<uint64_t>() >= min && value.get<uint64_t>() <= max;
+}
+
+// Reads an integer in [min, max]: values outside would wrap around when narrowed to int.
+void read_size(const nlohmann::json& json, const char* key, size_t& value, size_t min, size_t max) {
     if (!has_value(json, key)) {
         return;
     }
-    OPENVINO_ASSERT(json.at(key).is_number_unsigned(),
-                    "Molmo2 preprocessing: '", key, "' must be a non-negative integer, got ", json.at(key).dump());
+    OPENVINO_ASSERT(is_integer_in_range(json.at(key), min, max),
+                    "Molmo2 preprocessing: '", key, "' must be an integer in [", min, ", ", max, "], got ",
+                    json.at(key).dump());
     value = json.at(key).get<size_t>();
 }
 
-// Reads a [first, second] pair of non-negative integers such as overlap_margins and pooling_size.
-void read_size_pair(const nlohmann::json& json, const char* key, size_t& first, size_t& second) {
+// Reads a [first, second] pair of integers in [min, max] such as overlap_margins and pooling_size.
+void read_size_pair(const nlohmann::json& json,
+                    const char* key,
+                    size_t& first,
+                    size_t& second,
+                    size_t min,
+                    size_t max) {
     if (!has_value(json, key)) {
         return;
     }
     const nlohmann::json& value = json.at(key);
-    OPENVINO_ASSERT(value.is_array() && value.size() == 2 && value.at(0).is_number_unsigned() &&
-                        value.at(1).is_number_unsigned(),
-                    "Molmo2 preprocessing: '", key, "' must be an array of two non-negative integers, got ", value.dump());
+    OPENVINO_ASSERT(value.is_array() && value.size() == 2 && is_integer_in_range(value.at(0), min, max) &&
+                        is_integer_in_range(value.at(1), min, max),
+                    "Molmo2 preprocessing: '", key, "' must be an array of two integers in [", min, ", ", max,
+                    "], got ", value.dump());
     first = value.at(0).get<size_t>();
     second = value.at(1).get<size_t>();
 }
 
 VisionEncoderMolmo2::PreprocessingOptions read_options(const nlohmann::json& json) {
     VisionEncoderMolmo2::PreprocessingOptions options;
-    read_size(json, "max_crops", options.max_crops);
-    read_size_pair(json, "overlap_margins", options.overlap_margin_left, options.overlap_margin_right);
-    read_size_pair(json, "pooling_size", options.pooling_h, options.pooling_w);
+    read_size(json, "max_crops", options.max_crops, 1, kMaxCrops);
+    read_size_pair(json, "overlap_margins", options.overlap_margin_left, options.overlap_margin_right, 0, kMaxCropSize);
+    read_size_pair(json, "pooling_size", options.pooling_h, options.pooling_w, 1, kMaxCropSize);
     return options;
 }
 
@@ -552,7 +621,7 @@ EncodedImage VisionEncoderMolmo2::encode(const ov::Tensor& image, const ov::AnyM
 
     ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
-    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
+    clip_image_u8 input_image = to_rgb_image(image);
     Molmo2Preprocessed pre = preprocess_molmo2_image(input_image, config, m_image_options);
 
     // build_batched_images for a single image (N == 1): add the batch dimension.
@@ -592,14 +661,12 @@ EncodedVideo VisionEncoderMolmo2::encode_frames(const std::vector<ov::Tensor>& f
     ov::InferRequest& encoder = infer_request_guard.get();
     const VideoProcessorConfig& config = m_video_processor_config;
 
-    const int base_h = static_cast<int>(config.size_height);
-    const int base_w = static_cast<int>(config.size_width);
-    const int patch = static_cast<int>(config.patch_size);
+    const CropGeometry geometry = crop_geometry(config, m_video_options);
+    const int base_h = geometry.height;
+    const int base_w = geometry.width;
+    const int patch = geometry.patch;
     const int pool_h = static_cast<int>(m_video_options.pooling_h);
     const int pool_w = static_cast<int>(m_video_options.pooling_w);
-    OPENVINO_ASSERT(patch > 0 && base_h >= patch && base_w >= patch,
-                    "Molmo2 video preprocessing: the frame size [", base_h, ", ", base_w,
-                    "] must be at least one positive patch_size ", patch);
     const int crop_patches_h = base_h / patch;
     const int crop_patches_w = base_w / patch;
     const size_t n_patches = static_cast<size_t>(crop_patches_h) * crop_patches_w;
@@ -617,7 +684,7 @@ EncodedVideo VisionEncoderMolmo2::encode_frames(const std::vector<ov::Tensor>& f
     std::vector<int64_t> pooled_idx;
     pooled_idx.reserve(frames.size() * frame_pool.size());
     for (size_t f = 0; f < frames.size(); ++f) {
-        clip_image_u8 frame = tensor_to_clip_image_u8(frames[f]);
+        clip_image_u8 frame = to_rgb_image(frames[f]);
         std::vector<float> resized = resize_bilinear_norm(frame.buf, frame.ny, frame.nx, base_h, base_w, config.image_mean, config.image_std);
         append_patches(resized, base_h, base_w, patch, pixel_values);
         const int64_t offset = static_cast<int64_t>(f * n_patches);
