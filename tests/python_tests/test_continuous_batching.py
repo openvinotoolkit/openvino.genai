@@ -12,6 +12,7 @@ import numpy as np
 
 from pathlib import Path
 from shutil import rmtree
+from huggingface_hub import snapshot_download
 from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
@@ -26,6 +27,7 @@ from openvino_genai import (
     GenerationStatus,
     StreamingStatus,
     ChatHistory,
+    Tokenizer,
 )
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
@@ -1699,6 +1701,53 @@ def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_d
     assert tree_accepted > 0
 
     del ov_pipe
+
+
+def _export_with_remote_code(model_id: str) -> Path:
+    model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(model_id)
+    AtomicDownloadManager(model_path).execute(
+        lambda temp_path: export_with_optimum_cli(
+            retry_request(lambda: snapshot_download(model_id)),
+            "text-generation-with-past",
+            temp_path,
+            trust_remote_code=True,
+        )
+    )
+    return model_path
+
+
+def test_eagle3_counts_the_tree_window_that_ends_a_request():
+    # The second token of the target stops each request, so the tree the target validates after the first token ends
+    # the request.
+    target_path = _export_with_remote_code("optimum-intel-internal-testing/tiny-random-qwen3-layer10")
+    draft_path = _export_with_remote_code("optimum-intel-internal-testing/tiny-random-qwen3-eagle3")
+    tokenizer = Tokenizer(target_path)
+    prompts = ["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada."]
+    input_ids = [tokenizer.encode(prompt).input_ids for prompt in prompts]
+    properties = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
+    main_only = ContinuousBatchingPipeline(target_path, SchedulerConfig(), "CPU", properties)
+    reference = [
+        result.m_generation_ids[0]
+        for result in main_only.generate(input_ids, [GenerationConfig(max_new_tokens=2)] * len(input_ids))
+    ]
+    configs = []
+    for tokens in reference:
+        config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=6, branching_factor=2, tree_depth=3)
+        config.stop_token_ids = {tokens[1]}
+        configs.append(config)
+    pipe = ContinuousBatchingPipeline(
+        target_path,
+        SchedulerConfig(),
+        "CPU",
+        {**properties, "draft_model": draft_model(draft_path, "CPU", **properties)},
+    )
+
+    results = pipe.generate(input_ids, configs)
+
+    assert [result.m_generation_ids[0] for result in results] == reference
+    metrics = results[0].extended_perf_metrics
+    assert metrics.get_num_draft_tokens() == len(input_ids) * 6
+    assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
 
 
 @pytest.fixture(scope="module")
