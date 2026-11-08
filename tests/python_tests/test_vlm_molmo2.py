@@ -333,6 +333,40 @@ def test_processor_config_options_change_visual_tokens(
     assert (changed > baseline) == more_tokens
 
 
+@pytest.mark.parametrize(
+    "media, option",
+    [
+        ("images", "use_single_crop_start_token"),  # <low_res_im_start> instead of <im_start> before the low-res crop
+        ("videos", "use_frame_special_tokens"),  # <frame_start> / <frame_end> instead of <im_start> / <im_end>
+    ],
+)
+def test_processor_config_options_change_visual_special_tokens(
+    molmo2_dir: Path,
+    molmo2_models: dict,
+    tmp_path: Path,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+    media: str,
+    option: str,
+):
+    # These processor_config.json options replace special tokens without changing their number. Greedy texts of the
+    # tiny model do not show the replacement, so the inputs are compared by beam search scores (log probabilities).
+    tokenizer = Tokenizer(molmo2_dir)
+    inputs = {"images": [cat_tensor]} if media == "images" else {"videos": [synthetic_video_32x32_tensor]}
+    beam_search = GenerationConfig(max_new_tokens=4, num_beams=2, num_return_sequences=1)
+
+    def generate(value: bool):
+        config_dir = _config_dir(molmo2_dir, tmp_path / f"{option}-{value}", "processor_config.json", {option: value})
+        pipe = VLMPipeline(molmo2_models, tokenizer, config_dir, "CPU", INFERENCE_PRECISION_HINT="f32")
+        return pipe.generate("Describe.", **inputs, generation_config=beam_search)
+
+    baseline = generate(False)
+    changed = generate(True)
+    assert changed.perf_metrics.get_num_input_tokens() == baseline.perf_metrics.get_num_input_tokens()
+    # The replaced token changes the scores by about 2e-4; identical inputs give identical scores.
+    assert changed.scores != pytest.approx(baseline.scores, abs=1e-5)
+
+
 def test_exported_language_model_matches_hugging_face(molmo2_dir: Path):
     """genai-cli rewrites the decoder blocks before torch.export (_patch_text_model_for_export) and builds the image
     attention mask in the graph: the exported language model must give the logits of the original Hugging Face decoder,
