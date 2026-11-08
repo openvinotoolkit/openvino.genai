@@ -167,7 +167,6 @@ def test_chat_reembeds_images_the_template_moves(
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_chat_recomputes_cached_images_when_an_image_is_added(
     molmo2_dir: Path,
-    molmo2_pipe: Callable[[str], VLMPipeline],
     backend: str,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
@@ -175,21 +174,26 @@ def test_chat_recomputes_cached_images_when_an_image_is_added(
 ):
     # The third image goes right after the first two, which stay in the cached prefix. Image tokens attend to each
     # other bidirectionally, so the cached states of the first two images must be computed again.
-    pipe = VLMPipeline(molmo2_dir, "CPU", ATTENTION_BACKEND=backend)
+    # The greedy texts of the tiny model do not depend on the image states: the second turn compares beam search scores
+    # (log probabilities) with the full history instead. f32 everywhere: the CPU plugin compresses the KV cache by
+    # default, which alone changes the scores of cached tokens.
+    properties = {"ATTENTION_BACKEND": backend, "KV_CACHE_PRECISION": "f32", "INFERENCE_PRECISION_HINT": "f32"}
+    beam_search = GenerationConfig(max_new_tokens=4, num_beams=2, num_return_sequences=1)
+    pipe = VLMPipeline(molmo2_dir, "CPU", **properties)
     history = ChatHistory()
     history.append({"role": "user", "content": "Compare."})
     first = pipe.generate(history, images=[cat_tensor, car_tensor], generation_config=_config()).texts[0]
     history.append({"role": "assistant", "content": first})
     history.append({"role": "user", "content": "And now?"})
-    second = pipe.generate(history, images=[handwritten_tensor], generation_config=_config())
+    second = pipe.generate(history, images=[handwritten_tensor], generation_config=beam_search)
 
     expected_layout = f"Image 1<|image|>Image 2<|image|>Image 3<|image|>User: Compare. {first}User: And now? Assistant:"
-    reference = molmo2_pipe(backend).generate(
-        expected_layout,
-        images=[cat_tensor, car_tensor, handwritten_tensor],
-        generation_config=_config(apply_chat_template=False),
+    beam_search.apply_chat_template = False
+    reference = VLMPipeline(molmo2_dir, "CPU", **properties).generate(
+        expected_layout, images=[cat_tensor, car_tensor, handwritten_tensor], generation_config=beam_search
     )
     assert second.texts == reference.texts
+    assert second.scores == pytest.approx(reference.scores, abs=1e-4)
 
 
 def _config_dir(molmo2_dir: Path, config_dir: Path, config_file: str, options: dict) -> Path:
