@@ -21,6 +21,7 @@
 #include "json_utils.hpp"
 #include "sampling/logit_processor.hpp"
 #include "sampling/logit_transformers.hpp"
+#include "sampling/sampler.hpp"
 #include "speech_generation/qwen3_tts/mel_preprocess.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_utils.hpp"
 #include "utils.hpp"
@@ -783,72 +784,7 @@ int64_t Qwen3TTSCodecEngine::sample_token_from_logits(const ov::Tensor& logits,
         return greedy_pick();
     }
 
-    auto sample_from_probs = [&](const std::vector<float>& probs,
-                                 const std::vector<int64_t>& token_ids) -> int64_t {
-        OPENVINO_ASSERT(!probs.empty() && probs.size() == token_ids.size(),
-                        "Invalid probability vector for sampling");
-        std::discrete_distribution<size_t> dist(probs.begin(), probs.end());
-        return token_ids[dist(rng)];
-    };
-
-    if (logits_view.m_defer_expf) {
-        OPENVINO_ASSERT(logits_view.is_vector_initialized(),
-                        "defer_expf path requires initialized logits vector");
-        float max_val = logits_view.m_vector[0].m_log_prob;
-        for (size_t i = 1; i < logits_view.m_size; ++i) {
-            max_val = std::max(max_val, logits_view.m_vector[i].m_log_prob);
-        }
-
-        std::vector<float> weights;
-        std::vector<int64_t> ids;
-        weights.reserve(logits_view.m_size);
-        ids.reserve(logits_view.m_size);
-        float sum_w = 0.0f;
-        for (size_t i = 0; i < logits_view.m_size; ++i) {
-            float w = std::exp(logits_view.m_vector[i].m_log_prob - max_val);
-            if (!std::isfinite(w) || w < 0.0f) {
-                w = 0.0f;
-            }
-            weights.push_back(w);
-            ids.push_back(logits_view.m_vector[i].m_index);
-            sum_w += w;
-        }
-
-        if (!(sum_w > 0.0f && std::isfinite(sum_w))) {
-            return ids.empty() ? greedy_pick() : ids.front();
-        }
-        return sample_from_probs(weights, ids);
-    }
-
-    std::vector<float> probs;
-    std::vector<int64_t> ids;
-    if (logits_view.is_vector_initialized()) {
-        probs.reserve(logits_view.m_size);
-        ids.reserve(logits_view.m_size);
-        for (size_t i = 0; i < logits_view.m_size; ++i) {
-            const auto& t = logits_view.m_vector[i];
-            if (std::isfinite(t.m_log_prob) && t.m_log_prob > 0.0f) {
-                probs.push_back(t.m_log_prob);
-                ids.push_back(t.m_index);
-            }
-        }
-    } else {
-        probs.reserve(vocab);
-        ids.reserve(vocab);
-        for (size_t i = 0; i < vocab; ++i) {
-            const float p = scores[i];
-            if (std::isfinite(p) && p > 0.0f) {
-                probs.push_back(p);
-                ids.push_back(static_cast<int64_t>(i));
-            }
-        }
-    }
-
-    if (probs.empty()) {
-        return greedy_pick();
-    }
-
-    return sample_from_probs(probs, ids);
+    return ov::genai::sample_multinomial(logits_view, 1, rng).front().m_index;
 }
 
 std::vector<int64_t> Qwen3TTSCodecEngine::generate_codec_groups(const ov::Tensor& past_hidden,
