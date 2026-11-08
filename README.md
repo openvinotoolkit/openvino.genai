@@ -51,6 +51,11 @@ Explore blogs to setup your first hands-on experience with OpenVINO GenAI:
     ```sh
     optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --weight-format int4 --trust-remote-code TinyLlama_1_1b_v1_ov
     ```
+    Alternatively, use `genai-cli` (**preview**), the export tool shipped with OpenVINO GenAI. It takes the same options as `optimum-cli export openvino`, natively converts models that `optimum-cli` does not support yet (e.g. Molmo2), and exports all other models through `optimum-intel` (see [Converting Models with genai-cli](https://openvinotoolkit.github.io/openvino.genai/docs/guides/model-preparation/convert-to-openvino#genai-cli)):
+    ```sh
+    pip install openvino-genai[export]
+    genai-cli export -m TinyLlama/TinyLlama-1.1B-Chat-v1.0 --weight-format int4 TinyLlama_1_1b_v1_ov
+    ```
 3. Run inference:
     ```python
     import openvino_genai as ov_genai
@@ -97,6 +102,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 
 - [OpenVINO Generative AI workflow](https://docs.openvino.ai/2026/openvino-workflow-generative.html)
 - [Optimum Intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
+- [genai-cli (preview): model export with OpenVINO GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/guides/model-preparation/convert-to-openvino#genai-cli)
 - [OpenVINO Notebooks with GenAI](https://openvinotoolkit.github.io/openvino_notebooks/?libraries=OpenVINO+GenAI)
 
 ## License
