@@ -421,7 +421,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
 
         const auto template_start = std::chrono::steady_clock::now();
-        std::string templated_history = m_inputs_embedder->apply_chat_template(m_history, true);
+        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
         PerfMetrics::emplace_duration(vlm_perf_metrics[0].raw_metrics.chat_template_durations, template_start);
 
         m_inputs_embedder->set_prompt_formatting(PromptFormatting::AlreadyTemplated);
@@ -705,7 +705,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                processed_chat_data.audio_encoding_durations.end());
 
         const auto template_start = std::chrono::steady_clock::now();
-        std::string templated_history = m_inputs_embedder->apply_chat_template(
+        std::string templated_history = m_tokenizer.apply_chat_template(
             processed_chat_data.normalized_history,
             true
         );

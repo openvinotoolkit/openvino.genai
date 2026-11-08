@@ -7,7 +7,7 @@ Usage (from tests/python_tests, so that utils/tokenizers.py does not shadow the 
 
     python -m utils.molmo2_hf_parity <checkpoint dir> <OpenVINO model dir>
 
-The Molmo2 remote code needs the transformers version the native exporter pins, so test_vlm_molmo2 runs this script in
+The Molmo2 remote code needs the transformers version the native exporter pins, so test_vlm_pipeline runs this script in
 a uv overlay providing it. Both models get the same input embeddings: a prefill with text and image tokens (image tokens
 attend to each other bidirectionally) followed by cached decoding steps. Exits with an error if the logits differ.
 """

@@ -185,16 +185,18 @@ struct Molmo2Preprocessed {
 
 // Port of Molmo2 image_to_patches_and_grids (image branch). Produces the patchified crops, the
 // pooling indices, and the (low-res, high-res) pooled grids for a single image.
-Molmo2Preprocessed preprocess_molmo2_image(const clip_image_u8& img, const ProcessorConfig& cfg) {
+Molmo2Preprocessed preprocess_molmo2_image(const clip_image_u8& img,
+                                           const ProcessorConfig& cfg,
+                                           const VisionEncoderMolmo2::PreprocessingOptions& options) {
     const int base_h = static_cast<int>(cfg.size_height);
     const int base_w = static_cast<int>(cfg.size_width);
     const int patch = static_cast<int>(cfg.patch_size);
     OPENVINO_ASSERT(base_h == base_w, "Molmo2 expects a square base image input size");
-    const int max_crops = static_cast<int>(cfg.molmo2_max_crops);
-    const int left_margin = static_cast<int>(cfg.molmo2_overlap_margin_left);
-    const int right_margin = static_cast<int>(cfg.molmo2_overlap_margin_right);
-    const int pool_h = static_cast<int>(cfg.molmo2_pooling_h);
-    const int pool_w = static_cast<int>(cfg.molmo2_pooling_w);
+    const int max_crops = static_cast<int>(options.max_crops);
+    const int left_margin = static_cast<int>(options.overlap_margin_left);
+    const int right_margin = static_cast<int>(options.overlap_margin_right);
+    const int pool_h = static_cast<int>(options.pooling_h);
+    const int pool_w = static_cast<int>(options.pooling_w);
     const std::array<float, 3> mean = cfg.image_mean;
     const std::array<float, 3> stdev = cfg.image_std;
 
@@ -424,48 +426,125 @@ std::string expand_segments(const std::string& text, std::vector<char>& types) {
     return out;
 }
 
-// The Molmo2 chat template has no system role. Merges system messages into the next user message (a system message
-// without one becomes a user message) the way minja's system-role polyfill does for string contents.
-nlohmann::json merge_system_messages(const nlohmann::json& messages) {
-    nlohmann::json merged = nlohmann::json::array();
-    std::string pending_system;
-    auto prepend_pending_system = [&](nlohmann::json& content) {
-        const bool ends_with_text = content.is_array() && !content.empty() && content.back().is_object() &&
-                                    content.back().contains("text") && content.back().at("text").is_string();
-        if (content.is_string() || ends_with_text) {
-            nlohmann::json& text = content.is_string() ? content : content.back()["text"];
-            const std::string user_text = text.get<std::string>();
-            text = pending_system + (user_text.empty() ? "" : "\n" + user_text);
-        } else if (content.is_array()) {
-            content.insert(content.begin(), {{"type", "text"}, {"text", pending_system}});
-        } else {
-            content = pending_system;
-        }
-        pending_system.clear();
-    };
-    for (nlohmann::json message : messages) {
-        const std::string role = message.is_object() ? message.value("role", "") : "";
-        if (role == "system" && message.contains("content") && message.at("content").is_string()) {
-            pending_system += (pending_system.empty() ? "" : "\n") + message.at("content").get<std::string>();
-            continue;
-        }
-        if (!pending_system.empty()) {
-            if (role == "user") {
-                prepend_pending_system(message["content"]);
-            } else {
-                merged.push_back({{"role", "user"}, {"content", pending_system}});
-                pending_system.clear();
+// The checkpoint chat template, like Molmo2Processor, puts the media in front of the conversation: a single image as
+// "<|image|>", several images as "Image 1<|image|>Image 2<|image|>...", then a "<|video|>" per video. The pipelines
+// render the chat history with string contents, so the template does not see the media: the visual segments
+// normalize_prompt left in the user contents are moved to the same place instead.
+std::string place_media_like_chat_template(const std::string& rendered) {
+    auto [segments, text] = split_segments(rendered);
+    if (segments.empty()) {
+        return rendered;
+    }
+    const size_t num_images = static_cast<size_t>(
+        std::count_if(segments.begin(), segments.end(), [](const VisualSegment& segment) {
+            return segment.type == kImageSegment;
+        }));
+    std::string media;
+    size_t image_index = 0;
+    for (const VisualSegment& segment : segments) {
+        if (segment.type == kImageSegment) {
+            if (num_images > 1) {
+                media += "Image " + std::to_string(++image_index);
             }
+            media += wrap_segment(kImageSegment, segment.tokens);
         }
-        merged.push_back(std::move(message));
     }
-    if (!pending_system.empty()) {
-        merged.push_back({{"role", "user"}, {"content", pending_system}});
+    for (const VisualSegment& segment : segments) {
+        if (segment.type == kVideoSegment) {
+            media += wrap_segment(kVideoSegment, segment.tokens);
+        }
     }
-    return merged;
+    return media + text;
+}
+
+nlohmann::json read_json_if_exists(const std::filesystem::path& path) {
+    std::ifstream stream(path);
+    return stream.is_open() ? nlohmann::json::parse(stream) : nlohmann::json::object();
+}
+
+// processor_config.json and the image and video processor configs, taken from the files
+// VisionEncoder::resolve_processor_configs reads: nested in processor_config.json, or preprocessor_config.json and
+// video_preprocessor_config.json.
+struct ProcessorJsons {
+    nlohmann::json processor;
+    nlohmann::json image;
+    nlohmann::json video;
+};
+
+ProcessorJsons read_processor_jsons(const std::filesystem::path& config_dir) {
+    ProcessorJsons jsons;
+    jsons.processor = read_json_if_exists(config_dir / "processor_config.json");
+    jsons.image = jsons.processor.contains("image_processor")
+                      ? jsons.processor.at("image_processor")
+                      : read_json_if_exists(config_dir / "preprocessor_config.json");
+    if (jsons.processor.contains("video_processor")) {
+        jsons.video = jsons.processor.at("video_processor");
+    } else if (std::filesystem::exists(config_dir / "video_preprocessor_config.json")) {
+        jsons.video = read_json_if_exists(config_dir / "video_preprocessor_config.json");
+    } else {
+        jsons.video = jsons.image;
+    }
+    return jsons;
+}
+
+// The defaults are kept only when a key is absent (or null): a malformed value would silently change the crop or
+// image-token layout.
+bool has_value(const nlohmann::json& json, const char* key) {
+    return json.is_object() && json.contains(key) && !json.at(key).is_null();
+}
+
+void read_size(const nlohmann::json& json, const char* key, size_t& value) {
+    if (!has_value(json, key)) {
+        return;
+    }
+    OPENVINO_ASSERT(json.at(key).is_number_unsigned(),
+                    "Molmo2 preprocessing: '", key, "' must be a non-negative integer, got ", json.at(key).dump());
+    value = json.at(key).get<size_t>();
+}
+
+// Reads a [first, second] pair of non-negative integers such as overlap_margins and pooling_size.
+void read_size_pair(const nlohmann::json& json, const char* key, size_t& first, size_t& second) {
+    if (!has_value(json, key)) {
+        return;
+    }
+    const nlohmann::json& value = json.at(key);
+    OPENVINO_ASSERT(value.is_array() && value.size() == 2 && value.at(0).is_number_unsigned() &&
+                        value.at(1).is_number_unsigned(),
+                    "Molmo2 preprocessing: '", key, "' must be an array of two non-negative integers, got ", value.dump());
+    first = value.at(0).get<size_t>();
+    second = value.at(1).get<size_t>();
+}
+
+VisionEncoderMolmo2::PreprocessingOptions read_options(const nlohmann::json& json) {
+    VisionEncoderMolmo2::PreprocessingOptions options;
+    read_size(json, "max_crops", options.max_crops);
+    read_size_pair(json, "overlap_margins", options.overlap_margin_left, options.overlap_margin_right);
+    read_size_pair(json, "pooling_size", options.pooling_h, options.pooling_w);
+    return options;
 }
 
 } // namespace
+
+VisionEncoderMolmo2::VisionEncoderMolmo2(const std::filesystem::path& model_dir,
+                                         const std::string& device,
+                                         const ov::AnyMap properties)
+    : VisionEncoder(model_dir, device, properties) {
+    read_preprocessing_options(model_dir);
+}
+
+VisionEncoderMolmo2::VisionEncoderMolmo2(const ModelsMap& models_map,
+                                         const std::filesystem::path& config_dir_path,
+                                         const std::string& device,
+                                         const ov::AnyMap properties)
+    : VisionEncoder(models_map, config_dir_path, device, properties) {
+    read_preprocessing_options(config_dir_path);
+}
+
+void VisionEncoderMolmo2::read_preprocessing_options(const std::filesystem::path& config_dir) {
+    const ProcessorJsons jsons = read_processor_jsons(config_dir);
+    m_image_options = read_options(jsons.image);
+    m_video_options = read_options(jsons.video);
+}
 
 EncodedImage VisionEncoderMolmo2::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
@@ -474,7 +553,7 @@ EncodedImage VisionEncoderMolmo2::encode(const ov::Tensor& image, const ov::AnyM
     ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
-    Molmo2Preprocessed pre = preprocess_molmo2_image(input_image, config);
+    Molmo2Preprocessed pre = preprocess_molmo2_image(input_image, config, m_image_options);
 
     // build_batched_images for a single image (N == 1): add the batch dimension.
     ov::Tensor images_t(ov::element::f32, {1, static_cast<size_t>(pre.n_crops_total),
@@ -516,8 +595,8 @@ EncodedVideo VisionEncoderMolmo2::encode_frames(const std::vector<ov::Tensor>& f
     const int base_h = static_cast<int>(config.size_height);
     const int base_w = static_cast<int>(config.size_width);
     const int patch = static_cast<int>(config.patch_size);
-    const int pool_h = static_cast<int>(config.molmo2_pooling_h);
-    const int pool_w = static_cast<int>(config.molmo2_pooling_w);
+    const int pool_h = static_cast<int>(m_video_options.pooling_h);
+    const int pool_w = static_cast<int>(m_video_options.pooling_w);
     OPENVINO_ASSERT(patch > 0 && base_h >= patch && base_w >= patch,
                     "Molmo2 video preprocessing: the frame size [", base_h, ", ", base_w,
                     "] must be at least one positive patch_size ", patch);
@@ -592,35 +671,30 @@ InputsEmbedderMolmo2::InputsEmbedderMolmo2(
     }
 
 void InputsEmbedderMolmo2::read_molmo2_configs(const std::filesystem::path& config_dir) {
-    auto read_json = [&](const char* name) {
-        std::ifstream stream(config_dir / name);
-        return stream.is_open() ? nlohmann::json::parse(stream) : nlohmann::json::object();
-    };
     auto read = [](const nlohmann::json& json, const char* key, auto& value) {
-        if (json.contains(key) && !json.at(key).is_null()) {
+        if (has_value(json, key)) {
             value = json.at(key).get<std::decay_t<decltype(value)>>();
         }
     };
-    // Molmo2Processor saves its options in processor_config.json, the image processor config does not hold them.
-    const ProcessorConfig& image_config = m_vision_encoder->get_processor_config();
-    m_image_use_col_tokens = image_config.molmo2_image_use_col_tokens;
-    m_use_single_crop_col_tokens = image_config.molmo2_use_single_crop_col_tokens;
-    m_use_single_crop_start_token = image_config.molmo2_use_single_crop_start_token;
-    const nlohmann::json processor = read_json("processor_config.json");
-    read(processor, "image_use_col_tokens", m_image_use_col_tokens);
-    read(processor, "use_single_crop_start_token", m_use_single_crop_start_token);
-    if (processor.contains("use_single_crop_col_tokens") && !processor.at("use_single_crop_col_tokens").is_null()) {
-        m_use_single_crop_col_tokens = processor.at("use_single_crop_col_tokens").get<bool>() ? 1 : 0;
+    auto read_single_crop_col_tokens = [&](const nlohmann::json& json) {
+        if (has_value(json, "use_single_crop_col_tokens")) {
+            m_use_single_crop_col_tokens = json.at("use_single_crop_col_tokens").get<bool>() ? 1 : 0;
+        }
+    };
+    const ProcessorJsons jsons = read_processor_jsons(config_dir);
+    // Molmo2Processor saves its options in processor_config.json; values in the image processor config are kept as
+    // defaults.
+    for (const nlohmann::json* json : {&jsons.image, &jsons.processor}) {
+        read(*json, "image_use_col_tokens", m_image_use_col_tokens);
+        read(*json, "use_single_crop_start_token", m_use_single_crop_start_token);
+        read_single_crop_col_tokens(*json);
     }
-    read(processor, "video_use_col_tokens", m_video_use_col_tokens);
-    read(processor, "use_frame_special_tokens", m_use_frame_special_tokens);
-    // The video processor options are in video_preprocessor_config.json, or nested in processor_config.json the way
-    // VisionEncoder::resolve_processor_configs reads them.
-    const nlohmann::json video =
-        processor.contains("video_processor") ? processor.at("video_processor") : read_json("video_preprocessor_config.json");
+    read(jsons.processor, "video_use_col_tokens", m_video_use_col_tokens);
+    read(jsons.processor, "use_frame_special_tokens", m_use_frame_special_tokens);
+    const nlohmann::json& video = jsons.video;
     read(video, "frame_sample_mode", m_frame_sample_mode);
     // num_frames is checked as a JSON integer: converting a negative value to size_t would give a huge frame limit.
-    if (video.contains("num_frames") && !video.at("num_frames").is_null()) {
+    if (has_value(video, "num_frames")) {
         const nlohmann::json& num_frames = video.at("num_frames");
         OPENVINO_ASSERT(num_frames.is_number_unsigned() && num_frames.get<uint64_t>() > 0,
                         "Molmo2 video preprocessing: num_frames must be a positive integer, got ", num_frames.dump());
@@ -634,76 +708,6 @@ void InputsEmbedderMolmo2::read_molmo2_configs(const std::filesystem::path& conf
                     "Molmo2 video preprocessing: sampling_fps must be a positive number, got ", m_sampling_fps);
     OPENVINO_ASSERT(std::isfinite(m_max_fps),
                     "Molmo2 video preprocessing: max_fps must be a finite number, got ", m_max_fps);
-}
-
-std::string InputsEmbedderMolmo2::apply_chat_template(const ChatHistory& history, bool add_generation_prompt) {
-    // Turn the visual segments normalize_prompt put into user contents into typed content items, as Molmo2Processor
-    // passes media to the template.
-    nlohmann::json messages = nlohmann::json::parse(history.get_messages().to_json_string());
-    std::vector<VisualSegment> segments;  // in conversation order
-    for (nlohmann::json& message : messages) {
-        if (!message.is_object() || !message.contains("content") || !message.at("content").is_string()) {
-            continue;
-        }
-        auto [message_segments, text] = split_segments(message.at("content").get<std::string>());
-        if (message_segments.empty()) {
-            continue;
-        }
-        nlohmann::json content = nlohmann::json::array();
-        for (VisualSegment& segment : message_segments) {
-            content.push_back({{"type", segment.type == kImageSegment ? "image" : "video"}});
-            segments.push_back(std::move(segment));
-        }
-        content.push_back({{"type", "text"}, {"text", std::move(text)}});
-        message["content"] = std::move(content);
-    }
-    if (segments.empty()) {
-        return m_tokenizer.apply_chat_template(history, add_generation_prompt);
-    }
-    // Typed contents are rendered without minja's polyfills, which expect string contents.
-    ChatHistory typed_history(JsonContainer::from_json_string(merge_system_messages(messages).dump()));
-    typed_history.set_tools(history.get_tools());
-    typed_history.set_extra_context(history.get_extra_context());
-    const std::string rendered =
-        m_tokenizer.apply_chat_template(typed_history, add_generation_prompt, ov::genai::apply_polyfills(false));
-
-    // Replace the n-th image (video) placeholder the template emitted with the n-th image (video) segment.
-    const std::string& image_tag = m_vlm_config.image_token;
-    const std::string& video_tag = m_vlm_config.video_token;
-    std::vector<const VisualSegment*> images, videos;
-    for (const VisualSegment& segment : segments) {
-        (segment.type == kImageSegment ? images : videos).push_back(&segment);
-    }
-    std::string out;
-    size_t next_image = 0, next_video = 0, pos = 0;
-    while (true) {
-        const size_t image_pos = rendered.find(image_tag, pos);
-        const size_t video_pos = rendered.find(video_tag, pos);
-        const size_t found = std::min(image_pos, video_pos);
-        if (found == std::string::npos) {
-            break;
-        }
-        const bool is_image = found == image_pos;
-        std::vector<const VisualSegment*>& queue = is_image ? images : videos;
-        size_t& next = is_image ? next_image : next_video;
-        if (next == queue.size()) {
-            break;  // more placeholders than media, handled below
-        }
-        out.append(rendered, pos, found - pos);
-        out += wrap_segment(queue[next]->type, queue[next]->tokens);
-        ++next;
-        pos = found + (is_image ? image_tag : video_tag).size();
-    }
-    const bool all_placed = next_image == images.size() && next_video == videos.size() &&
-                            rendered.find(image_tag, pos) == std::string::npos &&
-                            rendered.find(video_tag, pos) == std::string::npos;
-    if (!all_placed) {
-        // The template does not emit one placeholder per typed media item: render string contents, the visual tokens
-        // stay where the placeholders were (Molmo2Processor expands placeholders in the text in place as well).
-        return m_tokenizer.apply_chat_template(history, add_generation_prompt);
-    }
-    out.append(rendered, pos, std::string::npos);
-    return out;
 }
 
 std::string InputsEmbedderMolmo2::build_image_tokens(size_t resized_h, size_t resized_w,
@@ -846,11 +850,16 @@ ov::Tensor InputsEmbedderMolmo2::apply_chat_template_tokenize(const std::string&
     bool apply_template = false;
     if (!m_is_chat_conversation && m_prompt_formatting == PromptFormatting::NeedsTemplate) {
         constexpr bool add_generation_prompt = true;
-        text = apply_chat_template(ChatHistory({{{"role", "user"}, {"content", prompt}}}), add_generation_prompt);
+        text = m_tokenizer.apply_chat_template(ChatHistory({{{"role", "user"}, {"content", prompt}}}),
+                                               add_generation_prompt);
         template_end_time = std::chrono::steady_clock::now();
         apply_template = true;
     }
-    // A chat history arrives rendered by apply_chat_template, raw prompts keep the visual tokens in place.
+    // A chat history arrives rendered by the pipeline with the chat template (AlreadyTemplated, or a chat conversation),
+    // raw prompts keep the visual tokens in place.
+    if (m_is_chat_conversation || m_prompt_formatting != PromptFormatting::Raw) {
+        text = place_media_like_chat_template(text);
+    }
     m_segment_types.clear();
     text = expand_segments(text, m_segment_types);
 

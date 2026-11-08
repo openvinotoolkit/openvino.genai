@@ -46,7 +46,6 @@
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/python/py_vlm_pipeline.cpp'
 - 'tests/python_tests/test_vlm_pipeline.py'
-- 'tests/python_tests/test_vlm_molmo2.py'
 
 'category: omni':
 - 'src/cpp/include/openvino/genai/omni/**/*'

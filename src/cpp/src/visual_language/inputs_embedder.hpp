@@ -131,9 +131,6 @@ public:
 
     void set_prompt_formatting(PromptFormatting prompt_formatting);
 
-    // renders a chat history whose user contents went through normalize_prompt
-    std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt);
-
     // finishes chat and clears a chat history
     void finish_chat();
 
@@ -309,12 +306,6 @@ private:
 
         void set_prompt_formatting(PromptFormatting prompt_formatting) {
             m_prompt_formatting = prompt_formatting;
-        }
-
-        /// Renders a chat history whose user contents went through normalize_prompt with the tokenizer chat
-        /// template. Models whose chat template places the media itself override it.
-        virtual std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt) {
-            return m_tokenizer.apply_chat_template(history, add_generation_prompt);
         }
 
         /**

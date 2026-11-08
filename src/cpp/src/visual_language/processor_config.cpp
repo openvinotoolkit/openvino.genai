@@ -7,24 +7,6 @@
 #include "json_utils.hpp"
 #include "utils.hpp"
 
-namespace {
-
-// Reads a [first, second] pair of non-negative integers such as Molmo2 overlap_margins and pooling_size. The defaults
-// are kept only when the key is absent (or null): a malformed value would silently change the crop or image-token
-// layout.
-void read_molmo2_pair(const nlohmann::json& parsed, const char* key, size_t& first, size_t& second) {
-    if (!parsed.contains(key) || parsed.at(key).is_null()) {
-        return;
-    }
-    const nlohmann::json& value = parsed.at(key);
-    OPENVINO_ASSERT(value.is_array() && value.size() == 2 && value.at(0).is_number_unsigned() &&
-                        value.at(1).is_number_unsigned(),
-                    "Processor config '", key, "' must be an array of two non-negative integers, got ", value.dump());
-    first = value.at(0).get<size_t>();
-    second = value.at(1).get<size_t>();
-}
-
-}  // namespace
 
 ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     using ov::genai::utils::read_json_param;
@@ -106,16 +88,6 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     // Setting mistral3 (pixtral) config params
     read_json_param(parsed, "size.longest_edge", longest_edge);
     OPENVINO_ASSERT(longest_edge > 0, "longest_edge must be positive, got ", longest_edge);
-
-    // Setting molmo2 config params
-    read_json_param(parsed, "max_crops", molmo2_max_crops);
-    read_json_param(parsed, "image_use_col_tokens", molmo2_image_use_col_tokens);
-    read_json_param(parsed, "use_single_crop_start_token", molmo2_use_single_crop_start_token);
-    read_molmo2_pair(parsed, "overlap_margins", molmo2_overlap_margin_left, molmo2_overlap_margin_right);
-    read_molmo2_pair(parsed, "pooling_size", molmo2_pooling_h, molmo2_pooling_w);
-    if (parsed.contains("use_single_crop_col_tokens") && !parsed.at("use_single_crop_col_tokens").is_null()) {
-        molmo2_use_single_crop_col_tokens = parsed.at("use_single_crop_col_tokens").get<bool>() ? 1 : 0;
-    }
 }
 
 ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path)

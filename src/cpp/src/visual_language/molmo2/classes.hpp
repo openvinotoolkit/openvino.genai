@@ -21,13 +21,37 @@ namespace ov::genai {
 /// exported vision backbone, which returns one embedding row per image token.
 class VisionEncoderMolmo2 : public VisionEncoder {
 public:
-    using VisionEncoder::VisionEncoder;
+    /// @brief Molmo2ImageProcessor / Molmo2VideoProcessor options the generic ProcessorConfig does not hold.
+    struct PreprocessingOptions {
+        /// @brief Maximum number of overlapping high-resolution crops per image (image processor only).
+        size_t max_crops = 8;
+        /// @brief Overlap margins (in patches) removed on each side when tiling crops (image processor only).
+        size_t overlap_margin_left = 4;
+        size_t overlap_margin_right = 4;
+        /// @brief Vision-adapter pooling window: the patches pooled into one image token.
+        size_t pooling_h = 2;
+        size_t pooling_w = 2;
+    };
+
+    VisionEncoderMolmo2(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+
+    VisionEncoderMolmo2(const ModelsMap& models_map,
+                        const std::filesystem::path& config_dir_path,
+                        const std::string& device,
+                        const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 
     /// @brief Encodes already sampled video frames: every frame is resized to a single base-size crop and pooled
     /// with the video pooling window (video_preprocessor_config.json), mirroring Molmo2VideoProcessor.
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
+
+private:
+    /// @brief Reads the options from the image and video processor configs VisionEncoder resolves.
+    void read_preprocessing_options(const std::filesystem::path& config_dir);
+
+    PreprocessingOptions m_image_options;
+    PreprocessingOptions m_video_options;
 };
 
 /// @brief Inputs embedder for the Molmo2 architecture.
@@ -82,13 +106,6 @@ public:
 
     NormalizedPrompt normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const override;
 
-    /// @brief Render a chat history with the checkpoint chat template, which is kept as exported. Like
-    /// Molmo2Processor, the media of every message are passed as typed content items, so the template decides where
-    /// their placeholders go (in front of the first "User:" turn, numbered "Image N" for several images); every
-    /// placeholder it emits is replaced by the visual tokens of the corresponding medium. A template that does not
-    /// emit one placeholder per medium renders string contents, the visual tokens then stay in place.
-    std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt) override;
-
     void update_chat_history(const std::string& decoded_results,
                              const ov::genai::GenerationStatus generation_finish_status) override;
 
@@ -97,7 +114,9 @@ public:
 protected:
     /// @brief Finishes the Molmo2 prompt layout once the prompt formatting is known (normalize_prompt runs before
     /// it is set), tokenizes it and prepends the BOS token before get_encoded_input_ids registers the sequence, so the
-    /// cache-state bookkeeping sees the exact embedded sequence.
+    /// cache-state bookkeeping sees the exact embedded sequence. In a text rendered by the chat template (a chat
+    /// history or a prompt that needs the template), the visual tokens are moved in front of the conversation the
+    /// way the checkpoint chat template places the media; raw prompts keep them in place.
     ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
 
 private:
@@ -120,7 +139,7 @@ private:
     /// new image tokens after them: bidirectional attention between image tokens changes the states of the cached ones.
     void drop_stale_cached_image_tokens(const ov::Tensor& input_ids);
 
-    /// @brief Molmo2Processor options from processor_config.json (the image processor config does not hold them).
+    /// @brief Molmo2Processor options from processor_config.json and the video sampling options.
     bool m_image_use_col_tokens = true;
     int m_use_single_crop_col_tokens = -1;  // -1: follow m_image_use_col_tokens
     bool m_use_single_crop_start_token = false;

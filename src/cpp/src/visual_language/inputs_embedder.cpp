@@ -603,10 +603,6 @@ void InputsEmbedder::set_prompt_formatting(PromptFormatting prompt_formatting) {
     m_impl->set_prompt_formatting(prompt_formatting);
 }
 
-std::string InputsEmbedder::apply_chat_template(const ChatHistory& history, bool add_generation_prompt) {
-    return m_impl->apply_chat_template(history, add_generation_prompt);
-}
-
 void InputsEmbedder::finish_chat() {
     m_impl->finish_chat();
 }
