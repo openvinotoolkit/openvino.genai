@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "sequence_group.hpp"
+#include "speculative_decoding/continuous_batching/dflash_candidate_selector.hpp"
 #include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
@@ -114,6 +115,11 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     const std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
     const ov::AnyMap draft_properties =
         draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
+    std::shared_ptr<dflash_cb::CandidateSelector> candidate_selector;
+    if (m_rt_info.markov_head_computation) {
+        candidate_selector = std::make_shared<dflash_cb::CandidateSelector>(m_rt_info, draft_device, draft_properties);
+        m_rt_info.markov_head_computation.reset();
+    }
 
     if (m_inputs_embedder) {
         m_main_pipeline = std::make_shared<ContinuousBatchingForDFlashDecodingImpl>(main_model,
@@ -133,7 +139,8 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                                                                                     draft_properties,
                                                                                     false,
                                                                                     m_rt_info.mask_token_id,
-                                                                                    m_rt_info.candidate_position_offset);
+                                                                                    m_rt_info.candidate_position_offset,
+                                                                                    candidate_selector);
     } else {
         m_main_pipeline = std::make_shared<ContinuousBatchingForDFlashDecodingImpl>(main_model,
                                                                                    m_tokenizer,
@@ -150,7 +157,8 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                                                                                     draft_properties,
                                                                                     false,
                                                                                     m_rt_info.mask_token_id,
-                                                                                    m_rt_info.candidate_position_offset);
+                                                                                    m_rt_info.candidate_position_offset,
+                                                                                    candidate_selector);
     }
     m_main_pipeline->set_hidden_state_export_needed(true);
 

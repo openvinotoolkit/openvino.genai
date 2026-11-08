@@ -6,6 +6,7 @@
 #include <chrono>
 #include <future>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 #include "sampling/sampler.hpp"
@@ -807,4 +808,150 @@ TEST(SamplerBlockSampling, samples_the_forwarded_candidates_of_a_partly_run_wind
 
     EXPECT_EQ(generated_ids(cut_in_block), (TokenIds{7, 20}));
     EXPECT_EQ(generated_ids(cut_at_seed), (TokenIds{7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}));
+}
+
+namespace {
+
+// A row source whose row after token t has its best logit at t + 1, and which has no row past position max_rows.
+// Its draw() returns drawn_tokens when there are any.
+class ChainRowSource : public BlockRowSource {
+public:
+    explicit ChainRowSource(bool position_major, size_t max_rows = DRAFT_VOCAB_SIZE)
+        : m_position_major(position_major),
+          m_max_rows(max_rows) {}
+
+    void prepare(const std::vector<SampledBlock>& blocks, const ov::Tensor&) override {
+        prepared = blocks;
+    }
+
+    bool is_position_major() const override {
+        return m_position_major;
+    }
+
+    void step(size_t position,
+              const std::vector<size_t>& blocks,
+              const std::vector<int64_t>& previous_tokens) override {
+        steps.push_back({position, blocks, previous_tokens});
+    }
+
+    std::optional<std::vector<BlockToken>> draw(size_t, const GenerationConfig&) const override {
+        if (drawn_tokens.empty()) {
+            return std::nullopt;
+        }
+        return drawn_tokens;
+    }
+
+    bool fill_row(size_t, size_t position, int64_t previous_token, float* row) const override {
+        if (position >= m_max_rows) {
+            return false;
+        }
+        std::fill_n(row, DRAFT_VOCAB_SIZE, 0.0f);
+        row[previous_token + 1] = 1.0f;
+        return true;
+    }
+
+    struct Step {
+        size_t position;
+        std::vector<size_t> blocks;
+        std::vector<int64_t> previous_tokens;
+    };
+
+    std::vector<SampledBlock> prepared;
+    std::vector<Step> steps;
+    std::vector<BlockToken> drawn_tokens;
+
+private:
+    bool m_position_major;
+    size_t m_max_rows;
+};
+
+}  // namespace
+
+TEST(SamplerBlockSampling, row_source_draws_every_token_from_the_row_after_the_token_before) {
+    Sampler sampler(2);
+    auto source = std::make_shared<ChainRowSource>(false);
+    sampler.set_block_sampling(1, source);
+    auto first = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 8, 3);
+    // the target validates one candidate of the second block
+    auto second = make_dflash_draft_group(1,
+                                          2,
+                                          {5, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN},
+                                          6,
+                                          3,
+                                          /*max_new_tokens=*/3);
+
+    const auto output = sampler.sample({first, second}, make_candidate_logits({0, 0, 0, 0, 0, 0}), false, false);
+
+    EXPECT_EQ(generated_ids(first), (TokenIds{7, 8, 9, 10}));
+    EXPECT_EQ(generated_ids(second), (TokenIds{5, 6}));
+    EXPECT_EQ(output.num_generated_tokens, 4);
+    ASSERT_EQ(source->prepared.size(), 2);
+    EXPECT_EQ(source->prepared[0].anchor_token, 7);
+    EXPECT_EQ(source->prepared[0].first_row, 0);
+    EXPECT_EQ(source->prepared[0].num_rows, 3);
+    EXPECT_EQ(source->prepared[0].num_candidates, 3);
+    EXPECT_EQ(source->prepared[1].anchor_token, 5);
+    EXPECT_EQ(source->prepared[1].first_row, 3);
+    EXPECT_EQ(source->prepared[1].num_rows, 3);
+    EXPECT_EQ(source->prepared[1].num_candidates, 1);
+    EXPECT_TRUE(source->steps.empty());
+}
+
+TEST(SamplerBlockSampling, position_major_row_source_steps_the_blocks_that_still_draw) {
+    Sampler sampler(2);
+    auto source = std::make_shared<ChainRowSource>(true);
+    sampler.set_block_sampling(1, source);
+    auto first = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 8, 3);
+    auto second = make_dflash_draft_group(1,
+                                          2,
+                                          {5, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN},
+                                          6,
+                                          3,
+                                          /*max_new_tokens=*/3);
+
+    sampler.sample({first, second}, make_candidate_logits({0, 0, 0, 0, 0, 0}), false, false);
+
+    EXPECT_EQ(generated_ids(first), (TokenIds{7, 8, 9, 10}));
+    EXPECT_EQ(generated_ids(second), (TokenIds{5, 6}));
+    ASSERT_EQ(source->steps.size(), 3);
+    EXPECT_EQ(source->steps[0].blocks, (std::vector<size_t>{0, 1}));
+    EXPECT_EQ(source->steps[0].previous_tokens, (std::vector<int64_t>{7, 5}));
+    EXPECT_EQ(source->steps[1].blocks, (std::vector<size_t>{0}));
+    EXPECT_EQ(source->steps[1].previous_tokens, (std::vector<int64_t>{8}));
+    EXPECT_EQ(source->steps[2].position, 2);
+    EXPECT_EQ(source->steps[2].previous_tokens, (std::vector<int64_t>{9}));
+}
+
+TEST(SamplerBlockSampling, row_source_ends_a_block_at_a_position_without_a_row) {
+    for (const bool position_major : {false, true}) {
+        Sampler sampler;
+        auto source = std::make_shared<ChainRowSource>(position_major, 2);
+        sampler.set_block_sampling(1, source);
+        auto group = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 8, 3);
+        // a window cut at the seed gathers no row, so the source does not see it
+        auto cut_at_seed =
+            make_dflash_draft_group(1, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 5, 0);
+
+        const auto output = sampler.sample({group, cut_at_seed}, make_candidate_logits({0, 0, 0}), false, false);
+
+        EXPECT_EQ(generated_ids(group), (TokenIds{7, 8, 9}));
+        EXPECT_EQ(output.num_generated_tokens_per_request.at(0), 2);
+        EXPECT_EQ(generated_ids(cut_at_seed), (TokenIds{7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}));
+        EXPECT_EQ(source->prepared.size(), 1);
+    }
+}
+
+TEST(SamplerBlockSampling, row_source_appends_the_tokens_it_draws_for_a_whole_block) {
+    Sampler sampler;
+    auto source = std::make_shared<ChainRowSource>(false);
+    source->drawn_tokens = {{21, -0.5f}, {30, 0.0f}};
+    sampler.set_block_sampling(1, source);
+    auto group = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 8, 3);
+
+    const auto output = sampler.sample({group}, make_candidate_logits({0, 0, 0}), false, false);
+
+    const auto sequence = group->get_running_sequences().front();
+    EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{7, 21, 30}));
+    EXPECT_FLOAT_EQ(sequence->get_generated_log_probs()[1], -0.5f);
+    EXPECT_EQ(output.num_generated_tokens_per_request.at(0), 2);
 }
