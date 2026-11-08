@@ -73,7 +73,8 @@ def main(checkpoint: str, ov_dir: str) -> None:
         )["logits"]
         max_diff = float(np.abs(ov_logits - hf_out.logits.numpy()).max())
         print(f"tokens [{start}, {end}): max abs logits difference {max_diff:.2e}")
-        if max_diff > _ATOL:
+        # NaN (non-finite logits in either model) compares false with the tolerance, so it is rejected explicitly.
+        if not np.isfinite(max_diff) or max_diff > _ATOL:
             sys.exit(f"The OpenVINO logits of tokens [{start}, {end}) differ from Hugging Face by {max_diff}")
 
 
