@@ -67,9 +67,15 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                         !draft_model_desc.scheduler_config.use_cache_eviction,
                     "DFlash speculative decoding does not support cache eviction.");
     const std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
+    const bool draft_inherits_target_properties = draft_model_desc.properties.empty();
     // PagedAttention is the only DFlash draft backend.
     auto [draft_properties, draft_attention_backend] = utils::extract_attention_backend(
-        draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties);
+        draft_inherits_target_properties ? main_model_desc.properties : draft_model_desc.properties);
+    if (draft_inherits_target_properties) {
+        // The target's model path keys its model cache in place of its weights, so drafts that differ only in their
+        // weights would share a cached blob.
+        draft_properties.erase(ov::cache_model_path.name());
+    }
     OPENVINO_ASSERT(draft_attention_backend == PA_BACKEND,
                     "DFlash drafts run on PagedAttention only; the draft ATTENTION_BACKEND must be '",
                     PA_BACKEND,
