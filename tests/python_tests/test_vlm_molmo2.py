@@ -2,10 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Molmo2: the prompt layout (the exported checkpoint chat template places the media, as Molmo2Processor does), the
-Molmo2Processor options read from processor_config.json, and the export options of the native genai-cli exporter."""
+Molmo2Processor options read from processor_config.json, chat with cached images, and the native genai-cli exporter
+(numerical parity with the Hugging Face decoder and the export options)."""
 
 import json
+import os
 import shutil
+import subprocess  # nosec B404
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,6 +18,8 @@ import openvino
 import pytest
 from huggingface_hub import snapshot_download
 from openvino_genai import ChatHistory, GenerationConfig, Tokenizer, VLMPipeline
+from openvino_genai._cli import uv_env
+from openvino_genai._cli.exporters.molmo2 import Molmo2Exporter
 
 from test_vlm_pipeline import (  # noqa: F401 (fixtures)
     MODEL_MOLMO2,
@@ -21,6 +27,7 @@ from test_vlm_pipeline import (  # noqa: F401 (fixtures)
     car_tensor,
     cat_image,
     cat_tensor,
+    handwritten_tensor,
     synthetic_video,
     synthetic_video_32x32,
     synthetic_video_32x32_tensor,
@@ -157,6 +164,64 @@ def test_chat_reembeds_images_the_template_moves(
     assert second == reference.texts
 
 
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_chat_recomputes_cached_images_when_an_image_is_added(
+    molmo2_dir: Path,
+    molmo2_pipe: Callable[[str], VLMPipeline],
+    backend: str,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    handwritten_tensor: openvino.Tensor,
+):
+    # The third image goes right after the first two, which stay in the cached prefix. Image tokens attend to each
+    # other bidirectionally, so the cached states of the first two images must be computed again.
+    pipe = VLMPipeline(molmo2_dir, "CPU", ATTENTION_BACKEND=backend)
+    history = ChatHistory()
+    history.append({"role": "user", "content": "Compare."})
+    first = pipe.generate(history, images=[cat_tensor, car_tensor], generation_config=_config()).texts[0]
+    history.append({"role": "assistant", "content": first})
+    history.append({"role": "user", "content": "And now?"})
+    second = pipe.generate(history, images=[handwritten_tensor], generation_config=_config())
+
+    expected_layout = f"Image 1<|image|>Image 2<|image|>Image 3<|image|>User: Compare. {first}User: And now? Assistant:"
+    reference = molmo2_pipe(backend).generate(
+        expected_layout,
+        images=[cat_tensor, car_tensor, handwritten_tensor],
+        generation_config=_config(apply_chat_template=False),
+    )
+    assert second.texts == reference.texts
+
+
+def _config_dir(molmo2_dir: Path, config_dir: Path, config_file: str, options: dict) -> Path:
+    """A copy of the configuration files of the model with ``options`` set in ``config_file``."""
+    config_dir.mkdir()
+    for file in molmo2_dir.iterdir():
+        if file.is_file() and file.suffix not in (".xml", ".bin"):
+            shutil.copy(file, config_dir)
+    config = json.loads((config_dir / config_file).read_text(encoding="utf-8"))
+    config.update(options)
+    (config_dir / config_file).write_text(json.dumps(config), encoding="utf-8")
+    return config_dir
+
+
+@pytest.mark.parametrize(
+    "config_file, options, message",
+    [
+        ("preprocessor_config.json", {"overlap_margins": [2]}, "overlap_margins"),
+        ("preprocessor_config.json", {"pooling_size": [2, -1]}, "pooling_size"),
+        ("video_preprocessor_config.json", {"pooling_size": "3x3"}, "pooling_size"),
+        ("video_preprocessor_config.json", {"sampling_fps": -2}, "sampling_fps"),
+        ("video_preprocessor_config.json", {"num_frames": 0}, "num_frames"),
+    ],
+)
+def test_malformed_preprocessing_config_is_rejected(
+    molmo2_dir: Path, molmo2_models: dict, tmp_path: Path, config_file: str, options: dict, message: str
+):
+    config_dir = _config_dir(molmo2_dir, tmp_path / "config", config_file, options)
+    with pytest.raises(RuntimeError, match=message):
+        VLMPipeline(molmo2_models, Tokenizer(molmo2_dir), config_dir, "CPU")
+
+
 @pytest.mark.parametrize(
     "option, value, more_tokens",
     [
@@ -176,14 +241,8 @@ def test_processor_config_options_change_image_tokens(
     tokenizer = Tokenizer(molmo2_dir)
 
     def num_input_tokens(processor_options: dict) -> int:
-        config_dir = tmp_path / ("-".join(f"{key}-{val}" for key, val in processor_options.items()) or "defaults")
-        config_dir.mkdir()
-        for file in molmo2_dir.iterdir():
-            if file.is_file() and file.suffix not in (".xml", ".bin"):
-                shutil.copy(file, config_dir)
-        processor = json.loads((config_dir / "processor_config.json").read_text(encoding="utf-8"))
-        processor.update(processor_options)
-        (config_dir / "processor_config.json").write_text(json.dumps(processor), encoding="utf-8")
+        name = "-".join(f"{key}-{val}" for key, val in processor_options.items()) or "defaults"
+        config_dir = _config_dir(molmo2_dir, tmp_path / name, "processor_config.json", processor_options)
         pipe = VLMPipeline(molmo2_models, tokenizer, config_dir, "CPU")
         result = pipe.generate("Describe.", images=[cat_tensor], generation_config=_config())
         return result.perf_metrics.get_num_input_tokens()
@@ -194,6 +253,28 @@ def test_processor_config_options_change_image_tokens(
     changed = num_input_tokens({**base, option: value})
     assert changed != baseline
     assert (changed > baseline) == more_tokens
+
+
+def test_exported_language_model_matches_hugging_face(molmo2_dir: Path):
+    """genai-cli rewrites the decoder blocks before torch.export (_patch_text_model_for_export) and builds the image
+    attention mask in the graph: the exported language model must give the logits of the original Hugging Face decoder,
+    for a prefill with text and image tokens and for cached decoding."""
+    checkpoint = retry_request(lambda: snapshot_download(MODEL_MOLMO2))
+    command = ["python", "-m", "utils.molmo2_hf_parity", checkpoint, str(molmo2_dir)]
+    requirement = f"transformers=={Molmo2Exporter.TRANSFORMERS_VERSION}"
+    env = dict(os.environ)
+    if uv_env.is_satisfied(requirement):
+        command[0] = sys.executable
+    else:
+        # The Molmo2 remote code needs the transformers version of the exporter: provide it like genai-cli does.
+        uv_command = [uv_env.find_uv(), "run", "--no-project", "--with", requirement]
+        if sys.prefix != sys.base_prefix:
+            env["VIRTUAL_ENV"] = sys.prefix
+            uv_command.append("--active")
+        else:
+            uv_command += ["--python", sys.executable]
+        command = uv_command + command
+    subprocess.run(command, cwd=Path(__file__).parent, env=env, check=True)
 
 
 def _weight_types(xml: Path) -> set[str]:

@@ -15,6 +15,7 @@ so the user's virtual environment is never modified.
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -36,6 +37,30 @@ def installed_version(distribution: str) -> str | None:
         return metadata.version(distribution)
     except metadata.PackageNotFoundError:
         return None
+
+
+def installed_requirement(distribution: str) -> str | None:
+    """The requirement that reproduces the installed ``distribution``, None if it is not installed.
+
+    Distributions installed from a direct URL (a Git commit, a local checkout or an archive, recorded in
+    ``direct_url.json`` as specified by PEP 610) give ``name @ url``, so that a resolver gets the same sources instead of
+    looking the version up in an index; other distributions give ``name==version``.
+    """
+    try:
+        dist = metadata.distribution(distribution)
+    except metadata.PackageNotFoundError:
+        return None
+    direct_url = dist.read_text("direct_url.json")
+    if not direct_url:
+        return f"{distribution}=={dist.version}"
+    info = json.loads(direct_url)
+    url = info["url"]
+    vcs_info = info.get("vcs_info")
+    if vcs_info is not None:
+        url = f"{vcs_info['vcs']}+{url}@{vcs_info['commit_id']}"
+    if info.get("subdirectory"):
+        url += f"#subdirectory={info['subdirectory']}"
+    return f"{distribution} @ {url}"
 
 
 def is_satisfied(requirement: str) -> bool:
@@ -93,7 +118,9 @@ def compile_requirements(requirements: list[str], exclude: Iterable[str] = ()) -
         raise RuntimeError(f"uv cannot resolve {requirements}:\n{result.stderr}")
     pins = {}
     for line in result.stdout.splitlines():
-        line = line.split("#")[0].strip()
+        # A comment starts at a `#` at the beginning of the line or after whitespace; `#` inside a URL starts a
+        # fragment (e.g. `#sha256=...` or `#subdirectory=...`) that is part of the requirement.
+        line = re.split(r"(?:^|\s)#", line, maxsplit=1)[0].strip()
         if line and not line.startswith("-"):
             pins[_normalize(Requirement(line).name)] = line
     return pins

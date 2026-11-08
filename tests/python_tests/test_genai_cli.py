@@ -46,8 +46,8 @@ def test_fallback_to_optimum_intel_for_non_native_models(tmp_path, monkeypatch, 
     argv = ["export", "-m", str(model_dir), "--weight-format", weight_format, str(tmp_path / "out")]
 
     assert cli_main.main(argv) == 0
-    model_type, task, export_argv, full_argv = calls[0]
-    assert (model_type, task) == ("qwen2", "auto")
+    model_config, task, export_argv, full_argv = calls[0]
+    assert (model_config, task) == ({"model_type": "qwen2"}, "auto")
     # Everything after `export` is forwarded to `optimum-cli export openvino` unchanged.
     assert export_argv == argv[1:]
     assert full_argv == argv
@@ -129,28 +129,37 @@ def test_fallback_keeps_optimum_intel_transformers_constraint_without_model_boun
             }
         ),
     )
-    monkeypatch.setattr(optimum_fallback, "_model_transformers_specifiers", lambda model_type, task: [])
+    monkeypatch.setattr(optimum_fallback, "_model_transformers_specifiers", lambda model_config, task: [])
     requirement = optimum_fallback._transformers_requirement(None, "auto")
     assert requirement is not None
     specifier = Requirement(requirement).specifier
     assert specifier.contains("5.5.4") and not specifier.contains("5.6.0") and not specifier.contains("4.44.0")
 
-    monkeypatch.setattr(optimum_fallback, "_model_transformers_specifiers", lambda model_type, task: ["<=4.57.6"])
-    specifier = Requirement(optimum_fallback._transformers_requirement("molmo2", "auto")).specifier
+    monkeypatch.setattr(optimum_fallback, "_model_transformers_specifiers", lambda model_config, task: ["<=4.57.6"])
+    specifier = Requirement(optimum_fallback._transformers_requirement({"model_type": "molmo2"}, "auto")).specifier
     assert specifier.contains("4.57.6") and not specifier.contains("5.0.0")
 
 
-def test_fallback_resolves_a_new_overlay_when_switching_transformers(monkeypatch):
-    """A transformers switch must not keep pins (e.g. huggingface-hub 1.x) of the previous overlay."""
+_OPTIMUM_INTEL_GIT = (
+    "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@20390257acb98993f99cdd3bf4df1c983eccadef"
+)
+
+
+@pytest.mark.parametrize("optimum_intel", ["optimum-intel==2.2.0", _OPTIMUM_INTEL_GIT])
+def test_fallback_resolves_a_new_overlay_when_switching_transformers(monkeypatch, optimum_intel):
+    """A transformers switch must not keep pins (e.g. huggingface-hub 1.x) of the previous overlay, and optimum-intel
+    installed from Git is resolved from the same commit."""
     compiled, captured = [], {}
     monkeypatch.setattr(
-        optimum_fallback, "installed_version", lambda name: {"optimum-intel": "2.2.0", "optimum": "2.1.0"}.get(name)
+        optimum_fallback,
+        "installed_requirement",
+        lambda name: {"optimum-intel": optimum_intel, "optimum": "optimum==2.1.0"}.get(name),
     )
 
     def fake_compile(requirements, exclude=()):
         compiled.append((requirements, set(exclude)))
         return {
-            "optimum-intel": "optimum-intel==2.2.0",
+            "optimum-intel": optimum_intel,
             "optimum": "optimum==2.1.0",
             "transformers": "transformers==4.57.6",
             "huggingface-hub": "huggingface-hub==0.36.2",
@@ -158,7 +167,7 @@ def test_fallback_resolves_a_new_overlay_when_switching_transformers(monkeypatch
 
     monkeypatch.setattr(optimum_fallback, "compile_requirements", fake_compile)
     overlay = optimum_fallback._overlay_for_transformers("transformers>=4.57,<4.58")
-    assert compiled[0][0] == ["optimum-intel==2.2.0", "optimum==2.1.0", "transformers>=4.57,<4.58"]
+    assert compiled[0][0] == [optimum_intel, "optimum==2.1.0", "transformers>=4.57,<4.58"]
     assert "torch" in compiled[0][1]
     assert sorted(overlay) == ["huggingface-hub==0.36.2", "transformers==4.57.6"]
 
@@ -251,6 +260,19 @@ def test_copy_model_files_skips_weights_and_in_place_export(tmp_path):
     assert (model_dir / "tokenizer.json").exists()
 
 
+def test_copy_model_files_keeps_new_irs_over_irs_of_a_previous_export(tmp_path):
+    model_dir = _checkpoint(tmp_path, "molmo2")
+    (model_dir / "openvino_language_model.xml").write_text("<previous export/>")
+    (model_dir / "openvino_language_model.bin").write_bytes(b"previous weights")
+    output = tmp_path / "out"
+    output.mkdir()
+    (output / "openvino_language_model.xml").write_text("<new export/>")
+
+    copy_model_files(model_dir, output)
+    assert (output / "openvino_language_model.xml").read_text() == "<new export/>"
+    assert sorted(path.name for path in output.iterdir()) == ["config.json", "openvino_language_model.xml"]
+
+
 def test_weight_compression_defaults():
     assert weight_compression_config_from_args(_export_args("-m", "m", "out")) is None
     assert weight_compression_config_from_args(_export_args("-m", "m", "--weight-format", "fp16", "out")) is None
@@ -323,14 +345,81 @@ def test_compression_options_reach_nncf(monkeypatch):
     assert captured["advanced_parameters"].group_size_fallback_mode == GroupSizeFallbackMode.ADJUST
 
 
+def _class_transformers_specifiers(config_cls) -> list[str]:
+    specifiers = [f">={config_cls.MIN_TRANSFORMERS_VERSION}"]
+    if getattr(config_cls, "MAX_TRANSFORMERS_VERSION", None) is not None:
+        specifiers.append(f"<={config_cls.MAX_TRANSFORMERS_VERSION}")
+    return specifiers
+
+
 def test_fallback_reads_model_transformers_bounds_from_optimum_intel():
     from optimum.exporters.openvino.model_configs import MiniCPMOpenVINOConfig
 
-    expected = [f">={MiniCPMOpenVINOConfig.MIN_TRANSFORMERS_VERSION}"]
-    if getattr(MiniCPMOpenVINOConfig, "MAX_TRANSFORMERS_VERSION", None) is not None:
-        expected.append(f"<={MiniCPMOpenVINOConfig.MAX_TRANSFORMERS_VERSION}")
-    assert optimum_fallback._model_transformers_specifiers("minicpm", "text-generation-with-past") == expected
-    assert optimum_fallback._model_transformers_specifiers("not-a-model-type", "auto") == []
+    specifiers = optimum_fallback._model_transformers_specifiers({"model_type": "minicpm"}, "text-generation-with-past")
+    assert specifiers == _class_transformers_specifiers(MiniCPMOpenVINOConfig)
+    assert optimum_fallback._model_transformers_specifiers({"model_type": "not-a-model-type"}, "auto") == []
+    assert optimum_fallback._model_transformers_specifiers(None, "auto") == []
+
+
+def test_fallback_reads_checkpoint_specific_transformers_bounds():
+    """optimum-intel narrows the bounds per checkpoint: Eagle3 drafts of VLMs need transformers<=4.57.6."""
+    from optimum.exporters.openvino.model_configs import LlamaOpenVINOConfig
+
+    llama = {"model_type": "llama", "architectures": ["LlamaForCausalLM"]}
+    eagle3_vlm = {"model_type": "llama", "architectures": ["LlamaForCausalLMEagle3"], "target_model_type": "qwen3_vl"}
+    task = "text-generation-with-past"
+    assert optimum_fallback._model_transformers_specifiers(llama, task) == _class_transformers_specifiers(
+        LlamaOpenVINOConfig
+    )
+    assert "<=4.57.6" in optimum_fallback._model_transformers_specifiers(eagle3_vlm, task)
+
+
+def test_installed_requirement_keeps_direct_url_provenance(tmp_path, monkeypatch):
+    def distribution(name: str, direct_url: dict | None = None) -> metadata.Distribution:
+        dist_info = tmp_path / f"{name}-2.2.0.dist-info"
+        dist_info.mkdir()
+        (dist_info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: 2.2.0\n")
+        if direct_url is not None:
+            (dist_info / "direct_url.json").write_text(json.dumps(direct_url))
+        return metadata.Distribution.at(dist_info)
+
+    dists = {
+        "from-index": distribution("from-index"),
+        "from-git": distribution(
+            "from-git",
+            {"url": "https://github.com/org/repo.git", "vcs_info": {"vcs": "git", "commit_id": "abc123"}},
+        ),
+        "from-checkout": distribution("from-checkout", {"url": "file:///src/repo", "dir_info": {"editable": True}}),
+    }
+
+    def fake_distribution(name):
+        if name not in dists:
+            raise metadata.PackageNotFoundError(name)
+        return dists[name]
+
+    monkeypatch.setattr(uv_env.metadata, "distribution", fake_distribution)
+    assert uv_env.installed_requirement("from-index") == "from-index==2.2.0"
+    assert uv_env.installed_requirement("from-git") == "from-git @ git+https://github.com/org/repo.git@abc123"
+    assert uv_env.installed_requirement("from-checkout") == "from-checkout @ file:///src/repo"
+    assert uv_env.installed_requirement("not-installed") is None
+
+
+def test_uv_compile_keeps_url_fragments(monkeypatch):
+    output = (
+        "# a comment line\n"
+        "packaging==24.2  # trailing comment\n"
+        "wheel-pkg @ https://example.com/wheel_pkg-1.0-py3-none-any.whl#sha256=0123abcd\n"
+        "vcs-pkg @ git+https://github.com/org/repo.git@abc123#subdirectory=python\n"
+    )
+    monkeypatch.setattr(uv_env, "find_uv", lambda: "uv")
+    monkeypatch.setattr(
+        uv_env.subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, output, "")
+    )
+    assert uv_env.compile_requirements(["anything"]) == {
+        "packaging": "packaging==24.2",
+        "wheel-pkg": "wheel-pkg @ https://example.com/wheel_pkg-1.0-py3-none-any.whl#sha256=0123abcd",
+        "vcs-pkg": "vcs-pkg @ git+https://github.com/org/repo.git@abc123#subdirectory=python",
+    }
 
 
 @pytest.mark.parametrize(

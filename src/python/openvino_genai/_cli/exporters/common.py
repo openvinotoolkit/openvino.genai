@@ -313,9 +313,18 @@ def save_submodel(
 
 
 def copy_model_files(src_dir: Path, output: Path) -> None:
-    """Copies configs, processor and tokenizer files of a checkpoint next to the IRs (everything but weights)."""
+    """Copies configs, processor and tokenizer files of a checkpoint next to the IRs (everything but weights).
+
+    OpenVINO IRs of a previous export in the checkpoint directory are not copied: their .xml files would replace the
+    IRs just exported while the matching .bin files are skipped as weights.
+    """
     for src in src_dir.iterdir():
-        if not src.is_file() or src.suffix in _WEIGHT_FILE_SUFFIXES or src.name in _WEIGHT_INDEX_FILES:
+        if (
+            not src.is_file()
+            or src.suffix in _WEIGHT_FILE_SUFFIXES
+            or src.suffix == ".xml"
+            or src.name in _WEIGHT_INDEX_FILES
+        ):
             continue
         dst = output / src.name
         if dst.exists() and dst.samefile(src):

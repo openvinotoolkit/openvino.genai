@@ -113,6 +113,13 @@ private:
     /// (video_preprocessor_config.json) options.
     void read_molmo2_configs(const std::filesystem::path& config_dir);
 
+    /// @brief Whether a token is an image or frame special token (token_type_ids == 1).
+    bool is_image_token(int64_t id) const;
+
+    /// @brief In a chat, drops the cached tokens from the first cached image token on when the tokenized text brings
+    /// new image tokens after them: bidirectional attention between image tokens changes the states of the cached ones.
+    void drop_stale_cached_image_tokens(const ov::Tensor& input_ids);
+
     /// @brief Molmo2Processor options from processor_config.json (the image processor config does not hold them).
     bool m_image_use_col_tokens = true;
     int m_use_single_crop_col_tokens = -1;  // -1: follow m_image_use_col_tokens
@@ -128,6 +135,8 @@ private:
 
     /// @brief Types of the visual segments (images / videos) of the last tokenized text, in token order.
     std::vector<char> m_segment_types;
+    /// @brief Number of "<im_patch>" tokens of the last tokenized text.
+    size_t m_num_patch_tokens = 0;
     /// @brief Vision features of the images / videos of the current conversation, in conversation order, and their
     /// state before the last get_inputs_embeds (restored when the pipeline drops a cancelled turn).
     std::vector<ov::Tensor> m_conversation_images;

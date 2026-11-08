@@ -339,6 +339,9 @@ std::vector<size_t> sample_frames(size_t total_frames, float fps, const std::str
         return out;
     };
     OPENVINO_ASSERT(mode == "uniform_last_frame", "Molmo2: unsupported frame_sample_mode '", mode, "'");
+    OPENVINO_ASSERT(num_frames > 0 && std::isfinite(fps) && fps > 0.0f && std::isfinite(max_fps),
+                    "Molmo2: invalid frame sampling parameters: num_frames ", num_frames, ", fps ", fps, ", max_fps ",
+                    max_fps);
     if (max_fps > 0.0f) {
         const double duration = static_cast<double>(total_frames) / fps;
         if (total_frames <= 2) {
@@ -611,11 +614,21 @@ void InputsEmbedderMolmo2::read_molmo2_configs(const std::filesystem::path& conf
     }
     read(processor, "video_use_col_tokens", m_video_use_col_tokens);
     read(processor, "use_frame_special_tokens", m_use_frame_special_tokens);
-    const nlohmann::json video = read_json("video_preprocessor_config.json");
+    // The video processor options are in video_preprocessor_config.json, or nested in processor_config.json the way
+    // VisionEncoder::resolve_processor_configs reads them.
+    const nlohmann::json video =
+        processor.contains("video_processor") ? processor.at("video_processor") : read_json("video_preprocessor_config.json");
     read(video, "frame_sample_mode", m_frame_sample_mode);
     read(video, "num_frames", m_num_frames);
     read(video, "max_fps", m_max_fps);
     read(video, "sampling_fps", m_sampling_fps);
+    // sample_frames divides by the frame rates and selects up to num_frames frames: invalid values would make it select
+    // no frames or never stop adding indices. A non-positive max_fps disables the frame rate limit.
+    OPENVINO_ASSERT(m_num_frames > 0, "Molmo2 video preprocessing: num_frames must be positive, got ", m_num_frames);
+    OPENVINO_ASSERT(std::isfinite(m_sampling_fps) && m_sampling_fps > 0.0f,
+                    "Molmo2 video preprocessing: sampling_fps must be a positive number, got ", m_sampling_fps);
+    OPENVINO_ASSERT(std::isfinite(m_max_fps),
+                    "Molmo2 video preprocessing: max_fps must be a finite number, got ", m_max_fps);
 }
 
 std::string InputsEmbedderMolmo2::apply_chat_template(const ChatHistory& history, bool add_generation_prompt) {
@@ -744,6 +757,8 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderMolmo2::encode_videos(const s
     for (size_t i = 0; i < videos.size(); ++i) {
         const size_t total_frames = videos[i].get_shape().at(0);
         VideoMetadata metadata = i < videos_metadata.size() ? videos_metadata[i] : VideoMetadata{};
+        OPENVINO_ASSERT(std::isfinite(metadata.fps),
+                        "Molmo2: the video fps must be a finite number, got ", metadata.fps);
         if (metadata.fps <= 0.0f) {
             // Without metadata the frames are treated as sampled at the model's sampling rate.
             metadata.fps = m_sampling_fps;
@@ -852,6 +867,12 @@ ov::Tensor InputsEmbedderMolmo2::apply_chat_template_tokenize(const std::string&
         ids[0] = bos;
         std::copy_n(encoded_data, length, ids + 1);
     }
+    const int64_t* input_data = input_ids.data<const int64_t>();
+    m_num_patch_tokens = static_cast<size_t>(
+        std::count(input_data, input_data + input_ids.get_size(), m_vlm_config.molmo2_image_patch_id));
+    if (m_is_chat_conversation) {
+        drop_stale_cached_image_tokens(input_ids);
+    }
     encode_timer.end();
     if (apply_template) {
         metrics.raw_metrics.chat_template_durations.emplace_back(
@@ -862,6 +883,37 @@ ov::Tensor InputsEmbedderMolmo2::apply_chat_template_tokenize(const std::string&
         metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
     }
     return input_ids;
+}
+
+bool InputsEmbedderMolmo2::is_image_token(int64_t id) const {
+    return id == m_vlm_config.molmo2_image_patch_id || id == m_vlm_config.molmo2_image_col_id ||
+           id == m_vlm_config.molmo2_image_start_token_id || id == m_vlm_config.molmo2_low_res_image_start_token_id ||
+           id == m_vlm_config.molmo2_frame_start_token_id || id == m_vlm_config.molmo2_image_end_token_id ||
+           id == m_vlm_config.molmo2_frame_end_token_id || id == m_vlm_config.molmo2_image_low_res_id;
+}
+
+void InputsEmbedderMolmo2::drop_stale_cached_image_tokens(const ov::Tensor& input_ids) {
+    std::vector<int64_t>& state = m_cache_state.get_state();
+    if (state.empty()) {
+        return;
+    }
+    // Image tokens attend to each other bidirectionally at prefill, so the cached states of earlier image tokens
+    // differ from the states the whole conversation gives them once new image tokens follow. Like processing the
+    // whole conversation, everything from the first cached image token is computed again.
+    const int64_t* ids = input_ids.data<const int64_t>();
+    const size_t length = input_ids.get_size();
+    const size_t common = utils::get_first_history_difference(input_ids, state);
+    auto is_image = [this](int64_t id) {
+        return is_image_token(id);
+    };
+    const int64_t* first_cached_image = std::find_if(ids, ids + common, is_image);
+    if (first_cached_image == ids + common || std::none_of(ids + common, ids + length, is_image)) {
+        return;
+    }
+    const size_t keep = static_cast<size_t>(first_cached_image - ids);
+    m_cache_state.num_tokens_to_trim += state.size() - keep;
+    state.resize(keep);
+    m_cache_state.reset_mem_state = state.empty() || m_cache_state.needs_reset();
 }
 
 ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
@@ -937,11 +989,17 @@ ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(
     });
     std::vector<const ov::Tensor*> segment_features;
     segment_features.reserve(types.size());
-    size_t next_image = 0, next_video = 0;
+    size_t next_image = 0, next_video = 0, conversation_rows = 0;
     for (char type : types) {
         segment_features.push_back(type == kImageSegment ? &m_conversation_images[next_image++]
                                                          : &m_conversation_videos[next_video++]);
+        conversation_rows += segment_features.back()->get_shape().at(1);
     }
+    // Like the reference implementation, the "<im_patch>" tokens of the whole text must match the vision features of
+    // the conversation exactly, so that a tokenizer or config mismatch fails instead of dropping features.
+    OPENVINO_ASSERT(m_num_patch_tokens == conversation_rows,
+                    "Molmo2: the text has ", m_num_patch_tokens, " image patch tokens, but the vision encoders produced ",
+                    conversation_rows, " embeddings for its images and videos");
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
@@ -953,21 +1011,11 @@ ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(
 
     // token_type_ids: mark every image special token so the LM applies bidirectional image attention.
     const int64_t patch_id = m_vlm_config.molmo2_image_patch_id;
-    const std::array<int64_t, 8> image_token_ids = {
-        m_vlm_config.molmo2_image_patch_id,
-        m_vlm_config.molmo2_image_col_id,
-        m_vlm_config.molmo2_image_start_token_id,
-        m_vlm_config.molmo2_low_res_image_start_token_id,
-        m_vlm_config.molmo2_frame_start_token_id,
-        m_vlm_config.molmo2_image_end_token_id,
-        m_vlm_config.molmo2_frame_end_token_id,
-        m_vlm_config.molmo2_image_low_res_id,
-    };
     ov::Tensor token_type_ids(ov::element::i64, ov::Shape{1, seq_len});
     int64_t* tt = token_type_ids.data<int64_t>();
     size_t num_patches = 0;
     for (size_t i = 0; i < seq_len; ++i) {
-        tt[i] = std::find(image_token_ids.begin(), image_token_ids.end(), ids[i]) != image_token_ids.end() ? 1 : 0;
+        tt[i] = is_image_token(ids[i]) ? 1 : 0;
         num_patches += ids[i] == patch_id ? 1 : 0;
     }
     m_lm_extra_inputs["token_type_ids"] = token_type_ids;

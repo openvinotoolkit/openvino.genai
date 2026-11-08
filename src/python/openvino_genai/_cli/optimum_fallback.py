@@ -15,6 +15,7 @@ from openvino_genai._cli.uv_env import (
     cache_dir,
     compile_requirements,
     install_to_target,
+    installed_requirement,
     installed_version,
     is_satisfied,
     pinned_version,
@@ -69,8 +70,30 @@ def _provide_optimum_intel(argv: list[str]) -> int:
     return reexec_with(overlay, argv, pythonpath=target)
 
 
-def _model_transformers_specifiers(model_type: str | None, task: str) -> list[str]:
-    """Bounds of the transformers versions optimum-intel's export config for ``model_type`` declares, if any."""
+def _export_config_for_checkpoint(constructor, model_config: dict):
+    """The optimum-intel export config instance for the checkpoint configuration, None if it cannot be built.
+
+    Export configs can narrow the transformers bounds per checkpoint in ``__init__``, e.g.
+    ``optimum.exporters.openvino.model_configs.LlamaOpenVINOConfig`` for Eagle3 drafts of VLMs.
+    """
+    from transformers import AutoConfig, PretrainedConfig
+
+    try:
+        # The configuration class registered in transformers keeps the nested configs and attribute aliases the
+        # export config reads; config.json is parsed as plain JSON, so no remote code is run.
+        pretrained_config = AutoConfig.for_model(**model_config)
+    except ValueError:
+        pretrained_config = PretrainedConfig.from_dict(model_config)
+    try:
+        return constructor(pretrained_config)
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        logger.debug(f"Cannot build the export config of the checkpoint: {error}")
+        return None
+
+
+def _model_transformers_specifiers(model_config: dict | None, task: str) -> list[str]:
+    """Bounds of the transformers versions optimum-intel's export config declares for the checkpoint, if any."""
+    model_type = model_config.get("model_type") if model_config else None
     if model_type is None:
         return []
     from optimum.exporters.openvino import model_configs  # noqa: F401 (registers the OpenVINO export configs)
@@ -88,11 +111,13 @@ def _model_transformers_specifiers(model_type: str | None, task: str) -> list[st
     if not constructors:
         return []
     constructor = constructors.get(task) or next(iter(constructors.values()))
-    config_cls = constructor.func if isinstance(constructor, partial) else constructor
+    export_config = _export_config_for_checkpoint(constructor, model_config)
+    if export_config is None:
+        export_config = constructor.func if isinstance(constructor, partial) else constructor
 
     specifiers = []
-    min_version = getattr(config_cls, "MIN_TRANSFORMERS_VERSION", None)
-    max_version = getattr(config_cls, "MAX_TRANSFORMERS_VERSION", None)
+    min_version = getattr(export_config, "MIN_TRANSFORMERS_VERSION", None)
+    max_version = getattr(export_config, "MAX_TRANSFORMERS_VERSION", None)
     if min_version is not None:
         specifiers.append(f">={min_version}")
     if max_version is not None:
@@ -100,11 +125,11 @@ def _model_transformers_specifiers(model_type: str | None, task: str) -> list[st
     return specifiers
 
 
-def _transformers_requirement(model_type: str | None, task: str) -> str | None:
-    """Range of transformers versions to export ``model_type`` with, or None if unconstrained.
+def _transformers_requirement(model_config: dict | None, task: str) -> str | None:
+    """Range of transformers versions to export the checkpoint with, or None if unconstrained.
 
     It is the transformers requirement of the installed optimum-intel (and optimum) distributions, narrowed by the
-    bounds of the model's export config when optimum-intel declares them.
+    bounds of the checkpoint's export config when optimum-intel declares them.
     """
     from packaging.requirements import Requirement
     from packaging.utils import canonicalize_name
@@ -114,28 +139,35 @@ def _transformers_requirement(model_type: str | None, task: str) -> str | None:
         for requirement in map(Requirement, metadata.requires(distribution) or []):
             if canonicalize_name(requirement.name) == "transformers" and requirement.marker is None:
                 specifiers += [str(spec) for spec in requirement.specifier]
-    specifiers += _model_transformers_specifiers(model_type, task)
+    specifiers += _model_transformers_specifiers(model_config, task)
     return "transformers" + ",".join(specifiers) if specifiers else None
 
 
 def _overlay_for_transformers(transformers_requirement: str) -> list[str]:
     """The overlay that switches to ``transformers_requirement``: transformers and its light dependencies resolved
     together with the installed optimum and optimum-intel, so that no pin of the previous overlay (e.g.
-    huggingface-hub 1.x for transformers 5) is kept for a transformers version it is not compatible with."""
+    huggingface-hub 1.x for transformers 5) is kept for a transformers version it is not compatible with.
+
+    optimum-intel and optimum installed from a Git commit or a local checkout are resolved from the same source, an
+    unpublished development version cannot be found in an index."""
     requirements = [
-        f"{name}=={installed_version(name)}" for name in ("optimum-intel", "optimum") if installed_version(name)
+        requirement
+        for requirement in map(installed_requirement, ("optimum-intel", "optimum"))
+        if requirement is not None
     ]
     pins = compile_requirements([*requirements, transformers_requirement], exclude=_ENVIRONMENT_PROVIDED)
     return [requirement for name, requirement in pins.items() if name not in ("optimum-intel", "optimum")]
 
 
-def export_with_optimum_intel(model_type: str | None, task: str, export_argv: list[str], argv: list[str]) -> int:
-    """Runs ``optimum-cli export openvino <export_argv>`` with the transformers version supported for the model."""
+def export_with_optimum_intel(model_config: dict | None, task: str, export_argv: list[str], argv: list[str]) -> int:
+    """Runs ``optimum-cli export openvino <export_argv>`` with the transformers version supported for the checkpoint
+    (``model_config`` is its config.json, None if it has none)."""
+    model_type = model_config.get("model_type") if model_config else None
     if not _is_optimum_intel_available():
         logger.info(f"Model type `{model_type}` is not converted natively by genai-cli, falling back to optimum-intel")
         return _provide_optimum_intel(argv)
 
-    transformers_range = _transformers_requirement(model_type, task)
+    transformers_range = _transformers_requirement(model_config, task)
     if transformers_range is not None and not is_satisfied(transformers_range):
         logger.info(
             f"optimum-intel supports `{model_type}` with {transformers_range}, "

@@ -85,6 +85,7 @@ def default_gen_answer(
 
         if not full_chat and len(tokenized_history) > 0:
             prefix_len = find_common_prefix_length(full_token_list, tokenized_history, inputs_processor)
+            prefix_len = inputs_processor.cache_prefix_length(preprocess_inputs, prefix_len)
             if prefix_len < len(tokenized_history):
                 language_model = model.language_model if hasattr(model, "language_model") else model
                 past_key_values = trim_kv_cache(language_model, past_key_values, prefix_len, kv_axes_pos)

@@ -104,6 +104,18 @@ class Molmo2InputsPreprocessor(VLMInputsPreprocessor):
 
         return inputs
 
+    def cache_prefix_length(self, inputs: dict, prefix_len: int) -> int:
+        # Molmo2 image tokens (token_type_ids == 1) attend to each other bidirectionally at prefill. When new image
+        # tokens follow cached ones, the cached image states no longer match the states of the whole conversation, so
+        # everything from the first cached image token is computed again.
+        token_type_ids = inputs.get("token_type_ids")
+        if token_type_ids is None:
+            return prefix_len
+        types = torch.as_tensor(token_type_ids)[0].tolist()
+        if 1 in types[prefix_len:] and 1 in types[:prefix_len]:
+            return types.index(1)
+        return prefix_len
+
     def align_inputs_with_cache(self, model: Any, inputs: dict, full_tokenized_chat: torch.Tensor, prefix_len: int):
         if "pixel_values" not in inputs:
             return inputs

@@ -174,6 +174,10 @@ else:
         "optimum-intel-internal-testing/tiny-random-minicpmv47",
         MODEL_QWEN38_FLASH_NEXT,
     ]
+# Models genai-cli exports natively: genai-cli provides the transformers version each of them needs (molmo2
+# remote code requires 4.57.x), so they are tested with any installed transformers.
+GENAI_CLI_NATIVE_MODEL_IDS = [MODEL_MOLMO2]
+VIDEO_MODEL_IDS.append(MODEL_MOLMO2)
 
 AUDIO_INPUT_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -206,10 +210,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-mistral3",
         *VIDEO_MODEL_IDS,
     ]
-# Models genai-cli exports natively: genai-cli provides the transformers version each of them needs (molmo2
-# remote code requires 4.57.x), so they are tested with any installed transformers.
-GENAI_CLI_NATIVE_MODEL_IDS = [MODEL_MOLMO2]
-MODEL_IDS += GENAI_CLI_NATIVE_MODEL_IDS
+MODEL_IDS += [model_id for model_id in GENAI_CLI_NATIVE_MODEL_IDS if model_id not in MODEL_IDS]
 # optimum-intel cannot export these models yet, so there is no optimum-intel reference to compare with.
 OPTIMUM_INTEL_UNSUPPORTED_MODEL_IDS = {
     MODEL_MOLMO2,  # huggingface/optimum-intel#1950
@@ -266,6 +267,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|video|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv47": lambda idx: "<video>./</video>\n",
+    MODEL_MOLMO2: lambda idx: "<|video|>",
 }
 
 
