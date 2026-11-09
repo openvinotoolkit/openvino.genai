@@ -186,6 +186,10 @@ struct ByteSpan {
     size_t size;
 };
 
+// Forward-declared: save_prefix_offload_format reads a previous snapshot at the same path (if any) through this,
+// to release its pins once the new snapshot has replaced it.
+SessionSnapshot::Loaded load_prefix_offload_format(const CacheOrchestrator& orchestrator, const std::filesystem::path& path);
+
 uint64_t prefix_offload_checksum(PrefixOffloadHeader header,
                                  const std::string& device,
                                  const std::vector<ByteSpan>& history,
@@ -240,6 +244,22 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
     const auto indices = logical_block_indices(orchestrator.get_block_manager(CacheType::KV_CACHE), sequence->get_id());
     // get_hash memoizes the sequence's prefix hashes, hence the mutable access.
     const auto mutable_sequence = std::const_pointer_cast<Sequence>(sequence);
+
+    // A periodic save overwrites the same file; the blocks it referenced are about to be superseded. Best effort:
+    // an unreadable/incompatible/missing previous file just means there is nothing to release.
+    std::vector<size_t> superseded_kv_hashes;
+    std::vector<size_t> superseded_la_hashes;
+    try {
+        const SessionSnapshot::Loaded previous = load_prefix_offload_format(orchestrator, path);
+        superseded_kv_hashes.reserve(previous.kv_entries.size());
+        for (const auto& entry : previous.kv_entries) {
+            superseded_kv_hashes.push_back(entry.hash);
+        }
+        if (previous.la_entry) {
+            superseded_la_hashes.push_back(previous.la_entry->hash);
+        }
+    } catch (...) {
+    }
 
     std::vector<SessionSnapshot::PrefixEntry> entries;
     std::vector<size_t> pinned_hashes;
@@ -347,6 +367,15 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
         if (rename_error) {
             std::filesystem::remove(temp_path);
             OPENVINO_THROW("Failed to finalize session snapshot file at '", path.string(), "': ", rename_error.message());
+        }
+        // The new snapshot now owns these blocks; release the previous snapshot's pins so superseded ones can be
+        // reclaimed. A hash that is still part of the new chain was just re-pinned above, so this only cancels out
+        // the old reference and leaves it pinned once.
+        for (const size_t hash : superseded_kv_hashes) {
+            kv_offload->unpin(hash);
+        }
+        for (const size_t hash : superseded_la_hashes) {
+            la_offload->unpin(hash);
         }
     } catch (...) {
         for (const size_t hash : pinned_hashes) {
