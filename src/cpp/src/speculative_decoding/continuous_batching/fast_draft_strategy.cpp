@@ -54,6 +54,13 @@ GenerationConfig ContinuousBatchingPipeline::SpeculativeDecodingImpl::make_draft
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
     draft_sampling_params.rng_seed = detail::proposal_rng_seed(sampling_params.rng_seed);
+    // Log-probs move the row to a candidate list, so without top-k or top-p truncation a recorded proposal would pair
+    // every token id with its probability instead of holding a dense row, and the draft would compute a full-vocabulary
+    // log-sum-exp per token. The main model reports the log-probs of accepted tokens. A greedy draft keeps them:
+    // without log-probs its tokens report log-prob 0, which assistant_confidence_threshold treats as unconfident.
+    if (draft_sampling_params.is_multinomial()) {
+        draft_sampling_params.logprobs = 0;
+    }
     return draft_sampling_params;
 }
 

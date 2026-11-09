@@ -4,6 +4,7 @@
 #pragma once
 
 #include <future>
+#include <random>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
@@ -162,6 +163,16 @@ std::vector<EncodedGenerationResult> generate_common(
     return results;
 }
 
+namespace detail {
+inline constexpr uint32_t PROPOSAL_RNG_SEED_SALT = 0x9E3779B9U;
+
+// Seed of the draft copy of a request (make_draft_sampling_params). It differs from the main request's seed so that
+// the uniform draws accepting draft tokens are independent of the draws that proposed them.
+inline std::mt19937::result_type proposal_rng_seed(size_t generation_seed) {
+    return static_cast<std::mt19937::result_type>(generation_seed) ^ PROPOSAL_RNG_SEED_SALT;
+}
+}  // namespace detail
+
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
@@ -181,7 +192,7 @@ protected:
 
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);
     // The draft copy of a request never stops on its own, and it samples from a stream independent of the
-    // main request's, whose draws accept or reject the drafted tokens.
+    // main request's, whose draws accept or reject the drafted tokens. A sampled draft requests no log-probs.
     static GenerationConfig make_draft_sampling_params(const GenerationConfig& sampling_params);
     void drop_requests();
     virtual void align_request_pair_processed_prefix(uint64_t) {}

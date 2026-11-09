@@ -66,11 +66,13 @@ struct Logits {
     }
 };
 
-// exp(x) for x <= 0, flushed to zero below -64. Smaller terms cannot change a float sum that includes the top term
-// (1.0), the normalised result stays a normal float for any vocabulary, and expf is very slow when its result is
-// denormal.
+// exp(x) for x <= 0 is flushed to zero below EXP_TAIL_CUTOFF. Smaller terms cannot change a float sum that includes
+// the top term (1.0), the normalised result stays a normal float for any vocabulary, and expf is very slow when its
+// result is denormal.
+inline constexpr float EXP_TAIL_CUTOFF = -64.0f;
+
 inline float exp_flush_tail(float x) {
-    return x < -64.0f ? 0.0f : expf(x);
+    return x < EXP_TAIL_CUTOFF ? 0.0f : expf(x);
 }
 
 namespace LogitTransformers {

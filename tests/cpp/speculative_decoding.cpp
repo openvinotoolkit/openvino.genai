@@ -144,6 +144,17 @@ TEST_F(CBForSDTest, DraftConfigsSampleFromAnIndependentStream) {
     EXPECT_EQ(MtpPipelineTestInstance::make_draft_generation_config(config).rng_seed, draft_seed);
 }
 
+// A sampled draft records its proposals without log-probs; a greedy draft keeps them for
+// assistant_confidence_threshold.
+TEST_F(CBForSDTest, OnlyGreedyDraftConfigsKeepLogProbs) {
+    ov::genai::GenerationConfig config;
+    config.logprobs = 3;
+    EXPECT_EQ(MtpPipelineTestInstance::make_draft_sampling_params(config).logprobs, 3u);
+    config.do_sample = true;
+    EXPECT_EQ(MtpPipelineTestInstance::make_draft_sampling_params(config).logprobs, 0u);
+    EXPECT_EQ(MtpPipelineTestInstance::make_draft_generation_config(config).logprobs, 0u);
+}
+
 TEST(MtpDraftUpdatePlan, PreservesAcceptedPrefixAfterPartialRejection) {
     struct TestCase {
         size_t removed_draft_tokens;
