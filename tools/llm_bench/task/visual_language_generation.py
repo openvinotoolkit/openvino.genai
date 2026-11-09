@@ -301,7 +301,8 @@ def run_visual_language_generation_benchmark(
     # `input_list` lets callers that synthesise their own entries (e.g. the
     # Qwen3-Omni speech path) reuse this benchmark instead of loading prompts
     # from args.
-    prompter = BenchPrompter(args, prompts=input_list)
+    # an empty --prompt_index selection is an error, as before BenchPrompter
+    prompter = BenchPrompter(args, prompts=input_list).require_active()
     prompt_idx_list = prompter.active_indices
     image_text_list = prompter.active_items
 

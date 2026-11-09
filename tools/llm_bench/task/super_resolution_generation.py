@@ -103,7 +103,8 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     # The spec renames the entry's 'prompt' key to 'media', so the low-res
     # input image is resolved relative to the prompt file and reported as an
     # image rather than as a text word count.
-    prompter = BenchPrompter(args)
+    # an empty --prompt_index selection is an error, as before BenchPrompter
+    prompter = BenchPrompter(args).require_active()
     prompt_idx_list = prompter.active_indices
     image_list = prompter.active_items
 

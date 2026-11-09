@@ -319,7 +319,10 @@ def run_text_generation(
     first_gen_size = calc_generated_token_size_optimum(
         result, 0, model, input_tokens, input_token_size, args["model_name"]
     )
-    output_text = tokenizer.decode(result[0][len(result[0]) - first_gen_size :]) if first_gen_size > 0 else ""
+    # special tokens (EOS, ...) out: they are no words of the output (count_words),
+    # and an output of them only is "empty" (text_output_repr)
+    output_text = (tokenizer.decode(result[0][len(result[0]) - first_gen_size :], skip_special_tokens=True)
+                   if first_gen_size > 0 else "")
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args["batch_size"],

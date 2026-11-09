@@ -857,9 +857,11 @@ class BenchPrompter(list):
         """Raise when ``args['prompt_index']`` selected no prompt at all.
 
         Returns ``self`` so it can be chained onto the constructor. Opt-in on
-        purpose: only the VLM chat pipeline treats an empty selection as an
-        error, while the other tasks run zero iterations instead. Calling this
-        from more pipelines would change their behaviour.
+        purpose, keeping each task's behaviour from before BenchPrompter: the
+        tasks that raised on an empty selection -- embeddings, speech to text,
+        super resolution, visual language and VLM chat -- call it; text
+        generation, text to speech and the others ran zero iterations instead
+        and still do.
         """
         if not self.active_pairs:
             raise RuntimeError("==Failure prompts is empty ==")

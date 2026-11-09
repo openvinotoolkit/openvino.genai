@@ -229,7 +229,8 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     # The raw waveform is loaded lazily inside the loop rather than here:
     # decoding needs the model's feature-extractor sampling rate, which is
     # only known once the model has been created.
-    prompter = BenchPrompter(args)
+    # an empty --prompt_index selection is an error, as before BenchPrompter
+    prompter = BenchPrompter(args).require_active()
 
     if args.get("is_omni_model", False):
         return run_omni_speech_2_txt_benchmark(

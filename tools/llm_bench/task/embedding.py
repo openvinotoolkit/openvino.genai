@@ -238,7 +238,8 @@ def run_text_embeddings_genai(
 
 
 def run_text_embddings_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    prompter = BenchPrompter(args)
+    # an empty --prompt_index selection is an error, as before BenchPrompter
+    prompter = BenchPrompter(args).require_active()
     prompt_idx_list = prompter.active_indices
     entries_list = prompter.active_items
 

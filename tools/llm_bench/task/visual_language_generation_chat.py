@@ -508,8 +508,7 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     model, processor_config, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
     # Each entry is expanded into its turns, honouring --chat_iter.
-    # require_active() makes an empty --prompt_index selection an error, which
-    # only this pipeline does.
+    # require_active() makes an empty --prompt_index selection an error
     prompter = BenchPrompter(args).require_active()
     input_idx_list = prompter.active_indices
     chat_list = prompter.active_items
