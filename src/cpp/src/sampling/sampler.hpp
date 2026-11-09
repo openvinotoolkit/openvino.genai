@@ -169,8 +169,8 @@ class Sampler {
 
     // Block sampling of one request: samples one token from each gathered row, in row order, in place of the
     // request's trailing placeholder tokens.
-    SequenceGroupSamplingInfo _sample_block_from_sequence_group(SequenceGroup::Ptr sequence_group,
-                                                                ov::Tensor sequence_group_logits,
+    SequenceGroupSamplingInfo _sample_block_from_sequence_group(const SequenceGroup::Ptr& sequence_group,
+                                                                const ov::Tensor& sequence_group_logits,
                                                                 RequestSamplerContext& context);
     // Removes the request's placeholder tokens and returns its block, whose rows start at first_row. The block has no
     // candidates when its window gathered no rows or the request has no token left to draft.
@@ -178,7 +178,7 @@ class Sampler {
     // Samples the next token of a block from its row with the request's logit processors and appends it.
     int64_t _sample_block_token(const Sequence::Ptr& sequence,
                                 const ov::genai::GenerationConfig& sampling_params,
-                                Logits logits,
+                                Logits& logits,
                                 RequestSamplerContext& context);
     // Appends a token that a row source drew for a block.
     void _append_block_token(const Sequence::Ptr& sequence, const BlockToken& token, RequestSamplerContext& context);

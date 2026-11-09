@@ -1505,7 +1505,7 @@ SampledBlock Sampler::_start_block(const SequenceGroup::Ptr& sequence_group, siz
 
 int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
                                      const ov::genai::GenerationConfig& sampling_params,
-                                     Logits logits,
+                                     Logits& logits,
                                      RequestSamplerContext& context) {
     LogitProcessor& logit_processor = context.logit_processor;
     logit_processor.update_generated_len(sequence->get_generated_len());
@@ -1521,17 +1521,15 @@ void Sampler::_append_block_token(const Sequence::Ptr& sequence,
     register_new_token(Token(token.log_prob, token.token), sequence, context.logit_processor, true, false);
 }
 
-SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(SequenceGroup::Ptr sequence_group,
-                                                                     ov::Tensor sequence_group_logits,
+SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(const SequenceGroup::Ptr& sequence_group,
+                                                                     const ov::Tensor& sequence_group_logits,
                                                                      RequestSamplerContext& context) {
     SequenceGroupSamplingInfo sg_sampling_info;
     const SampledBlock block = _start_block(sequence_group, 0);
     const Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
     for (size_t candidate = 0; candidate < block.num_candidates; ++candidate) {
-        _sample_block_token(sequence,
-                            sequence_group->get_sampling_parameters(),
-                            _get_logit_vector(sequence_group_logits, 0, block.num_rows - 1 - candidate),
-                            context);
+        Logits logits = _get_logit_vector(sequence_group_logits, 0, block.num_rows - 1 - candidate);
+        _sample_block_token(sequence, sequence_group->get_sampling_parameters(), logits, context);
     }
     sg_sampling_info.sampler_output.num_generated_tokens = block.num_candidates;
     return sg_sampling_info;
@@ -1590,10 +1588,8 @@ std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector
                     if (!m_block_row_source->fill_row(block, position, previous_token, row.data())) {
                         break;
                     }
-                    previous_token = _sample_block_token(sequences[block],
-                                                         params(block),
-                                                         Logits{row.data(), vocab_size},
-                                                         *contexts[block]);
+                    Logits logits{row.data(), vocab_size};
+                    previous_token = _sample_block_token(sequences[block], params(block), logits, *contexts[block]);
                 }
                 return position;
             }));
@@ -1629,10 +1625,9 @@ std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector
                     if (!m_block_row_source->fill_row(block, position, previous_tokens[block], rows[block].data())) {
                         return false;
                     }
-                    previous_tokens[block] = _sample_block_token(sequences[block],
-                                                                 params(block),
-                                                                 Logits{rows[block].data(), vocab_size},
-                                                                 *contexts[block]);
+                    Logits logits{rows[block].data(), vocab_size};
+                    previous_tokens[block] =
+                        _sample_block_token(sequences[block], params(block), logits, *contexts[block]);
                     return true;
                 }));
             }
