@@ -14,9 +14,13 @@
 namespace ov::genai {
 
 namespace {
+// KNOWN LIMITATION: Sequence::_make_hash() (sequence_group.cpp) already folds the full 128-bit
+// ContentHash digest down to a single size_t via XOR before it ever reaches this layer, so the
+// value mirrored into both halves below carries only 64 bits of real identity, not the 128 the
+// wire struct's width implies; distinct digests that fold to the same size_t alias here too.
+// Fixing this requires widening Sequence::get_hash()/the prefix-cache hash maps and the snapshot
+// file format to carry ContentHash end to end, which is out of scope for this change.
 OvKVCacheContentHash to_abi_hash(size_t hash) {
-    // size_t keys at this layer are already a single folded 64-bit value (see content_hash.hpp);
-    // mirroring it into both halves keeps the 128-bit wire key well-defined without a second hash.
     return OvKVCacheContentHash{static_cast<uint64_t>(hash), static_cast<uint64_t>(hash)};
 }
 }  // namespace
