@@ -406,18 +406,18 @@ void init_speech_generation_pipeline(py::module_& m) {
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> SpeechGenerationHandle {
                 const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                const ov::Tensor tensor = speaker_embedding.is_none() ? ov::Tensor() : speaker_embedding.cast<ov::Tensor>();
                 py::gil_scoped_release rel;
-                if (speaker_embedding.is_none()) {
-                    return pipe.add_request(request_id, text, ov::Tensor(), properties);
-                }
-                const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
                 return pipe.add_request(request_id, text, tensor, properties);
             },
             py::arg("request_id"),
             py::arg("text"),
             py::arg("speaker_embedding") = py::none(),
             text2speech_cb_add_request_docstring)
-        .def("step", &Text2SpeechContinuousBatchingPipeline::step)
+        .def("step", [](Text2SpeechContinuousBatchingPipeline& pipe) {
+            py::gil_scoped_release rel;
+            pipe.step();
+        })
         .def("has_non_finished_requests", &Text2SpeechContinuousBatchingPipeline::has_non_finished_requests)
         .def("get_speaker_embedding_shape",
              &Text2SpeechContinuousBatchingPipeline::get_speaker_embedding_shape,
