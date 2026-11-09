@@ -408,7 +408,7 @@ Setting it to `0` runs the request on the target alone.
 ### Choosing the Block Size
 
 A DFlash draft is trained with a fixed block size, which the model provider usually states.
-OpenVINO GenAI does not limit `num_assistant_tokens`, but staying within the trained block size is recommended.
+OpenVINO GenAI does not check `num_assistant_tokens` against the draft's block size, only against the general limit of 100, but staying within the trained block size is recommended.
 
 :::tip
 Tune `num_assistant_tokens` on prompts that resemble your use case, balancing the accepted tokens per step against the step latency of the target and the draft.
