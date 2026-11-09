@@ -539,15 +539,21 @@ def parse_args():
             Metrics.DIVERGENCY.value,
             Metrics.KL_DIVERGENCY.value,
             Metrics.TOKEN_SIMILARITY.value,
+            Metrics.VIDEO_QUALITY.value,
+            Metrics.OBJECT_PRESENCE.value,
         ],
         required=False,
         default=[Metrics.SIMILARITY.value],
-        help="List of metrics to compute. It applicable for text generation now.\n"
+        help="List of metrics to compute. Applicable for text generation and text-to-video.\n"
         "similarity: Compute the similarity between generated and reference text. Default. \n"
         "divergency: Compute the FDT, FDT norm, SDT, SDT norm between generated and reference encoded answer. \n"
         "kl_divergency: Compute the KL divergence for the prompt tokens. Prompt is divided into two parts: prefix and scored tail. "
         "Scored tail is used for the actual KL divergence computation. Context/scoring range may be adjasted with --kld-ctx, --kld-chunk. \n"
-        "token_similarity: Collect the tokenized prompt and generated results, no checks are performed at that moment.",
+        "token_similarity: Collect the tokenized prompt and generated results, no checks are performed at that moment.\n"
+        "video_quality: text-to-video only. Reference-free imaging quality (MUSIQ, needs `pip install pyiqa`), "
+        "aesthetic quality and temporal flicker of each base and target video, with the difference.\n"
+        "object_presence: text-to-video only. Fraction of frames in which an open-vocabulary detector finds the "
+        "objects listed in the 'objects' column of the prompts, for base and target videos.",
     )
     parser.add_argument(
         "--kld-ctx",
@@ -616,8 +622,15 @@ def check_args(args):
     if args.dataset_field is None and args.model_type != "speech-recognition":
         args.dataset_field = "text"
 
-    if args.metrics != [Metrics.SIMILARITY.value] and args.model_type != "text":
-        raise ValueError(f"For --model-type {args.model_type}, only --metrics={Metrics.SIMILARITY.value} is supported.")
+    video_metrics = {Metrics.VIDEO_QUALITY.value, Metrics.OBJECT_PRESENCE.value}
+    if args.model_type == "text":
+        allowed_metrics = {m.value for m in Metrics} - video_metrics
+    elif args.model_type == "text-to-video":
+        allowed_metrics = {Metrics.SIMILARITY.value} | video_metrics
+    else:
+        allowed_metrics = {Metrics.SIMILARITY.value}
+    if not set(args.metrics) <= allowed_metrics:
+        raise ValueError(f"For --model-type {args.model_type}, supported --metrics are: {', '.join(sorted(allowed_metrics))}.")
 
 
 def load_prompts(args):
@@ -1354,6 +1367,7 @@ def create_evaluator(base_model, args):
                 base_model=base_model,
                 gt_data=args.gt_data,
                 test_data=get_prompts(),
+                metrics=args.metrics,
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 num_frames=args.video_frames_num,

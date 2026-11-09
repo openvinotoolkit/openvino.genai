@@ -28,6 +28,8 @@ class Metrics(Enum):
     DIVERGENCY = "divergency"
     KL_DIVERGENCY = "kl_divergency"
     TOKEN_SIMILARITY = "token_similarity"
+    VIDEO_QUALITY = "video_quality"
+    OBJECT_PRESENCE = "object_presence"
 
 
 class MetricStorageKind(Enum):
