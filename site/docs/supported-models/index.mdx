@@ -142,6 +142,12 @@ The model requires `transformers>=4.57` for the export with `optimum-cli`.
 
 The model requires `transformers==5.2` for the export with `optimum-cli`.
 
+#### Qwen3.8-Flash-Next {#qwen3_8_flash_next-notes}
+
+The model requires `transformers>=5.17.0` for the export with `optimum-cli`.
+
+Currently, only the SDPA attention backend is supported. `VLMPipeline` selects this backend by default for this model.
+
 #### nanoLLaVA {#nanollava-notes}
 
 The model requires `transformers>=4.48` for the export with `optimum-cli`.
