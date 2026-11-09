@@ -72,7 +72,7 @@ jobs:
   coverity_build:
     name: Build for coverity
     needs: [ openvino_download ]
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
