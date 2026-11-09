@@ -771,9 +771,36 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test
 
+  # Installs WWB alone, the way a user does, so that its requirements resolve without the pins from tests/python_tests/requirements.txt (CVS-199281).
+  genai_wwb_standalone_install:
+    name: WWB standalone install
+    needs: [ smart_ci ]
+    if: ${{ needs.smart_ci.outputs.skip_workflow != 'True' && fromJSON(needs.smart_ci.outputs.affected_components).WWB }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    runs-on: macos-latest
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: tools/who_what_benchmark
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install WWB
+        run: python -m pip install -e ./tools/who_what_benchmark --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Smoke test
+        run: wwb --help
+
   Overall_Status:
     name: ci/gha_overall_status_macos
-    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_build_nodejs, genai_nodejs_tests]
+    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_build_nodejs, genai_nodejs_tests, genai_wwb_standalone_install]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
