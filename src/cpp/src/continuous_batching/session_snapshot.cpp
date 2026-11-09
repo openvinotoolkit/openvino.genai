@@ -4,8 +4,15 @@
 #include "continuous_batching/session_snapshot.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <fstream>
+
+#ifdef _WIN32
+#    include <process.h>
+#else
+#    include <unistd.h>
+#endif
 
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
@@ -66,6 +73,18 @@ void write_exact(std::ofstream& out, const void* data, size_t size) {
 void read_exact(std::ifstream& in, void* data, size_t size) {
     in.read(reinterpret_cast<char*>(data), static_cast<std::streamsize>(size));
     OPENVINO_ASSERT(in.good(), "Session snapshot file is truncated or unreadable");
+}
+
+/// A path for the temporary file a save writes before renaming it over the final snapshot path, unique per
+/// process and per call so concurrent saves (even to the same destination) never collide.
+std::filesystem::path temp_snapshot_path(const std::filesystem::path& path) {
+    static std::atomic<uint64_t> counter{0};
+#ifdef _WIN32
+    const auto pid = static_cast<unsigned long long>(_getpid());
+#else
+    const auto pid = static_cast<unsigned long long>(::getpid());
+#endif
+    return path.string() + ".tmp." + std::to_string(pid) + "." + std::to_string(counter.fetch_add(1));
 }
 
 /// @return The physical block indices for `seq_id`'s shared (layer-0) block table, in logical order.
@@ -308,14 +327,27 @@ void save_prefix_offload_format(CacheOrchestrator& orchestrator,
                                          history.token_ids.size() * sizeof(int64_t)}};
         header.checksum = prefix_offload_checksum(header, device, history_spans, entries);
 
-        std::ofstream out(path, std::ios::binary | std::ios::trunc);
-        OPENVINO_ASSERT(out.is_open(), "Failed to create session snapshot file at '", path.string(), "'");
-        write_exact(out, &header, sizeof(header));
-        write_exact(out, device.data(), device.size());
-        for (const ByteSpan& span : history_spans) {
-            write_exact(out, span.data, span.size);
+        // Written to a temporary file first and renamed into place, so a crash or write failure (full disk,
+        // exception while writing) never leaves a truncated file where a previously valid snapshot was.
+        const std::filesystem::path temp_path = temp_snapshot_path(path);
+        {
+            std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
+            OPENVINO_ASSERT(out.is_open(), "Failed to create a temporary session snapshot file at '", temp_path.string(), "'");
+            write_exact(out, &header, sizeof(header));
+            write_exact(out, device.data(), device.size());
+            for (const ByteSpan& span : history_spans) {
+                write_exact(out, span.data, span.size);
+            }
+            write_exact(out, entries.data(), entries.size() * sizeof(SessionSnapshot::PrefixEntry));
+            out.flush();
+            OPENVINO_ASSERT(out.good(), "Failed to write the temporary session snapshot file at '", temp_path.string(), "'");
         }
-        write_exact(out, entries.data(), entries.size() * sizeof(SessionSnapshot::PrefixEntry));
+        std::error_code rename_error;
+        std::filesystem::rename(temp_path, path, rename_error);
+        if (rename_error) {
+            std::filesystem::remove(temp_path);
+            OPENVINO_THROW("Failed to finalize session snapshot file at '", path.string(), "': ", rename_error.message());
+        }
     } catch (...) {
         for (const size_t hash : pinned_hashes) {
             kv_offload->unpin(hash);

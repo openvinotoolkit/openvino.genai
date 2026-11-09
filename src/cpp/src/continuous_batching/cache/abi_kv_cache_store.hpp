@@ -17,9 +17,10 @@ namespace ov::genai {
  * Wraps an (OvKVCacheStoreVTable*, void* store) pair obtained from a provider's `open()` - whether
  * the in-tree default (AbiFileStoreProvider) or, eventually, a dynamically loaded third-party
  * plugin - so it can be used anywhere an IKVCacheStore is expected. Computes and verifies its own
- * witness (a content hash of the payload bytes, independent of the caller-supplied key) on every
- * write/read: the ABI's witness is host-defined and host-verified, never trusted from the plugin
- * (see kv_cache_store_provider_abi.h).
+ * witness (a content hash of the payload bytes seeded with the requested key) on every write/read,
+ * so a store that returns a different but internally-consistent block for the requested key is
+ * caught, not just bit-level corruption: the ABI's witness is host-defined and host-verified,
+ * never trusted from the plugin (see kv_cache_store_provider_abi.h).
  */
 class AbiKVCacheStore final : public IKVCacheStore {
 public:
@@ -34,7 +35,7 @@ public:
                     std::string group,
                     size_t block_size,
                     size_t capacity_blocks,
-                    StoreInfo info = {});
+                    StoreInfo info = StoreInfo{0, std::nullopt});
     ~AbiKVCacheStore() override;
 
     AbiKVCacheStore(const AbiKVCacheStore&) = delete;

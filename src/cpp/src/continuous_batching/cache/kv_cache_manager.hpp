@@ -7,6 +7,7 @@
 #include <list>
 #include <cstdint>
 #include <cstring>
+#include <sstream>
 
 #include "openvino/runtime/tensor.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
@@ -156,6 +157,17 @@ public:
     ov::element::Type get_value_cache_precision(size_t decoder_layer_id) const {
         OPENVINO_ASSERT(decoder_layer_id < m_value_precisions.size());
         return m_value_precisions[decoder_layer_id];
+    }
+
+    /// Per-layer key/value precision and shape, so an offload namespace built from it tells apart two models
+    /// whose aggregate block byte size happens to match but whose segment layout does not (e.g. FP16 vs BF16).
+    std::string get_layout_signature() const {
+        std::ostringstream oss;
+        for (size_t i = 0; i < m_num_layers; ++i) {
+            oss << m_key_precisions[i] << ' ' << m_key_shapes[i] << '|' << m_value_precisions[i] << ' '
+                << m_value_shapes[i] << ';';
+        }
+        return oss.str();
     }
 
     // --- KV-cache-specific accessors ---

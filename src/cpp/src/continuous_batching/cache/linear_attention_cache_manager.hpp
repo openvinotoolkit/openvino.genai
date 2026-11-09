@@ -8,6 +8,7 @@
 #include <cstring>
 #include <map>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -364,6 +365,19 @@ public:
             }
         }
         return KVCacheDiskLayout(segment_sizes, std::vector<size_t>(segment_sizes.size(), 0));
+    }
+
+    /// Per-layer precision and shape, so an offload namespace built from it tells apart two models whose
+    /// aggregate block byte size happens to match but whose segment layout does not (e.g. FP16 vs BF16).
+    std::string get_layout_signature() const {
+        std::ostringstream oss;
+        for (const auto& group : m_groups) {
+            for (size_t layer_idx : group.sorted_indices) {
+                const auto& info = group.layers.at(layer_idx);
+                oss << group.prefix << '.' << layer_idx << ' ' << info.precision << ' ' << info.partial_shape << ';';
+            }
+        }
+        return oss.str();
     }
 
     std::vector<uint8_t> read_block(size_t block_id) const {

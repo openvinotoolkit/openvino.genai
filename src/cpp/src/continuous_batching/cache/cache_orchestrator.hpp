@@ -252,7 +252,8 @@ public:
         auto store = open_kv_cache_store(kv_manager.get_block_layout(),
                                          offload_config,
                                          device,
-                                         offload_group_name("kv", kv_manager.get_block_layout(), kv_block_tokens, device),
+                                         offload_group_name("kv", kv_manager.get_block_layout(), kv_block_tokens,
+                                                            device, kv_manager.get_layout_signature()),
                                          kv_block_tokens);
         GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
                    store->get_block_size(),
@@ -280,17 +281,20 @@ public:
      *
      * Without a model identity this is just `base` ("kv" / "la"). With one, the namespace also carries a digest of
      * the identity and the cache layout, so a persistent plugin keeps entries of different models, devices and
-     * layouts apart.
+     * layouts apart. `layout_signature` carries each segment's precision and shape, so two models whose aggregate
+     * block byte size happens to match (e.g. FP16 vs BF16) still open different namespaces.
      */
     std::string offload_group_name(const std::string& base,
                                    const KVCacheDiskLayout& layout,
                                    size_t block_tokens,
-                                   const std::string& device) const {
+                                   const std::string& device,
+                                   const std::string& layout_signature = "") const {
         if (m_model_identity.empty()) {
             return base;
         }
         const std::string key = m_model_identity + '|' + device + '|' + std::to_string(layout.get_slot_size()) + '|' +
-                                std::to_string(layout.get_num_layers()) + '|' + std::to_string(block_tokens);
+                                std::to_string(layout.get_num_layers()) + '|' + std::to_string(block_tokens) + '|' +
+                                layout_signature;
         const ContentHash digest = compute_content_hash(key.data(), key.size());
         char hex[33];
         std::snprintf(hex, sizeof(hex), "%016llx%016llx", static_cast<unsigned long long>(digest.hi),
@@ -315,7 +319,8 @@ public:
         auto store = open_kv_cache_store(la_manager.get_block_layout(),
                                          la_backend_config,
                                          device,
-                                         offload_group_name("la", la_manager.get_block_layout(), la_interval, device),
+                                         offload_group_name("la", la_manager.get_block_layout(), la_interval, device,
+                                                            la_manager.get_layout_signature()),
                                          la_interval);
         GENAI_INFO("[KV_TRACE] la_cache_offload slot_bytes=%zu capacity_blocks=%zu",
                    store->get_block_size(),

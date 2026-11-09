@@ -204,7 +204,9 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
         result.vtable->stats == nullptr) {
         GENAI_WARN("KV cache store plugin '%s' returned a store vtable missing required synchronous entries",
                    config.store_library_path.c_str());
-        if (result.vtable->destroy != nullptr) {
+        // destroy itself may sit past struct_bytes in a truncated vtable; only call it when that is not the case.
+        constexpr size_t destroy_end = offsetof(OvKVCacheStoreVTable, destroy) + sizeof(OvKVCacheStoreVTable::destroy);
+        if (result.vtable->struct_bytes >= destroy_end && result.vtable->destroy != nullptr) {
             result.vtable->destroy(result.store);
         }
         return nullptr;

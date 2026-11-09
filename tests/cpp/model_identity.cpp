@@ -95,3 +95,15 @@ TEST(TestOffloadGroupName, KeepsModelsDevicesAndLayoutsApart) {
     OrchestratorFixture second("model-b");
     EXPECT_NE(name, second.orchestrator->offload_group_name("kv", layout, 32, "CPU"));
 }
+
+TEST(TestOffloadGroupName, KeepsSegmentLayoutsAndTypesApartEvenWithTheSameAggregateByteSize) {
+    OrchestratorFixture fixture("model-a");
+    const auto layout = fixture.kv_layout();
+    const auto name = fixture.orchestrator->offload_group_name("kv", layout, 32, "CPU", "f16 {2,2}|f16 {2,2};");
+
+    // Two layouts can reduce to the same slot size (e.g. FP16 vs BF16, same byte width) yet mean different bytes.
+    EXPECT_NE(name, fixture.orchestrator->offload_group_name("kv", layout, 32, "CPU", "bf16 {2,2}|bf16 {2,2};"));
+    EXPECT_NE(name, fixture.orchestrator->offload_group_name("kv", layout, 32, "CPU", ""));
+    EXPECT_EQ(name, fixture.orchestrator->offload_group_name("kv", layout, 32, "CPU", "f16 {2,2}|f16 {2,2};"));
+}
+

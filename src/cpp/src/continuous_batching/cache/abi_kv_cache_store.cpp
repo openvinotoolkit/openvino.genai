@@ -109,7 +109,9 @@ std::vector<bool> AbiKVCacheStore::write_blocks(const std::vector<size_t>& hashe
     std::vector<OvKVCacheStoreWriteResult> results(count);
     for (size_t i = 0; i < count; ++i) {
         OPENVINO_ASSERT(data[i]->size() == m_block_size, "ABI store block size mismatch");
-        digests[i] = compute_content_hash(data[i]->data(), data[i]->size());
+        // Seeding with the key's hash binds the witness to the key it was written under, so a store that
+        // returns a different (but internally valid) block for a read of this key is still caught below.
+        digests[i] = compute_content_hash(data[i]->data(), data[i]->size(), static_cast<uint64_t>(hashes[i]));
         requests[i].key = make_key(hashes[i]);
         requests[i].source = data[i]->data();
         requests[i].bytes = data[i]->size();
@@ -174,7 +176,8 @@ std::vector<bool> AbiKVCacheStore::read_blocks(const std::vector<size_t>& hashes
                         results[i].status);
         OPENVINO_ASSERT(results[i].bytes_read == scratch[i].size(), "ABI store returned a short read");
 
-        const ContentHash expected_witness = compute_content_hash(scratch[i].data(), scratch[i].size());
+        const ContentHash expected_witness =
+            compute_content_hash(scratch[i].data(), scratch[i].size(), static_cast<uint64_t>(hashes[i]));
         OPENVINO_ASSERT(results[i].witness.len == sizeof(expected_witness) &&
                             std::memcmp(&expected_witness, &returned_witnesses[i], sizeof(expected_witness)) == 0,
                         "ABI store witness mismatch for a read block - payload may be corrupted");
