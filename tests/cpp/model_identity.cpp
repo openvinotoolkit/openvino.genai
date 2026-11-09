@@ -13,6 +13,7 @@
 #include "continuous_batching/cache/model_identity.hpp"
 #include "helper.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/subtract.hpp"
 #include "openvino/openvino.hpp"
 
 using namespace ov::genai;
@@ -21,10 +22,31 @@ namespace {
 
 std::shared_ptr<ov::Model> make_model(const std::vector<float>& weights, const ov::Shape& shape) {
     auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, shape);
+    parameter->set_friendly_name("input");
     auto constant = ov::op::v0::Constant::create(ov::element::f32, shape, weights);
+    constant->set_friendly_name("weight");
     auto add = std::make_shared<ov::op::v1::Add>(parameter, constant);
+    add->set_friendly_name("add");
     auto result = std::make_shared<ov::op::v0::Result>(add);
-    return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
+    result->set_friendly_name("output");
+    auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
+    model->set_friendly_name("test_model");
+    return model;
+}
+
+/// Same parameter/constant pair as make_model(), but Subtract instead of Add: identical constants, different graph.
+std::shared_ptr<ov::Model> make_model_with_subtract(const std::vector<float>& weights, const ov::Shape& shape) {
+    auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, shape);
+    parameter->set_friendly_name("input");
+    auto constant = ov::op::v0::Constant::create(ov::element::f32, shape, weights);
+    constant->set_friendly_name("weight");
+    auto subtract = std::make_shared<ov::op::v1::Subtract>(parameter, constant);
+    subtract->set_friendly_name("add");
+    auto result = std::make_shared<ov::op::v0::Result>(subtract);
+    result->set_friendly_name("output");
+    auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
+    model->set_friendly_name("test_model");
+    return model;
 }
 
 }  // namespace
@@ -45,6 +67,11 @@ TEST(TestModelIdentity, DifferentWeightsGiveADifferentDigest) {
 TEST(TestModelIdentity, SameBytesInADifferentShapeGiveADifferentDigest) {
     EXPECT_NE(compute_model_identity(make_model({1.f, 2.f, 3.f, 4.f}, {2, 2})),
               compute_model_identity(make_model({1.f, 2.f, 3.f, 4.f}, {1, 4})));
+}
+
+TEST(TestModelIdentity, SameConstantsWithADifferentOperatorGiveADifferentDigest) {
+    EXPECT_NE(compute_model_identity(make_model({1.f, 2.f, 3.f, 4.f}, {2, 2})),
+              compute_model_identity(make_model_with_subtract({1.f, 2.f, 3.f, 4.f}, {2, 2})));
 }
 
 namespace {
