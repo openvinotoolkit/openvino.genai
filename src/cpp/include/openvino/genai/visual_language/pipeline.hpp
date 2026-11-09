@@ -231,12 +231,7 @@ public:
                                        const std::vector<VideoMetadata>& videos_metadata,
                                        const GenerationConfig& generation_config,
                                        const StreamerVariant& streamer,
-                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
-        if (omni_streamer) {
-            throw_omni_streaming_not_implemented();
-        }
-        return generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
-    }
+                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer);
 
     /// @brief ChatHistory form of the omni-streaming generate above; same optional-override contract.
     /// OmniPipeline uses this one for its ChatHistory overload rather than applying the chat template
@@ -251,12 +246,7 @@ public:
                                        const std::vector<VideoMetadata>& videos_metadata,
                                        const GenerationConfig& generation_config,
                                        const StreamerVariant& streamer,
-                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
-        if (omni_streamer) {
-            throw_omni_streaming_not_implemented();
-        }
-        return generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
-    }
+                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer);
 
     /// @brief Backend capability: true when the active execution path emits the per-step hidden
     /// states the talker consumes. Depends on how the model was loaded — only the continuous-batching
@@ -274,19 +264,6 @@ public:
     /// @see supports_hidden_states_collection(), which instead reflects the active backend.
     /// @note This is a preview API and is subject to change.
     virtual bool is_audio_output_enabled() const = 0;
-
-protected:
-    /// @brief Shared body of the two omni-streaming generate() defaults above, so the explanation
-    /// can't drift between them. Separate from OmniPipeline's construction-time check against
-    /// supports_hidden_states_collection(), which rejects an incapable backend earlier and with a
-    /// message about how the model was loaded rather than about implementing this interface.
-    [[noreturn]] static void throw_omni_streaming_not_implemented() {
-        OPENVINO_THROW_NOT_IMPLEMENTED(
-            "This VLM backend does not implement streaming the thinker's output to a talker. "
-            "Implementing this generate() overload is optional: it is needed only to support "
-            "GenerationConfig::stream_text2speech. A backend without it still produces speech "
-            "normally, because OmniPipeline then runs the talker over the finished text instead.");
-    }
 };
 
 /// @brief A Visual language modeling pipeline class used to generate a

@@ -27,6 +27,14 @@
 using namespace ov::genai;
 
 namespace {
+[[noreturn]] void throw_omni_streaming_not_implemented() {
+    OPENVINO_THROW_NOT_IMPLEMENTED(
+        "This VLM backend does not implement streaming the thinker's output to a talker. "
+        "Implementing this generate() overload is optional: it is needed only to support "
+        "GenerationConfig::stream_text2speech. A backend without it still produces speech "
+        "normally, because OmniPipeline then runs the talker over the finished text instead.");
+}
+
 void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     switch (vlm_config.model_type) {
@@ -46,6 +54,34 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
     device_properties["AUTO"] = auto_properties;
 }
 
+}
+
+VLMDecodedResults VLMPipelineBase::generate(const std::string& prompt,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const GenerationConfig& generation_config,
+                                          const StreamerVariant& streamer,
+                                          const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
+    if (omni_streamer) {
+        throw_omni_streaming_not_implemented();
+    }
+    return generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipelineBase::generate(const ChatHistory& history,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const GenerationConfig& generation_config,
+                                          const StreamerVariant& streamer,
+                                          const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
+    if (omni_streamer) {
+        throw_omni_streaming_not_implemented();
+    }
+    return generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
 }
 
 class VLMPipeline::VLMPipelineImpl : public VLMBackend{
