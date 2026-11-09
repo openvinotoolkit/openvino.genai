@@ -1058,6 +1058,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
         const bool is_cancelled = request->handle_cancelled();
 
         if (is_finished || is_stopped || is_cancelled) {
+            const GenerationStatus terminal_status = request->out_of_memory()
+                ? GenerationStatus::IGNORED
+                : (is_finished ? GenerationStatus::FINISHED
+                               : (is_stopped ? GenerationStatus::STOP : GenerationStatus::CANCEL));
+            on_request_terminal(request, terminal_status);
             if (!request->notified_terminal()) {
                 _commit_perf_metrics(request);
                 if (is_finished) {
@@ -1131,9 +1136,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fail_pipeline(std::exc
     m_failure = std::move(error);
 
     for (const SequenceGroup::Ptr& request : m_requests) {
+        on_request_failed(request, m_failure);
         request->fail_generation(m_failure);
     }
     for (const SequenceGroup::Ptr& request : m_awaiting_requests) {
+        on_request_failed(request, m_failure);
         request->fail_generation(m_failure);
     }
 

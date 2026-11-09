@@ -83,6 +83,9 @@ protected:
      */
     void _commit_perf_metrics(const SequenceGroup::Ptr& request);
 
+    virtual void on_request_terminal(const SequenceGroup::Ptr&, GenerationStatus) {}
+    virtual void on_request_failed(const SequenceGroup::Ptr&, std::exception_ptr) noexcept {}
+
     /**
      * Handles 'echo' generation parameter
      */
