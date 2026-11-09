@@ -5,6 +5,7 @@
 #include "generation_stream.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "visual_language/chat_history_state.hpp"
 #include "visual_language/vlm_chat_context.hpp"
@@ -636,13 +637,23 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 namespace {
 
-/// @brief Clear the pending thinker -> talker bridge on every exit path, so a bridge from one
+/// @brief Release the pending thinker -> talker bridge on every exit path, so a bridge from one
 /// generate() call can never leak into the next one (which would write another request's steps
-/// into a talker that already saw end()).
+/// into a talker that already saw end()). ContinuousBatchingImpl::generate takes the bridge out of
+/// the slot; a bridge still in it here was never consumed, so abandon() it, otherwise the talker
+/// reading the other end would wait forever.
 struct PendingOmniStreamerGuard {
     std::shared_ptr<OmniStreamerBase>& slot;
-    ~PendingOmniStreamerGuard() { slot.reset(); }
+    ~PendingOmniStreamerGuard() {
+        if (auto unconsumed = std::exchange(slot, nullptr)) {
+            unconsumed->abandon();
+        }
+    }
 };
+
+constexpr const char* OMNI_STREAMER_UNSUPPORTED_BACKEND =
+    "Streaming the thinker's output to a talker is supported only by the plain continuous batching "
+    "backend; disable speculative decoding, prompt lookup, Eagle3, DFlash and MTP";
 
 }  // namespace
 
@@ -659,7 +670,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 ) {
     PendingOmniStreamerGuard guard{m_pending_omni_streamer};
     m_pending_omni_streamer = omni_streamer;
-    return generate(prompts, images_vector, videos_vector, videos_metadata_vector, audios_vector, sampling_params, streamer);
+    auto results = generate(prompts, images_vector, videos_vector, videos_metadata_vector, audios_vector, sampling_params, streamer);
+    OPENVINO_ASSERT(!m_pending_omni_streamer, OMNI_STREAMER_UNSUPPORTED_BACKEND);
+    return results;
 }
 
 std::vector<VLMDecodedResults>
@@ -675,7 +688,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 ) {
     PendingOmniStreamerGuard guard{m_pending_omni_streamer};
     m_pending_omni_streamer = omni_streamer;
-    return generate(histories, images_vector, videos_vector, videos_metadata_vector, audios_vector, sampling_params, streamer);
+    auto results = generate(histories, images_vector, videos_vector, videos_metadata_vector, audios_vector, sampling_params, streamer);
+    OPENVINO_ASSERT(!m_pending_omni_streamer, OMNI_STREAMER_UNSUPPORTED_BACKEND);
+    return results;
 }
 
 std::vector<VLMDecodedResults>

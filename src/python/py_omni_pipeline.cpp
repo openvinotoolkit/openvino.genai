@@ -16,6 +16,7 @@
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
+#include "openvino/genai/omni/text_source_base.hpp"
 #include "omni/talker_speech_config_utils.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "py_utils.hpp"
@@ -29,6 +30,7 @@ using ov::genai::GenerationConfig;
 using ov::genai::OmniDecodedResults;
 using ov::genai::OmniPipeline;
 using ov::genai::OmniTalkerSpeechConfig;
+using ov::genai::OmniTextSourceBase;
 using ov::genai::Talker;
 using ov::genai::TalkerBase;
 using ov::genai::VideoMetadata;
@@ -199,6 +201,20 @@ public:
         return generate(vlm_result, resolved.config, resolved.speech_streamer);
     }
 
+    // Python has one generate(); it receives the OmniTextSourceBase where the batch form receives
+    // a VLMDecodedResults. Not PURE: a subclass that leaves it out keeps the base's NotImplemented.
+    ov::genai::TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                                      const OmniTalkerSpeechConfig& talker_speech_config,
+                                      const ov::genai::OmniSpeechStreamerVariant& speech_streamer) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE(ov::genai::TalkerResults,
+                          TalkerBase,
+                          generate,
+                          text_source,
+                          talker_speech_config,
+                          speech_streamer);
+    }
+
     OmniTalkerSpeechConfig get_speech_config() const override {
         py::gil_scoped_acquire acquire;
         PYBIND11_OVERRIDE_PURE(OmniTalkerSpeechConfig, TalkerBase, get_speech_config);
@@ -344,7 +360,12 @@ void init_omni_pipeline(py::module_& m) {
         Pure interface with no storage of its own. Subclass to plug a custom talker into
         OmniPipeline; the default implementation is Talker. Subclasses must override
         generate(), get_speech_config(), set_speech_config(), list_speakers(), and
-        get_speaker_embedding().)")
+        get_speaker_embedding().
+
+        generate() has two forms that share one Python name: the first argument is a
+        VLMDecodedResults on the batch path, and an OmniTextSourceBase when
+        GenerationConfig.stream_text2speech is set. A subclass that does not handle the
+        OmniTextSourceBase form keeps the default, which raises NotImplemented.)")
         .def(py::init<>())
         .def("list_speakers", &TalkerBase::list_speakers)
         .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"))
@@ -452,6 +473,37 @@ void init_omni_pipeline(py::module_& m) {
                     py::arg("talker_speech_config"),
                     py::arg("speech_streamer") = std::monostate{},
                     "Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.");
+
+    talker_base.def("generate",
+                    [](TalkerBase& self,
+                       const std::shared_ptr<OmniTextSourceBase>& text_source,
+                       const OmniTalkerSpeechConfig& talker_speech_config,
+                       const ov::genai::OmniSpeechStreamerVariant& speech_streamer) {
+                        ov::genai::TalkerResults res;
+                        {
+                            py::gil_scoped_release rel;
+                            res = self.generate(text_source, talker_speech_config, speech_streamer);
+                        }
+                        return res;
+                    },
+                    py::arg("text_source"),
+                    py::arg("talker_speech_config"),
+                    py::arg("speech_streamer") = std::monostate{},
+                    R"(
+                        Run speech generation against the read end of a thinker -> talker bridge,
+                        consuming the thinker's steps as they arrive so speech starts before text
+                        generation finishes. Talker is prefilled as soon as the prompt and the thinker's
+                        first token have arrived, then pulls one token per codec step.
+
+                        With a fixed rng_seed the waveform matches the VLMDecodedResults form for the
+                        same thinker output, as long as the thinker did not generate an <|im_start|>
+                        token. Optional to override; the default raises NotImplemented.
+
+                        :param text_source: Read end of the bridge, e.g. the OmniChannel passed to
+                            VLMPipeline.generate(..., omni_streamer=channel) on another thread.
+                        :type text_source: OmniTextSourceBase
+                        :return: TalkerResults
+                    )");
 
     talker_base.def("generate",
                     [](TalkerBase& self, const VLMDecodedResults& vlm_result, const py::kwargs& kwargs) {

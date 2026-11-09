@@ -5,10 +5,8 @@
 
 #include <condition_variable>
 #include <deque>
-#include <iostream>  // TODO: temporary, for trace_write().
 #include <mutex>
 #include <utility>
-#include <vector>
 
 namespace ov {
 namespace genai {
@@ -22,7 +20,6 @@ class OmniChannel::Impl {
 
 public:
     StreamingStatus write(const ov::AnyMap& data) {
-        size_t depth = 0;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             if (m_reader_state != ReaderState::OPEN) {
@@ -32,12 +29,8 @@ public:
                                                               : StreamingStatus::RUNNING;
             }
             m_queue.push_back(data);
-            depth = m_queue.size();
         }
         m_cv.notify_one();
-        // TODO: temporary — drop once the talker reads the other end. Traces what the thinker
-        // pushes so the bridge can be watched end-to-end before there is a consumer.
-        trace_write(data, depth);
         return StreamingStatus::RUNNING;
     }
 
@@ -99,31 +92,6 @@ private:
         m_cv.notify_all();
     }
 
-    // TODO: temporary — remove together with the trace_write() call in write().
-    void trace_write(const ov::AnyMap& data, size_t queue_depth) {
-        const auto tokens_it = data.find(omni_stream::tokens.name());
-        const auto tokens = tokens_it == data.end() ? std::vector<int64_t>{}
-                                                    : tokens_it->second.as<std::vector<int64_t>>();
-
-        std::cerr << "[OmniChannel] write #" << m_written++ << ": " << tokens.size() << " token(s) [";
-        for (size_t i = 0; i < tokens.size() && i < 8; ++i) {
-            std::cerr << (i ? ", " : "") << tokens[i];
-        }
-        std::cerr << (tokens.size() > 8 ? ", ...]" : "]");
-
-        const auto hidden_states_it = data.find(omni_stream::hidden_states.name());
-        if (hidden_states_it == data.end()) {
-            std::cerr << ", no hidden states";
-        } else {
-            const auto hidden_states = hidden_states_it->second.as<std::vector<ov::Tensor>>();
-            std::cerr << ", " << hidden_states.size() << " hidden state(s)";
-            if (!hidden_states.empty()) {
-                std::cerr << " of shape " << hidden_states.front().get_shape();
-            }
-        }
-        std::cerr << ", queue depth " << queue_depth << std::endl;
-    }
-
     /// @brief Pop the front step under an already-held lock. nullopt when the queue is empty.
     std::optional<ov::AnyMap> pop(const std::unique_lock<std::mutex>&) {
         if (m_queue.empty()) {
@@ -134,14 +102,12 @@ private:
         return data;
     }
 
-
     std::deque<ov::AnyMap> m_queue;
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     bool m_finished = false;
     bool m_truncated = false;
     ReaderState m_reader_state = ReaderState::OPEN;
-    size_t m_written = 0;  // TODO: temporary, only used by trace_write().
 };
 
 OmniChannel::OmniChannel() : m_impl(std::make_unique<Impl>()) {}

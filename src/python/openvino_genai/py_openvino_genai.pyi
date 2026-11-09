@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniChannel', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniStreamerBase', 'OmniTalkerSpeechConfig', 'OmniTextSourceBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -3335,6 +3335,40 @@ class MeanStdPair:
     @property
     def std(self) -> float:
         ...
+class OmniChannel(OmniStreamerBase, OmniTextSourceBase):
+    """
+    
+        Built-in thinker -> talker bridge: the VLM writes decode steps in, the talker reads them out,
+        so speech generation runs while text generation is still going. Implements both
+        OmniStreamerBase and OmniTextSourceBase.
+    
+        OmniPipeline creates one per generate() call when GenerationConfig.stream_text2speech is set.
+        Construct one directly only when driving VLMPipeline.generate(..., omni_streamer=channel) and
+        Talker.generate(channel, ...) yourself, typically on two threads.
+    
+        Steps are queued in arrival order and are never dropped or coalesced. The queue is unbounded,
+        so a talker slower than the thinker costs memory rather than stalling text generation.
+    
+        The reader closes its own end with detach() when it stops listening and with abort() when it
+        fails. Both drop the queue and are idempotent, with abort() taking precedence. After detach()
+        write() keeps returning RUNNING so the text still finishes; after abort() it returns STOP.
+    
+        The writer closes with end() or abandon(), and the difference reaches the reader as
+        truncated(). abandon() also drops the queue.
+    
+        Safe to use from two threads, one writing and one reading. read() releases the GIL while it
+        waits. This is a preview API and is subject to change.
+    """
+    def __init__(self) -> None:
+        ...
+    def abort(self) -> None:
+        """
+        Close the read end because the talker failed. write() returns STOP from now on.
+        """
+    def detach(self) -> None:
+        """
+        Close the read end: the talker stopped gracefully and is not going to read anymore. write() keeps returning RUNNING.
+        """
 class OmniDecodedResults(VLMDecodedResults):
     """
     Omni-specific decoded results including speech outputs.
@@ -3482,6 +3516,55 @@ class OmniSpeechStreamerBase:
         """
         Called with each audio chunk tensor [1, 1, N_samples]. Return StreamingStatus.
         """
+class OmniStreamerBase:
+    """
+    
+        Write end of the thinker -> talker bridge. VLMPipeline.generate(..., omni_streamer=...) calls
+        write() once per decode step with that step's tokens and thinker hidden states, so a talker
+        reading the other end can start speaking before text generation finishes.
+    
+        Inherit and implement write(), end() and abandon(). OmniChannel is the built-in implementation
+        that also implements OmniTextSourceBase; OmniPipeline builds one itself when
+        GenerationConfig.stream_text2speech is set, so a custom one is for driving VLMPipeline and
+        Talker yourself.
+    
+        write(step: dict) -> StreamingStatus:
+            Called once per VLM decode step. Ignore unknown keys. Known keys:
+              "tokens": list[int] -- token ids produced by this step: every prompt token on prefill,
+                  one token per decode step.
+              "hidden_states": list[ov.Tensor] -- f32 [1, 1, hidden_size] thinker hidden states,
+                  co-indexed with the token stream by absolute position across the whole stream, not
+                  within one payload; the token stream ends one entry longer. Present only when the
+                  backend collects hidden states (continuous batching with
+                  GenerationConfig.return_omni_outputs).
+            Return StreamingStatus.RUNNING to continue, STOP or TOOL_CALL_STOP to stop, CANCEL to
+            cancel the VLM.
+    
+        end():
+            Called exactly once when the VLM stage ends, including on an early stop or cancel.
+            Must release any reader blocked in OmniTextSourceBase.read().
+    
+        abandon():
+            Called instead of end() when the VLM stage raised: what was written is a prefix of a
+            response that will never be completed. Same obligation to release readers.
+    
+        write() and end()/abandon() are called sequentially from the thread running the VLM decode
+        loop. This is a preview API and is subject to change.
+    """
+    def __init__(self) -> None:
+        ...
+    def abandon(self) -> None:
+        """
+        Called instead of end() when the VLM stage raised.
+        """
+    def end(self) -> None:
+        """
+        Called exactly once when the VLM stage ends, including on an early stop or cancel.
+        """
+    def write(self, step: dict) -> StreamingStatus:
+        """
+        Called once per VLM decode step with that step's payload. Return StreamingStatus.
+        """
 class OmniTalkerSpeechConfig:
     """
     
@@ -3625,6 +3708,38 @@ class OmniTalkerSpeechConfig:
     @talker_top_k.setter
     def talker_top_k(self, arg0: typing.SupportsInt | None) -> None:
         ...
+class OmniTextSourceBase:
+    """
+    
+        Read end of the thinker -> talker bridge. Talker.generate(text_source, ...) calls read() in a
+        loop to pull the VLM's decode steps as they are produced instead of waiting for a finished
+        VLMDecodedResults.
+    
+        Inherit and implement read() and truncated(). What a producer passed to OmniStreamerBase.write()
+        is what read() returns, with the same keys and in the same order.
+    
+        read() -> dict | None:
+            Take the next VLM step, blocking until one arrives or the stream ends. Return None once the
+            write end has called end() and every queued step has been read; None is final. Must not
+            block forever on a VLM that stopped early or raised: end() or abandon() is always called
+            on the write end and must release the reader.
+    
+        truncated() -> bool:
+            Whether the producer called abandon() instead of end(). Only meaningful once read() has
+            returned None.
+    
+        This is a preview API and is subject to change.
+    """
+    def __init__(self) -> None:
+        ...
+    def read(self) -> dict | None:
+        """
+        Take the next VLM step, blocking until one arrives or the stream ends. None once the stream ended.
+        """
+    def truncated(self) -> bool:
+        """
+        Whether the producer called abandon() instead of end(). Meaningful once read() returned None.
+        """
 class Parser:
     def __init__(self) -> None:
         ...
@@ -5432,6 +5547,11 @@ class TalkerBase:
             OmniPipeline; the default implementation is Talker. Subclasses must override
             generate(), get_speech_config(), set_speech_config(), list_speakers(), and
             get_speaker_embedding().
+    
+            generate() has two forms that share one Python name: the first argument is a
+            VLMDecodedResults on the batch path, and an OmniTextSourceBase when
+            GenerationConfig.stream_text2speech is set. A subclass that does not handle the
+            OmniTextSourceBase form keeps the default, which raises NotImplemented.
     """
     def __init__(self) -> None:
         ...
@@ -5439,6 +5559,23 @@ class TalkerBase:
     def generate(self, vlm_result: VLMDecodedResults, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], StreamingStatus] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
         """
         Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.
+        """
+    @typing.overload
+    def generate(self, text_source: OmniTextSourceBase, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], StreamingStatus] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
+        """
+                                Run speech generation against the read end of a thinker -> talker bridge,
+                                consuming the thinker's steps as they arrive so speech starts before text
+                                generation finishes. Talker is prefilled as soon as the prompt and the thinker's
+                                first token have arrived, then pulls one token per codec step.
+        
+                                With a fixed rng_seed the waveform matches the VLMDecodedResults form for the
+                                same thinker output, as long as the thinker did not generate an <|im_start|>
+                                token. Optional to override; the default raises NotImplemented.
+        
+                                :param text_source: Read end of the bridge, e.g. the OmniChannel passed to
+                                    VLMPipeline.generate(..., omni_streamer=channel) on another thread.
+                                :type text_source: OmniTextSourceBase
+                                :return: TalkerResults
         """
     @typing.overload
     def generate(self, vlm_result: VLMDecodedResults, **kwargs) -> TalkerResults:
@@ -6568,7 +6705,10 @@ class VLMPipeline(VLMPipelineBase):
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields,
+                plus omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden
+                states, so a Talker reading the other end can speak while text is still being generated.
+                Requires the continuous batching backend and batch size 1. See OmniChannel.
             :type kwargs: dict
         
             :return: return results in decoded form
@@ -6612,7 +6752,10 @@ class VLMPipeline(VLMPipelineBase):
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields,
+                plus omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden
+                states, so a Talker reading the other end can speak while text is still being generated.
+                Requires the continuous batching backend and batch size 1. See OmniChannel.
             :type kwargs: dict
         
             :return: return results in decoded form
@@ -6656,7 +6799,10 @@ class VLMPipeline(VLMPipelineBase):
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields,
+                plus omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden
+                states, so a Talker reading the other end can speak while text is still being generated.
+                Requires the continuous batching backend and batch size 1. See OmniChannel.
             :type kwargs: dict
         
             :return: return results in decoded form
@@ -6700,7 +6846,10 @@ class VLMPipeline(VLMPipelineBase):
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields,
+                plus omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden
+                states, so a Talker reading the other end can speak while text is still being generated.
+                Requires the continuous batching backend and batch size 1. See OmniChannel.
             :type kwargs: dict
         
             :return: return results in decoded form
@@ -6728,6 +6877,7 @@ class VLMPipeline(VLMPipelineBase):
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
             speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
             audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when speech_streamer is not provided.
+            omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden states (see OmniChannel). Requires the continuous batching backend and batch size 1.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -6770,7 +6920,10 @@ class VLMPipeline(VLMPipelineBase):
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields,
+                plus omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden
+                states, so a Talker reading the other end can speak while text is still being generated.
+                Requires the continuous batching backend and batch size 1. See OmniChannel.
             :type kwargs: dict
         
             :return: return results in decoded form
@@ -6814,7 +6967,10 @@ class VLMPipeline(VLMPipelineBase):
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields,
+                plus omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden
+                states, so a Talker reading the other end can speak while text is still being generated.
+                Requires the continuous batching backend and batch size 1. See OmniChannel.
             :type kwargs: dict
         
             :return: return results in decoded form
@@ -6858,7 +7014,10 @@ class VLMPipeline(VLMPipelineBase):
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields,
+                plus omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden
+                states, so a Talker reading the other end can speak while text is still being generated.
+                Requires the continuous batching backend and batch size 1. See OmniChannel.
             :type kwargs: dict
         
             :return: return results in decoded form
@@ -6886,6 +7045,7 @@ class VLMPipeline(VLMPipelineBase):
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
             speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
             audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when speech_streamer is not provided.
+            omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden states (see OmniChannel). Requires the continuous batching backend and batch size 1.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -6908,28 +7068,34 @@ class VLMPipelineBase:
             constructor. A subclass must override generate(), get_tokenizer(), get_generation_config(),
             set_generation_config(), set_chat_template(), and the Qwen3-Omni capability queries
             supports_hidden_states_collection() and is_audio_output_enabled().
+    
+            When GenerationConfig.stream_text2speech is set, OmniPipeline calls generate() with an
+            extra `omni_streamer` keyword argument (an OmniStreamerBase) that the subclass must feed
+            with every decode step's tokens and hidden states and close with end() or abandon().
+            Accept `omni_streamer=None` in the override to support it; a subclass without that
+            parameter cannot be used with stream_text2speech.
     """
     def __init__(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, omni_streamer: OmniStreamerBase = None) -> VLMDecodedResults:
         """
-        Generate a VLM response from a prompt. Override in a subclass.
+        Generate a VLM response from a prompt. Override in a subclass. With omni_streamer set, additionally push every decode step's tokens and thinker hidden states into it.
         """
     @typing.overload
-    def generate(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
+    def generate(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, omni_streamer: OmniStreamerBase = None) -> VLMDecodedResults:
         """
-        Generate a VLM response from a chat history. Override in a subclass.
+        Generate a VLM response from a chat history. Override in a subclass. With omni_streamer set, additionally push every decode step's tokens and thinker hidden states into it.
         """
     @typing.overload
     def generate(self, prompt: str, **kwargs) -> VLMDecodedResults:
         """
-        Generate a VLM response from a prompt plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
+        Generate a VLM response from a prompt plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, omni_streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
         """
     @typing.overload
     def generate(self, history: ChatHistory, **kwargs) -> VLMDecodedResults:
         """
-        Generate a VLM response from a chat history plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
+        Generate a VLM response from a chat history plus a property bag: images, videos, audios, videos_metadata, generation_config, streamer, omni_streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
         """
     def get_generation_config(self) -> GenerationConfig:
         ...

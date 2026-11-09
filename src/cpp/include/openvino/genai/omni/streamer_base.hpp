@@ -10,6 +10,7 @@
 #include "openvino/core/any.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
 
 namespace ov::genai {
@@ -70,9 +71,10 @@ namespace ov::genai {
  *      otherwise the talker deadlocks on a failed VLM stage.
  *
  * Return values from write():
- *   - RUNNING -- continue generating.
- *   - STOP    -- stop generation gracefully; already-generated text is kept. end() is still called.
- *   - CANCEL  -- cancel generation; generated text may be dropped. end() is still called.
+ *   - RUNNING        -- continue generating.
+ *   - STOP           -- stop generation gracefully; already-generated text is kept. end() is still called.
+ *   - CANCEL         -- cancel generation; generated text may be dropped. end() is still called.
+ *   - TOOL_CALL_STOP -- stop as STOP does, with the finish reason recorded as a tool call.
  *
  * @note This is a preview API and is subject to change.
  */
@@ -80,7 +82,7 @@ class OPENVINO_GENAI_EXPORTS OmniStreamerBase {
 public:
     /// @brief Called once per VLM decode step with that step's data.
     /// @param data Step payload keyed as documented above. Unknown keys must be ignored.
-    /// @return StreamingStatus to continue (RUNNING), stop (STOP), or cancel (CANCEL) the VLM.
+    /// @return StreamingStatus to continue (RUNNING), stop (STOP or TOOL_CALL_STOP), or cancel (CANCEL) the VLM.
     virtual StreamingStatus write(const ov::AnyMap& data) = 0;
 
     /// @brief Called exactly once when the VLM stage ends, including on an early stop or cancel.

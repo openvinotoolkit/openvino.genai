@@ -50,31 +50,33 @@ public:
         }
         // Closing the read end here rather than inside TalkerBase keeps it off the contract every
         // talker implementation would otherwise have to honour to avoid stranding the thinker.
-        m_result = std::async(std::launch::async, [this] {
+        m_result = std::async(std::launch::async, [this, channel = m_channel] {
             try {
-                TalkerResults results = m_talker->generate(m_channel, m_talker_speech_config, m_speech_streamer);
+                TalkerResults results = m_talker->generate(channel, m_talker_speech_config, m_speech_streamer);
                 // A talker that returned while the thinker is still going wants no more tokens,
                 // but the caller still wants the text, so this must not stop generation.
-                m_channel->detach();
+                channel->detach();
                 return results;
             } catch (...) {
                 // Nothing will consume the rest of the response. The exception itself rides the
                 // future and surfaces from finish() on the caller's thread.
-                m_channel->abort();
+                channel->abort();
                 throw;
             }
         });
     }
 
-    /// @brief Close the bridge, then wait for the talker thread (the future's destructor blocks,
-    /// and members die after this body). Closing here is what keeps a thinker that threw before it
-    /// could close its own write end from leaving the talker blocked on a read that can never be
-    /// satisfied. abandon() rather than end() because reaching the destructor without finish()
-    /// means nothing will consume the talker's output, so it should stop at its next step instead
-    /// of padding out a stream nobody will hear while an exception unwinds. Whatever it throws on
-    /// the way out stays in the future and never competes with the exception already in flight.
+    /// @brief Close the bridge if finish() never ran, then wait for the talker thread (the future's
+    /// destructor blocks, and members die after this body). Closing here is what keeps a thinker
+    /// that threw before it could close its own write end from leaving the talker blocked on a read
+    /// that can never be satisfied. abandon() rather than end() because reaching the destructor
+    /// without finish() means nothing will consume the talker's output, so it should stop at its
+    /// next step instead of padding out a stream nobody will hear while an exception unwinds.
+    /// Whatever it throws on the way out stays in the future and never competes with the exception
+    /// already in flight. After finish() the thinker has already called end() on the bridge, and
+    /// the OmniStreamerBase contract allows exactly one of end() and abandon().
     ~TalkerStage() {
-        if (m_channel) {
+        if (m_channel && !m_finished) {
             m_channel->abandon();
         }
     }
@@ -85,6 +87,8 @@ public:
         if (!m_channel) {
             return m_talker->generate(vlm_result, m_talker_speech_config, m_speech_streamer);
         }
+        // Reaching finish() means the thinker returned, so it has closed the write end itself.
+        m_finished = true;
         return m_result.get();
     }
 
@@ -96,6 +100,7 @@ private:
     const OmniTalkerSpeechConfig& m_talker_speech_config;
     const OmniSpeechStreamerVariant& m_speech_streamer;
     std::future<TalkerResults> m_result;
+    bool m_finished = false;
 };
 
 /// @brief Cross-config validation: when speech output is requested the thinker text decode

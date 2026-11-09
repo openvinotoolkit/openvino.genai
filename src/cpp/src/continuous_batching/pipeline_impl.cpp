@@ -5,6 +5,7 @@
 #include <atomic>
 #include <optional>
 #include <thread>
+#include <utility>
 
 #include "openvino/genai/cache_eviction.hpp"
 
@@ -920,22 +921,30 @@ namespace {
 /// count would silently drop it, and the talker would speak a sentence short of its ending.
 class OmniStepForwarder {
 public:
+    /// @param requests Exactly one request with one running sequence; checked by the caller before
+    ///                 the request was added, so a rejected call leaves no request behind.
     OmniStepForwarder(std::shared_ptr<OmniStreamerBase> streamer,
                       const std::vector<SequenceGroup::Ptr>& requests)
         : m_streamer(std::move(streamer)) {
         if (!m_streamer) {
             return;
         }
-        OPENVINO_ASSERT(requests.size() == 1,
-                        "Streaming the thinker's output to a talker requires batch size 1, got ",
-                        requests.size(), " requests");
         const auto& running_sequences = requests.front()->get_running_sequences();
-        OPENVINO_ASSERT(running_sequences.size() == 1,
-                        "Streaming the thinker's output to a talker requires a single sequence per request "
-                        "(num_return_sequences == 1, no beam search), got ", running_sequences.size());
+        OPENVINO_ASSERT(requests.size() == 1 && running_sequences.size() == 1,
+                        "Internal error: the omni_streamer constraints were supposed to be validated before add_request");
         // Held by shared_ptr so it stays reachable after the group drops it from the running list.
         m_sequence = running_sequences.front();
         m_prompt_ids = requests.front()->get_prompt_ids();
+    }
+
+    OmniStepForwarder(const OmniStepForwarder&) = delete;
+    OmniStepForwarder& operator=(const OmniStepForwarder&) = delete;
+
+    /// @brief A bridge still open here was neither ended nor abandoned by the decode loop, so the
+    /// loop left through an exception the loop's own catch did not see (a throwing text streamer,
+    /// or the bridge's write()). Abandon it so the reader does not block forever.
+    ~OmniStepForwarder() {
+        abandon();
     }
 
     /// @brief Write whatever the last step added, if anything.
@@ -1069,6 +1078,17 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
+    // Checked before add_request so a rejected call leaves no request behind. The bridge stays in
+    // m_pending_omni_streamer until the OmniStepForwarder below takes it, so a throw in between
+    // still reaches the guard in IContinuousBatchingPipeline::generate, which abandons it.
+    OPENVINO_ASSERT(!m_pending_omni_streamer || input_ids.size() == 1,
+                    "Streaming the thinker's output to a talker requires batch size 1, got ",
+                    input_ids.size(), " requests");
+    OPENVINO_ASSERT(!m_pending_omni_streamer ||
+                        sampling_params[0].num_return_sequences == 1 && !sampling_params[0].is_beam_search(),
+                    "Streaming the thinker's output to a talker requires a single sequence per request "
+                    "(num_return_sequences == 1, no beam search)");
+
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
@@ -1100,7 +1120,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     // Thinker -> talker bridge, if the caller passed one via ov::genai::omni_streamer. Built after
     // add_request so the sequence it follows exists; it needs the same hidden states the batch path
     // collects, so it only ever has something to forward when return_omni_outputs enabled them.
-    OmniStepForwarder omni_forwarder(m_pending_omni_streamer, all_requests);
+    // Taking the bridge out of the slot marks it consumed for IContinuousBatchingPipeline::generate.
+    OmniStepForwarder omni_forwarder(std::exchange(m_pending_omni_streamer, nullptr), all_requests);
 
     streamer_ptr->start();
     m_sampler->clear_structured_output_compile_times();

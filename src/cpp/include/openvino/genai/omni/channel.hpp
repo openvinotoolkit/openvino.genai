@@ -29,7 +29,7 @@ namespace ov::genai {
  * path spends accumulating VLMDecodedResults::intermediate_hidden_states.
  *
  * The reader closes its own end with detach() when it stops listening and with abort() when it
- * fails. Both drop the queue, which is what keeps a reader that is gone from turning the rest ofl
+ * fails. Both drop the queue, which is what keeps a reader that is gone from turning the rest of
  * the generation into unbounded growth, and both are idempotent, with abort() taking precedence.
  * They differ in what write() then tells the thinker: detach() leaves it RUNNING so the text still
  * finishes, while abort() returns STOP because nobody will hear the rest. The failure itself never

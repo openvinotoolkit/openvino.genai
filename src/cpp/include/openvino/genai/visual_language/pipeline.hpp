@@ -218,20 +218,24 @@ public:
     /// OmniPipeline; `omni_streamer` is null for conventional VLM use.
     ///
     /// Overriding is optional: this overload exists only to serve
-    /// `GenerationConfig::stream_text2speech`, so the default throws `ov::NotImplemented` rather than
+    /// `GenerationConfig::stream_text2speech`. With a null `omni_streamer` the default delegates to the
+    /// non-streaming overload above; with a non-null one it throws `ov::NotImplemented` rather than
     /// quietly dropping the streamer and producing no speech. A backend that skips it still supports
     /// non-streaming speech output in full — OmniPipeline calls the non-streaming overload above when
-    /// streaming is off, and never routes a null `omni_streamer` here.
+    /// streaming is off.
     /// @note This is a preview API and is subject to change.
-    virtual VLMDecodedResults generate(const std::string& /* prompt */,
-                                       const std::vector<ov::Tensor>& /* images */,
-                                       const std::vector<ov::Tensor>& /* videos */,
-                                       const std::vector<ov::Tensor>& /* audios */,
-                                       const std::vector<VideoMetadata>& /* videos_metadata */,
-                                       const GenerationConfig& /* generation_config */,
-                                       const StreamerVariant& /* streamer */,
-                                       const std::shared_ptr<OmniStreamerBase>& /* omni_streamer */) {
-        throw_omni_streaming_not_implemented();
+    virtual VLMDecodedResults generate(const std::string& prompt,
+                                       const std::vector<ov::Tensor>& images,
+                                       const std::vector<ov::Tensor>& videos,
+                                       const std::vector<ov::Tensor>& audios,
+                                       const std::vector<VideoMetadata>& videos_metadata,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer,
+                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
+        if (omni_streamer) {
+            throw_omni_streaming_not_implemented();
+        }
+        return generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
     }
 
     /// @brief ChatHistory form of the omni-streaming generate above; same optional-override contract.
@@ -240,15 +244,18 @@ public:
     /// tags inside the user message only happens on the ChatHistory path, and going through a
     /// templated string changes the Thinker's output.
     /// @note This is a preview API and is subject to change.
-    virtual VLMDecodedResults generate(const ChatHistory& /* history */,
-                                       const std::vector<ov::Tensor>& /* images */,
-                                       const std::vector<ov::Tensor>& /* videos */,
-                                       const std::vector<ov::Tensor>& /* audios */,
-                                       const std::vector<VideoMetadata>& /* videos_metadata */,
-                                       const GenerationConfig& /* generation_config */,
-                                       const StreamerVariant& /* streamer */,
-                                       const std::shared_ptr<OmniStreamerBase>& /* omni_streamer */) {
-        throw_omni_streaming_not_implemented();
+    virtual VLMDecodedResults generate(const ChatHistory& history,
+                                       const std::vector<ov::Tensor>& images,
+                                       const std::vector<ov::Tensor>& videos,
+                                       const std::vector<ov::Tensor>& audios,
+                                       const std::vector<VideoMetadata>& videos_metadata,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer,
+                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
+        if (omni_streamer) {
+            throw_omni_streaming_not_implemented();
+        }
+        return generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
     }
 
     /// @brief Backend capability: true when the active execution path emits the per-step hidden

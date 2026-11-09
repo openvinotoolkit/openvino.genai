@@ -204,8 +204,10 @@ public:
     /// the thinker is still generating: the talker is prefilled as soon as the prompt and the
     /// thinker's first token have arrived, and then pulls one token per codec step.
     ///
-    /// Streaming changes only the timing, not the result: with a fixed `rng_seed` the waveform is
-    /// bit-identical to the one the VLMDecodedResults overload produces for the same thinker output.
+    /// Streaming changes the timing, not the result: with a fixed `rng_seed` the waveform matches
+    /// the one the VLMDecodedResults overload produces for the same thinker output, as long as the
+    /// thinker did not generate an `<|im_start|>` token. The batch overload sees the whole response
+    /// and trims at that token; the streaming one cannot look ahead, so the two diverge after it.
     TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
                           const OmniTalkerSpeechConfig& talker_speech_config,
                           const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
