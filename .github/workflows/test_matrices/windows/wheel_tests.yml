@@ -290,10 +290,10 @@
   components:
     - speculative_decoding
 
-- name: DFlash speculative decoding tests
+- name: DFlash and DSpark speculative decoding tests
   cmd: |-
-    # The DFlash drafts need the export from https://github.com/huggingface/optimum-intel/pull/2096; with it,
-    # optimum-intel exports Qwen3.5 only with transformers>=5.15.
+    # The DFlash and DSpark drafts need the export from optimum-intel main, which exports Qwen3.5 only with
+    # transformers>=5.15.
     python -m pip install transformers==5.15.1
     python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f09a56ace88149cd341233ddfa2bc018bff7c079"
     python -m pytest -v ./tests/python_tests/test_continuous_batching.py ./tests/python_tests/test_vlm_pipeline.py ./tests/python_tests/test_dflash_markov_head_cb.py -k "dflash"
