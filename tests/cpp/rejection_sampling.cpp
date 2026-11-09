@@ -11,7 +11,9 @@
 #include <vector>
 
 #include "openvino/op/constant.hpp"
+#include "sampling/candidates_validation.hpp"
 #include "sampling/sampler.hpp"
+#include "sampling/sampling_distribution.hpp"
 #include "sequence_group.hpp"
 
 using namespace ov::genai;
@@ -104,7 +106,8 @@ TEST(RejectionSampling, SamplesExactResidualOutsideRejectedProposalMass) {
 
     std::mt19937 rng(0);
     std::vector<float> p{0.25f, 0.75f};
-    const auto sampled = detail::sample_residual(Logits(p.data(), p.size()), proposal, rng);
+    const Logits target(p.data(), p.size());
+    const auto sampled = detail::sample_residual(SamplingDistribution(target), proposal, rng);
     ASSERT_EQ(sampled.m_index, 0);
     ASSERT_NEAR(std::exp(sampled.m_log_prob), 0.25f, 1e-6f);
 }
@@ -113,11 +116,13 @@ TEST(RejectionSampling, SamplesExactResidualOutsideRejectedProposalMass) {
 TEST(RejectionSampling, FallsBackToTargetWhenResidualIsDegenerate) {
     std::vector<float> p{0.1f, 0.2f, 0.3f, 0.4f};
     const DraftProposal proposal{{}, p};
+    const Logits logits(p.data(), p.size());
+    const SamplingDistribution target(logits);
     std::mt19937 rng(7);
     std::vector<float> frequencies(p.size(), 0.0f);
     constexpr size_t trials = 40000;
     for (size_t trial = 0; trial < trials; ++trial) {
-        frequencies.at(detail::sample_residual(Logits(p.data(), p.size()), proposal, rng).m_index) += 1.0f / trials;
+        frequencies.at(detail::sample_residual(target, proposal, rng).m_index) += 1.0f / trials;
     }
     EXPECT_LT(total_variation_distance(frequencies, p), 0.02f);
 }
@@ -131,10 +136,12 @@ TEST(RejectionSampling, SamplesTheResidualTailOfADenseTarget) {
     p[1] = 0.6f;
     p[0] = 1.0f - p[1] - tail_size * tail_probability;
     const DraftProposal proposal{{0}, {1.0f}};
+    const Logits logits(p.data(), p.size());
+    const SamplingDistribution target(logits);
     std::mt19937 rng(11);
     size_t tail_draws = 0;
     for (size_t trial = 0; trial < 500; ++trial) {
-        tail_draws += detail::sample_residual(Logits(p.data(), p.size()), proposal, rng).m_index > 1;
+        tail_draws += detail::sample_residual(target, proposal, rng).m_index > 1;
     }
     EXPECT_GT(tail_draws, 0u);
 }
@@ -149,7 +156,8 @@ TEST(RejectionSampling, DrawsTheDenseTailItsProposalRecords) {
     std::vector<float> probabilities(2 + tail_size, tail_probability);
     probabilities[0] = 0.39f;
     probabilities[1] = 0.6f;
-    const auto proposal = detail::make_draft_proposal(Logits(probabilities.data(), probabilities.size()));
+    const Logits row(probabilities.data(), probabilities.size());
+    const auto proposal = detail::make_draft_proposal(SamplingDistribution(row));
     ASSERT_TRUE(proposal.is_dense());
     const double recorded_tail_mass =
         std::accumulate(proposal.probabilities.begin() + 2, proposal.probabilities.end(), 0.0);
@@ -181,22 +189,28 @@ TEST(RejectionSampling, DrawsTheDenseTailItsProposalRecords) {
     EXPECT_NEAR(tail_frequency(config), recorded_tail_mass, 0.004) << "probabilities in m_vector";
 }
 
+// Release builds check the shape of a proposal; debug builds also check that it is a distribution.
 TEST(RejectionSampling, RejectsInvalidDistributions) {
+    EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{}), ov::Exception);
+    EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{0, 1}, {1.0f}}), ov::Exception);
+#ifndef NDEBUG
     EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{0}, {0.75f}}), ov::Exception);
     EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{-1}, {1.0f}}), ov::Exception);
-    EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{}), ov::Exception);
+#endif
 }
 
 TEST(RejectionSampling, UsesUniformFallbackForInvalidSamplingLogits) {
     float values[] = {-std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()};
     const Logits logits(values, 2);
+    const SamplingDistribution distribution(logits);
 
-    const auto proposal = detail::make_draft_proposal(logits);
+    const auto proposal = detail::make_draft_proposal(distribution);
     ASSERT_TRUE(proposal.is_dense());
     ASSERT_EQ(proposal.probabilities.size(), 2);
     EXPECT_FLOAT_EQ(proposal.probabilities[0], 0.5f);
     EXPECT_FLOAT_EQ(proposal.probabilities[1], 0.5f);
-    EXPECT_FLOAT_EQ(detail::sampling_probability(logits, 1), 0.5f);
+    EXPECT_FLOAT_EQ(distribution.probability_of(1), 0.5f);
+    EXPECT_FLOAT_EQ(distribution.log_probability(1), std::log(0.5f));
 }
 
 // One likely token and a vocabulary-sized tail of equal probabilities: float sums over it drift by more than the
@@ -213,11 +227,14 @@ TEST(RejectionSampling, NormalizesFullVocabularyProposalsWithEqualTails) {
         probability = static_cast<float>(probability / total);
     }
     const Logits logits(probabilities.data(), vocab_size);
+    const SamplingDistribution distribution(logits);
 
-    const auto proposal = detail::make_draft_proposal(logits);
+    const auto proposal = detail::make_draft_proposal(distribution);
     ASSERT_TRUE(proposal.is_dense());
     EXPECT_NO_THROW(detail::validate_draft_proposal(proposal));
-    EXPECT_NEAR(detail::sampling_probability(logits, 0), proposal.probabilities[0], 1e-6f);
+    EXPECT_NEAR(distribution.probability_of(0), proposal.probabilities[0], 1e-6f);
+    const double proposal_total = std::accumulate(proposal.probabilities.begin(), proposal.probabilities.end(), 0.0);
+    EXPECT_NEAR(proposal_total, 1.0, 1e-3);
 }
 
 // The same row as a candidate list, as top-p or min-p without top-k can leave it.
@@ -229,11 +246,14 @@ TEST(RejectionSampling, NormalizesLargeCandidateProposalsWithEqualTails) {
         candidates.emplace_back(static_cast<float>(1.0 / total), static_cast<int64_t>(i));
     }
     const Logits logits = candidate_logits(std::move(candidates), false);
+    const SamplingDistribution distribution(logits);
 
-    const auto proposal = detail::make_draft_proposal(logits);
+    const auto proposal = detail::make_draft_proposal(distribution);
     ASSERT_FALSE(proposal.is_dense());
     EXPECT_NO_THROW(detail::validate_draft_proposal(proposal));
-    EXPECT_NEAR(detail::sampling_probability(logits, 0), proposal.probabilities[0], 1e-6f);
+    EXPECT_NEAR(distribution.probability_of(0), proposal.probabilities[0], 1e-6f);
+    const double proposal_total = std::accumulate(proposal.probabilities.begin(), proposal.probabilities.end(), 0.0);
+    EXPECT_NEAR(proposal_total, 1.0, 1e-3);
 }
 
 TEST(RejectionSampling, CapturesTheDistributionUsedToSampleDraftTokens) {
@@ -365,8 +385,8 @@ TEST(RejectionSampling, RecoversTheTargetDistributionOverFilteredCandidates) {
     constexpr size_t vocab_size = 6;
     const std::vector<Token> target_candidates = {{120.0f, 4}, {119.0f, 1}, {117.0f, 3}};
     const auto target = candidate_logits(target_candidates, true);
-    const auto proposal =
-        detail::make_draft_proposal(candidate_logits({{0.4f, 1}, {0.2f, 3}, {0.2f, 4}, {0.1f, 0}}, false));
+    const auto draft = candidate_logits({{0.4f, 1}, {0.2f, 3}, {0.2f, 4}, {0.1f, 0}}, false);
+    const auto proposal = detail::make_draft_proposal(SamplingDistribution(draft));
     ASSERT_FALSE(proposal.is_dense());
     EXPECT_NO_THROW(detail::validate_draft_proposal(proposal));
 
