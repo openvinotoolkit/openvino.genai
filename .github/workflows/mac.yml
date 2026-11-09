@@ -800,7 +800,8 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_macos
-    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_build_nodejs, genai_nodejs_tests, genai_wwb_standalone_install]
+    # TODO: restore genai_build_nodejs and genai_nodejs_tests after https://github.com/openvinotoolkit/openvino_tokenizers/pull/821 is merged
+    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_wwb_standalone_install]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
