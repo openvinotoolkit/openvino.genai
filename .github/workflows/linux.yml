@@ -152,6 +152,12 @@ jobs:
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -278,6 +284,12 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -341,6 +353,12 @@ jobs:
       # Per-Python-version cache prefix so each matrix leg keeps its own sccache entries.
       SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64/py${{ matrix.python-version }}
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -472,6 +490,12 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -546,6 +570,12 @@ jobs:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1020,6 +1050,12 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1073,9 +1109,36 @@ jobs:
           # lfm2 conversion fails in CI: CVS-195736
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" -k "not lfm2"
 
+  # Installs WWB alone, the way a user does, so that its requirements resolve without the pins from tests/python_tests/requirements.txt (CVS-199281).
+  genai_wwb_standalone_install:
+    name: WWB standalone install
+    needs: [ smart_ci ]
+    if: ${{ needs.smart_ci.outputs.skip_workflow != 'True' && fromJSON(needs.smart_ci.outputs.affected_components).WWB }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: tools/who_what_benchmark
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install WWB
+        run: python -m pip install -e ./tools/who_what_benchmark --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Smoke test
+        run: wwb --help
+
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests]
+    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests, genai_wwb_standalone_install]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
