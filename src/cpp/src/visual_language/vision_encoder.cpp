@@ -12,6 +12,7 @@
 #include "visual_language/qwen2_5_vl/classes.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/qwen3_5/classes.hpp"
+#include "visual_language/qwen4_exp/classes.hpp"
 #include "visual_language/qwen3_omni/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
@@ -29,6 +30,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/mistral3/classes.hpp"
 #include "visual_language/lfm3_vl/classes.hpp"
 
 namespace ov::genai {
@@ -139,6 +141,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN3_VL) {
         return std::make_shared<VisionEncoderQwen3VL>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::QWEN4_EXP) {
+        return std::make_shared<VisionEncoderQwen4_Exp>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN3_5 || model_type == VLMModelType::QWEN3_5_MOE) {
         return std::make_shared<VisionEncoderQwen3_5>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN3_OMNI) {
@@ -159,6 +163,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderMuseGlimmer>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MINICPMV4_7) {
         return std::make_shared<VisionEncoderMiniCPMv4_7>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::MISTRAL3) {
+        return std::make_shared<VisionEncoderMistral3>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -196,6 +202,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderQwen2_5_VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN3_VL) {
         return std::make_shared<VisionEncoderQwen3VL>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::QWEN4_EXP) {
+        return std::make_shared<VisionEncoderQwen4_Exp>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN3_5 || model_type == VLMModelType::QWEN3_5_MOE) {
         return std::make_shared<VisionEncoderQwen3_5>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN3_OMNI) {
@@ -216,6 +224,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderMuseGlimmer>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MINICPMV4_7) {
         return std::make_shared<VisionEncoderMiniCPMv4_7>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::MISTRAL3) {
+        return std::make_shared<VisionEncoderMistral3>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
