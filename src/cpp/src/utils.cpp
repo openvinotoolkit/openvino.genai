@@ -1313,6 +1313,11 @@ std::string patch_chat_template_multiline_strings(const std::string& chat_templa
     return std::regex_replace(chat_template, multiline_string_concatenation, "");
 }
 
+std::string patch_chat_template_undefined_tests(const std::string& chat_template) {
+    const std::regex var_is_undefined{R"((\b[\w\.]+)\s+is\s+undefined)"};
+    return std::regex_replace(chat_template, var_is_undefined, "not $1 is defined");
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
