@@ -5,6 +5,7 @@ from openvino_genai import GenerationConfig, WhisperGenerationConfig, ASRGenerat
 import json
 import math
 import os
+import numpy as np
 import pytest
 
 
@@ -281,3 +282,26 @@ def test_asr_use_itn_read_from_json(tmp_path, use_itn):
     config = ASRGenerationConfig(config_path)
 
     assert config.use_itn == use_itn
+
+
+@pytest.mark.parametrize("config_source", ["kwargs", "update"])
+@pytest.mark.parametrize(
+    "fields",
+    [
+        dict(max_new_tokens=np.int64(7)),
+        dict(max_new_tokens=np.int32(7), top_k=np.uint8(3)),
+        dict(do_sample=np.bool_(True), top_p=np.float64(0.5)),
+        dict(do_sample=np.bool_(False), ignore_eos=np.bool_(True)),
+        dict(do_sample=True, temperature=np.float32(0.5)),
+        dict(do_sample=True, temperature=np.float16(0.5)),
+    ],
+)
+def test_numpy_scalars_from_kwargs(config_source, fields):
+    if config_source == "kwargs":
+        config = GenerationConfig(**fields)
+    else:
+        config = GenerationConfig()
+        config.update_generation_config(**fields)
+
+    for key, value in fields.items():
+        assert getattr(config, key) == value, key
