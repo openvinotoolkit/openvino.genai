@@ -139,11 +139,42 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'MiniCPMOcrForConditionalGeneration',
+    models: [
+      {
+        name: 'MiniCPM-OCR-1.0',
+        links: ['https://huggingface.co/openbmb/MiniCPM-OCR-1.0'],
+      },
+    ],
+  },
+  {
+    architecture: 'MiniCPMV4_6ForConditionalGeneration',
+    models: [
+      {
+        name: 'MiniCPM-V-4.6',
+        links: ['https://huggingface.co/openbmb/MiniCPM-V-4.6'],
+        notesLink: '#minicpmv4_6-notes',
+      },
+    ],
+  },
+  {
     architecture: 'MuseGlimmerForConditionalGeneration',
     models: [
       {
         name: 'Muse-Glimmer',
         links: ['https://huggingface.co/meta-models/Muse-Glimmer-30B'],
+      },
+    ],
+  },
+  {
+    architecture: 'Mistral3ForConditionalGeneration',
+    models: [
+      {
+        name: 'Mistral3',
+        links: [
+          'https://huggingface.co/mistralai/Ministral-3-3B-Reasoning-2512',
+        ],
+        notesLink: '#mistral3-notes',
       },
     ],
   },

@@ -5,7 +5,7 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "visual_language/inputs_embedder.hpp"
-#include "visual_language/vision_registry.hpp"
+#include "visual_language/embeddings_registry.hpp"
 
 #include "sampling/sampler.hpp"
 #include "continuous_batching/model_runner.hpp"
@@ -78,7 +78,7 @@ protected:
     // Null on every non-Omni path, which is what keeps those paths byte-for-byte unchanged.
     std::shared_ptr<OmniStreamerBase> m_pending_omni_streamer;
 
-    std::shared_ptr<VisionRegistry> m_vision_registry;
+    std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 

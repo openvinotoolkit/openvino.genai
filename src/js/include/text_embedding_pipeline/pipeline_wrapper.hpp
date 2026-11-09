@@ -4,6 +4,8 @@
 #pragma once
 
 #include <napi.h>
+
+#include "include/base/pipeline_state.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
 class TextEmbeddingPipelineWrapper : public Napi::ObjectWrap<TextEmbeddingPipelineWrapper> {
@@ -17,4 +19,5 @@ class TextEmbeddingPipelineWrapper : public Napi::ObjectWrap<TextEmbeddingPipeli
         Napi::Value embed_query_async(const Napi::CallbackInfo& info);
     private:
         std::shared_ptr<ov::genai::TextEmbeddingPipeline> pipe = nullptr;
+        std::shared_ptr<PipelineState> state = std::make_shared<PipelineState>();
 };

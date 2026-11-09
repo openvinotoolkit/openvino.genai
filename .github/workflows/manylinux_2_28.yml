@@ -2,6 +2,11 @@ name: Manylinux 2_28
 on:
   workflow_dispatch:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   merge_group:
   push:
     branches:
@@ -42,6 +47,7 @@ jobs:
   smart_ci:
     name: Smart CI
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false || github.run_attempt > 1 || contains(github.event.pull_request.labels.*.name, 'enable_ci_for_draft_pr')
     outputs:
       affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
       changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
@@ -145,6 +151,12 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -260,6 +272,12 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -322,6 +340,12 @@ jobs:
       SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28/py${{ matrix.python-version }}
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -399,6 +423,12 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

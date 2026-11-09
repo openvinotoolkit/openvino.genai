@@ -55,12 +55,9 @@ from typing import Any
 import numpy as np
 import openvino
 import openvino as ov
-import openvino_tokenizers
 import pytest
 import transformers
-from huggingface_hub import snapshot_download
 from optimum.intel.openvino import OVModelForVisualCausalLM
-from optimum.utils.import_utils import is_transformers_version
 
 import openvino_genai as ov_genai
 from openvino_genai import (
@@ -72,12 +69,7 @@ from openvino_genai import (
     VLMPipeline,
     VideoMetadata,
 )
-from utils.atomic_download import AtomicDownloadManager
-from utils.constants import get_ov_cache_converted_models_dir
 from utils.media_tags import ModalityType, get_universal_tag
-from utils.network import retry_request
-
-OMNI_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
 FRAME_RESOLUTION = 64
 VIDEO_FRAMES = 4
@@ -647,61 +639,6 @@ class TestOmniPipelineDependencyInjection:
             ov_genai.OmniPipeline(vlm, RecordingTalker())
 
 
-def _export_tiny_omni_model(target_dir: Path) -> None:
-    """Export the tiny Qwen3-Omni checkpoint to OpenVINO IR under ``target_dir``."""
-    # Only the download needs retrying; both from_pretrained() calls below read the local path it returns.
-    model_cached = retry_request(lambda: snapshot_download(OMNI_MODEL_ID))
-    align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-    processor = transformers.AutoProcessor.from_pretrained(
-        model_cached,
-        trust_remote_code=True,
-        **align_with_optimum_cli,
-    )
-    model = OVModelForVisualCausalLM.from_pretrained(
-        model_cached, compile=False, device="CPU", export=True, load_in_8bit=False
-    )
-
-    tokenizer = processor.tokenizer
-    tokenizer.save_pretrained(target_dir)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    ov.save_model(ov_tokenizer, target_dir / "openvino_tokenizer.xml")
-    ov.save_model(ov_detokenizer, target_dir / "openvino_detokenizer.xml")
-
-    processor.save_pretrained(target_dir)
-    model.save_pretrained(target_dir)
-
-
-@pytest.fixture(scope="module")
-def omni_model_path() -> Path:
-    """Path to an exported tiny Qwen3-Omni model, or skip when the pinned deps cannot produce one.
-
-    Only the known transformers 5.0.x config bug is turned into a skip — any other export failure
-    propagates so a real regression cannot hide behind a skipped test.
-    """
-    model_dir = get_ov_cache_converted_models_dir() / OMNI_MODEL_ID.replace("/", "_")
-    manager = AtomicDownloadManager(model_dir)
-
-    if not manager.is_complete() and not (model_dir / "openvino_language_model.xml").exists():
-        try:
-            manager.execute(_export_tiny_omni_model)
-        except AttributeError as error:
-            # Transformers 5.0 reads an uninitialized use_sliding_window in this config; 5.1 fixed it.
-            message = str(error)
-            if not (
-                is_transformers_version(">=", "5.0")
-                and is_transformers_version("<", "5.1")
-                and "Qwen3OmniMoeTalkerCodePredictorConfig" in message
-                and "use_sliding_window" in message
-            ):
-                raise
-            pytest.skip(
-                f"Cannot export {OMNI_MODEL_ID}: hit the known transformers 5.0.x config bug, "
-                f"fixed in 5.1.0. AttributeError: {message}"
-            )
-
-    return model_dir
-
-
 @pytest.fixture(scope="module")
 def omni_pipe(omni_model_path: Path) -> ov_genai.OmniPipeline:
     """Pipeline built once per module — loading the model per test dominates the suite runtime.
@@ -1203,6 +1140,114 @@ class TestOmniPipelineRealModel:
             f"passing the embedding of {speaker!r} as a tensor must synthesize the same waveform as its name"
         )
         assert not np.array_equal(speak(altered), named), "an altered speaker embedding must change the speech"
+
+
+# Long enough for the first turn to fill a whole CPU KV block, which is what prefix caching restores.
+PREFIX_CACHE_PROMPT = "Describe in detail what a calm morning in a small mountain village looks like. " * 3
+CPU_KV_BLOCK_SIZE = 32
+
+requires_paged_attention = pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="CVS-194249: PagedAttention is unavailable on macOS arm64.",
+)
+
+
+def _omni_outputs_config(max_new_tokens: int) -> GenerationConfig:
+    config = GenerationConfig(max_new_tokens=max_new_tokens, do_sample=False, ignore_eos=True)
+    config.return_omni_outputs = True
+    return config
+
+
+def _scheduler_config(**fields: bool | int) -> SchedulerConfig:
+    config = SchedulerConfig()
+    for name, value in fields.items():
+        setattr(config, name, value)
+    return config
+
+
+def _generate_omni_outputs(
+    pipe: ContinuousBatchingPipeline, histories: list[ChatHistory], max_new_tokens: int
+) -> list[VLMDecodedResults]:
+    # The overload without media returns plain GenerationResult, which has no hidden states.
+    no_media = [[] for _ in histories]
+    configs = [_omni_outputs_config(max_new_tokens) for _ in histories]
+    return pipe.generate(histories, no_media, no_media, configs)
+
+
+def _two_turns(pipe: ContinuousBatchingPipeline) -> tuple[VLMDecodedResults, VLMDecodedResults]:
+    history = ChatHistory()
+    history.append({"role": "user", "content": PREFIX_CACHE_PROMPT})
+    first = _generate_omni_outputs(pipe, [history], max_new_tokens=8)[0]
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "Now say it in one sentence."})
+    second = _generate_omni_outputs(pipe, [history], max_new_tokens=8)[0]
+    return first, second
+
+
+def _rows(result: VLMDecodedResults) -> list[np.ndarray]:
+    return [np.array(state.data) for state in result.intermediate_hidden_states[0]]
+
+
+@requires_paged_attention
+def test_prefix_cache_replays_hidden_states_of_restored_prefix(omni_model_path: Path) -> None:
+    """A restored prefix is not recomputed, yet the talker still needs one hidden state per position."""
+    cached = ContinuousBatchingPipeline(omni_model_path, _scheduler_config(enable_prefix_caching=True), "CPU")
+    uncached = ContinuousBatchingPipeline(omni_model_path, _scheduler_config(enable_prefix_caching=False), "CPU")
+
+    first, second = _two_turns(cached)
+    _, reference = _two_turns(uncached)
+
+    # KV restore is capped at the cached hidden states, so a hit proves the rows were replayed, not recomputed.
+    assert second.perf_metrics.get_num_prefix_cache_hit_tokens() >= CPU_KV_BLOCK_SIZE
+    assert len(second.intermediate_hidden_states[0]) == len(second.full_token_ids[0]) - 1
+    assert second.full_token_ids == reference.full_token_ids
+    restored_block = zip(_rows(second)[:CPU_KV_BLOCK_SIZE], _rows(first)[:CPU_KV_BLOCK_SIZE])
+    assert all(np.array_equal(got, want) for got, want in restored_block), "the restored block must replay turn 1"
+    for got, want in zip(_rows(second), _rows(reference)):
+        np.testing.assert_allclose(got, want, rtol=1e-4, atol=1e-5)
+
+
+@requires_paged_attention
+def test_preemption_keeps_one_hidden_state_per_position(omni_model_path: Path) -> None:
+    """A request preempted by recompute must not store the recomputed hidden states twice."""
+    # Each request needs 9 blocks of 32 tokens, so one fits in 12 blocks but three cannot run together.
+    scheduler_config = _scheduler_config(num_kv_blocks=12, dynamic_split_fuse=True, max_num_batched_tokens=256)
+    pipe = ContinuousBatchingPipeline(omni_model_path, scheduler_config, "CPU")
+    histories = [ChatHistory([{"role": "user", "content": f"{PREFIX_CACHE_PROMPT} {index}"}]) for index in range(3)]
+
+    results = _generate_omni_outputs(pipe, histories, max_new_tokens=32)
+
+    for result in results:
+        assert len(result.intermediate_hidden_states[0]) == len(result.full_token_ids[0]) - 1
+
+
+@requires_paged_attention
+def test_prefix_cache_survives_stop_string_trim_at_block_end(omni_model_path: Path) -> None:
+    """A stop string that completes a KV block and is trimmed must not hash past the kept tokens."""
+    pipe = ContinuousBatchingPipeline(omni_model_path, _scheduler_config(enable_prefix_caching=True), "CPU")
+    tokenizer = pipe.get_tokenizer()
+    history = ChatHistory([{"role": "user", "content": PREFIX_CACHE_PROMPT}])
+    max_new_tokens = 96
+    reference = list(_generate_omni_outputs(pipe, [history], max_new_tokens)[0].full_token_ids[0])
+    prompt_len = len(reference) - max_new_tokens
+    generated = reference[prompt_len:]
+
+    # Generated token j is sampled on the step that completes position prompt_len + j.
+    stop_string = None
+    for j in range(-prompt_len % CPU_KV_BLOCK_SIZE, max_new_tokens, CPU_KV_BLOCK_SIZE):
+        text = tokenizer.decode(generated[: j + 1])
+        candidate = tokenizer.decode(generated[j - 2 : j + 1])
+        if j >= 2 and candidate.strip() and text.find(candidate) + len(candidate) == len(text):
+            stop_string = candidate
+            break
+    assert stop_string is not None, "no generated block end is a clean 3-token stop string"
+
+    config = _omni_outputs_config(max_new_tokens)
+    config.stop_strings = {stop_string}
+    stopped = pipe.generate([history], [[]], [[]], [config])[0].full_token_ids[0]
+
+    assert len(stopped) < len(reference)
+    assert list(stopped) == reference[: len(stopped)]
 
 
 # The tiny CI model's tokenizer lacks the audio tokens, so audio dies in the merge assert; audio
@@ -1876,7 +1921,7 @@ def test_audio_identical_tensor_not_reencoded(qwen3_omni_pipe_pa: VLMPipeline, a
     """Re-sending the same tensor on a later turn must hit the content-hash cache, not re-encode.
 
     Uses the ChatHistory overload on one persistent ChatHistory object, because that is where the
-    cache lives: `VLMChatContext` registers media in the `VisionRegistry` and skips encoding on a
+    cache lives: `VLMChatContext` registers media in the `EmbeddingsRegistry` and skips encoding on a
     hash hit. The `start_chat()` + prompt path accumulates `m_history_*` and re-encodes each turn
     instead — for images and video too, not just audio — and a fresh ChatHistory per call would
     release the registry refs and drop the entry.

@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -163,11 +164,14 @@ public:
      *                              cache_size when it is zero.
      * @param get_available_memory  Returns available device memory in bytes given the device
      *                              string and number of cache tensors across all cache types.
+     * @param hidden_state_bytes_per_token  Bytes the pipeline's HiddenStateCache keeps per KV token.
+     *                              They share the cache_size budget with KV. 0 when there is no such cache.
      */
     static std::shared_ptr<CacheOrchestrator> create(
             ov::InferRequest& infer_request,
             SchedulerConfig& config,
-            std::function<size_t(const std::string&, size_t)> get_available_memory) {
+            std::function<size_t(const std::string&, size_t)> get_available_memory,
+            size_t hidden_state_bytes_per_token = 0) {
         config.validate();
 
         auto orchestrator = std::make_shared<CacheOrchestrator>();
@@ -187,7 +191,8 @@ public:
         // Only an explicitly requested count is a hard ceiling.
         const size_t requested_num_la_blocks = config.num_linear_attention_blocks;
 
-        auto [num_kv_blocks, num_la_blocks] = normalize_block_counts(kv_mgr.get(), la_mgr.get(), config, cache_interval, total_available_memory);
+        auto [num_kv_blocks, num_la_blocks] = normalize_block_counts(
+            kv_mgr.get(), la_mgr.get(), config, cache_interval, total_available_memory, hidden_state_bytes_per_token);
         config.num_kv_blocks = num_kv_blocks;
         config.num_linear_attention_blocks = num_la_blocks;
 
@@ -569,6 +574,14 @@ public:
      */
     size_t free_group_partially_for_target(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
         assert_no_active_scratch_leases(victim);
+        if (has_checkpointed_linear_attention_cache()) {
+            const auto resume_position = plan_checkpointed_partial_preemption(victim, target);
+            OPENVINO_ASSERT(resume_position.has_value(),
+                            "Internal error: partial preemption of request ", victim->get_request_id(),
+                            " was not allowed by can_partially_preempt");
+            return apply_checkpointed_partial_preemption(victim, *resume_position);
+        }
+
         size_t tokens_to_release = 0;
 
         for (const auto& [type, block_mgr] : m_block_managers) {
@@ -617,6 +630,9 @@ public:
      */
     size_t free_partially_beam_search_group_for_target(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
         assert_no_active_scratch_leases(victim);
+        OPENVINO_ASSERT(!has_checkpointed_linear_attention_cache(),
+                        "Internal error: beam-search request ", victim->get_request_id(),
+                        " must be fully preempted when linear attention state is checkpointed");
         size_t tokens_to_release = 0;
 
         for (const auto& [type, block_mgr] : m_block_managers) {
@@ -663,6 +679,9 @@ public:
      * @return Whether partial preemption of victim is sufficient for target in all cache types.
      */
     bool can_partially_preempt(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        if (has_checkpointed_linear_attention_cache()) {
+            return plan_checkpointed_partial_preemption(victim, target).has_value();
+        }
         return std::all_of(m_block_managers.begin(), m_block_managers.end(),
             [&](const auto& pair) {
                 const auto& block_mgr = pair.second;
@@ -962,6 +981,115 @@ private:
         return !m_cache_managers.empty();
     }
 
+    /// @return Whether linear-attention state is kept as prefix-cache checkpoints (one block per cache interval).
+    bool has_checkpointed_linear_attention_cache() const {
+        const auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        return la_it != m_block_managers.end() && !la_it->second->is_fixed_size_per_sequence();
+    }
+
+    /**
+     * @brief Plans partial preemption of a victim when linear-attention state is checkpointed.
+     *
+     * Logical LA block L holds the recurrent state at token (L + 1) * cache_interval, so the victim can only
+     * resume from a checkpoint boundary whose block it keeps. The plan picks the latest such boundary that
+     * releases enough KV and LA blocks to cover the target's deficit in each pool.
+     * @return Token position the victim resumes from, or std::nullopt if only full preemption is possible.
+     */
+    std::optional<size_t> plan_checkpointed_partial_preemption(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        if (victim->get_sampling_parameters().is_beam_search() || victim->get_num_scheduled_tokens() != 0) {
+            return std::nullopt;
+        }
+        const size_t processed_tokens = victim->get_num_processed_tokens();
+        const auto sequences = victim->get_not_finished_sequences();
+        if (processed_tokens == 0 || sequences.empty()) {
+            return std::nullopt;
+        }
+
+        auto& la_mgr = *m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE);
+        const auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
+        BlockManager* kv_mgr = kv_it == m_block_managers.end() ? nullptr : kv_it->second.get();
+
+        auto block_deficit = [&](BlockManager& block_mgr) {
+            const size_t required = block_mgr.required_blocks_count(target);
+            const size_t free_blocks = block_mgr.num_free_blocks();
+            return required > free_blocks ? required - free_blocks : 0;
+        };
+
+        const size_t cache_interval = la_mgr.get_block_size();
+        const size_t la_deficit = block_deficit(la_mgr);
+        size_t kv_deficit = 0;
+        if (kv_mgr) {
+            OPENVINO_ASSERT(cache_interval % kv_mgr->get_block_size() == 0,
+                            "Linear attention cache interval ", cache_interval,
+                            " must be a multiple of the KV cache block size ", kv_mgr->get_block_size());
+            kv_deficit = block_deficit(*kv_mgr);
+        }
+
+        if (la_deficit == 0 && kv_deficit == 0) {
+            return std::nullopt;
+        }
+
+        size_t latest_resume_position = processed_tokens - 1;
+        size_t min_resume_position = 0;
+        for (const auto& sequence : sequences) {
+            const uint64_t seq_id = sequence->get_id();
+            const size_t la_start = la_mgr.get_block_table_logical_start(seq_id);
+            const size_t la_stored = la_mgr.get_num_stored_blocks(seq_id);
+            if (la_stored == 0) {
+                return std::nullopt;
+            }
+            latest_resume_position = std::min(latest_resume_position, (la_start + la_stored) * cache_interval);
+            min_resume_position = std::max(min_resume_position, la_mgr.get_earliest_complete_checkpoint(seq_id));
+
+            if (kv_mgr) {
+                const size_t kv_block_size = kv_mgr->get_block_size();
+                const size_t kv_start = kv_mgr->get_block_table_logical_start(seq_id);
+                const size_t kv_stored = kv_mgr->get_num_stored_blocks(seq_id);
+                if (kv_stored == 0) {
+                    return std::nullopt;
+                }
+                latest_resume_position = std::min(latest_resume_position, (kv_start + kv_stored) * kv_block_size);
+                min_resume_position = std::max(min_resume_position, (kv_start + 1) * kv_block_size);
+            }
+        }
+
+        size_t resume_position = latest_resume_position / cache_interval * cache_interval;
+        const auto la_positions = la_mgr.get_releasable_block_positions(victim);
+        const auto kv_positions = kv_mgr ? kv_mgr->get_releasable_block_positions(victim) : std::vector<size_t>{};
+        while (resume_position >= min_resume_position) {
+            const size_t la_released = static_cast<size_t>(la_positions.end() -
+                std::lower_bound(la_positions.begin(), la_positions.end(), resume_position));
+            const size_t kv_released = static_cast<size_t>(kv_positions.end() -
+                std::lower_bound(kv_positions.begin(), kv_positions.end(), resume_position));
+            if (la_released >= la_deficit && kv_released >= kv_deficit) {
+                return resume_position;
+            }
+            if (resume_position < cache_interval) {
+                break;
+            }
+            resume_position -= cache_interval;
+        }
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Trims every unfinished sequence of the victim back to the planned checkpoint.
+     * @return Number of processed tokens to preempt from the victim.
+     */
+    size_t apply_checkpointed_partial_preemption(SequenceGroup::Ptr victim, size_t resume_position) {
+        auto& la_mgr = *m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE);
+        const auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
+        for (const auto& sequence : victim->get_not_finished_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            la_mgr.rewind_linear_attention_to_checkpoint(seq_id, resume_position);
+            if (kv_it != m_block_managers.end()) {
+                auto& kv_mgr = *kv_it->second;
+                kv_mgr.trim_sequence(seq_id, resume_position / kv_mgr.get_block_size() - kv_mgr.get_block_table_logical_start(seq_id));
+            }
+        }
+        return victim->get_num_processed_tokens() - resume_position;
+    }
+
     /**
      * @brief Detect and create KV and linear attention cache managers from the compiled model.
      *        Validates that LA-specific config fields are not set when no LA cache is present.
@@ -1026,6 +1154,8 @@ private:
     /**
      * @brief Compute the number of KV and LA blocks to allocate, honouring the memory budget
      *        expressed either as cache_size (GiB) or explicit block counts in config.
+     *        Each KV block also pays for the hidden states of its tokens, because the
+     *        HiddenStateCache holds as many tokens as the KV cache.
      *        Returns a tuple of (num_kv_blocks, num_la_blocks).
      */
     static std::tuple<size_t, size_t>
@@ -1033,16 +1163,18 @@ private:
                           const LinearAttentionCacheManager* la_manager,
                           const SchedulerConfig& config,
                           size_t cache_interval,
-                          size_t total_available_memory) {
+                          size_t total_available_memory,
+                          size_t hidden_state_bytes_per_token) {
         const size_t kv_block_size = kv_manager ? kv_manager->get_block_size() : 0;
-        const size_t kv_block_size_in_bytes = kv_manager ? kv_manager->get_block_size_in_bytes() : 0;
+        const size_t kv_block_budget_bytes =
+            kv_manager ? kv_manager->get_block_size_in_bytes() + kv_block_size * hidden_state_bytes_per_token : 0;
         const size_t la_block_size_in_bytes = la_manager ? la_manager->get_block_size_in_bytes() : 0;
 
         auto bytes_for_token_target = [&](size_t token_target) {
             size_t total_bytes = 0;
             if (kv_manager) {
                 const size_t kv_blocks = (token_target + kv_block_size - 1) / kv_block_size;
-                total_bytes += kv_blocks * kv_block_size_in_bytes;
+                total_bytes += kv_blocks * kv_block_budget_bytes;
             }
             if (la_manager && config.enable_prefix_caching) {
                 const size_t la_blocks = (token_target + cache_interval - 1) / cache_interval;
@@ -1071,13 +1203,13 @@ private:
                 OPENVINO_ASSERT(reserved_la_bytes <= budget_in_bytes,
                                 "Requested linear attention cache allocation exceeds the configured cache size.");
                 if (kv_manager) {
-                    normalized_num_kv_blocks = (budget_in_bytes - reserved_la_bytes) / kv_block_size_in_bytes;
+                    normalized_num_kv_blocks = (budget_in_bytes - reserved_la_bytes) / kv_block_budget_bytes;
                 }
             } else {
                 size_t low = 0;
                 size_t high = 0;
                 if (kv_manager) {
-                    high = (budget_in_bytes / kv_block_size_in_bytes) * kv_block_size;
+                    high = (budget_in_bytes / kv_block_budget_bytes) * kv_block_size;
                 } else if (la_manager) {
                     high = (budget_in_bytes / la_block_size_in_bytes) * cache_interval;
                 }
@@ -1106,7 +1238,7 @@ private:
 
             size_t total_requested_bytes = 0;
             if (kv_manager) {
-                total_requested_bytes += normalized_num_kv_blocks * kv_block_size_in_bytes;
+                total_requested_bytes += normalized_num_kv_blocks * kv_block_budget_bytes;
             }
             if (la_manager) {
                 total_requested_bytes += normalized_num_la_blocks * la_block_size_in_bytes;

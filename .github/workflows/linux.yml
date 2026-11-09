@@ -2,6 +2,11 @@ name: Linux (Ubuntu 22.04, Python 3.11)
 on:
   workflow_dispatch:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   merge_group:
   push:
     branches:
@@ -42,6 +47,7 @@ jobs:
   smart_ci:
     name: Smart CI
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false || github.run_attempt > 1 || contains(github.event.pull_request.labels.*.name, 'enable_ci_for_draft_pr')
     outputs:
       affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
       changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
@@ -146,6 +152,12 @@ jobs:
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -272,6 +284,12 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -335,6 +353,12 @@ jobs:
       # Per-Python-version cache prefix so each matrix leg keeps its own sccache entries.
       SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64/py${{ matrix.python-version }}
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -466,6 +490,12 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -540,6 +570,12 @@ jobs:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -867,7 +903,7 @@ jobs:
           # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
           python -m pip install transformers==5.0.0
           python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1" -k "not image2video"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1 and not llm_bench_qwen3_tts" -k "not image2video"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
       - name: Test LLM Benchmark Tools transformers under 5.0
@@ -885,6 +921,16 @@ jobs:
           python -m pip install transformers==5.1
           python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16#egg=optimum-intel"
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_higher_v5_1"
+        env:
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
+
+      - name: Test LLM Benchmark Tools with Qwen3-TTS model
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install qwen-tts transformers==4.57.3 torch==2.11.0 torchaudio==2.11.0
+          python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@c46fb912366bc9d25b8395621d885a457369228d#egg=optimum-intel"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and llm_bench_qwen3_tts"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
 
@@ -1004,6 +1050,12 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
 
     steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1057,9 +1109,36 @@ jobs:
           # lfm2 conversion fails in CI: CVS-195736
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" -k "not lfm2"
 
+  # Installs WWB alone, the way a user does, so that its requirements resolve without the pins from tests/python_tests/requirements.txt (CVS-199281).
+  genai_wwb_standalone_install:
+    name: WWB standalone install
+    needs: [ smart_ci ]
+    if: ${{ needs.smart_ci.outputs.skip_workflow != 'True' && fromJSON(needs.smart_ci.outputs.affected_components).WWB }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: tools/who_what_benchmark
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install WWB
+        run: python -m pip install -e ./tools/who_what_benchmark --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Smoke test
+        run: wwb --help
+
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests]
+    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests, genai_wwb_standalone_install]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

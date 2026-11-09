@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <numeric>
@@ -160,6 +161,10 @@ Qwen3OmniSpeechConfig Qwen3OmniSpeechConfig::from_vlm_config(const VLMConfig& co
     sc.image_token_id = config.image_token_id;
     sc.video_token_id = config.video_token_id;
     sc.num_code_groups = config.talker_num_code_groups;
+    const auto& rates = config.code2wav_config_upsample_rates;
+    const auto& ratios = config.code2wav_config_upsampling_ratios;
+    sc.code2wav_samples_per_frame = std::accumulate(rates.begin(), rates.end(), size_t{1}, std::multiplies<>()) *
+                                    std::accumulate(ratios.begin(), ratios.end(), size_t{1}, std::multiplies<>());
     sc.speaker_ids = config.speaker_ids;
 
     OPENVINO_ASSERT(sc.codec_bos_id >= 0 && sc.codec_eos_token_id >= 0 && sc.codec_pad_id >= 0 &&
@@ -1045,6 +1050,50 @@ private:
     ov::Tensor m_row;
 };
 
+ov::Tensor Qwen3OmniSpeechPipeline::stack_codes_range(const std::vector<std::vector<int64_t>>& codes,
+                                                      size_t begin,
+                                                      size_t end) {
+    const size_t num_quantizers = m_config.num_code_groups;
+    const size_t n_steps = end - begin;
+    m_stack_codes_buf.set_shape({1, num_quantizers, n_steps});
+    auto* data = m_stack_codes_buf.data<int64_t>();
+    for (size_t s = 0; s < n_steps; s++) {
+        const auto& frame = codes[begin + s];
+        for (size_t q = 0; q < num_quantizers && q < frame.size(); q++) {
+            data[q * n_steps + s] = frame[q];
+        }
+    }
+    return m_stack_codes_buf;
+}
+
+ov::Tensor Qwen3OmniSpeechPipeline::decode_chunk(const std::vector<std::vector<int64_t>>& codes,
+                                                 size_t begin,
+                                                 size_t end,
+                                                 size_t left_context_frames) {
+    // A chunk decoded alone loses the code2wav warmup at every seam and its first samples see
+    // no history. Decode it after up to left_context_frames earlier frames, then keep only the
+    // samples of [begin, end).
+    const auto context = std::min(begin, left_context_frames);
+    auto wav = codes_to_wav(stack_codes_range(codes, begin - context, end));
+    if (context == 0) {
+        return wav;
+    }
+    const auto chunk_samples = (end - begin) * m_config.code2wav_samples_per_frame;
+    OPENVINO_ASSERT(wav.get_size() >= chunk_samples,
+                    "code2wav returned ",
+                    wav.get_size(),
+                    " samples for ",
+                    context + end - begin,
+                    " frames, fewer than the ",
+                    chunk_samples,
+                    " expected for the chunk");
+    ov::Tensor chunk(ov::element::f32, {1, 1, chunk_samples});
+    std::memcpy(chunk.data<float>(),
+                wav.data<float>() + (wav.get_size() - chunk_samples),
+                chunk_samples * sizeof(float));
+    return chunk;
+}
+
 TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& full_token_ids,
                                                        const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                                        const OmniSpeechStreamerVariant& speech_streamer,
@@ -1184,6 +1233,7 @@ TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input
     const size_t cp_top_k_resolved = talker_speech_config.cp_top_k.value_or(m_config.cp_top_k);
 
     const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
+    const size_t left_context_frames = talker_speech_config.audio_chunk_left_context_frames;
     const bool streaming = is_speech_streamer_active(speech_streamer);
 
     // Reseed at every entry so output depends only on inputs + seed, not prior call history.
@@ -1252,19 +1302,6 @@ TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input
     // Pre-allocate codes stacking buffer at max possible size, then use set_shape per call
     m_stack_codes_buf = ov::Tensor(ov::element::i64, {1, num_quantizers, talker_max_tokens});
 
-    auto stack_codes_range = [&](size_t begin, size_t end) -> ov::Tensor {
-        size_t n_steps = end - begin;
-        m_stack_codes_buf.set_shape({1, num_quantizers, n_steps});
-        auto* data = m_stack_codes_buf.data<int64_t>();
-        for (size_t s = 0; s < n_steps; s++) {
-            const auto& frame = all_codes[begin + s];
-            for (size_t q = 0; q < num_quantizers && q < frame.size(); q++) {
-                data[q * n_steps + s] = frame[q];
-            }
-        }
-        return m_stack_codes_buf;
-    };
-
     // talker_temp / talker_top_k_resolved / talker_rep_penalty resolved at function entry
     // from the OmniTalkerSpeechConfig overrides (or m_config defaults if unset).
     const auto& suppress_tokens = m_config.talker_suppress_tokens;
@@ -1325,8 +1362,7 @@ TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input
 
         // F9: Streaming uses cursor into all_codes instead of separate chunk_codes
         if (streaming && all_codes.size() - chunk_cursor >= chunk_frames) {
-            auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
-            auto chunk_wav = codes_to_wav(chunk_tensor);
+            auto chunk_wav = decode_chunk(all_codes, chunk_cursor, all_codes.size(), left_context_frames);
             chunk_cursor = all_codes.size();
             streamed_chunks.push_back(chunk_wav);
 
@@ -1373,8 +1409,7 @@ TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input
 
     // Flush remaining frames if streaming
     if (streaming && chunk_cursor < all_codes.size() && !early_stop) {
-        auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
-        auto chunk_wav = codes_to_wav(chunk_tensor);
+        auto chunk_wav = decode_chunk(all_codes, chunk_cursor, all_codes.size(), left_context_frames);
         streamed_chunks.push_back(chunk_wav);
         invoke_speech_streamer(speech_streamer, chunk_wav);
     }
@@ -1413,7 +1448,7 @@ TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input
 
     GENAI_INFO("Speech: %zu codec steps generated, converting to waveform...", all_codes.size());
 
-    auto full_codes = stack_codes_range(0, all_codes.size());
+    auto full_codes = stack_codes_range(all_codes, 0, all_codes.size());
     return build_result(codes_to_wav(full_codes));
 }
 
