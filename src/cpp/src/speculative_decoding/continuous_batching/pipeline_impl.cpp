@@ -853,9 +853,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
     // Candidates need embeddings before the next update can remove the rejected ones.
     sync_generated_embeddings();
 
+    const float markov_head_duration =
+        m_dflash_candidate_selector ? m_dflash_candidate_selector->take_inference_duration() : 0.0f;
     if (ran_forward) {
         raw_perf_metrics.m_durations.emplace_back(step_duration);
-        raw_perf_metrics.m_inference_durations[0] += MicroSeconds(get_metrics().inference_duration);
+        raw_perf_metrics.m_inference_durations[0] +=
+            MicroSeconds(get_metrics().inference_duration + markov_head_duration);
         raw_perf_metrics.m_batch_sizes.emplace_back(num_candidates);
     }
 }
