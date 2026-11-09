@@ -24,11 +24,14 @@ SpeechGenerationHandle Qwen3TTSContinuousBatchingPipelineImpl::add_request(uint6
                                                                           const std::string& text,
                                                                           const ov::Tensor& speaker_embedding,
                                                                           const SpeechGenerationConfig& generation_config) {
-    return m_impl->add_speech_request(request_id, text, speaker_embedding, generation_config);
+    auto handle = m_impl->add_speech_request(request_id, text, speaker_embedding, generation_config);
+    m_impl->report_perf_if_drained();
+    return handle;
 }
 
 void Qwen3TTSContinuousBatchingPipelineImpl::step() {
     m_impl->step();
+    m_impl->report_perf_if_drained();
 }
 
 bool Qwen3TTSContinuousBatchingPipelineImpl::has_non_finished_requests() const {

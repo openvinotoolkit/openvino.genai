@@ -4,6 +4,7 @@
 #include "speech_generation/qwen3_tts/qwen3_tts_continuous_batching_impl.hpp"
 
 #include <fstream>
+#include <iostream>
 #include <limits>
 
 #include <nlohmann/json.hpp>
@@ -299,6 +300,25 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
 
 void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::generate_candidates_for_prompt_lookup() {
     std::lock_guard<std::mutex> lock{m_request_state_mutex};
+    struct PendingFrame {
+        SequenceGroup::Ptr sequence_group;
+        Sequence::Ptr sequence;
+        RequestState* state;
+        ov::Tensor last_hidden;
+        int64_t first_codec_token;
+    };
+
+    size_t subtalker_frames_this_forward = 0;
+    if (qwen_perf_enabled() && m_pipeline_metrics.scheduled_requests > 0) {
+        constexpr const char* talker_cb_forward = "talker_cb_forward";
+        m_engine.perf_ms()[talker_cb_forward] += m_pipeline_metrics.inference_duration / 1000.0;
+        ++m_engine.perf_calls()[talker_cb_forward];
+        m_engine.perf_device()[talker_cb_forward] = m_device;
+        m_talker_scheduled_request_groups += m_pipeline_metrics.scheduled_requests;
+    }
+
+    std::vector<PendingFrame> pending_frames;
+    std::vector<SequenceGroup::Ptr> completed_groups;
     for (auto& sequence_group : m_requests) {
         auto state_it = m_request_state.find(sequence_group->get_request_id());
         if (state_it == m_request_state.end()) {
@@ -313,13 +333,60 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::generate_candid
             if (sequence->get_generated_len() <= sequence->get_generated_ids_embeds().size()) {
                 continue;  // no new token sampled this step (mid multi-step prefill, or already synced)
             }
-            process_new_frame(sequence_group, sequence, state_it->second);
+            const int64_t token = sequence->get_generated_ids().back();
+            if (token == m_engine.ids().codec_eos_token_id) {
+                process_new_frame(sequence_group, sequence, state_it->second);
+            } else {
+                if (qwen_perf_enabled()) {
+                    ++subtalker_frames_this_forward;
+                }
+                pending_frames.push_back({sequence_group,
+                                          sequence,
+                                          &state_it->second,
+                                          get_last_hidden_state(sequence),
+                                          token});
+            }
         }
 
         if (sequence_group->has_finished()) {
+            completed_groups.push_back(sequence_group);
+        }
+    }
+
+    std::vector<Qwen3TTSCodecEngine::CodecGroupBatchItem> batch_items;
+    batch_items.reserve(pending_frames.size());
+    for (const PendingFrame& frame : pending_frames) {
+        batch_items.push_back({frame.last_hidden,
+                               frame.first_codec_token,
+                               &frame.state->generation_config,
+                               &frame.state->rng});
+    }
+    if (!batch_items.empty()) {
+        const auto generated_groups = m_engine.generate_codec_groups_batch(batch_items);
+        OPENVINO_ASSERT(generated_groups.size() == pending_frames.size(),
+                        "Code-group batch output count mismatch. Expected ",
+                        pending_frames.size(),
+                        ", got ",
+                        generated_groups.size());
+        for (size_t frame_idx = 0; frame_idx < pending_frames.size(); ++frame_idx) {
+            PendingFrame& frame = pending_frames[frame_idx];
+            process_new_frame(frame.sequence_group,
+                              frame.sequence,
+                              *frame.state,
+                              &generated_groups[frame_idx]);
+        }
+    }
+
+    for (const SequenceGroup::Ptr& sequence_group : completed_groups) {
+        const auto state_it = m_request_state.find(sequence_group->get_request_id());
+        if (state_it != m_request_state.end()) {
             finalize_request(sequence_group, state_it->second);
             m_request_state.erase(state_it);
         }
+    }
+
+    if (qwen_perf_enabled() && m_pipeline_metrics.scheduled_requests > 0) {
+        ++m_subtalker_frames_per_step[subtalker_frames_this_forward];
     }
 }
 
@@ -362,10 +429,44 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::on_request_fail
     m_request_state.erase(state_it);
 }
 
+ov::Tensor ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::get_last_hidden_state(
+    const Sequence::Ptr& sequence) const {
+    const size_t hidden = m_engine.talker_hidden_size();
+    const ov::Tensor sequence_hidden = sequence->get_hidden_state();
+    const ov::Shape hidden_shape = sequence_hidden.get_shape();
+    OPENVINO_ASSERT(hidden_shape.size() == 3,
+                    "Unexpected talker hidden-state rank for Qwen3-TTS CB: ",
+                    hidden_shape.size());
+    OPENVINO_ASSERT(hidden_shape[2] == hidden,
+                    "Unexpected talker hidden-state width for Qwen3-TTS CB. Expected ",
+                    hidden,
+                    ", got ",
+                    hidden_shape[2]);
+
+    ov::Tensor last_hidden(ov::element::f32, ov::Shape{1, 1, hidden});
+    if (hidden_shape[0] == 1) {
+        OPENVINO_ASSERT(hidden_shape[1] > 0,
+                        "Talker hidden-state sequence length must be > 0");
+        const size_t last_idx = hidden_shape[1] - 1;
+        const float* src = sequence_hidden.data<const float>() + last_idx * hidden;
+        std::copy_n(src, hidden, last_hidden.data<float>());
+    } else {
+        OPENVINO_ASSERT(hidden_shape[1] == 1 && hidden_shape[0] > 0,
+                        "Unexpected talker hidden-state shape for Qwen3-TTS CB: ",
+                        hidden_shape,
+                        ". Expected [1,T,H] or [T,1,H]");
+        const size_t last_idx = hidden_shape[0] - 1;
+        const float* src = sequence_hidden.data<const float>() + last_idx * hidden;
+        std::copy_n(src, hidden, last_hidden.data<float>());
+    }
+    return last_hidden;
+}
+
 void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_frame(
     const SequenceGroup::Ptr& sequence_group,
     const Sequence::Ptr& sequence,
-    RequestState& state) {
+    RequestState& state,
+    const std::vector<int64_t>* generated_groups) {
     const int64_t token = sequence->get_generated_ids().back();
     const size_t hidden = m_engine.talker_hidden_size();
     const size_t position_id = sequence->get_generated_ids_embeds().size() + sequence_group->get_prompt_len();
@@ -383,37 +484,19 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_fra
         return;
     }
 
-    const ov::Tensor sequence_hidden = sequence->get_hidden_state();
-    const ov::Shape hidden_shape = sequence_hidden.get_shape();
-    OPENVINO_ASSERT(hidden_shape.size() == 3,
-                    "Unexpected talker hidden-state rank for Qwen3-TTS CB: ",
-                    hidden_shape.size());
-    OPENVINO_ASSERT(hidden_shape[2] == hidden,
-                    "Unexpected talker hidden-state width for Qwen3-TTS CB. Expected ",
-                    hidden,
-                    ", got ",
-                    hidden_shape[2]);
-
-    // Match SDPA path semantics: code-group expansion is conditioned on the
-    // hidden state of the latest sampled token only, not on the full sequence.
-    ov::Tensor last_hidden(ov::element::f32, ov::Shape{1, 1, hidden});
-    if (hidden_shape[0] == 1) {
-        OPENVINO_ASSERT(hidden_shape[1] > 0,
-                        "Talker hidden-state sequence length must be > 0");
-        const size_t last_idx = hidden_shape[1] - 1;
-        const float* src = sequence_hidden.data<const float>() + last_idx * hidden;
-        std::copy_n(src, hidden, last_hidden.data<float>());
-    } else {
-        OPENVINO_ASSERT(hidden_shape[1] == 1 && hidden_shape[0] > 0,
-                        "Unexpected talker hidden-state shape for Qwen3-TTS CB: ",
-                        hidden_shape,
-                        ". Expected [1,T,H] or [T,1,H]");
-        const size_t last_idx = hidden_shape[0] - 1;
-        const float* src = sequence_hidden.data<const float>() + last_idx * hidden;
-        std::copy_n(src, hidden, last_hidden.data<float>());
+    if (qwen_perf_enabled()) {
+        ++m_subtalker_codec_frames;
     }
 
-    auto groups = m_engine.generate_codec_groups(last_hidden, token, state.generation_config, state.rng);
+    std::vector<int64_t> serial_groups;
+    if (!generated_groups) {
+        // Match SDPA semantics: the predictor uses only the newest talker hidden row.
+        const ov::Tensor last_hidden = get_last_hidden_state(sequence);
+        serial_groups = m_engine.generate_codec_groups(last_hidden, token, state.generation_config, state.rng);
+        generated_groups = &serial_groups;
+    }
+
+    const std::vector<int64_t>& groups = *generated_groups;
     state.all_codes.insert(state.all_codes.end(), groups.begin(), groups.end());
 
     auto token_embed = m_engine.infer_embedding(m_engine.talker_embedding(), groups[0]);
@@ -471,6 +554,44 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
     perf_metrics.evaluate_statistics();
     state.stream->set_perf_metrics(std::move(perf_metrics));
     state.stream->push_and_close(std::move(output), GenerationStatus::FINISHED);
+}
+
+void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::report_perf_if_drained() {
+    if (!qwen_perf_enabled()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock{m_request_state_mutex};
+    if (!m_request_state.empty() || m_engine.perf_ms().empty()) {
+        return;
+    }
+
+    const auto talker_calls = m_engine.perf_calls().find("talker_cb_forward");
+    const size_t num_talker_batches = talker_calls == m_engine.perf_calls().end()
+        ? 0
+        : static_cast<size_t>(talker_calls->second);
+    std::cout << "[QWEN3_TTS_PERF] Continuous-batching aggregate: "
+              << num_talker_batches << " talker batches, "
+              << m_talker_scheduled_request_groups << " scheduled request-groups, "
+              << m_subtalker_codec_frames << " subtalker codec frames" << std::endl;
+    std::cout << "[QWEN3_TTS_PERF] Subtalker frame opportunities per talker forward (frames:forwards): ";
+    if (m_subtalker_frames_per_step.empty()) {
+        std::cout << "none";
+    } else {
+        bool first = true;
+        for (const auto& [frames, forwards] : m_subtalker_frames_per_step) {
+            if (!first) {
+                std::cout << ", ";
+            }
+            std::cout << frames << ":" << forwards;
+            first = false;
+        }
+    }
+    std::cout << std::endl;
+    m_engine.perf_print_and_reset(0);
+    m_talker_scheduled_request_groups = 0;
+    m_subtalker_codec_frames = 0;
+    m_subtalker_frames_per_step.clear();
 }
 
 ov::Shape ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::get_speaker_embedding_shape() const {

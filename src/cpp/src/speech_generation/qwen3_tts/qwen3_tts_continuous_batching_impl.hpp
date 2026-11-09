@@ -6,6 +6,7 @@
 #include <mutex>
 #include <random>
 #include <chrono>
+#include <map>
 #include <unordered_map>
 
 #include "continuous_batching/pipeline_impl.hpp"
@@ -45,6 +46,7 @@ public:
 
     ov::Shape get_speaker_embedding_shape() const;
     uint32_t get_output_sample_rate() const;
+    void report_perf_if_drained();
 
 protected:
     void generate_candidates_for_prompt_lookup() override;
@@ -66,12 +68,19 @@ private:
         SpeechGenerationStream::Ptr stream;
     };
 
-    void process_new_frame(const SequenceGroup::Ptr& sequence_group, const Sequence::Ptr& sequence, RequestState& state);
+    ov::Tensor get_last_hidden_state(const Sequence::Ptr& sequence) const;
+    void process_new_frame(const SequenceGroup::Ptr& sequence_group,
+                           const Sequence::Ptr& sequence,
+                           RequestState& state,
+                           const std::vector<int64_t>* generated_groups = nullptr);
     void finalize_request(const SequenceGroup::Ptr& sequence_group, RequestState& state);
 
     Qwen3TTSCodecEngine m_engine;
     std::mutex m_request_state_mutex;
     std::unordered_map<uint64_t, RequestState> m_request_state;
+    size_t m_talker_scheduled_request_groups = 0;
+    size_t m_subtalker_codec_frames = 0;
+    std::map<size_t, size_t> m_subtalker_frames_per_step;
 };
 
 }  // namespace genai

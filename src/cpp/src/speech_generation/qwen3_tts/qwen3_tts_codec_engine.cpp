@@ -114,6 +114,22 @@ Qwen3TTSCodecEngine::Qwen3TTSCodecEngine(const std::filesystem::path& models_pat
             beam_idx.data<int32_t>()[0] = 0;
             m_talker_code_predictor.set_tensor("beam_idx", beam_idx);
         }
+
+        auto supports_dynamic_batch = [&](const std::string& input_name) {
+            for (const auto& input : m_talker_code_predictor.get_compiled_model().inputs()) {
+                if (input.get_any_name() != input_name) {
+                    continue;
+                }
+                const auto shape = input.get_partial_shape();
+                return shape.rank().is_static() && shape.rank().get_length() > 0 && shape[0].is_dynamic();
+            }
+            return false;
+        };
+        m_predictor_batching_supported = !m_predictor_static &&
+                                         supports_dynamic_batch("inputs_embeds") &&
+                                         supports_dynamic_batch("attention_mask") &&
+                                         supports_dynamic_batch("position_ids") &&
+                                         (!m_predictor_has_beam_idx || supports_dynamic_batch("beam_idx"));
     }
     m_talker_code_predictor_embedding = compile_for(models_path / CODE_PREDICTOR_EMBEDDINGS_NAME, roles::CODE_PREDICTOR_EMBEDDING);
 
@@ -709,6 +725,66 @@ ov::Tensor Qwen3TTSCodecEngine::infer_predictor(const ov::Tensor& inputs_embeds,
     return m_talker_code_predictor.get_tensor("logits");  // static: [1,1,V]
 }
 
+ov::Tensor Qwen3TTSCodecEngine::infer_predictor_batch(const ov::Tensor& inputs_embeds, int64_t step) {
+    OPENVINO_ASSERT(!m_predictor_static && m_predictor_batching_supported,
+                    "Batched code predictor inference requires dynamic batch inputs and state");
+    const ov::Shape input_shape = inputs_embeds.get_shape();
+    OPENVINO_ASSERT(input_shape.size() == 3 && input_shape[0] > 1 && input_shape[2] == m_talker_hidden_size,
+                    "Batched code predictor inputs_embeds must have shape [B>1, T, ",
+                    m_talker_hidden_size,
+                    "], got ",
+                    input_shape);
+    const size_t batch_size = input_shape[0];
+    const size_t seq_len = input_shape[1];
+    OPENVINO_ASSERT(seq_len > 0, "Batched code predictor received an empty sequence");
+
+    m_talker_code_predictor.set_tensor("inputs_embeds", inputs_embeds);
+
+    ov::Tensor attention_mask;
+    if (seq_len == 1) {
+        attention_mask = ov::Tensor(ov::element::f32,
+                                    ov::Shape{batch_size, 1, 1, m_pred_position + 1});
+        std::fill_n(attention_mask.data<float>(), attention_mask.get_size(), 0.0f);
+    } else {
+        attention_mask = ov::Tensor(ov::element::f32, ov::Shape{batch_size, 1, seq_len, seq_len});
+        const ov::Tensor single_mask = make_causal_attention_mask_4d(seq_len);
+        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+            std::copy_n(single_mask.data<const float>(),
+                        single_mask.get_size(),
+                        attention_mask.data<float>() + batch_idx * single_mask.get_size());
+        }
+    }
+    m_talker_code_predictor.set_tensor("attention_mask", attention_mask);
+
+    ov::Tensor position_ids(ov::element::i64, ov::Shape{batch_size, seq_len});
+    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+        for (size_t pos_idx = 0; pos_idx < seq_len; ++pos_idx) {
+            position_ids.data<int64_t>()[batch_idx * seq_len + pos_idx] =
+                static_cast<int64_t>(m_pred_position + pos_idx);
+        }
+    }
+    m_talker_code_predictor.set_tensor("position_ids", position_ids);
+
+    ov::Tensor step_tensor = m_talker_code_predictor.get_tensor("step");
+    const ov::Shape step_shape = step_tensor.get_shape();
+    OPENVINO_ASSERT(step_shape.empty() || (step_shape.size() == 1 && step_shape[0] == 1),
+                    "Unsupported code predictor step shape: ",
+                    step_shape);
+    step_tensor.data<int64_t>()[0] = step;
+
+    if (m_predictor_has_beam_idx) {
+        ov::Tensor beam_idx(ov::element::i32, ov::Shape{batch_size});
+        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+            beam_idx.data<int32_t>()[batch_idx] = static_cast<int32_t>(batch_idx);
+        }
+        m_talker_code_predictor.set_tensor("beam_idx", beam_idx);
+    }
+
+    run_and_time([&] { m_talker_code_predictor.infer(); }, roles::CODE_PREDICTOR, m_perf_ms, m_perf_calls);
+    m_pred_position += seq_len;
+    return m_talker_code_predictor.get_tensor("logits");
+}
+
 ov::Tensor Qwen3TTSCodecEngine::infer_predictor_embedding(int64_t token_id, int64_t generation_step) {
     // Update pre-allocated id tensors in-place (tensors already set on infer request).
     m_pred_emb_ids.data<int64_t>()[0] = token_id;
@@ -745,13 +821,18 @@ int64_t Qwen3TTSCodecEngine::sample_token_from_logits(const ov::Tensor& logits,
                                                       const SpeechGenerationConfig& generation_config,
                                                       const std::vector<int64_t>& generated,
                                                       const std::vector<bool>& suppressed,
-                                                      std::mt19937& rng) const {
+                                                      std::mt19937& rng,
+                                                      size_t batch_index) const {
     const auto shape = logits.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3, "Expected logits shape [B, T, V]");
+    OPENVINO_ASSERT(shape.size() == 3 && batch_index < shape[0],
+                    "Expected logits shape [B, T, V] with batch index < B, got ",
+                    shape,
+                    " and batch index ",
+                    batch_index);
     OPENVINO_ASSERT(logits.get_element_type() == ov::element::f32, "Qwen3 logits must be f32 for sampling");
     const size_t vocab = shape[2];
     const float* ptr = logits.data<const float>();
-    const size_t offset = (shape[1] - 1) * vocab;
+    const size_t offset = (batch_index * shape[1] + shape[1] - 1) * vocab;
 
     std::vector<float> scores(vocab);
     for (size_t i = 0; i < vocab; ++i) {
@@ -900,6 +981,139 @@ std::vector<int64_t> Qwen3TTSCodecEngine::generate_codec_groups(const ov::Tensor
 
     sample_remaining_groups(next, generated, predictor_suppressed);
     append_and_pad_groups(generated);
+
+    return groups;
+}
+
+std::vector<std::vector<int64_t>> Qwen3TTSCodecEngine::generate_codec_groups_batch(
+    const std::vector<CodecGroupBatchItem>& batch_items) {
+    OPENVINO_ASSERT(!batch_items.empty(), "Code-group batch must contain at least one frame");
+
+    if (batch_items.size() == 1 ||
+        !qwen_cb_subtalker_batching_enabled() ||
+        m_predictor_static ||
+        !m_predictor_batching_supported) {
+        std::vector<std::vector<int64_t>> groups;
+        groups.reserve(batch_items.size());
+        for (const CodecGroupBatchItem& item : batch_items) {
+            OPENVINO_ASSERT(item.generation_config && item.rng,
+                            "Code-group batch item must include generation config and RNG");
+            groups.push_back(generate_codec_groups(item.past_hidden,
+                                                   item.first_codec_token,
+                                                   *item.generation_config,
+                                                   *item.rng));
+        }
+        return groups;
+    }
+
+    const size_t batch_size = batch_items.size();
+    const size_t hidden_size = m_talker_hidden_size;
+    std::vector<SpeechGenerationConfig> predictor_configs;
+    std::vector<std::vector<int64_t>> groups(batch_size);
+    std::vector<std::vector<int64_t>> generated(batch_size);
+    predictor_configs.reserve(batch_size);
+
+    ov::Tensor prefill(ov::element::f32, ov::Shape{batch_size, 2, hidden_size});
+    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+        const CodecGroupBatchItem& item = batch_items[batch_idx];
+        OPENVINO_ASSERT(item.generation_config && item.rng,
+                        "Code-group batch item must include generation config and RNG");
+        const ov::Shape past_shape = item.past_hidden.get_shape();
+        OPENVINO_ASSERT(past_shape == ov::Shape({1, 1, hidden_size}),
+                        "Batched code predictor past_hidden must have shape [1, 1, ",
+                        hidden_size,
+                        "], got ",
+                        past_shape);
+
+        SpeechGenerationConfig predictor_config = *item.generation_config;
+        predictor_config.do_sample = item.generation_config->subtalker_dosample;
+        predictor_config.top_k = item.generation_config->subtalker_top_k;
+        predictor_config.top_p = item.generation_config->subtalker_top_p;
+        predictor_config.temperature = item.generation_config->subtalker_temperature;
+        predictor_config.repetition_penalty = 1.0f;
+        predictor_configs.push_back(std::move(predictor_config));
+
+        groups[batch_idx].reserve(m_ids.num_code_groups);
+        groups[batch_idx].push_back(item.first_codec_token);
+        generated[batch_idx].reserve(m_ids.num_code_groups - 1);
+
+        const ov::Tensor first_id_hidden = infer_embedding(m_talker_embedding, item.first_codec_token);
+        OPENVINO_ASSERT(first_id_hidden.get_shape() == ov::Shape({1, 1, hidden_size}),
+                        "Code predictor first-id embedding must have shape [1, 1, ",
+                        hidden_size,
+                        "], got ",
+                        first_id_hidden.get_shape());
+        std::copy_n(item.past_hidden.data<const float>(),
+                    hidden_size,
+                    prefill.data<float>() + batch_idx * 2 * hidden_size);
+        std::copy_n(first_id_hidden.data<const float>(),
+                    hidden_size,
+                    prefill.data<float>() + (batch_idx * 2 + 1) * hidden_size);
+    }
+
+    reset_predictor_state();
+    ov::Tensor logits = infer_predictor_batch(prefill, /*step=*/0);
+    const ov::Shape logits_shape = logits.get_shape();
+    OPENVINO_ASSERT(logits_shape.size() == 3 && logits_shape[0] == batch_size,
+                    "Batched code predictor logits must have shape [B, T, V], got ",
+                    logits_shape);
+    const std::vector<bool> predictor_suppressed(logits_shape[2], false);
+
+    std::vector<int64_t> next_tokens(batch_size);
+    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+        next_tokens[batch_idx] = sample_token_from_logits(logits,
+                                                          predictor_configs[batch_idx],
+                                                          generated[batch_idx],
+                                                          predictor_suppressed,
+                                                          *batch_items[batch_idx].rng,
+                                                          batch_idx);
+        generated[batch_idx].push_back(next_tokens[batch_idx]);
+        groups[batch_idx].push_back(next_tokens[batch_idx]);
+    }
+
+    for (size_t group_idx = 1; group_idx < m_ids.num_code_groups - 1; ++group_idx) {
+        ov::Tensor predictor_inputs(ov::element::f32, ov::Shape{batch_size, 1, hidden_size});
+        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+            const ov::Tensor embedding = infer_predictor_embedding(next_tokens[batch_idx],
+                                                                   static_cast<int64_t>(group_idx - 1));
+            OPENVINO_ASSERT(embedding.get_shape() == ov::Shape({1, 1, hidden_size}),
+                            "Code predictor residual embedding must have shape [1, 1, ",
+                            hidden_size,
+                            "], got ",
+                            embedding.get_shape());
+            std::copy_n(embedding.data<const float>(),
+                        hidden_size,
+                        predictor_inputs.data<float>() + batch_idx * hidden_size);
+        }
+
+        logits = infer_predictor_batch(predictor_inputs, static_cast<int64_t>(group_idx));
+        const ov::Shape step_logits_shape = logits.get_shape();
+        OPENVINO_ASSERT(step_logits_shape.size() == 3 && step_logits_shape[0] == batch_size,
+                        "Batched code predictor logits must have shape [B, T, V], got ",
+                        step_logits_shape);
+        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+            next_tokens[batch_idx] = sample_token_from_logits(logits,
+                                                              predictor_configs[batch_idx],
+                                                              generated[batch_idx],
+                                                              predictor_suppressed,
+                                                              *batch_items[batch_idx].rng,
+                                                              batch_idx);
+            generated[batch_idx].push_back(next_tokens[batch_idx]);
+            groups[batch_idx].push_back(next_tokens[batch_idx]);
+        }
+    }
+
+    for (std::vector<int64_t>& frame_groups : groups) {
+        while (frame_groups.size() < m_ids.num_code_groups) {
+            frame_groups.push_back(m_ids.codec_pad_id);
+        }
+    }
+
+    if (m_predictor_has_beam_idx) {
+        ov::Tensor beam_idx(ov::element::i32, ov::Shape{1});
+        beam_idx.data<int32_t>()[0] = 0;
+        m_talker_code_predictor.set_tensor("beam_idx", beam_idx);
+    }
 
     return groups;
 }

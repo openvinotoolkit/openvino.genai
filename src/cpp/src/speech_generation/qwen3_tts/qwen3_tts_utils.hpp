@@ -238,6 +238,17 @@ inline bool qwen_perf_enabled() {
     return enabled;
 }
 
+// Set OV_GENAI_QWEN_TTS_CB_SUBTALKER_BATCHING=0 to use serial predictor inference.
+inline bool qwen_cb_subtalker_batching_enabled() {
+    static const bool enabled = []() {
+        const char* env = std::getenv("OV_GENAI_QWEN_TTS_CB_SUBTALKER_BATCHING");
+        if (!env) return true;
+        const std::string value = to_lower(std::string(env));
+        return value != "0" && value != "false" && value != "no" && value != "off";
+    }();
+    return enabled;
+}
+
 // Conditionally time a callable and accumulate into the caller's perf maps.
 template <typename F>
 inline void run_and_time(F&& f,

@@ -51,6 +51,13 @@ public:
         size_t hidden = 0;
     };
 
+    struct CodecGroupBatchItem {
+        ov::Tensor past_hidden;
+        int64_t first_codec_token = -1;
+        const SpeechGenerationConfig* generation_config = nullptr;
+        std::mt19937* rng = nullptr;
+    };
+
     Qwen3TTSCodecEngine(const std::filesystem::path& models_path,
                        const std::string& device,
                        const ov::AnyMap& properties,
@@ -126,13 +133,16 @@ public:
                                      const SpeechGenerationConfig& generation_config,
                                      const std::vector<int64_t>& generated,
                                      const std::vector<bool>& suppressed,
-                                     std::mt19937& rng) const;
+                                     std::mt19937& rng,
+                                     size_t batch_index = 0) const;
     // Predicts the remaining `num_code_groups - 1` codec ids for one talker frame, given the
     // talker's last hidden state for that frame and the already-sampled first (group-0) codec id.
     std::vector<int64_t> generate_codec_groups(const ov::Tensor& past_hidden,
                                                int64_t first_codec_token,
                                                const SpeechGenerationConfig& generation_config,
                                                std::mt19937& rng);
+    std::vector<std::vector<int64_t>> generate_codec_groups_batch(
+        const std::vector<CodecGroupBatchItem>& batch_items);
 
     std::vector<float> decode_speech_tokenizer(const std::vector<int64_t>& codes);
 
@@ -186,6 +196,7 @@ public:
 
 private:
     void init_config(const std::filesystem::path& models_path);
+    ov::Tensor infer_predictor_batch(const ov::Tensor& inputs_embeds, int64_t step);
     // Read static-predictor dims from the IR and (re)allocate host KV buffers.
     void init_static_predictor_meta(const std::shared_ptr<ov::Model>& model);
     // Reshape a dynamically-exported code predictor IR to the required static
@@ -203,6 +214,7 @@ private:
     ov::InferRequest m_talker_text_embedding;
     ov::InferRequest m_talker_code_predictor;
     bool m_predictor_static = false;  // true when predictor is converted to stateless+static at runtime
+    bool m_predictor_batching_supported = false;
     bool m_predictor_has_beam_idx = false;
     ov::InferRequest m_talker_code_predictor_embedding;
 
