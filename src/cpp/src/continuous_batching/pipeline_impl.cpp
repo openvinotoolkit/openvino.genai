@@ -172,8 +172,27 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     // file store lives and dies with this pipeline and needs no identity.
     std::string model_identity;
     const auto& offload_config = normalized_config.cache_offload_config;
-    if (normalized_config.use_cache_offload && offload_config.allow_untrusted_store_plugin &&
-        !offload_config.store_library_path.empty()) {
+    const bool plugin_backed_offload_requested = normalized_config.use_cache_offload &&
+                                                 offload_config.allow_untrusted_store_plugin &&
+                                                 !offload_config.store_library_path.empty();
+
+    // Resolve per-role MODEL_PROPERTIES overlay for the language model and
+    // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
+    const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
+
+    // apply LoRA
+    auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
+    // The namespace a plugin-backed store opens under is derived from the base model's weights alone (see
+    // compute_model_identity), computed before any adapter is applied below. A pipeline configured with a static
+    // LoRA adapter would therefore share that namespace with the same base model under a different adapter (or
+    // none), silently reusing KV blocks computed under the wrong weights. Until adapters are folded into cache
+    // identity, reject the combination instead of risking that.
+    OPENVINO_ASSERT(!plugin_backed_offload_requested || !m_generation_config.adapters,
+                    "KV cache offload through a store plugin is not supported together with LoRA adapters yet, "
+                    "since the store namespace does not distinguish adapters from the base model. Remove "
+                    "allow_untrusted_store_plugin/store_library_path or the adapters to proceed.");
+
+    if (plugin_backed_offload_requested) {
         const auto identity_start = std::chrono::steady_clock::now();
         model_identity = compute_model_identity(model);
         GENAI_INFO("[KV_TRACE] model_identity=%s computed_in_ms=%lld",
@@ -182,12 +201,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                               std::chrono::steady_clock::now() - identity_start)
                                               .count()));
     }
-    // Resolve per-role MODEL_PROPERTIES overlay for the language model and
-    // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
-    const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
-
-    // apply LoRA
-    auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller =
