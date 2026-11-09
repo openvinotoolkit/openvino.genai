@@ -201,6 +201,8 @@ protected:
     bool dflash_mode_enabled = false;
     int64_t m_dflash_mask_token_id = -1;
     size_t m_dflash_candidate_position_offset = 1;
+    // the Markov head of a DSpark draft, which the sampler runs
+    std::shared_ptr<dflash_cb::CandidateSelector> m_dflash_candidate_selector;
     // Windows planned by the DFlash draft update for the next draft forward, by sequence id.
     std::map<uint64_t, detail::DFlashDraftWindow> m_dflash_draft_windows;
 
@@ -471,6 +473,7 @@ protected:
                              std::shared_ptr<dflash_cb::CandidateSelector> candidate_selector) {
         m_dflash_mask_token_id = mask_token_id;
         m_dflash_candidate_position_offset = candidate_position_offset;
+        m_dflash_candidate_selector = candidate_selector;
         m_model_runner->enable_dflash_draft(candidate_position_offset);
         m_sampler->set_block_sampling(candidate_position_offset, std::move(candidate_selector));
     }

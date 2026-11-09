@@ -1604,7 +1604,8 @@ std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector
         }
     } else {
         std::vector<int64_t> previous_tokens(blocks.size());
-        std::vector<std::vector<float>> rows(blocks.size(), std::vector<float>(vocab_size));
+        // allocated on the first fill_row() of a block; draw_token() needs no row
+        std::vector<std::vector<float>> rows(blocks.size());
         std::vector<size_t> walking(blocks.size());
         for (size_t block = 0; block < blocks.size(); ++block) {
             previous_tokens[block] = blocks[block].anchor_token;
@@ -1624,6 +1625,7 @@ std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector
                         previous_tokens[block] = token->token;
                         return true;
                     }
+                    rows[block].resize(vocab_size);
                     if (!m_block_row_source->fill_row(block, position, previous_tokens[block], rows[block].data())) {
                         return false;
                     }

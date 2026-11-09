@@ -4,9 +4,12 @@
 #include "speculative_decoding/continuous_batching/dflash_candidate_selector.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <limits>
+#include <utility>
 
+#include "openvino/genai/perf_metrics.hpp"
 #include "speculative_decoding/continuous_batching/dflash_candidate_lattice.hpp"
 #include "utils.hpp"
 
@@ -55,8 +58,10 @@ CandidateSelector::CandidateSelector(const utils::dflash::DFlashRTInfo& rt_info,
                                      const ov::AnyMap& properties) {
     const auto& markov_head = rt_info.markov_head_computation;
     OPENVINO_ASSERT(markov_head, "The DFlash candidate selector requires a draft with a Markov head.");
-    // A draft without properties takes the target's, to which LLMPipeline adds the GenAI-only sampler_num_threads.
-    ov::AnyMap compile_properties = properties;
+    // A draft without properties takes the target's, which can carry a MODEL_PROPERTIES overlay and the GenAI-only
+    // sampler_num_threads that LLMPipeline adds. The head compiles with the language model's properties, as the
+    // backbone does.
+    ov::AnyMap compile_properties = utils::get_model_properties(properties, "language_model", device);
     compile_properties.erase("sampler_num_threads");
     auto request =
         utils::singleton_core().compile_model(markov_head, device, compile_properties).create_infer_request();
@@ -104,7 +109,7 @@ void CandidateSelector::score_candidates() {
     scorer.set_tensor("draft_logits", packed_rows(m_logits, m_blocks, num_rows));
     scorer.set_tensor("anchor_token_ids", anchor_token_ids);
     scorer.set_tensor("subsequence_begins", subsequence_begins);
-    scorer.infer();
+    infer(scorer);
 
     m_edge_scores = scorer.get_tensor("edge_scores");
     m_candidate_ids = scorer.get_tensor("candidate_ids");
@@ -116,7 +121,7 @@ void CandidateSelector::step(size_t, const std::vector<size_t>& blocks, const st
     ov::Tensor prev_token_ids(ov::element::i64, {blocks.size()});
     std::copy(previous_tokens.begin(), previous_tokens.end(), prev_token_ids.data<int64_t>());
     m_markov_step->set_tensor("prev_token_ids", prev_token_ids);
-    m_markov_step->infer();
+    infer(*m_markov_step);
     m_markov_bias = m_markov_step->get_tensor("markov_bias");
     OPENVINO_ASSERT(m_markov_bias.get_element_type() == ov::element::f32 &&
                         m_markov_bias.get_shape() == ov::Shape({blocks.size(), m_vocab_size}),
@@ -193,6 +198,16 @@ const float* CandidateSelector::backbone_logits(size_t block, size_t position) c
 
 const float* CandidateSelector::markov_bias(size_t block) const {
     return m_markov_bias.data<const float>() + m_markov_bias_rows[block] * m_vocab_size;
+}
+
+void CandidateSelector::infer(ov::InferRequest& request) {
+    const auto start = std::chrono::steady_clock::now();
+    request.infer();
+    m_inference_duration += PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
+}
+
+float CandidateSelector::take_inference_duration() {
+    return std::exchange(m_inference_duration, 0.0f);
 }
 
 }  // namespace ov::genai::dflash_cb

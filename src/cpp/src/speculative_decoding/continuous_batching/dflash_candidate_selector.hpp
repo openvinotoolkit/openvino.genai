@@ -55,8 +55,13 @@ public:
 
     bool fill_row(size_t block, size_t position, int64_t previous_token, float* row) const override;
 
+    // Microseconds the Markov head ran since the last call. The head runs during sampling, after the draft's
+    // inference timer stops, so the draft adds this to its inference duration.
+    float take_inference_duration();
+
 private:
     void score_candidates();
+    void infer(ov::InferRequest& request);
     const float* backbone_logits(size_t block, size_t position) const;
     const float* markov_bias(size_t block) const;
 
@@ -74,6 +79,7 @@ private:
     // the dense step's Markov bias at the current position, the row of each block that draws a token there
     ov::Tensor m_markov_bias;
     std::vector<size_t> m_markov_bias_rows;
+    float m_inference_duration = 0.0f;
 };
 
 }  // namespace ov::genai::dflash_cb
