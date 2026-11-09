@@ -1017,22 +1017,41 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr& sequenc
     return dropped_seq_ids;
 }
 
-void register_new_token(const Token& sampled_token,
-                        Sequence::Ptr running_sequence,
-                        LogitProcessor& logit_processor,
-                        bool is_extend_sequence,
-                        bool is_validation_mode_enabled) {
+void append_sampled_token(const Token& sampled_token, const Sequence::Ptr& sequence, LogitProcessor& logit_processor) {
     logit_processor.register_new_generated_token(sampled_token.m_index);
-    if (is_extend_sequence) {
-        running_sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
+    sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
+}
+
+// With assistant_confidence_threshold, a draft stops drafting at a token it is not confident about.
+void pause_if_unconfident(const Token& sampled_token, const Sequence::Ptr& sequence, LogitProcessor& logit_processor) {
+    const float threshold = logit_processor.get_assistant_confidence_threshold();
+    if (threshold > 0 && (std::fabs(std::exp(sampled_token.m_log_prob)) < threshold || sampled_token.m_log_prob == 0)) {
+        sequence->get_sequence_group_ptr()->pause_generation(true);
     }
-    if (!is_validation_mode_enabled &&
-        logit_processor.get_assistant_confidence_threshold() > 0 &&
-        (std::fabs(std::exp(sampled_token.m_log_prob)) < logit_processor.get_assistant_confidence_threshold() || sampled_token.m_log_prob == 0)) {
-        auto sequence_group = running_sequence->get_sequence_group_ptr();
-        sequence_group->pause_generation(true);
+}
+
+// Removes tokens whose rows this step has already processed: rejected candidates and the candidates after them, or
+// tokens beyond max_new_tokens. The KV cache of the request is rolled back by its largest removal.
+void roll_back_tokens(const Sequence::Ptr& sequence, size_t num_tokens, AssistingPipelineInfo& assisting_pipeline_info) {
+    sequence->remove_last_tokens(num_tokens);
+    assisting_pipeline_info.max_removed_tokens_per_request =
+        std::max(assisting_pipeline_info.max_removed_tokens_per_request, num_tokens);
+}
+
+// An accepted or sampled stop token finishes the sequence and discards the num_trailing_candidates candidates after it.
+void finish_at_stop_token(const Token& token,
+                          const Sequence::Ptr& sequence,
+                          size_t num_trailing_candidates,
+                          const GenerationConfig& sampling_params,
+                          SequenceGroupSamplingInfo& sg_sampling_info) {
+    if (!is_stop_token_id_hit(token.m_index, sampling_params.stop_token_ids) || sampling_params.ignore_eos) {
+        return;
     }
-};
+    roll_back_tokens(sequence, num_trailing_candidates, sg_sampling_info.get_assisting_pipeline_info());
+    sequence->set_status(SequenceStatus::FINISHED);
+    sequence->set_finish_reason(GenerationFinishReason::STOP);
+    sg_sampling_info.sampler_output.m_dropped_sequences.push_back(sequence->get_id());
+}
 
 std::map<size_t, int32_t> Sampler::get_beam_idxs(SequenceGroup::CPtr sequence_group) {
     size_t request_id = sequence_group->get_request_id();
@@ -1063,18 +1082,10 @@ create_n_forked_sequences(SequenceGroup::Ptr sequence_group,
         const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
         const auto forked_seq_id = forked_sequence->get_id();
         forked_seq_ids.push_back(forked_seq_id);
-        register_new_token(sampled_tokens[i], forked_sequence, logit_processor, true, false);
+        append_sampled_token(sampled_tokens[i], forked_sequence, logit_processor);
+        pause_if_unconfident(sampled_tokens[i], forked_sequence, logit_processor);
     }
     return forked_seq_ids;
-}
-
-void
-stop_sample_tokens(Sequence::Ptr running_sequence,
-                   size_t token_idx,
-                   size_t max_gen_len,
-                   size_t& max_removed_tokens_per_request) {
-    running_sequence->remove_last_tokens(token_idx);
-    max_removed_tokens_per_request = std::max(max_removed_tokens_per_request, token_idx);
 }
 
 void
@@ -1273,26 +1284,182 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
     return accepted_steps;
 }
 
-bool Sampler::validate_candidate(
-    Sequence::Ptr running_sequence,
-    size_t& token_idx,
-    const Token& sampled_token,
-    bool& is_extend_sequence,
-    size_t& max_removed_tokens) {
-    OPENVINO_ASSERT(token_idx > 0);
-    const auto& generated_tokens = running_sequence->get_generated_ids();
-    auto it_token_id = generated_tokens.rbegin();
-    std::advance(it_token_id, token_idx - 1);
+Token Sampler::_multinomial_sample(SequenceGroup::Ptr sequence_group,
+                                   const SamplingDistribution& distribution,
+                                   RequestSamplerContext& ctx,
+                                   SamplerOutput& sampler_output) {
+    const size_t num_return_sequences = sequence_group->get_sampling_parameters().num_return_sequences;
+    const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1 && num_return_sequences > 1;
+    std::vector<Token> sampled_tokens(is_generate_n_tokens ? num_return_sequences : 1);
+    for (Token& sampled_token : sampled_tokens) {
+        sampled_token = distribution.sample(ctx.rng_engine);
+    }
+    if (is_generate_n_tokens) {
+        const uint64_t forked_sequence_id = sequence_group->get_running_sequences().front()->get_id();
+        sampler_output.m_forked_sequences.insert(
+            {forked_sequence_id, create_n_forked_sequences(sequence_group, ctx.logit_processor, sampled_tokens)});
+    }
+    return sampled_tokens.front();
+}
 
-    // to validate candidates from assisting model and remove incorrect ones from generated sequence
-    if (*it_token_id != sampled_token.m_index) {
-        running_sequence->remove_last_tokens(token_idx);
-        max_removed_tokens = std::max(max_removed_tokens, token_idx);
-        is_extend_sequence = true;
-        return false;
+void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
+                                  const ov::Tensor& sequence_group_logits,
+                                  RequestSamplerContext& ctx,
+                                  size_t num_tokens_to_process,
+                                  SequenceGroupSamplingInfo& sg_sampling_info) {
+    const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+    AssistingPipelineInfo& assisting_pipeline_info = sg_sampling_info.get_assisting_pipeline_info();
+    LogitProcessor& logit_processor = ctx.logit_processor;
+    // A draft also has a row for each main model token inserted since its last step.
+    const size_t num_inserted_tokens = sequence_group->get_num_tokens_to_validate();
+    const bool is_draft_proposal_needed = m_collect_draft_proposals && sampling_params.is_multinomial();
+    const int64_t* d2t = m_d2t_mapping ? m_d2t_mapping->get_data_ptr<int64_t>() : nullptr;
+    OPENVINO_ASSERT(!is_draft_proposal_needed || !d2t || m_d2t_mapping_is_one_to_one,
+                    "Sampled drafting requires a draft-to-target token mapping that sends the draft tokens to "
+                    "distinct target tokens.");
+    const std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+    for (size_t running_sequence_id = 0; running_sequence_id < running_sequences.size(); ++running_sequence_id) {
+        const Sequence::Ptr& running_sequence = running_sequences[running_sequence_id];
+        // The rows of inserted tokens only fill the KV cache; the new token is sampled from the last row.
+        for (size_t i = 0; i <= num_tokens_to_process; ++i) {
+            if (running_sequence->has_finished())
+                break;
+            sg_sampling_info.sampler_output.num_generated_tokens++;
+            const size_t generated_seq_token_offset = num_inserted_tokens - i;
+            OPENVINO_ASSERT(running_sequence->get_generated_len() >= generated_seq_token_offset);
+            const size_t generated_len = running_sequence->get_generated_len() - generated_seq_token_offset;
+            OPENVINO_ASSERT(sequence_group->get_max_new_tokens() >= generated_len);
+            if (sequence_group->get_max_new_tokens() == generated_len) {
+                roll_back_tokens(running_sequence, generated_seq_token_offset, assisting_pipeline_info);
+                break;
+            }
+            if (generated_seq_token_offset > 0) {
+                continue;
+            }
+
+            auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, 0);
+            logit_processor.update_generated_len(generated_len);
+            logit_processor.apply(logit_vector);
+            std::optional<SamplingDistribution> distribution;
+            Token sampled_token;
+            if (sampling_params.is_greedy_decoding()) {
+                sampled_token = _greedy_sample(logit_vector, sampling_params.logprobs);
+            } else {
+                distribution.emplace(logit_vector);
+                sampled_token = _multinomial_sample(sequence_group, *distribution, ctx, sg_sampling_info.sampler_output);
+            }
+            // An EAGLE draft samples over its own vocabulary.
+            if (d2t) {
+                sampled_token.m_index += d2t[sampled_token.m_index];
+            }
+            append_sampled_token(sampled_token, running_sequence, logit_processor);
+            pause_if_unconfident(sampled_token, running_sequence, logit_processor);
+            if (is_draft_proposal_needed) {
+                running_sequence->set_draft_proposal(running_sequence->get_generated_len() - 1,
+                                                     detail::make_draft_proposal(*distribution, d2t));
+            }
+            finish_at_stop_token(sampled_token, running_sequence, 0, sampling_params, sg_sampling_info);
+        }
+        assisting_pipeline_info.min_generated_len =
+            std::min(assisting_pipeline_info.min_generated_len, running_sequence->get_generated_len());
+    }
+}
+
+void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
+                                   const ov::Tensor& sequence_group_logits,
+                                   RequestSamplerContext& ctx,
+                                   size_t num_tokens_to_process,
+                                   SequenceGroupSamplingInfo& sg_sampling_info) {
+    const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+    AssistingPipelineInfo& assisting_pipeline_info = sg_sampling_info.get_assisting_pipeline_info();
+    LogitProcessor& logit_processor = ctx.logit_processor;
+    const size_t num_candidates = sequence_group->get_num_tokens_to_validate();
+    // Sampled draft candidates are verified by speculative sampling against their recorded proposals; greedy and
+    // prompt lookup candidates are verified by exact match.
+    const bool is_speculative_sampling = sampling_params.do_sample && !sampling_params.is_prompt_lookup();
+    const auto sample_token = [&](const Logits& logits) {
+        return sampling_params.is_greedy_decoding() ? _greedy_sample(logits, sampling_params.logprobs)
+                                                    : SamplingDistribution(logits).sample(ctx.rng_engine);
+    };
+    size_t num_sampled_rows = 0;
+    const std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+    for (size_t running_sequence_id = 0; running_sequence_id < running_sequences.size(); ++running_sequence_id) {
+        const Sequence::Ptr& running_sequence = running_sequences[running_sequence_id];
+        // Row i predicts the position of candidate i, and the last row the token after the window.
+        for (size_t i = 0; i <= num_tokens_to_process; ++i) {
+            if (running_sequence->has_finished())
+                break;
+            sg_sampling_info.sampler_output.num_generated_tokens++;
+            const size_t logit_token_offset = num_tokens_to_process - i;
+            const size_t generated_seq_token_offset = num_candidates - i;
+            OPENVINO_ASSERT(running_sequence->get_generated_len() >= generated_seq_token_offset);
+            const size_t generated_and_verified_len = running_sequence->get_generated_len() - generated_seq_token_offset;
+            OPENVINO_ASSERT(sequence_group->get_max_new_tokens() >= generated_and_verified_len);
+            if (sequence_group->get_max_new_tokens() == generated_and_verified_len) {
+                roll_back_tokens(running_sequence, generated_seq_token_offset, assisting_pipeline_info);
+                break;
+            }
+
+            auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
+            // The processor is shared by the sequences of the group and by the positions of a validation window,
+            // so min_new_tokens is evaluated against the tokens generated before this position of this sequence.
+            logit_processor.update_generated_len(generated_and_verified_len);
+            logit_processor.apply(logit_vector);
+            num_sampled_rows = i + 1;
+
+            if (logit_token_offset == 0) {
+                const Token sampled_token =
+                    sampling_params.is_greedy_decoding()
+                        ? _greedy_sample(logit_vector, sampling_params.logprobs)
+                        : _multinomial_sample(sequence_group,
+                                              SamplingDistribution(logit_vector),
+                                              ctx,
+                                              sg_sampling_info.sampler_output);
+                append_sampled_token(sampled_token, running_sequence, logit_processor);
+                finish_at_stop_token(sampled_token,
+                                     running_sequence,
+                                     generated_seq_token_offset > 0 ? generated_seq_token_offset - 1 : 0,
+                                     sampling_params,
+                                     sg_sampling_info);
+                break;
+            }
+
+            const size_t candidate_index = generated_and_verified_len;
+            const int64_t candidate = running_sequence->get_generated_ids()[candidate_index];
+            const detail::CandidateVerdict verdict =
+                is_speculative_sampling
+                    ? detail::verify_draft_token(logit_vector,
+                                                 candidate,
+                                                 running_sequence->get_draft_proposal(candidate_index),
+                                                 ctx.rng_engine)
+                    : detail::match_candidate(candidate, sample_token(logit_vector));
+            if (!verdict.accepted) {
+                // The token is drawn for the rejected position, so it replaces the rejected candidate and every
+                // candidate after it.
+                roll_back_tokens(running_sequence, generated_seq_token_offset, assisting_pipeline_info);
+                append_sampled_token(verdict.token, running_sequence, logit_processor);
+                break;
+            }
+            running_sequence->update_generated_log_prob(candidate_index, verdict.token.m_log_prob);
+            running_sequence->clear_draft_proposal(candidate_index);
+            logit_processor.register_new_generated_token(candidate);
+            finish_at_stop_token(verdict.token,
+                                 running_sequence,
+                                 generated_seq_token_offset - 1,
+                                 sampling_params,
+                                 sg_sampling_info);
+        }
+        assisting_pipeline_info.min_generated_len =
+            std::min(assisting_pipeline_info.min_generated_len, running_sequence->get_generated_len());
     }
 
-    return true;
+    if (sampling_params.is_greedy_decoding() && num_candidates > 0) {
+        OPENVINO_ASSERT(num_sampled_rows > 0, "Greedy speculative validation produced no acceptance decision");
+        sg_sampling_info.sampler_output.acceptance_by_sequence.emplace(
+            running_sequences.front()->get_id(),
+            SamplerOutput::AcceptanceResult{num_sampled_rows,
+                                            sequence_group->get_num_processed_tokens() + num_sampled_rows});
+    }
 }
 
 std::pair<size_t, std::set<std::string>>
@@ -1345,14 +1512,17 @@ int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
     logit_processor.update_generated_len(sequence->get_generated_len());
     logit_processor.apply(logits);
     const Token token = _greedy_sample(logits, sampling_params.logprobs);
-    register_new_token(token, sequence, logit_processor, true, false);
+    append_sampled_token(token, sequence, logit_processor);
+    pause_if_unconfident(token, sequence, logit_processor);
     return token.m_index;
 }
 
 void Sampler::_append_block_token(const Sequence::Ptr& sequence,
                                   const BlockToken& token,
                                   RequestSamplerContext& context) {
-    register_new_token(Token(token.log_prob, token.token), sequence, context.logit_processor, true, false);
+    const Token sampled_token(token.log_prob, token.token);
+    append_sampled_token(sampled_token, sequence, context.logit_processor);
+    pause_if_unconfident(sampled_token, sequence, context.logit_processor);
 }
 
 SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(const SequenceGroup::Ptr& sequence_group,
@@ -1500,11 +1670,9 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     // get number of tokens to be validated
     size_t num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
     size_t num_generated_tokens_to_validate = num_tokens_to_process;
-    std::optional<std::pair<uint64_t, size_t>> greedy_acceptance;
 
     LogitProcessor& logit_processor = ctx.logit_processor;
     const std::pair<size_t, std::set<std::string>>& stop_strings = ctx.stop_strings;
-    std::mt19937& rng_engine = ctx.rng_engine;
 
     if (num_tokens_to_process > output_seq_len - 1) {
         auto delta = num_tokens_to_process - (output_seq_len - 1);
@@ -1513,156 +1681,13 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     }
 
     if (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial()) {
-        std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
-        size_t num_running_sequences = sequence_group->num_running_seqs();
         if (sampling_params.is_greedy_decoding()) {
-            OPENVINO_ASSERT(num_running_sequences == 1);
+            OPENVINO_ASSERT(sequence_group->num_running_seqs() == 1);
         }
-        // Sampled draft candidates are verified by speculative sampling against their recorded proposals;
-        // greedy and prompt lookup candidates are verified by exact match.
-        const bool is_speculative_sampling =
-            is_validation_mode_enabled && sampling_params.do_sample && !sampling_params.is_prompt_lookup();
-        const bool is_draft_proposal_needed = m_collect_draft_proposals && sampling_params.is_multinomial();
-        const int64_t* d2t = m_d2t_mapping ? m_d2t_mapping->get_data_ptr<int64_t>() : nullptr;
-        OPENVINO_ASSERT(!is_draft_proposal_needed || !d2t || m_d2t_mapping_is_one_to_one,
-                        "Sampled drafting requires a draft-to-target token mapping that sends the draft tokens to "
-                        "distinct target tokens.");
-        for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
-            auto& running_sequence = running_sequences[running_sequence_id];
-            bool is_validation_passed = true;
-            // make `num_tokens_to_process` iteration to validate a candidate generated by `draft_model` + 1 iteration to generate one more token by `main_model`
-            for (size_t i = 0; i <= num_tokens_to_process; ++i) {
-                if (running_sequence->has_finished())
-                    break;
-                sg_sampling_info.sampler_output.num_generated_tokens++;
-                // calculate token offset from the end of logit
-                size_t logit_token_offset = num_tokens_to_process - i;
-                size_t generated_seq_token_offset = num_generated_tokens_to_validate - i;
-                // max counter of needed to be sampled tokens
-                OPENVINO_ASSERT(running_sequence->get_generated_len() >= generated_seq_token_offset);
-                size_t generated_and_verified_len = running_sequence->get_generated_len() - generated_seq_token_offset;
-                OPENVINO_ASSERT(sequence_group->get_max_new_tokens() >= generated_and_verified_len);
-                size_t max_num_sampled_token = sequence_group->get_max_new_tokens() - generated_and_verified_len;
-                if (max_num_sampled_token == 0) {
-                    stop_sample_tokens(running_sequence, generated_seq_token_offset, max_num_sampled_token, assisting_pipeline_info.max_removed_tokens_per_request);
-                    break;
-                }
-                // do sampling only for token validation/generation.
-                // continue in case of extending draft model sequences by main model generated tokens which
-                // should be taken to KV cache without validation
-                if (!is_validation_mode_enabled && generated_seq_token_offset > 0) {
-                    continue;
-                }
-
-                auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
-                // The processor is shared by the sequences of the group and by the positions of a validation window,
-                // so min_new_tokens is evaluated against the tokens generated before this position of this sequence.
-                logit_processor.update_generated_len(generated_and_verified_len);
-                logit_processor.apply(logit_vector);
-
-                Token sampled_token;
-                bool is_generate_n_tokens = false;
-                // The distribution of a multinomial draw, which a draft records as the proposal of the token.
-                std::optional<SamplingDistribution> distribution;
-                // flag to add sampled token to generated sequence or extend logit processors only
-                bool is_extend_sequence = logit_token_offset == 0 || !is_validation_passed;
-                if (is_speculative_sampling && !is_extend_sequence) {
-                    const size_t candidate_index = generated_and_verified_len;
-                    const auto verdict =
-                        detail::verify_draft_token(logit_vector,
-                                                   running_sequence->get_generated_ids()[candidate_index],
-                                                   running_sequence->get_draft_proposal(candidate_index),
-                                                   rng_engine);
-                    sampled_token = verdict.token;
-                    if (verdict.accepted) {
-                        running_sequence->update_generated_log_prob(candidate_index, sampled_token.m_log_prob);
-                        running_sequence->clear_draft_proposal(candidate_index);
-                    } else {
-                        // The replacement is drawn for the rejected position, so it takes the place of the rejected
-                        // candidate and every candidate after it.
-                        running_sequence->remove_last_tokens(generated_seq_token_offset);
-                        auto& max_removed_tokens = assisting_pipeline_info.max_removed_tokens_per_request;
-                        max_removed_tokens = std::max(max_removed_tokens, generated_seq_token_offset);
-                        is_extend_sequence = true;
-                        is_validation_passed = false;
-                    }
-                } else {
-                    if (sampling_params.is_greedy_decoding()) {
-                        sampled_token = { _greedy_sample(logit_vector, sampling_params.logprobs) };
-                    } else {
-                        // is_multinomial()
-                        is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
-                        const size_t num_tokens_per_sequence =
-                            is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
-                        is_generate_n_tokens &= (num_tokens_per_sequence > 1);
-                        distribution.emplace(logit_vector);
-                        std::vector<Token> sampled_token_ids;
-                        for (size_t n = 0; n < num_tokens_per_sequence; ++n) {
-                            sampled_token_ids.push_back(distribution->sample(rng_engine));
-                        }
-                        // to create n sequence just in case of `sequence_group->num_total_seqs() == 1` and
-                        // `sampling_params.num_return_sequences > 1`
-                        if (is_generate_n_tokens) {
-                            const auto forked_seq_ids =
-                                create_n_forked_sequences(sequence_group, logit_processor, sampled_token_ids);
-                            sg_sampling_info.sampler_output.m_forked_sequences.insert(
-                                {running_sequences[0]->get_id(), forked_seq_ids});
-                        }
-                        sampled_token = sampled_token_ids.front();
-                    }
-                    // compute token offset for draft model in speculative sampling
-                    if (!is_validation_mode_enabled && d2t) {
-                        sampled_token.m_index += d2t[sampled_token.m_index];
-                    }
-                    is_extend_sequence = is_extend_sequence || is_generate_n_tokens;
-                    if (is_validation_mode_enabled && !is_extend_sequence) {
-                        is_validation_passed =
-                            validate_candidate(running_sequences[running_sequence_id],
-                                               generated_seq_token_offset,
-                                               sampled_token,
-                                               is_extend_sequence,
-                                               assisting_pipeline_info.max_removed_tokens_per_request);
-                        // update log prob just while validation process
-                        if (!is_extend_sequence) {
-                            OPENVINO_ASSERT(generated_and_verified_len <
-                                            running_sequences[running_sequence_id]->get_generated_len());
-                            running_sequence->update_generated_log_prob(generated_and_verified_len,
-                                                                        sampled_token.m_log_prob);
-                        }
-                    }
-                }
-                register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
-                if (is_validation_mode_enabled && sampling_params.is_greedy_decoding()) {
-                    greedy_acceptance = std::make_pair(running_sequence->get_id(), i + 1);
-                }
-                if (is_draft_proposal_needed) {
-                    OPENVINO_ASSERT(is_extend_sequence && distribution,
-                                    "Draft proposal must be attached to a newly appended sampled token.");
-                    running_sequence->set_draft_proposal(running_sequence->get_generated_len() - 1,
-                                                         detail::make_draft_proposal(*distribution, d2t));
-                }
-                               
-                // to exit from sampling in case of failed token validation
-                if (!is_validation_passed) {
-                    break;
-                } else {
-                    const auto& sampling_params = sequence_group->get_sampling_parameters();
-                    if (is_stop_token_id_hit(sampled_token.m_index, sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
-                        // Accepted stop token, discard draft candidates speculatively appended after it
-                        const size_t trailing_draft_tokens =
-                            generated_seq_token_offset > 0 ? generated_seq_token_offset - 1 : 0;
-                        if (trailing_draft_tokens > 0) {
-                            running_sequence->remove_last_tokens(trailing_draft_tokens);
-                            assisting_pipeline_info.max_removed_tokens_per_request =
-                                std::max(assisting_pipeline_info.max_removed_tokens_per_request, trailing_draft_tokens);
-                        }
-                        running_sequence->set_status(SequenceStatus::FINISHED);
-                        running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-                        sg_sampling_info.sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
-                    }
-                }
-            }
-            assisting_pipeline_info.min_generated_len = std::min(assisting_pipeline_info.min_generated_len, running_sequence->get_generated_len());
+        if (is_validation_mode_enabled) {
+            _validate_candidates(sequence_group, sequence_group_logits, ctx, num_tokens_to_process, sg_sampling_info);
+        } else {
+            _sample_next_tokens(sequence_group, sequence_group_logits, ctx, num_tokens_to_process, sg_sampling_info);
         }
         align_all_sequence_len(sequence_group, assisting_pipeline_info.min_generated_len, logit_processor);
         for (const auto& dropped_seq_id : _try_finish_generation(sequence_group, ctx.stop_strings)) {
@@ -1757,17 +1782,6 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         OPENVINO_THROW("Unsupported sampling method");
     }
     OPENVINO_ASSERT(num_generated_tokens_to_validate >= assisting_pipeline_info.max_removed_tokens_per_request);
-    if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0) {
-        if (sampling_params.is_greedy_decoding()) {
-            OPENVINO_ASSERT(greedy_acceptance.has_value(),
-                            "Greedy speculative validation produced no acceptance decision");
-            sg_sampling_info.sampler_output.acceptance_by_sequence.emplace(
-                greedy_acceptance->first,
-                SamplerOutput::AcceptanceResult{
-                    greedy_acceptance->second,
-                    sequence_group->get_num_processed_tokens() + greedy_acceptance->second});
-        }
-    }
     if (notify_handle) {
         try {
             sequence_group->notify_handle();

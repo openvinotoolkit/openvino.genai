@@ -30,6 +30,8 @@
 #include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov::genai {
+class SamplingDistribution;
+
 // Handle stop_token_ids
 inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t> & stop_token_ids) {
     for (auto & stop_token_id : stop_token_ids) {
@@ -149,11 +151,29 @@ class Sampler {
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr& sequence_group,
                                                  const std::pair<size_t, std::set<std::string>>& stop_strings);
 
-    bool validate_candidate(Sequence::Ptr running_sequence,
-                            size_t& token_idx,
-                            const Token& sampled_token,
-                            bool& is_extend_sequence,
-                            size_t& max_removed_tokens);
+    // Draws the token of the running sequence. The first step of a request with num_return_sequences > 1 draws a
+    // token per sequence and forks the other sequences off the running one.
+    Token _multinomial_sample(SequenceGroup::Ptr sequence_group,
+                              const SamplingDistribution& distribution,
+                              RequestSamplerContext& context,
+                              SamplerOutput& sampler_output);
+
+    // A draft or target-only step: samples the token after the last row of each running sequence. A draft records the
+    // proposal of each sampled token.
+    void _sample_next_tokens(SequenceGroup::Ptr sequence_group,
+                             const ov::Tensor& sequence_group_logits,
+                             RequestSamplerContext& context,
+                             size_t num_tokens_to_process,
+                             SequenceGroupSamplingInfo& sg_sampling_info);
+
+    // A main model step over a window of candidates: verifies the candidates in order, with speculative sampling for
+    // sampled drafts and by exact match for greedy decoding and prompt lookup, then samples the token after the window.
+    // The first rejected candidate is replaced by a token drawn for its position, which ends the window.
+    void _validate_candidates(SequenceGroup::Ptr sequence_group,
+                              const ov::Tensor& sequence_group_logits,
+                              RequestSamplerContext& context,
+                              size_t num_tokens_to_process,
+                              SequenceGroupSamplingInfo& sg_sampling_info);
 
     // Verify the candidate tree against target-model logits: greedily accept the longest
     // matching prefix across all tree paths, then append a bonus token.
