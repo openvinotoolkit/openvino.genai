@@ -37,11 +37,9 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Generator, cast
-import openvino_tokenizers
 import openvino
 import PIL
 import pytest
-import requests
 import sys
 import os
 import numpy as np
@@ -70,12 +68,19 @@ from utils.generation_config import (
     get_multinomial_all_parameters,
     get_greedy,
 )
-from utils.constants import get_ov_cache_converted_models_dir
-from utils.atomic_download import AtomicDownloadManager
 from utils.media_tags import ModalityType, get_media_inputs_kwargs, get_universal_tag
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import should_skip_npuw_tests
+
+from conftest import (
+    ATTENTION_BACKEND,
+    PROMPTS,
+    TEST_IMAGE_URLS,
+    _get_ov_model as _get_ov_model_shared,
+    from_cache_or_download,
+    retry,
+)
 
 import logging
 logger = logging.getLogger(__name__)
@@ -135,12 +140,6 @@ class _VlmPipelineUnsupportedImageInputGuard:
     def __getattr__(self, name: str):
         return getattr(self._pipeline, name)
 
-
-PROMPTS: list[str] = [
-    "What is in the image?",
-    "What is special about this image?",
-    "Describe the image"
-]
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
@@ -282,8 +281,6 @@ RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
 DEFAULT_RESOLUTION = 336
 
 
-ATTENTION_BACKEND: list[str] = ["PA", "SDPA"]
-
 PROMPT_LOOKUP: list[bool] = [True, False]
 
 
@@ -293,12 +290,6 @@ IMAGE_TOKENS_NUM = 54
 MAX_RETRIES = 10
 RETRY_BASE_DELAY_SEC = 0.1
 RETRY_MAX_DELAY_SEC = 2.0
-
-TEST_IMAGE_URLS = {
-    'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
-    'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
-    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350'
-}
 
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
@@ -455,96 +446,8 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
 
 def _get_ov_model(model_id: str) -> str:
     _maybe_skip_unsupported_model_export(model_id)
+    return _get_ov_model_shared(model_id)
 
-    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
-    dir_name = str(model_id).replace(os.sep, "_")
-    model_dir = ov_cache_converted_dir / dir_name
-    manager = AtomicDownloadManager(model_dir)
-
-    if manager.is_complete() or (model_dir / "openvino_language_model.xml").exists():
-        return model_dir
-
-    def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = retry_request(lambda: snapshot_download(model_id))
-        align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-        processor = retry_request(
-            lambda: transformers.AutoProcessor.from_pretrained(
-                model_cached,
-                trust_remote_code=True,
-                **align_with_optimum_cli,
-            )
-        )
-        model = retry_request(
-            lambda: OVModelForVisualCausalLM.from_pretrained(
-                model_cached,
-                compile=False,
-                device="CPU",
-                export=True,
-                load_in_8bit=False,
-                trust_remote_code=model_id in {
-                    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
-                    "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
-                    "optimum-intel-internal-testing/tiny-random-internvl2",
-                    "optimum-intel-internal-testing/tiny-random-phi3-vision",
-                    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
-                    "qnguyen3/nanoLLaVA",
-                    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
-                    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
-                },
-            )
-        )
-        if model.config.model_type == "llava-qwen2" or _is_videochat_flash_qwen_model(model_id):
-            tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
-        # For tiny-random-internvl2 processor is actually tokenizer
-        elif isinstance(processor, transformers.Qwen2TokenizerFast):
-            tokenizer = processor
-            processor = transformers.AutoImageProcessor.from_pretrained(model_cached, trust_remote_code=True)
-        else:
-            tokenizer = processor.tokenizer
-            if tokenizer.chat_template is None:
-                tokenizer.chat_template = processor.chat_template
-        tokenizer.save_pretrained(temp_dir)
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer, with_detokenizer=True
-        )
-        openvino.save_model(ov_tokenizer, temp_dir / "openvino_tokenizer.xml")
-        openvino.save_model(ov_detokenizer, temp_dir / "openvino_detokenizer.xml")
-
-        if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
-            # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
-            processor.chat_template = tokenizer.chat_template
-
-        if model_id not in AUDIO_INPUT_SUPPORTED_MODELS:
-            if (
-                isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
-                or model.config.model_type == "qwen3_5"
-                or is_transformers_version(">=", "5.0")
-            ):
-                # Setting to None is insufficient because some processors still serialize
-                # audio_tokenizer and access its name_or_path attribute.
-                processor.__dict__.pop("audio_tokenizer", None)
-            else:
-                processor.audio_tokenizer = None
-
-        # DeepSeek-OCR-2 tiny-random currently may miss preprocessor_config.json
-        # So override processor with AutoImageProcessor in this case.
-        if model_id == MODEL_DEEPSEEK_OCR2:
-            try:
-                processor = transformers.AutoImageProcessor.from_pretrained(
-                    model_cached,
-                    trust_remote_code=True,
-                )
-            except (OSError, ValueError):
-                pass
-
-        processor.save_pretrained(temp_dir)
-        if model.config.model_type == "mistral3":
-            # Align with optimum-cli: HF repo nests image processor settings in processor_config.json only.
-            processor.image_processor.save_pretrained(temp_dir)
-        model.save_pretrained(temp_dir)
-
-    manager.execute(convert_to_temp)
-    return model_dir
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
@@ -750,31 +653,6 @@ def ov_continuous_batching_pipe_videochat() -> ContinuousBatchingPipeline:
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
-def download_image(link: str) -> PIL.Image:
-    return PIL.Image.open(requests.get(link, stream=True).raw).convert("RGB")
-
-
-def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: str):
-    def implementation():
-        try:
-            image_path = pytestconfig.cache.mkdir("images") / file_name
-        except AttributeError:
-            # Cache is disabled with -p no:cacheprovider
-            return download_image(link)
-        if image_path.exists():
-            image: PIL.Image = PIL.Image.open(image_path)
-        else:
-            image = download_image(link)
-            image.save(image_path)
-        return image
-    return retry(implementation, PIL.UnidentifiedImageError)
-
-
-@pytest.fixture(scope="module")
-def cat_image(pytestconfig: pytest.Config):
-    return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['cat'], "cat.jpg")
-
-
 def resize_video(video, shape):
     video_resized = []
     for frame in video:
@@ -831,11 +709,6 @@ def cat_image_336x336(cat_image):
 @pytest.fixture(scope="module")
 def cat_image_32x32(cat_image):
     return cat_image.resize((32, 32))
-
-
-@pytest.fixture(scope="module")
-def cat_tensor(cat_image) -> openvino.Tensor:
-    return openvino.Tensor(cat_image)
 
 
 @pytest.fixture(scope="module")
@@ -1971,17 +1844,6 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     res_second = streamer_generation_result
 
     assert res_first == res_second
-
-
-def retry(func, exception_type=AssertionError):
-    __tracebackhide__ = True
-    max_retries = 20
-    for idx in range(max_retries):
-        try:
-            return func()
-        except exception_type:
-            if idx == max_retries - 1:
-                raise
 
 
 def generate(

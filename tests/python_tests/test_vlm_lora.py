@@ -16,13 +16,10 @@ from openvino_genai import (
     VLMPipeline,
 )
 
-from test_vlm_pipeline import (
+from conftest import (
     ATTENTION_BACKEND,
-    DEFAULT_MAX_NEW_TOKENS,
     PROMPTS,
     _get_ov_model,
-    cat_image,  # noqa: F401  cat_tensor depends on it
-    cat_tensor,  # noqa: F401  used as a fixture below
 )
 
 # Qwen3.5 is multimodal on its own, there is no separate VL line for it.
@@ -59,34 +56,54 @@ def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> 
 
 @pytest.fixture(scope="module")
 def vision_lora(tmp_path_factory: pytest.TempPathFactory) -> tuple[str, Adapter]:
+    pytest.importorskip("transformers", minversion="5.2.0")
     models_path = _get_ov_model(VISION_LORA_MODEL_ID)
     adapter_path = tmp_path_factory.mktemp("vision_lora") / "adapter.safetensors"
     assert _build_vision_lora(models_path, adapter_path) > 0, "No vision layer to adapt was found"
     return models_path, Adapter(str(adapter_path))
 
 
-@pytest.mark.precommit
-@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-@pytest.mark.parametrize("mode", [AdapterConfig.Mode.MODE_STATIC, AdapterConfig.Mode.MODE_DYNAMIC])
-def test_vlm_vision_lora(backend: str, mode, vision_lora, cat_tensor: openvino.Tensor) -> None:
-    models_path, adapter = vision_lora
-    config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
-
+@pytest.fixture(scope="module", params=ATTENTION_BACKEND)
+def vision_lora_reference(request: pytest.FixtureRequest, vision_lora, cat_tensor: openvino.Tensor) -> tuple[str, str]:
+    models_path, _ = vision_lora
+    backend = request.param
+    config = GenerationConfig(max_new_tokens=10, do_sample=False)
     reference = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend).generate(
         PROMPTS[0], images=[cat_tensor], generation_config=config
     )
+    return backend, reference.texts[0]
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("mode", [AdapterConfig.Mode.MODE_STATIC, AdapterConfig.Mode.MODE_DYNAMIC])
+def test_vlm_vision_lora(mode, vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor) -> None:
+    models_path, adapter = vision_lora
+    backend, reference = vision_lora_reference
+    config = GenerationConfig(max_new_tokens=10, do_sample=False)
+
     adapted = VLMPipeline(
         models_path, "CPU", ATTENTION_BACKEND=backend, adapters=AdapterConfig(adapter, 1.0, mode)
     ).generate(PROMPTS[0], images=[cat_tensor], generation_config=config)
 
-    assert adapted.texts[0] != reference.texts[0], "Vision LoRA adapter did not affect the generated text"
+    assert adapted.texts[0] != reference, "Vision LoRA adapter did not affect the generated text"
+
+    if mode == AdapterConfig.Mode.MODE_STATIC:
+        alpha_1 = VLMPipeline(
+            models_path,
+            "CPU",
+            ATTENTION_BACKEND=backend,
+            adapters=AdapterConfig(adapter, 1.0, AdapterConfig.Mode.MODE_DYNAMIC),
+        ).generate(PROMPTS[0], images=[cat_tensor], generation_config=config)
+        assert adapted.texts[0] == alpha_1.texts[0], (
+            "STATIC and DYNAMIC adapters with the same alpha must produce identical text"
+        )
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-def test_vlm_vision_lora_switched_per_generate(backend: str, vision_lora, cat_tensor: openvino.Tensor) -> None:
+def test_vlm_vision_lora_switched_per_generate(vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor) -> None:
     models_path, adapter = vision_lora
-    config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
+    backend, without_adapters = vision_lora_reference
+    config = GenerationConfig(max_new_tokens=10, do_sample=False)
 
     def dynamic(alpha: float) -> AdapterConfig:
         return AdapterConfig(adapter, alpha, AdapterConfig.Mode.MODE_DYNAMIC)
@@ -95,7 +112,6 @@ def test_vlm_vision_lora_switched_per_generate(backend: str, vision_lora, cat_te
         return pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config, **kwargs).texts[0]
 
     # Pipelines configured once and never switched, to compare the switched outputs against.
-    without_adapters = generate(VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend))
     alpha_1 = generate(VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, adapters=dynamic(1.0)))
     alpha_2 = generate(VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, adapters=dynamic(2.0)))
     assert len({without_adapters, alpha_1, alpha_2}) == 3, "Equal references would make the checks below meaningless"
