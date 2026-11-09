@@ -1707,6 +1707,24 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
+@pytest.mark.transformers_lower_v5(reason="CVS-186059: gemma3 fails with transformers 5.0")
+def test_vlm_npu_gemma3_vision_encoder(cat_tensor):
+    models_path = _get_ov_model(MODEL_GEMMA)
+    # DEVICE puts the encoder on NPU with a static shape, the rest of the pipeline stays on CPU.
+    properties = {
+        "MODEL_PROPERTIES": {
+            "vision_embeddings": {"DEVICE": "NPU", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"},
+        }
+    }
+
+    ov_pipe = VLMPipeline(models_path, "CPU", config=properties)
+    generation_config = _setup_generation_config(ov_pipe)
+
+    res = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    assert res.texts[0]
+
+
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_auto_embeddings_duration(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {

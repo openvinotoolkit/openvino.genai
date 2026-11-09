@@ -15,9 +15,18 @@ namespace ov::genai {
 
 class VisionEncoderGemma3 : public VisionEncoder {
 public:
-    using VisionEncoder::VisionEncoder;
+    VisionEncoderGemma3(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+
+    VisionEncoderGemma3(
+        const ModelsMap& models_map,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+private:
+    void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties);
 };
 
 class InputsEmbedderGemma3 : public InputsEmbedder::IInputsEmbedder {

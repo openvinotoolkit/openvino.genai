@@ -33,6 +33,53 @@ ov::Tensor get_pixel_values_gemma3(const ov::Tensor& image, const ProcessorConfi
 
 } // namespace
 
+VisionEncoderGemma3::VisionEncoderGemma3(
+    const std::filesystem::path& model_dir,
+    const std::string& device,
+    const ov::AnyMap properties)
+    : VisionEncoder(model_dir, ConfigOnlyTag{}) {
+    compile(utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml"), device, properties);
+}
+
+VisionEncoderGemma3::VisionEncoderGemma3(
+    const ModelsMap& models_map,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap properties)
+    : VisionEncoder(models_map, config_dir_path, ConfigOnlyTag{}) {
+    const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
+    compile(utils::singleton_core().read_model(model_str, weights), device, properties);
+}
+
+void VisionEncoderGemma3::compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) {
+    auto compile_device = device;
+    // DEVICE in the encoder's own model properties picks its device and makes those properties the only ones it gets.
+    auto role_properties = utils::get_role_properties(properties, "vision_embeddings");
+    if (const auto device_it = role_properties.find("DEVICE"); device_it != role_properties.end()) {
+        compile_device = device_it->second.as<std::string>();
+        role_properties.erase(device_it);
+        if (compile_device == "NPU") {
+            utils::set_config_default(role_properties, "NPU_USE_NPUW", std::string("YES"));
+            // The encoder gets one image of the preprocessed size per request, so its shape can be static.
+            model->reshape(std::map<std::string, ov::PartialShape>{
+                {"pixel_values",
+                 ov::PartialShape{1,
+                                  3,
+                                  static_cast<int64_t>(m_processor_config.size_height),
+                                  static_cast<int64_t>(m_processor_config.size_width)}}});
+        }
+    } else {
+        role_properties = utils::get_model_properties(properties, "vision_embeddings", compile_device);
+    }
+    auto compiled_model = utils::singleton_core().compile_model(model, compile_device, role_properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
+    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+}
+
 EncodedImage VisionEncoderGemma3::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
