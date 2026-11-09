@@ -1033,6 +1033,97 @@ class MemorySamplerFull(MemorySamplerBase):
         return self.aggregate_and_format(marker, self.read_raw())
 
 
+class _RusageInfoV0(ctypes.Structure):
+    """``struct rusage_info_v0`` of macOS ``<sys/resource.h>`` (flavor
+    ``RUSAGE_INFO_V0``): the fields up to ``ri_proc_exit_abstime``, all
+    ``uint64_t`` after the 16-byte UUID."""
+
+    _fields_ = [("ri_uuid", ctypes.c_uint8 * 16)] + [
+        (name, ctypes.c_uint64)
+        for name in (
+            "ri_user_time",
+            "ri_system_time",
+            "ri_pkg_idle_wkups",
+            "ri_interrupt_wkups",
+            "ri_pageins",
+            "ri_wired_size",
+            "ri_resident_size",
+            "ri_phys_footprint",
+            "ri_proc_start_abstime",
+            "ri_proc_exit_abstime",
+        )
+    ]
+
+
+class MemorySamplerMac(MemorySamplerBase):
+    """
+    macOS memory sampler ("MAC").
+
+    Extends :class:`MemorySamplerBase` -- the same ``rss`` / ``vms`` / ``priv``
+    / ``sys`` / ``nsys`` metrics -- with ``foot``, the process's **physical
+    footprint**: the memory figure macOS itself uses for a process (Activity
+    Monitor's "Memory" column, the one memory-pressure decisions are based
+    on). Unlike RSS it counts compressed pages and the memory the GPU driver
+    (IOKit / Metal) allocated for the process -- on Apple Silicon's unified
+    memory that is where GPU allocations show -- and unlike VMS (the virtual
+    address space, ~1 TiB for a Python + PyTorch / OpenVINO process) it is not
+    inflated by reserved but unused mappings. ``memory_info()`` has no USS /
+    private counters on macOS, so ``foot`` is the per-process "real usage"
+    there.
+
+    ``foot`` comes from ``proc_pid_rusage(pid, RUSAGE_INFO_V0)`` ->
+    ``ri_phys_footprint`` of ``libproc`` (via ``ctypes``, no extra package),
+    summed over the monitored process and all its descendants like the other
+    per-process metrics. A process whose usage can not be read (it exited,
+    no permission) counts 0. macOS only.
+    """
+
+    RUSAGE_INFO_V0 = 0
+    chunk_size = 8192
+    metrics = OrderedDict(
+        list(MemorySamplerBase.metrics.items()) + [("foot", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True})]
+    )
+    _libproc = None
+
+    @classmethod
+    def load_libproc(cls):
+        """The ``libproc`` library (``proc_pid_rusage``), loaded once."""
+        if cls._libproc is None:
+            path = ctypes.util.find_library("proc") or "/usr/lib/libproc.dylib"
+            lib = ctypes.CDLL(path, use_errno=True)
+            lib.proc_pid_rusage.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.POINTER(_RusageInfoV0)]
+            lib.proc_pid_rusage.restype = ctypes.c_int
+            cls._libproc = lib
+        return cls._libproc
+
+    def __init__(self, process_id):
+        MemorySamplerBase.__init__(self, process_id)
+        self.load_libproc()
+
+    @classmethod
+    def phys_footprint(cls, pid):
+        """Physical footprint of *pid* in bytes; 0 when it can not be read."""
+        info = _RusageInfoV0()
+        if cls.load_libproc().proc_pid_rusage(int(pid), cls.RUSAGE_INFO_V0, ctypes.byref(info)) != 0:
+            return 0
+        return int(info.ri_phys_footprint)
+
+    def read_raw(self):
+        """
+        Raw snapshot (no aggregation) in ``self.metrics`` order:
+        ``rss, vms, priv, sys, nsys, foot``. See :meth:`MemorySamplerBase.read_raw`.
+        """
+        values = self._collect_ram_values()
+        parent_process = psutilProcess(self.process_id)
+        foot_mem = self.phys_footprint(parent_process.pid)
+        for child_proc in parent_process.children(recursive=True):
+            foot_mem += self.phys_footprint(child_proc.pid)
+        return values + [foot_mem]
+
+    def collect(self, marker):
+        return self.aggregate_and_format(marker, self.read_raw())
+
+
 class MemorySamplerWinGPU(MemorySamplerBase):
     """
     Windows GPU-aware memory sampler.
@@ -1289,7 +1380,12 @@ class MemoryMarkerMonitor(list):
         #                                    up front by MemoryMarkerHandler.
         #   "full"    → MemorySamplerFull:   MemorySamplerBase (same RAM metrics) PLUS
         #                                    uss/pss/swap from psutil.memory_full_info().
-        #                                    Linux only; falls back to MemorySamplerBase
+        #                                    Linux only; on macOS falls back to
+        #                                    MemorySamplerMac, elsewhere to
+        #                                    MemorySamplerBase, with a warning.
+        #   "mac"     → MemorySamplerMac:    MemorySamplerBase (same RAM metrics) PLUS
+        #                                    foot (physical footprint, libproc).
+        #                                    macOS only; falls back to MemorySamplerBase
         #                                    elsewhere with a warning.
         if sampler_type == "win-gpu" and sys.platform == "win32":
             log.info("Memory worker: MemorySamplerWinGPU (psutil RAM + WMI GPU) init...")
@@ -1297,6 +1393,14 @@ class MemoryMarkerMonitor(list):
         elif sampler_type == "full" and sys.platform == "linux":
             log.info("Memory worker: MemorySamplerFull (psutil memory_full_info: +uss/pss/swap) init...")
             self.sampler = MemorySamplerFull(process_id)
+        elif sampler_type in ("mac", "full") and sys.platform == "darwin":
+            if sampler_type == "full":
+                log.warning(
+                    "Memory worker: --memory_sampler full requested but MemorySamplerFull is "
+                    "only available on Linux — using MemorySamplerMac (+foot) on macOS."
+                )
+            log.info("Memory worker: MemorySamplerMac (psutil RAM + libproc phys_footprint) init...")
+            self.sampler = MemorySamplerMac(process_id)
         else:
             if sampler_type == "win-gpu":
                 log.warning(
@@ -1307,6 +1411,11 @@ class MemoryMarkerMonitor(list):
                 log.warning(
                     "Memory worker: --memory_sampler full requested but MemorySamplerFull is "
                     "only available on Linux — falling back to MemorySamplerBase."
+                )
+            elif sampler_type == "mac":
+                log.warning(
+                    "Memory worker: --memory_sampler mac requested but MemorySamplerMac is "
+                    "only available on macOS — falling back to MemorySamplerBase."
                 )
             log.info("Memory worker: MemorySamplerBase (psutil cross-platform) init...")
             self.sampler = MemorySamplerBase(process_id)
