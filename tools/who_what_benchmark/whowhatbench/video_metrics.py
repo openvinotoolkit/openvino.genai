@@ -17,6 +17,7 @@ ObjectPresence
     objects; "objects_lost" names the objects the base model shows and the target does not.
 """
 
+import json
 import logging
 import os
 import urllib.request
@@ -188,6 +189,26 @@ class ObjectPresence:
             return []
         return [name.strip() for name in str(value).split(";") if name.strip()]
 
+    @staticmethod
+    def default_objects():
+        """Objects of the built-in prompts, by prompt text."""
+        from importlib.resources import files
+
+        prompts = json.loads(files("whowhatbench.prompts").joinpath("text_to_video_prompts.json").read_text())
+        return {item["prompt"]: item.get("objects", "") for item in prompts}
+
+    def objects_per_row(self, data_gold, data_prediction, n):
+        """Object lists from the "objects" column, or for data collected before that column existed,
+        from the built-in prompts; empty lists where nothing is known."""
+        for data in (data_prediction, data_gold):
+            if "objects" in data.columns:
+                return [self.parse_objects(value) for value in data["objects"].values[:n]]
+        defaults = self.default_objects()
+        for data in (data_prediction, data_gold):
+            if "prompt" in data.columns:
+                return [self.parse_objects(defaults.get(prompt)) for prompt in data["prompt"].values[:n]]
+        return [[] for _ in range(n)]
+
     def _detector_model(self):
         if self._detector is None:
             from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
@@ -219,13 +240,12 @@ class ObjectPresence:
 
     def evaluate(self, data_gold, data_prediction):
         n = min(len(data_gold), len(data_prediction))
-        column = next((df["objects"] for df in (data_prediction, data_gold) if "objects" in df.columns), None)
-        if column is None:
-            logger.warning("object_presence: no 'objects' column in the data, metric skipped")
+        objects_per_row = self.objects_per_row(data_gold, data_prediction, n)
+        if not any(objects_per_row):
+            logger.warning("object_presence: no objects known for these prompts (no 'objects' column), metric skipped")
             return {}, {}
         base, target, lost = [], [], []
-        for i in range(n):
-            objects = self.parse_objects(column.values[i])
+        for i, objects in enumerate(objects_per_row):
             if not objects:
                 base.append(float("nan"))
                 target.append(float("nan"))

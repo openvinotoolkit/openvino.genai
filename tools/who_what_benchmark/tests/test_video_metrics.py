@@ -84,9 +84,24 @@ def test_object_presence_scores_and_lost_objects(two_videos, monkeypatch):
 
 
 def test_object_presence_without_objects_column_is_skipped(two_videos):
-    gold = pd.DataFrame({"videos": [two_videos[0]]})
+    gold = pd.DataFrame({"videos": [two_videos[0]], "prompt": ["a prompt that is not built in"]})
     aggregate, per_video = ObjectPresence().evaluate(gold, gold)
     assert aggregate == {} and per_video == {}
+
+
+def test_object_presence_falls_back_to_built_in_objects(two_videos, monkeypatch):
+    # data collected before the "objects" column existed: objects come from the built-in prompt file
+    prompt = Text2VideoEvaluator(
+        gt_data="unused/gt.csv", base_model=object(), metrics=[], num_samples=0, gen_video_fn=None
+    ).collect_default_data()[9]["prompt"]
+    metric = ObjectPresence(threshold=0.5, max_frames=4)
+    monkeypatch.setattr(metric, "frame_scores", lambda frames, objects: np.full((len(frames), len(objects)), 0.9))
+    gold = pd.DataFrame({"videos": [two_videos[0]], "prompt": [prompt]})
+    pred = pd.DataFrame({"videos": [two_videos[1]], "prompt": [prompt]})
+
+    assert metric.objects_per_row(gold, pred, 1) == [["man in a suit", "tie", "woman", "couch", "chair"]]
+    _, per_video = metric.evaluate(gold, pred)
+    assert per_video["object_presence"] == [1.0] and per_video["objects_lost"] == [""]
 
 
 def test_parse_objects():
