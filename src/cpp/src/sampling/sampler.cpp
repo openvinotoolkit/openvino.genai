@@ -5,6 +5,8 @@
 #include <optional>
 
 #include "sampling/sampler.hpp"
+#include "sampling/candidates_validation.hpp"
+#include "sampling/sampling_distribution.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 
 namespace ov::genai {
@@ -979,149 +981,6 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     return Token(max_value, max_index);
 }
 
-// Candidate i of m_vector is drawn with probability values[i] / total: exp(logit - max_logit) when expf is
-// deferred, the stored probability otherwise, and uniform if every candidate is masked (-inf / NaN). The total is
-// summed in double, since top-p or min-p without top-k can keep most of the vocabulary and a float sum drops weights
-// smaller than half an ulp of the sum so far.
-struct CandidateWeights {
-    std::vector<float> values;
-    double total = 0.0;
-    float max_logit = 0.0f;
-    bool fallback_uniform = false;
-};
-
-static CandidateWeights candidate_weights(const Logits& logits) {
-    OPENVINO_ASSERT(logits.is_vector_initialized(), "Candidate weights require initialized logits candidates.");
-    CandidateWeights result;
-    result.values.resize(logits.m_size);
-    if (logits.m_defer_expf) {
-        // m_vector holds K logits in arbitrary heap order, so scan for the max.
-        result.max_logit = logits.m_vector[0].m_log_prob;
-        for (size_t i = 1; i < logits.m_size; ++i)
-            result.max_logit = std::max(result.max_logit, logits.m_vector[i].m_log_prob);
-        for (size_t i = 0; i < logits.m_size; ++i) {
-            result.values[i] = expf(logits.m_vector[i].m_log_prob - result.max_logit);
-            result.total += result.values[i];
-        }
-    } else {
-        for (size_t i = 0; i < logits.m_size; ++i) {
-            result.values[i] = logits.m_vector[i].m_log_prob;
-            result.total += result.values[i];
-        }
-    }
-    // Defensive fallback: should not occur in practice (at least one non-masked token is always
-    // guaranteed), but if all logits happen to be -inf/NaN, sample uniformly over the K candidates
-    // so generation can continue rather than aborting.
-    result.fallback_uniform = !(result.total > 0.0 && std::isfinite(result.total));
-    if (result.fallback_uniform) {
-        std::fill(result.values.begin(), result.values.end(), 1.0f);
-        result.total = static_cast<double>(logits.m_size);
-    }
-    return result;
-}
-
-std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine) {
-    std::uniform_real_distribution<double> u(0.0, 1.0);
-    std::vector<Token> out_tokens;
-    out_tokens.reserve(num_tokens_per_sequence);
-
-    if (logits.m_defer_expf) {
-        // --- Deferred / fused expf path ---
-        // defer_expf is only set when top_k > 0, so m_vector is always initialized here.
-        OPENVINO_ASSERT(logits.is_vector_initialized(),
-            "Internal error: m_defer_expf=true but m_vector not initialized. "
-            "defer_expf requires top_k > 0 which always populates m_vector via TopKFilter.");
-        // Precompute weights once to avoid recomputing expf on every draw.
-        const CandidateWeights weights = candidate_weights(logits);
-        // log_sum_cum = log(Σ exp(v[i])) = log(total) + max_logit (log-sum-exp identity).
-        // In the fallback case max_logit may be -inf, so use 0 to keep log_sum_cum finite.
-        const float log_sum_cum = static_cast<float>(std::log(weights.total)) +
-                                  (weights.fallback_uniform ? 0.0f : weights.max_logit);
-
-        for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-            const double r = weights.total * u(rng_engine);
-            double sum_run = 0.0;
-            size_t sampled_idx = logits.m_size - 1;
-            for (size_t i = 0; i < logits.m_size; ++i) {
-                sum_run += weights.values[i];
-                if (sum_run > r) { sampled_idx = i; break; }
-            }
-            // When m_full_vocab_log_sum_exp is set (logprobs > 0), m_data holds the
-            // original raw model logits (grammar/penalties only wrote to m_vector).
-            // Return raw log-probability: log p_i = raw_logit_i − log(Σ exp(raw_logit_j)).
-            const float log_prob = weights.fallback_uniform
-                ? std::log(1.0f / static_cast<float>(logits.m_size))
-                : (!std::isnan(logits.m_full_vocab_log_sum_exp)
-                    ? logits.m_data[logits.m_vector[sampled_idx].m_index] - logits.m_full_vocab_log_sum_exp
-                    : logits.m_vector[sampled_idx].m_log_prob - log_sum_cum);
-            out_tokens.emplace_back(log_prob, logits.m_vector[sampled_idx].m_index);
-        }
-    } else {
-        // --- Normalised probability path (top_p active, deferring not possible) ---
-        // Pre-compute total weight once: TopP truncates without renormalizing, so Σ probs may be < 1.
-        // Scaling r by total_weight ensures uniform sampling within the actual probability mass (Fix 1).
-        // The sums are in double, as in candidate_weights.
-        double total_weight = 0.0;
-        if (logits.is_vector_initialized()) {
-            for (size_t i = 0; i < logits.m_size; ++i)
-                total_weight += logits.m_vector[i].m_log_prob;
-        } else {
-            for (size_t i = 0; i < logits.m_size; ++i)
-                total_weight += logits.m_data[i];
-        }
-        // Defensive fallback: should not occur in practice (at least one non-masked token is
-        // always guaranteed), but recover gracefully by sampling uniformly if all probabilities
-        // are zero or NaN rather than aborting generation.
-        if (!(total_weight > 0.0 && std::isfinite(total_weight))) {
-            std::uniform_int_distribution<size_t> uniform_idx(0, logits.m_size - 1);
-            const float uniform_log_prob = std::log(1.0f / logits.m_size);
-            for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-                const size_t sampled_idx = uniform_idx(rng_engine);
-                if (logits.is_vector_initialized()) {
-                    auto logit = logits.m_vector[sampled_idx];
-                    logit.m_log_prob = uniform_log_prob;
-                    out_tokens.push_back(logit);
-                } else {
-                    out_tokens.emplace_back(uniform_log_prob, sampled_idx);
-                }
-            }
-        } else {
-        // Sampling distributes r = total_weight * U(0,1), drawing from the conditional
-        // distribution p_i / total_weight.  The stored log-prob must reflect the same
-        // distribution: log(p_i / total_weight) = log(p_i) - log(total_weight).
-        // When total_weight == 1 (no TopP truncation) log_total_weight == 0, no-op.
-        const float log_total_weight = static_cast<float>(std::log(total_weight));
-        for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-            const double r = total_weight * u(rng_engine);
-            double sum_cum = 0.0;
-            if (logits.is_vector_initialized()) {
-                size_t sampled_idx = logits.m_size - 1;  // fallback for floating-point rounding
-                for (size_t i = 0; i < logits.m_size; ++i) {
-                    sum_cum += logits.m_vector[i].m_log_prob;
-                    if (sum_cum > r) { sampled_idx = i; break; }
-                }
-                auto logit = logits.m_vector[sampled_idx];
-                // When m_full_vocab_log_sum_exp is set (logprobs > 0), m_data holds the
-                // original raw model logits (grammar/penalties only wrote to m_vector).
-                // Return raw log-probability: log p_i = raw_logit_i − log(Σ exp(raw_logit_j)).
-                logit.m_log_prob = !std::isnan(logits.m_full_vocab_log_sum_exp)
-                    ? logits.m_data[logit.m_index] - logits.m_full_vocab_log_sum_exp
-                    : std::log(logit.m_log_prob) - log_total_weight;
-                out_tokens.push_back(logit);
-            } else {
-                size_t sampled_idx = logits.m_size - 1;
-                for (size_t i = 0; i < logits.m_size; ++i) {
-                    sum_cum += logits.m_data[i];
-                    if (sum_cum > r) { sampled_idx = i; break; }
-                }
-                out_tokens.emplace_back(std::log(logits.m_data[sampled_idx]) - log_total_weight, sampled_idx);
-            }
-        }
-        }
-    }
-    return out_tokens;
-}
-
 std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr& sequence_group,
                                                      const std::pair<size_t, std::set<std::string>>& stop_strings) {
     const auto& sampling_params = sequence_group->get_sampling_parameters();
@@ -1436,211 +1295,6 @@ bool Sampler::validate_candidate(
     return true;
 }
 
-namespace {
-// Normalizer of a dense row, summed in double since a float sum over a full vocabulary can drift past the draft
-// proposal tolerance. It is 0 for a row without positive finite mass, which is sampled as uniform.
-double dense_row_sum(const Logits& logits) {
-    const double sum = std::accumulate(logits.m_data, logits.m_data + logits.m_size, 0.0);
-    return sum > 0.0 && std::isfinite(sum) ? sum : 0.0;
-}
-
-float dense_probability(const Logits& logits, size_t token_id, double row_sum) {
-    return row_sum > 0.0 ? static_cast<float>(logits.m_data[token_id] / row_sum)
-                         : 1.0f / static_cast<float>(logits.m_size);
-}
-
-// The distribution _multinomial_sample draws from: sparse over the candidates when the logit processor selected
-// them, otherwise dense over the whole row.
-DraftProposal sampling_distribution(const Logits& logits) {
-    OPENVINO_ASSERT(logits.m_size > 0, "Sampling logits have no candidate tokens.");
-    DraftProposal distribution;
-    distribution.probabilities.resize(logits.m_size);
-    if (logits.is_vector_initialized()) {
-        const CandidateWeights weights = candidate_weights(logits);
-        distribution.token_ids.resize(logits.m_size);
-        for (size_t i = 0; i < logits.m_size; ++i) {
-            distribution.token_ids[i] = logits.m_vector[i].m_index;
-            distribution.probabilities[i] = static_cast<float>(weights.values[i] / weights.total);
-        }
-        return distribution;
-    }
-    const double row_sum = dense_row_sum(logits);
-    for (size_t i = 0; i < logits.m_size; ++i) {
-        distribution.probabilities[i] = dense_probability(logits, i, row_sum);
-    }
-    return distribution;
-}
-
-float reported_log_probability(const Logits& logits, int64_t token_id, float sampling_probability) {
-    if (!std::isnan(logits.m_full_vocab_log_sum_exp)) {
-        OPENVINO_ASSERT(token_id >= 0, "Sampled token ID must be non-negative.");
-        return logits.m_data[token_id] - logits.m_full_vocab_log_sum_exp;
-    }
-    return std::log(std::max(sampling_probability, std::numeric_limits<float>::min()));
-}
-
-bool accept_draft_token(float target_probability, float draft_probability, std::mt19937& rng_engine) {
-    OPENVINO_ASSERT(draft_probability > 0.0f, "Draft probability must be positive for rejection sampling.");
-    if (target_probability <= 0.0f) {
-        return false;
-    }
-    if (target_probability >= draft_probability) {
-        return true;
-    }
-    std::uniform_real_distribution<double> uniform(0.0, 1.0);
-    return uniform(rng_engine) * draft_probability < target_probability;
-}
-}  // namespace
-
-float detail::sampling_probability(const Logits& logits, int64_t token_id) {
-    if (logits.is_vector_initialized()) {
-        const CandidateWeights weights = candidate_weights(logits);
-        for (size_t i = 0; i < logits.m_size; ++i) {
-            if (logits.m_vector[i].m_index == token_id) {
-                return static_cast<float>(weights.values[i] / weights.total);
-            }
-        }
-        return 0.0f;
-    }
-    if (token_id < 0 || static_cast<size_t>(token_id) >= logits.m_size) {
-        return 0.0f;
-    }
-    return dense_probability(logits, static_cast<size_t>(token_id), dense_row_sum(logits));
-}
-
-DraftProposal detail::make_draft_proposal(const Logits& logits, const int64_t* d2t) {
-    DraftProposal distribution = sampling_distribution(logits);
-    const bool is_dense = distribution.is_dense();
-    if (is_dense && d2t == nullptr) {
-        return distribution;
-    }
-    DraftProposal proposal;
-    for (size_t i = 0; i < distribution.probabilities.size(); ++i) {
-        if (distribution.probabilities[i] <= 0.0f) {
-            continue;
-        }
-        int64_t token_id = is_dense ? static_cast<int64_t>(i) : distribution.token_ids[i];
-        if (d2t != nullptr) {
-            token_id += d2t[token_id];
-        }
-        proposal.token_ids.push_back(token_id);
-        proposal.probabilities.push_back(distribution.probabilities[i]);
-    }
-    return proposal;
-}
-
-void detail::validate_draft_proposal(const DraftProposal& proposal) {
-    OPENVINO_ASSERT(!proposal.empty(), "Sampled speculative candidates require a proposal distribution.");
-    if (!proposal.is_dense()) {
-        OPENVINO_ASSERT(proposal.token_ids.size() == proposal.probabilities.size(),
-                        "Sparse draft proposal IDs and probabilities must stay aligned.");
-        for (const auto token_id : proposal.token_ids) {
-            OPENVINO_ASSERT(token_id >= 0, "Sparse draft proposal contains a negative token ID.");
-        }
-    }
-
-    double probability_sum = 0.0;
-    for (const auto probability : proposal.probabilities) {
-        OPENVINO_ASSERT(probability >= 0.0f && std::isfinite(probability),
-                        "Draft proposal probabilities must be finite and non-negative.");
-        probability_sum += probability;
-    }
-    OPENVINO_ASSERT(std::isfinite(probability_sum) && std::abs(probability_sum - 1.0) <= 1e-3,
-                    "Draft proposal probabilities must sum to one.");
-}
-
-float detail::proposal_probability(const DraftProposal& proposal, int64_t token_id) {
-    if (proposal.is_dense()) {
-        return token_id >= 0 && static_cast<size_t>(token_id) < proposal.probabilities.size()
-                   ? proposal.probabilities[static_cast<size_t>(token_id)]
-                   : 0.0f;
-    }
-    OPENVINO_ASSERT(proposal.token_ids.size() == proposal.probabilities.size(),
-                    "Draft proposal IDs and probabilities must stay aligned.");
-    for (size_t index = 0; index < proposal.token_ids.size(); ++index) {
-        if (proposal.token_ids[index] == token_id) {
-            return proposal.probabilities[index];
-        }
-    }
-    return 0.0f;
-}
-
-Token detail::sample_residual(const Logits& target_logits, const DraftProposal& proposal, std::mt19937& rng_engine) {
-    const DraftProposal target = sampling_distribution(target_logits);
-    const bool is_dense_target = target.is_dense();
-    std::vector<float> residual = target.probabilities;
-    if (is_dense_target) {
-        // Only q's support changes p, and draft ids beyond the target logits carry no target mass.
-        if (proposal.is_dense()) {
-            const size_t shared_size = std::min(residual.size(), proposal.probabilities.size());
-            for (size_t token_id = 0; token_id < shared_size; ++token_id) {
-                residual[token_id] = std::max(0.0f, residual[token_id] - proposal.probabilities[token_id]);
-            }
-        } else {
-            for (size_t index = 0; index < proposal.token_ids.size(); ++index) {
-                const int64_t token_id = proposal.token_ids[index];
-                if (token_id >= 0 && static_cast<size_t>(token_id) < residual.size()) {
-                    residual[token_id] = std::max(0.0f, residual[token_id] - proposal.probabilities[index]);
-                }
-            }
-        }
-    } else if (proposal.is_dense()) {
-        for (size_t i = 0; i < residual.size(); ++i) {
-            residual[i] = std::max(0.0f, residual[i] - proposal_probability(proposal, target.token_ids[i]));
-        }
-    } else {
-        std::unordered_map<int64_t, float> draft_probabilities;
-        draft_probabilities.reserve(proposal.token_ids.size());
-        for (size_t index = 0; index < proposal.token_ids.size(); ++index) {
-            draft_probabilities.emplace(proposal.token_ids[index], proposal.probabilities[index]);
-        }
-        for (size_t i = 0; i < residual.size(); ++i) {
-            const auto it = draft_probabilities.find(target.token_ids[i]);
-            if (it != draft_probabilities.end()) {
-                residual[i] = std::max(0.0f, residual[i] - it->second);
-            }
-        }
-    }
-
-    // Summed in double like dense_row_sum: a float sum drops tail tokens smaller than half an ulp of the sum so far.
-    double residual_sum = std::accumulate(residual.begin(), residual.end(), 0.0);
-    if (!(residual_sum > 0.0 && std::isfinite(residual_sum))) {
-        residual = target.probabilities;
-        residual_sum = std::accumulate(residual.begin(), residual.end(), 0.0);
-    }
-    std::uniform_real_distribution<double> uniform(0.0, residual_sum);
-    const double sample = uniform(rng_engine);
-    // The draw can round up to residual_sum, so the scan must end on a token with residual mass.
-    double cumulative = 0.0;
-    size_t selected = 0;
-    for (size_t i = 0; i < residual.size(); ++i) {
-        if (residual[i] <= 0.0f) {
-            continue;
-        }
-        selected = i;
-        cumulative += residual[i];
-        if (sample < cumulative) {
-            break;
-        }
-    }
-    const int64_t token_id = is_dense_target ? static_cast<int64_t>(selected) : target.token_ids[selected];
-    return Token(reported_log_probability(target_logits, token_id, target.probabilities[selected]), token_id);
-}
-
-detail::DraftTokenVerdict detail::verify_draft_token(const Logits& target_logits,
-                                                     int64_t draft_token,
-                                                     const DraftProposal& proposal,
-                                                     std::mt19937& rng_engine) {
-    OPENVINO_ASSERT(!proposal.empty(), "Sampled speculative candidates require a proposal distribution.");
-    const float draft_probability = proposal_probability(proposal, draft_token);
-    OPENVINO_ASSERT(draft_probability > 0.0f, "Selected draft token is absent from its proposal distribution.");
-    const float target_probability = sampling_probability(target_logits, draft_token);
-    if (accept_draft_token(target_probability, draft_probability, rng_engine)) {
-        return {Token(reported_log_probability(target_logits, draft_token, target_probability), draft_token), true};
-    }
-    return {sample_residual(target_logits, proposal, rng_engine), false};
-}
-
 std::pair<size_t, std::set<std::string>>
 process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& tokenizer) {
     std::pair<size_t, std::set<std::string>> result;
@@ -1908,6 +1562,8 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
 
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
+                // The distribution of a multinomial draw, which a draft records as the proposal of the token.
+                std::optional<SamplingDistribution> distribution;
                 // flag to add sampled token to generated sequence or extend logit processors only
                 bool is_extend_sequence = logit_token_offset == 0 || !is_validation_passed;
                 if (is_speculative_sampling && !is_extend_sequence) {
@@ -1939,9 +1595,11 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                         const size_t num_tokens_per_sequence =
                             is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
                         is_generate_n_tokens &= (num_tokens_per_sequence > 1);
-                        auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence, rng_engine);
-                        OPENVINO_ASSERT(sampled_token_ids.size() == num_tokens_per_sequence,
-                                       "Multinomial sampler returned unexpected number of tokens");
+                        distribution.emplace(logit_vector);
+                        std::vector<Token> sampled_token_ids;
+                        for (size_t n = 0; n < num_tokens_per_sequence; ++n) {
+                            sampled_token_ids.push_back(distribution->sample(rng_engine));
+                        }
                         // to create n sequence just in case of `sequence_group->num_total_seqs() == 1` and
                         // `sampling_params.num_return_sequences > 1`
                         if (is_generate_n_tokens) {
@@ -1978,10 +1636,10 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     greedy_acceptance = std::make_pair(running_sequence->get_id(), i + 1);
                 }
                 if (is_draft_proposal_needed) {
-                    OPENVINO_ASSERT(is_extend_sequence,
+                    OPENVINO_ASSERT(is_extend_sequence && distribution,
                                     "Draft proposal must be attached to a newly appended sampled token.");
                     running_sequence->set_draft_proposal(running_sequence->get_generated_len() - 1,
-                                                         detail::make_draft_proposal(logit_vector, d2t));
+                                                         detail::make_draft_proposal(*distribution, d2t));
                 }
                                
                 // to exit from sampling in case of failed token validation

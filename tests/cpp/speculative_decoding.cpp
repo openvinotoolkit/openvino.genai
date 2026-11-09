@@ -507,9 +507,10 @@ TEST_F(CBForSDTest, rejects_invalid_draft_proposal__one_sequence) {
 
     tokens = { 0, 1 };
     log_probs = { 0.1f, 0.2f };
-    const auto incomplete = std::make_shared<const ov::genai::DraftProposal>(ov::genai::DraftProposal{{1}, {0.5f}});
+    const auto misaligned =
+        std::make_shared<const ov::genai::DraftProposal>(ov::genai::DraftProposal{{1, 2}, {1.0f}});
     ov::genai::GeneratedSequences candidate_1{
-        { 0, ov::genai::GeneratedSequence(tokens, log_probs, 0, {}, nullptr, {nullptr, incomplete}) }};
+        { 0, ov::genai::GeneratedSequence(tokens, log_probs, 0, {}, nullptr, {nullptr, misaligned}) }};
     EXPECT_THROW(m_pipeline.update_request(0, candidate_1, false), ov::Exception);
 }
 

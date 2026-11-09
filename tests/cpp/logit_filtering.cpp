@@ -523,7 +523,7 @@ TEST(EOSPenaltyTransformValidationTest, ThrowsForOutOfVocabularyStopTokenIds) {
 // ---------------------------------------------------------------------------
 // Tests for the deferred-expf code path (TopKFilter + TemperatureLogitTransform
 // with defer_expf=true).  The deferred path keeps raw logits in m_vector and
-// moves the expf call to _multinomial_sample; Temperature must only scale.
+// moves the expf call to SamplingDistribution; Temperature must only scale.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

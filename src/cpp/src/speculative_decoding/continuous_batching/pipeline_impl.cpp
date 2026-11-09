@@ -7,6 +7,7 @@
 #include <numeric>
 #include <optional>
 
+#include "sampling/candidates_validation.hpp"
 #include "sequence_group.hpp"
 
 namespace ov::genai {

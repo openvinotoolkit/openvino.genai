@@ -93,7 +93,7 @@ public:
                 //   2. top_p == 1.0: TopPFilter will NOT run (it requires normalised probs).
                 //   3. min_p == 0.0: MinPFilter will NOT run (it also requires normalised probs).
                 // When deferred, TemperatureLogitTransform only scales logits by 1/T;
-                // expf and CDF scan are fused in _multinomial_sample.
+                // SamplingDistribution computes the expf.
                 const bool min_p_active = (sampling_params.min_p > 0.0f);
                 const bool defer_expf = top_k_active && (sampling_params.top_p == 1.0f) && !min_p_active;
                 m_logit_transformers.push_back(std::make_shared<LogitTransformers::TemperatureLogitTransform>(
