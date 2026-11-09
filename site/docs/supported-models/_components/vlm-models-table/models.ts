@@ -287,6 +287,16 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Qwen3.8-Flash-Next',
+    models: [
+      {
+        name: 'Qwen3.8-Flash-Next',
+        links: ['https://huggingface.co/Qwen/Qwen3.8-Flash-Next'],
+        notesLink: '#qwen3_8_flash_next-notes',
+      },
+    ],
+  },
+  {
     architecture: 'DeepseekOCR2ForCausalLM',
     models: [
       {
