@@ -111,9 +111,13 @@ void CandidateSelector::score_candidates() {
     scorer.set_tensor("subsequence_begins", subsequence_begins);
     infer(scorer);
 
-    m_edge_scores = scorer.get_tensor("edge_scores");
-    m_candidate_ids = scorer.get_tensor("candidate_ids");
-    validate_candidate_lattice(m_edge_scores, m_candidate_ids, num_rows, m_vocab_size);
+    ov::Tensor edge_scores = scorer.get_tensor("edge_scores");
+    ov::Tensor candidate_ids = scorer.get_tensor("candidate_ids");
+    validate_candidate_lattice(edge_scores, candidate_ids, num_rows, m_vocab_size);
+    // The sampler reads the lattice from several threads at once, and a plugin tensor rebuilds the shape that
+    // get_shape() returns on every call. Views over the scorer outputs keep a fixed shape.
+    m_edge_scores = ov::Tensor(edge_scores.get_element_type(), edge_scores.get_shape(), edge_scores.data());
+    m_candidate_ids = ov::Tensor(candidate_ids.get_element_type(), candidate_ids.get_shape(), candidate_ids.data());
 }
 
 // Runs the dense Markov step for the tokens the blocks drew at the position before, the anchors at the first position.
