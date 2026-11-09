@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -539,6 +540,93 @@ TEST(RejectionSampling, EmittedTokensFollowTheTopKTargetDistribution) {
     for (size_t token = 0; token < p.size(); ++token) {
         EXPECT_NEAR(frequencies[token], expected[token], 0.02f) << "token " << token;
     }
+}
+
+// A window of two candidates and the bonus token, where the target at each position depends on the tokens emitted
+// before it: each row follows the token before it (a Markov chain), and presence_penalty follows every token generated
+// so far. The emitted tokens, completed to three tokens by the same conditionals, must follow the joint distribution of
+// target-only sampling over the 27 sequences, whether they end with a replacement or the bonus token.
+TEST(RejectionSampling, EmittedWindowsFollowTheTargetJointDistribution) {
+    constexpr size_t vocab_size = 3;
+    constexpr int64_t first_token = 0;
+    constexpr float temperature = 0.8f;
+    constexpr float presence_penalty = 1.0f;
+    // Raw target logits of the token after token s; positive, so presence_penalty subtracts from them.
+    const std::vector<std::vector<float>> target_logits = {{4.0f, 5.0f, 3.0f}, {3.5f, 3.0f, 5.0f}, {5.0f, 3.5f, 4.0f}};
+    const std::vector<std::vector<float>> draft = {{0.2f, 0.6f, 0.2f}, {0.2f, 0.2f, 0.6f}, {0.4f, 0.3f, 0.3f}};
+
+    // Target distribution of the token after `generated`, which starts with first_token.
+    const auto target = [&](const std::vector<int64_t>& generated) {
+        std::vector<double> weights(vocab_size);
+        for (size_t token = 0; token < vocab_size; ++token) {
+            const bool is_generated =
+                std::find(generated.begin(), generated.end(), static_cast<int64_t>(token)) != generated.end();
+            const float logit = target_logits[generated.back()][token] - (is_generated ? presence_penalty : 0.0f);
+            weights[token] = std::exp(static_cast<double>(logit) / temperature);
+        }
+        const double total = std::accumulate(weights.begin(), weights.end(), 0.0);
+        for (auto& weight : weights) {
+            weight /= total;
+        }
+        return weights;
+    };
+    std::vector<double> expected(vocab_size * vocab_size * vocab_size);
+    for (int64_t a = 0; a < 3; ++a) {
+        for (int64_t b = 0; b < 3; ++b) {
+            for (int64_t c = 0; c < 3; ++c) {
+                expected[9 * a + 3 * b + c] = target({first_token})[a] * target({first_token, a})[b] *
+                                              target({first_token, a, b})[c];
+            }
+        }
+    }
+
+    constexpr size_t trials = 60000;
+    std::mt19937 test_rng(2024);
+    std::vector<double> frequencies(expected.size(), 0.0);
+    size_t num_bonus_tokens = 0;
+    Sampler sampler;
+    for (size_t trial = 0; trial < trials; ++trial) {
+        GenerationConfig config;
+        config.max_new_tokens = 30;
+        config.do_sample = true;
+        config.temperature = temperature;
+        config.presence_penalty = presence_penalty;
+        config.rng_seed = trial + 1;
+        auto group = make_group(config, trial, vocab_size);
+        sampler.create_logit_processor(trial, config, group->get_prompt_ids());
+        sampler.get_logit_processor(trial).register_new_generated_token(first_token);
+
+        std::discrete_distribution<int64_t> draw_first(draft[first_token].begin(), draft[first_token].end());
+        const int64_t candidate_1 = draw_first(test_rng);
+        std::discrete_distribution<int64_t> draw_second(draft[candidate_1].begin(), draft[candidate_1].end());
+        const int64_t candidate_2 = draw_second(test_rng);
+        auto sequence = add_candidates(group,
+                                       {candidate_1, candidate_2},
+                                       {DraftProposal{{}, draft[first_token]}, DraftProposal{{}, draft[candidate_1]}});
+        std::vector<float> logits;
+        for (const int64_t previous : {first_token, candidate_1, candidate_2}) {
+            logits.insert(logits.end(), target_logits[previous].begin(), target_logits[previous].end());
+        }
+        sampler.sample({group}, logits_tensor(logits, 3), true);
+        sampler.clear_request_info(trial);
+
+        std::vector<int64_t> generated = sequence->get_generated_ids();
+        num_bonus_tokens += generated.size() == 4;
+        while (generated.size() < 4) {
+            const auto p = target(generated);
+            std::discrete_distribution<int64_t> draw_next(p.begin(), p.end());
+            generated.push_back(draw_next(test_rng));
+        }
+        frequencies[9 * generated[1] + 3 * generated[2] + generated[3]] += 1.0 / trials;
+    }
+
+    double distance = 0.0;
+    for (size_t i = 0; i < expected.size(); ++i) {
+        distance += std::abs(frequencies[i] - expected[i]);
+    }
+    EXPECT_LT(0.5 * distance, 0.02);
+    EXPECT_GT(num_bonus_tokens, trials / 10);
+    EXPECT_LT(num_bonus_tokens, trials * 9 / 10);
 }
 
 // Candidate 1 accepted at the first position is history for the second: presence_penalty turns logit 5 of token 1
