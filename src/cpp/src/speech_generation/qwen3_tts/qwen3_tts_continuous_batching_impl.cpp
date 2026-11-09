@@ -19,7 +19,7 @@ using namespace ov::genai::qwen3_tts;
 namespace {
 
 struct TalkerVocabInfo {
-    size_t vocab_size = 3072;
+    uint64_t vocab_size = 3072;
     int64_t eos_token_id = -1;
 };
 
@@ -34,8 +34,24 @@ TalkerVocabInfo read_talker_vocab_info(const std::filesystem::path& models_path)
     const nlohmann::json talker = config.at("talker_config");
 
     TalkerVocabInfo info;
-    info.vocab_size = talker.value("vocab_size", static_cast<size_t>(3072));
+    const auto vocab_it = talker.find("vocab_size");
+    if (vocab_it != talker.end()) {
+        OPENVINO_ASSERT(vocab_it->is_number_unsigned() || vocab_it->is_number_integer(),
+                        "Qwen3-TTS talker_config.vocab_size must be a positive integer");
+        if (vocab_it->is_number_unsigned()) {
+            info.vocab_size = vocab_it->get<uint64_t>();
+        } else {
+            const int64_t vocab_size = vocab_it->get<int64_t>();
+            OPENVINO_ASSERT(vocab_size > 0,
+                            "Qwen3-TTS talker_config.vocab_size must be positive, got ",
+                            vocab_size);
+            info.vocab_size = static_cast<uint64_t>(vocab_size);
+        }
+    }
     info.eos_token_id = talker.value("codec_eos_token_id", static_cast<int64_t>(-1));
+    OPENVINO_ASSERT(info.vocab_size > 0 && info.vocab_size <= std::numeric_limits<size_t>::max(),
+                    "Qwen3-TTS talker_config.vocab_size is out of range: ",
+                    info.vocab_size);
     return info;
 }
 
@@ -53,14 +69,33 @@ void apply_talker_logit_suppression(const std::shared_ptr<ov::Model>& model, con
     }
     OPENVINO_ASSERT(logits_result, "Qwen3-TTS talker model is expected to have a 'logits' output");
 
-    std::vector<float> bias(info.vocab_size, 0.0f);
-    const size_t suppress_begin = info.vocab_size > 1024 ? (info.vocab_size - 1024) : 0;
-    for (size_t i = suppress_begin; i < info.vocab_size; ++i) {
+    const ov::PartialShape logits_shape = logits_result->input_value(0).get_partial_shape();
+    OPENVINO_ASSERT(logits_shape.rank().is_static() && logits_shape.rank().get_length() == 3 &&
+                        logits_shape[2].is_static(),
+                    "Qwen3-TTS talker logits must have a statically known vocabulary dimension, got ",
+                    logits_shape);
+    const size_t logits_vocab_size = static_cast<size_t>(logits_shape[2].get_length());
+    OPENVINO_ASSERT(info.vocab_size == logits_vocab_size,
+                    "Qwen3-TTS config vocab_size (",
+                    info.vocab_size,
+                    ") does not match talker logits vocabulary (",
+                    logits_vocab_size,
+                    ")");
+    OPENVINO_ASSERT(info.eos_token_id >= 0 && static_cast<uint64_t>(info.eos_token_id) < info.vocab_size,
+                    "Qwen3-TTS codec EOS token id must be in [0, ",
+                    info.vocab_size,
+                    "), got ",
+                    info.eos_token_id);
+
+    const size_t vocab_size = static_cast<size_t>(info.vocab_size);
+    std::vector<float> bias(vocab_size, 0.0f);
+    const size_t suppress_begin = vocab_size > 1024 ? (vocab_size - 1024) : 0;
+    for (size_t i = suppress_begin; i < vocab_size; ++i) {
         if (static_cast<int64_t>(i) != info.eos_token_id) {
             bias[i] = -std::numeric_limits<float>::infinity();
         }
     }
-    auto bias_const = ov::opset15::Constant::create(ov::element::f32, ov::Shape{1, 1, info.vocab_size}, bias);
+    auto bias_const = ov::opset15::Constant::create(ov::element::f32, ov::Shape{1, 1, vocab_size}, bias);
     auto biased_logits = std::make_shared<ov::opset15::Add>(logits_result->input_value(0), bias_const);
     biased_logits->set_friendly_name(logits_result->get_input_node_shared_ptr(0)->get_friendly_name() + "/qwen3_tts_suppress");
     logits_result->input(0).replace_source_output(biased_logits->output(0));
@@ -88,7 +123,7 @@ ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::Qwen3TTSContinuousBa
                              tokenizer,
                              scheduler_config,
                              device,
-                             properties,
+                             utils::get_model_properties(properties, roles::TALKER, device),
                              GenerationConfig()),
       m_engine(models_path, device, properties, tokenizer) {
     OPENVINO_ASSERT(device.find("NPU") == std::string::npos,
@@ -103,9 +138,12 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     const std::string& text,
     const ov::Tensor& speaker_embedding,
     const SpeechGenerationConfig& generation_config) {
+    const auto request_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(generation_config.num_return_sequences == 1,
                     "Qwen3-TTS continuous batching does not support beam search / parallel sampling "
                     "(num_return_sequences must be 1)");
+    OPENVINO_ASSERT(generation_config.num_beams == 1,
+                    "Qwen3-TTS continuous batching does not support beam search (num_beams must be 1)");
 
     const std::string language = m_engine.normalize_text_language(generation_config.language);
     const std::string speaker = m_engine.normalize_speaker(generation_config.speaker);
@@ -189,6 +227,24 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
         --max_new_tokens;
     }
 
+    if (max_new_tokens == 0) {
+        SpeechGenerationStream::Ptr stream = SpeechGenerationStream::create();
+        SpeechGenerationOutput output;
+        output.waveform = ov::Tensor(ov::element::f32, ov::Shape{0});
+        output.finish_reason = GenerationFinishReason::LENGTH;
+        output.speaker_embedding = effective_speaker_embedding;
+        output.ref_codec_ids = effective_ref_codec_ids;
+
+        SpeechGenerationPerfMetrics perf_metrics;
+        perf_metrics.raw_metrics.generate_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - request_start_time));
+        perf_metrics.evaluate_statistics();
+        stream->set_perf_metrics(std::move(perf_metrics));
+        stream->push_and_close(std::move(output), GenerationStatus::FINISHED);
+        state_lock.unlock();
+        return std::make_shared<SpeechGenerationHandleImpl>(stream);
+    }
+
     GenerationConfig sampling_params = generation_config;
     sampling_params.set_eos_token_id(static_cast<size_t>(m_engine.ids().codec_eos_token_id));
     sampling_params.max_new_tokens = max_new_tokens;
@@ -206,6 +262,7 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
 
     RequestState state;
     state.generation_config = generation_config;
+    state.start_time = request_start_time;
     state.generation_config.ref_audio = ov::Tensor();
     state.generation_config.ref_codec_ids = ov::Tensor();
     state.generation_config.ref_text.clear();
@@ -219,10 +276,22 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     SpeechGenerationStream::Ptr stream = state.stream;
 
     m_request_state.emplace(request_id, std::move(state));
+    const auto group_stream = sequence_group->get_generation_stream();
+    stream->set_terminal_callback([group_stream](GenerationStatus status, GenerationFinishReason finish_reason) {
+        if (status == GenerationStatus::STOP) {
+            group_stream->stop(finish_reason);
+        } else if (status == GenerationStatus::CANCEL) {
+            group_stream->cancel();
+        }
+    });
     state_lock.unlock();
-    {
+    try {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        _throw_if_failed();
         m_awaiting_requests.push_back(sequence_group);
+    } catch (...) {
+        on_request_failed(sequence_group, std::current_exception());
+        throw;
     }
 
     return std::make_shared<SpeechGenerationHandleImpl>(stream);
@@ -235,7 +304,6 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::generate_candid
         if (state_it == m_request_state.end()) {
             continue;
         }
-
         // Process newly sampled tokens for every sequence, not only RUNNING ones.
         // A sequence can become FINISHED in the same step that sampled its last
         // token due to max_new_tokens; that token still needs code-group
@@ -253,6 +321,45 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::generate_candid
             m_request_state.erase(state_it);
         }
     }
+}
+
+void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::on_request_terminal(
+    const SequenceGroup::Ptr& sequence_group,
+    GenerationStatus status) {
+    std::lock_guard<std::mutex> lock{m_request_state_mutex};
+    auto state_it = m_request_state.find(sequence_group->get_request_id());
+    if (state_it == m_request_state.end()) {
+        return;
+    }
+
+    RequestState& state = state_it->second;
+    if (status == GenerationStatus::IGNORED) {
+        SpeechGenerationPerfMetrics perf_metrics;
+        perf_metrics.raw_metrics.generate_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - state.start_time));
+        perf_metrics.evaluate_statistics();
+        state.stream->set_perf_metrics(std::move(perf_metrics));
+        state.stream->close(GenerationStatus::IGNORED);
+    } else if (status == GenerationStatus::STOP) {
+        state.stream->stop(sequence_group->get_generation_stream()->get_finish_reason());
+    } else if (status == GenerationStatus::CANCEL) {
+        state.stream->cancel();
+    } else if (status == GenerationStatus::FINISHED) {
+        finalize_request(sequence_group, state);
+    }
+    m_request_state.erase(state_it);
+}
+
+void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::on_request_failed(
+    const SequenceGroup::Ptr& sequence_group,
+    std::exception_ptr error) noexcept {
+    std::lock_guard<std::mutex> lock{m_request_state_mutex};
+    auto state_it = m_request_state.find(sequence_group->get_request_id());
+    if (state_it == m_request_state.end()) {
+        return;
+    }
+    state_it->second.stream->fail(std::move(error));
+    m_request_state.erase(state_it);
 }
 
 void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_frame(
@@ -356,13 +463,14 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
     output.finish_reason = sequence_group->get_sequences().front()->get_finish_reason();
     output.speaker_embedding = state.speaker_embedding;
     output.ref_codec_ids = state.ref_codec_ids;
-    state.stream->push(std::move(output));
 
     SpeechGenerationPerfMetrics perf_metrics;
     perf_metrics.num_generated_samples = wav_tensor.get_size();
+    perf_metrics.raw_metrics.generate_durations.emplace_back(
+        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - state.start_time));
     perf_metrics.evaluate_statistics();
     state.stream->set_perf_metrics(std::move(perf_metrics));
-    state.stream->set_generation_status(GenerationStatus::FINISHED);
+    state.stream->push_and_close(std::move(output), GenerationStatus::FINISHED);
 }
 
 ov::Shape ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::get_speaker_embedding_shape() const {

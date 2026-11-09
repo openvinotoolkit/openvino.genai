@@ -5,6 +5,7 @@
 
 #include <mutex>
 #include <random>
+#include <chrono>
 #include <unordered_map>
 
 #include "continuous_batching/pipeline_impl.hpp"
@@ -47,12 +48,15 @@ public:
 
 protected:
     void generate_candidates_for_prompt_lookup() override;
+    void on_request_terminal(const SequenceGroup::Ptr& sequence_group, GenerationStatus status) override;
+    void on_request_failed(const SequenceGroup::Ptr& sequence_group, std::exception_ptr error) noexcept override;
 
 private:
     // Per-request state that persists across step() calls. Qwen3-TTS has no equivalent of the
     // token-oriented GenerationStream SequenceGroup already owns, hence the separate map here.
     struct RequestState {
         SpeechGenerationConfig generation_config;
+        std::chrono::steady_clock::time_point start_time;
         std::mt19937 rng;
         ov::Tensor speaker_embedding;
         ov::Tensor tts_pad;
