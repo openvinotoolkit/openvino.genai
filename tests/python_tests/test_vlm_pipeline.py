@@ -1717,11 +1717,14 @@ def test_vlm_npu_gemma3_vision_encoder(cat_tensor):
         }
     }
 
-    ov_pipe = VLMPipeline(models_path, "CPU", config=properties)
-    generation_config = _setup_generation_config(ov_pipe)
+    cpu_pipe = VLMPipeline(models_path, "CPU")
+    npuw_pipe = VLMPipeline(models_path, "CPU", config=properties)
+    # NPUW runs the encoder on CPU here, so greedy output must match the default CPU pipeline exactly.
+    generation_config = _setup_generation_config(cpu_pipe, max_new_tokens=10, do_sample=False)
 
-    res = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
-    assert res.texts[0]
+    cpu_res = cpu_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    npuw_res = npuw_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    assert npuw_res.texts[0] == cpu_res.texts[0]
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
