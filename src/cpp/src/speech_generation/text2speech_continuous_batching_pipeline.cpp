@@ -5,6 +5,7 @@
 
 #include "speech_generation/qwen3_tts/qwen3_tts_continuous_batching_pipeline_impl.hpp"
 #include "speech_generation/text2speech_continuous_batching_pipeline_impl.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -14,7 +15,8 @@ Text2SpeechContinuousBatchingPipeline::Text2SpeechContinuousBatchingPipeline(
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties)
-    : m_impl(std::make_shared<Qwen3TTSContinuousBatchingPipelineImpl>(models_path, scheduler_config, device, properties)) {}
+        : m_impl(std::make_shared<Qwen3TTSContinuousBatchingPipelineImpl>(models_path, scheduler_config, device, properties)),
+            m_speech_gen_config(utils::from_config_json_if_exists<SpeechGenerationConfig>(models_path)) {}
 
 SpeechGenerationHandle Text2SpeechContinuousBatchingPipeline::add_request(uint64_t request_id,
                                                                           const std::string& text,
