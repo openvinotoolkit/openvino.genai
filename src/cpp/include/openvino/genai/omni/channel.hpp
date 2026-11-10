@@ -18,10 +18,10 @@ namespace ov::genai {
  * @brief Built-in thinker -> talker bridge: the VLM writes decode steps in, the talker reads them
  * out, so speech generation runs while text generation is still going.
  *
- * OmniPipeline creates one per generate() call when `GenerationConfig::stream_text2speech` is set
- * and hands the same object to both stages — as an OmniStreamerBase to the VLM, and as an
- * OmniTextSourceBase to the talker. Construct one directly only when driving the two stages
- * yourself.
+ * When `GenerationConfig::stream_text2speech` is set, each `OmniPipeline::generate()` call creates
+ * an `OmniChannel` and passes it to both stages — as an OmniStreamerBase to the VLM, and as an
+ * OmniTextSourceBase to the talker. Construct an OmniChannel directly only when driving the two
+ * stages yourself.
  *
  * Steps are queued in arrival order and are not dropped or coalesced: what the talker reads is
  * exactly what the thinker produced, in order. The queue is unbounded, so a talker slower than the

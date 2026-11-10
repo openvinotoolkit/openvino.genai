@@ -255,9 +255,11 @@ auto omni_channel_docstring = R"(
     so speech generation runs while text generation is still going. Implements both
     OmniStreamerBase and OmniTextSourceBase.
 
-    OmniPipeline creates one per generate() call when GenerationConfig.stream_text2speech is set.
-    Construct one directly only when driving VLMPipeline.generate(..., omni_streamer=channel) and
-    Talker.generate(channel, ...) yourself, typically on two threads.
+    When GenerationConfig.stream_text2speech is set, each OmniPipeline.generate() call creates an
+    OmniChannel and passes it to the VLM as an OmniStreamerBase and to the talker as an
+    OmniTextSourceBase. Construct an OmniChannel directly only when driving
+    VLMPipeline.generate(..., omni_streamer=channel) and Talker.generate(channel, ...) yourself,
+    typically on two threads.
 
     Steps are queued in arrival order and are never dropped or coalesced. The queue is unbounded,
     so a talker slower than the thinker costs memory rather than stalling text generation.

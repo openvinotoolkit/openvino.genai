@@ -11,7 +11,6 @@
 #include "openvino/genai/omni/pipeline.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
-#include "openvino/runtime/properties.hpp"
 #include "speech_generation/audio_utils.hpp"
 #include "visual_language_chat/load_image.hpp"
 #include "visual_language_chat/load_video.hpp"
@@ -71,11 +70,8 @@ int main(int argc, char* argv[]) try {
     // sharing a VLM base across pipelines, or injecting custom TalkerBase implementations.
     // For simpler use cases: ov::genai::OmniPipeline pipe(models_path, "CPU");
 
-    // Pinning off because stream_text2speech has both stages inferring at once, which leaves a
-    // pinned talker confined to a single core for the whole call.
-    auto vlm = std::make_shared<ov::genai::VLMPipeline>(models_path, "CPU", ov::hint::enable_cpu_pinning(false));
-    auto talker =
-        std::make_shared<ov::genai::Talker>(models_path, "CPU", ov::AnyMap{ov::hint::enable_cpu_pinning(false)});
+    auto vlm = std::make_shared<ov::genai::VLMPipeline>(models_path, "CPU");
+    auto talker = std::make_shared<ov::genai::Talker>(models_path, "CPU");
     ov::genai::OmniPipeline pipe(vlm, talker);
 
     // Speaker API demo: list available speakers and demonstrate voice blending.
