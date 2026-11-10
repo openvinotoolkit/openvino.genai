@@ -534,6 +534,36 @@ def test_fallback_imports_export_configs_only_with_supported_transformers(monkey
         assert reexecuted == [["transformers<5"]]
 
 
+def test_native_exporters_are_found_through_their_registration():
+    from openvino_genai._cli.exporters import get_native_exporter
+    from openvino_genai._cli.exporters.molmo2 import Molmo2Exporter
+
+    assert get_native_exporter("molmo2", None) is Molmo2Exporter
+    assert get_native_exporter("molmo2", "transformers") is Molmo2Exporter
+    assert get_native_exporter("molmo2", "diffusers") is None
+    assert get_native_exporter("llama", None) is None
+    assert get_native_exporter(None, None) is None
+
+
+def test_register_exporter_rejects_a_second_exporter_for_a_model_type(monkeypatch):
+    from openvino_genai._cli.exporters import base
+
+    monkeypatch.setattr(base, "_REGISTERED_EXPORTERS", {})
+
+    @base.register_exporter
+    class First(base.NativeExporter):
+        MODEL_TYPE = "test-model"
+
+    assert base.register_exporter(First) is First  # registering the same class again is a no-op
+    assert base.registered_exporters() == {"test-model": First}
+
+    class Second(base.NativeExporter):
+        MODEL_TYPE = "test-model"
+
+    with pytest.raises(ValueError, match="already has the native exporter"):
+        base.register_exporter(Second)
+
+
 def test_molmo2_hub_download_includes_pytorch_weights():
     from huggingface_hub.utils import filter_repo_objects
 

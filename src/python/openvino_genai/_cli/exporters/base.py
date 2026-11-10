@@ -51,3 +51,23 @@ class NativeExporter:
 
     def export(self) -> None:
         raise NotImplementedError
+
+
+# Native exporters by model type, filled by @register_exporter when their modules are imported.
+_REGISTERED_EXPORTERS: dict[str, type[NativeExporter]] = {}
+
+
+def register_exporter(exporter: type[NativeExporter]) -> type[NativeExporter]:
+    """Class decorator that makes genai-cli convert ``exporter.MODEL_TYPE`` models with ``exporter``."""
+    registered = _REGISTERED_EXPORTERS.get(exporter.MODEL_TYPE)
+    if registered is not None and registered is not exporter:
+        raise ValueError(
+            f"Model type `{exporter.MODEL_TYPE}` already has the native exporter {registered.__qualname__}, "
+            f"cannot register {exporter.__qualname__}"
+        )
+    _REGISTERED_EXPORTERS[exporter.MODEL_TYPE] = exporter
+    return exporter
+
+
+def registered_exporters() -> dict[str, type[NativeExporter]]:
+    return dict(_REGISTERED_EXPORTERS)

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import openvino as ov
 
-from openvino_genai._cli.exporters.base import NativeExporter
+from openvino_genai._cli.exporters.base import NativeExporter, register_exporter
 from openvino_genai._cli.exporters.common import (
     INT8_SYM_CONFIG,
     convert_exported_program,
@@ -232,6 +232,7 @@ def _build_export_modules():
     return TextEmbeddings, VisionEmbeddings, LanguageModel
 
 
+@register_exporter
 class Molmo2Exporter(NativeExporter):
     MODEL_TYPE = "molmo2"
     TASKS = ("image-text-to-text",)
