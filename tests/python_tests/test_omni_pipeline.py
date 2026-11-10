@@ -276,25 +276,29 @@ class TestOmniChannel:
         assert channel.read() is None, "abandon() drops what the talker has not read yet"
         assert channel.truncated() is True
 
-    def test_detach_keeps_thinker_running(self) -> None:
+    def test_finish_reading_keeps_thinker_running(self) -> None:
         channel = ov_genai.OmniChannel()
         channel.write(_step(1))
-        channel.detach()
+        channel.finish_reading()
 
-        assert channel.read() is None, "a detached reader must not see queued steps"
-        assert channel.write(_step(2)) == ov_genai.StreamingStatus.RUNNING, "detach() must not stop text generation"
+        assert channel.read() is None, "a finished reader must not see queued steps"
+        assert channel.write(_step(2)) == ov_genai.StreamingStatus.RUNNING, (
+            "finish_reading() must not stop text generation"
+        )
         channel.end()
         assert channel.truncated() is False
 
-    def test_abort_stops_thinker(self) -> None:
+    def test_fail_reading_stops_thinker(self) -> None:
         channel = ov_genai.OmniChannel()
         channel.write(_step(1))
-        channel.abort()
+        channel.fail_reading()
 
         assert channel.read() is None
         assert channel.write(_step(2)) == ov_genai.StreamingStatus.STOP, "abort() must ask the thinker to stop"
-        channel.detach()
-        assert channel.write(_step(3)) == ov_genai.StreamingStatus.STOP, "abort() takes precedence over detach()"
+        channel.finish_reading()
+        assert channel.write(_step(3)) == ov_genai.StreamingStatus.STOP, (
+            "fail_reading() takes precedence over finish_reading()"
+        )
         channel.end()
 
     def test_read_blocks_until_write_from_another_thread(self) -> None:
@@ -1418,7 +1422,7 @@ class TestOmniPipelineRealModel:
             try:
                 talker_results.append(talker.generate(channel, speech_on))
             except Exception as error:
-                channel.abort()
+                channel.fail_reading()
                 errors.append(error)
 
         thinker = threading.Thread(

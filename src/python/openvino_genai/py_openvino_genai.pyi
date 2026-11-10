@@ -3349,9 +3349,10 @@ class OmniChannel(OmniStreamerBase, OmniTextSourceBase):
         Steps are queued in arrival order and are never dropped or coalesced. The queue is unbounded,
         so a talker slower than the thinker costs memory rather than stalling text generation.
     
-        The reader closes its own end with detach() when it stops listening and with abort() when it
-        fails. Both drop the queue and are idempotent, with abort() taking precedence. After detach()
-        write() keeps returning RUNNING so the text still finishes; after abort() it returns STOP.
+        The reader closes its own end with finish_reading() when it stops listening normally and with
+        fail_reading() when it fails. Both drop the queue and are idempotent, with fail_reading() taking
+        precedence. After finish_reading(), write() keeps returning RUNNING so text generation can
+        finish; after fail_reading(), it returns STOP.
     
         The writer closes with end() or abandon(), and the difference reaches the reader as
         truncated(). abandon() also drops the queue.
@@ -3361,13 +3362,13 @@ class OmniChannel(OmniStreamerBase, OmniTextSourceBase):
     """
     def __init__(self) -> None:
         ...
-    def abort(self) -> None:
+    def fail_reading(self) -> None:
         """
-        Close the read end because the talker failed. write() returns STOP from now on.
+        Close the read end after the talker failed. write() returns STOP from now on.
         """
-    def detach(self) -> None:
+    def finish_reading(self) -> None:
         """
-        Close the read end: the talker stopped gracefully and is not going to read anymore. write() keeps returning RUNNING.
+        Close the read end after the talker finished normally. write() keeps returning RUNNING.
         """
 class OmniDecodedResults(VLMDecodedResults):
     """

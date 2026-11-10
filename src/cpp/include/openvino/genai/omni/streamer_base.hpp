@@ -30,8 +30,8 @@ namespace ov::genai {
  * Prefer an unbounded queue. Bounding it makes write() block as soon as the talker falls behind,
  * stalling text generation to save memory the non-streaming path spends anyway on
  * VLMDecodedResults::intermediate_hidden_states. A reader that stops reading is the case worth
- * handling instead; see OmniChannel::detach() and OmniChannel::abort() for how the built-in bridge
- * does it.
+ * handling instead; see OmniChannel::finish_reading() and OmniChannel::fail_reading() for how the
+ * built-in bridge does it.
  *
  * The payload is an ov::AnyMap rather than a fixed signature so producers can add data without
  * breaking implementations. Keys are the contract; see the `omni_stream` namespace below for the

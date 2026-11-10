@@ -55,12 +55,12 @@ public:
                 TalkerResults results = m_talker->generate(channel, m_talker_speech_config, m_speech_streamer);
                 // A talker that returned while the thinker is still going wants no more tokens,
                 // but the caller still wants the text, so this must not stop generation.
-                channel->detach();
+                channel->finish_reading();
                 return results;
             } catch (...) {
                 // Nothing will consume the rest of the response. The exception itself rides the
                 // future and surfaces from finish() on the caller's thread.
-                channel->abort();
+                channel->fail_reading();
                 throw;
             }
         });

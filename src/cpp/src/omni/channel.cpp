@@ -14,9 +14,8 @@ namespace genai {
 /// @brief Queue behind OmniChannel. Pimpl'd so <mutex> / <condition_variable> stay out of the
 /// public header — a std::mutex member would otherwise cross the shared-library boundary.
 class OmniChannel::Impl {
-    /// @brief How the read end stands. Monotone toward the stronger state: detach() cannot soften a
-    /// prior abort(), so a failure can never be downgraded by a talker still winding down.
-    enum class ReaderState { OPEN, DETACHED, ABORTED };
+    /// @brief How the read end stands. A normal finish cannot soften a prior failure.
+    enum class ReaderState { OPEN, FINISHED, FAILED };
 
 public:
     StreamingStatus write(const ov::AnyMap& data) {
@@ -25,8 +24,8 @@ public:
             if (m_reader_state != ReaderState::OPEN) {
                 // Dropping instead of queueing is the whole point: nobody is going to read this,
                 // and the queue is unbounded.
-                return m_reader_state == ReaderState::ABORTED ? StreamingStatus::STOP
-                                                              : StreamingStatus::RUNNING;
+                return m_reader_state == ReaderState::FAILED ? StreamingStatus::STOP
+                                                             : StreamingStatus::RUNNING;
             }
             m_queue.push_back(data);
         }
@@ -72,19 +71,19 @@ public:
         return m_truncated;
     }
 
-    void detach() {
-        close_read(ReaderState::DETACHED);
+    void finish_reading() {
+        close_read(ReaderState::FINISHED);
     }
 
-    void abort() {
-        close_read(ReaderState::ABORTED);
+    void fail_reading() {
+        close_read(ReaderState::FAILED);
     }
 
 private:
     void close_read(ReaderState state) {
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            if (m_reader_state != ReaderState::ABORTED) {
+            if (m_reader_state != ReaderState::FAILED) {
                 m_reader_state = state;
             }
             m_queue.clear();
@@ -134,12 +133,12 @@ bool OmniChannel::truncated() const {
     return m_impl->truncated();
 }
 
-void OmniChannel::detach() {
-    m_impl->detach();
+void OmniChannel::finish_reading() {
+    m_impl->finish_reading();
 }
 
-void OmniChannel::abort() {
-    m_impl->abort();
+void OmniChannel::fail_reading() {
+    m_impl->fail_reading();
 }
 
 }  // namespace genai

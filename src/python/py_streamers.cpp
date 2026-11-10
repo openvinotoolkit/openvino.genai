@@ -262,9 +262,10 @@ auto omni_channel_docstring = R"(
     Steps are queued in arrival order and are never dropped or coalesced. The queue is unbounded,
     so a talker slower than the thinker costs memory rather than stalling text generation.
 
-    The reader closes its own end with detach() when it stops listening and with abort() when it
-    fails. Both drop the queue and are idempotent, with abort() taking precedence. After detach()
-    write() keeps returning RUNNING so the text still finishes; after abort() it returns STOP.
+    The reader closes its own end with finish_reading() when it stops listening normally and with
+    fail_reading() when it fails. Both drop the queue and are idempotent, with fail_reading() taking
+    precedence. After finish_reading(), write() keeps returning RUNNING so text generation can
+    finish; after fail_reading(), it returns STOP.
 
     The writer closes with end() or abandon(), and the difference reaches the reader as
     truncated(). abandon() also drops the queue.
@@ -394,9 +395,8 @@ void init_streamers(py::module_& m) {
     py::class_<OmniChannel, OmniStreamerBase, OmniTextSourceBase, std::shared_ptr<OmniChannel>>(
         m, "OmniChannel", omni_channel_docstring)
         .def(py::init<>())
-        .def("detach", &OmniChannel::detach,
-             "Close the read end: the talker stopped gracefully and is not going to read anymore. "
-             "write() keeps returning RUNNING.")
-        .def("abort", &OmniChannel::abort,
-             "Close the read end because the talker failed. write() returns STOP from now on.");
+           .def("finish_reading", &OmniChannel::finish_reading,
+               "Close the read end after the talker finished normally. write() keeps returning RUNNING.")
+           .def("fail_reading", &OmniChannel::fail_reading,
+               "Close the read end after the talker failed. write() returns STOP from now on.");
 }
