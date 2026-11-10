@@ -159,13 +159,6 @@ OmniDecodedResults generate_impl(const std::shared_ptr<VLMPipelineBase>& vlm,
             channel ? vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer, channel)
                     : vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer);
         TalkerResults talker_result = talker_stage.finish(vlm_result);
-        // TODO: when `channel` is set, vlm_result.intermediate_hidden_states holds a second full
-        // copy of what already travelled through it — the CB backend accumulates every step on the
-        // sequence *and* forwards it. Clearing it here reclaims one copy once the field is no
-        // longer part of the streaming contract. The deeper fix is upstream: with a bridge attached
-        // the backend shouldn't accumulate at all, which means the forwarder in
-        // continuous_batching/pipeline_impl.cpp has to tap the per-step tensor directly instead of
-        // reading out of that same accumulation buffer.
         OmniDecodedResults omni_result;
         static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
         omni_result.speech_result = std::move(talker_result);
