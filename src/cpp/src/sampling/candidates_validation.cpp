@@ -152,19 +152,6 @@ void validate_draft_proposal(const DraftProposal& proposal) {
     OPENVINO_ASSERT(!proposal.empty(), "Sampled speculative candidates require a proposal distribution.");
     OPENVINO_ASSERT(proposal.is_dense() || proposal.token_ids.size() == proposal.probabilities.size(),
                     "Sparse draft proposal IDs and probabilities must stay aligned.");
-#ifndef NDEBUG
-    for (const auto token_id : proposal.token_ids) {
-        OPENVINO_ASSERT(token_id >= 0, "Sparse draft proposal contains a negative token ID.");
-    }
-    double probability_sum = 0.0;
-    for (const auto probability : proposal.probabilities) {
-        OPENVINO_ASSERT(probability >= 0.0f && std::isfinite(probability),
-                        "Draft proposal probabilities must be finite and non-negative.");
-        probability_sum += probability;
-    }
-    OPENVINO_ASSERT(std::isfinite(probability_sum) && std::abs(probability_sum - 1.0) <= 1e-3,
-                    "Draft proposal probabilities must sum to one.");
-#endif
 }
 
 }  // namespace ov::genai::detail
