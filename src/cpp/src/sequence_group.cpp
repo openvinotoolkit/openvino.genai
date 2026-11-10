@@ -85,15 +85,18 @@ std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embed
     return res;
 }
 
+size_t Sequence::get_prefix_identity_length() const {
+    const auto sequence_group = get_sequence_group_ptr();
+    return sequence_group->get_prompt_len() + (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS
+                                                   ? m_generated_ids.size()
+                                                   : m_generated_ids_embeds.size());
+}
+
 void Sequence::truncate_prefix_hashes() {
     if (m_prefix_hashes.empty()) {
         return;
     }
-    const auto sequence_group = get_sequence_group_ptr();
-    const size_t identity_length = sequence_group->get_prompt_len() +
-                                   (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS
-                                        ? m_generated_ids.size()
-                                        : m_generated_ids_embeds.size());
+    const size_t identity_length = get_prefix_identity_length();
     for (auto& [block_size, prefix_hashes] : m_prefix_hashes) {
         prefix_hashes.resize(std::min(prefix_hashes.size(), identity_length / block_size));
     }
