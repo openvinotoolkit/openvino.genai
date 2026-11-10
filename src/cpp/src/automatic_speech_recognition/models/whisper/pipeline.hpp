@@ -25,7 +25,7 @@ public:
     ASRDecodedResults generate(const AudiosView& audios,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer) override {
-        const std::vector<float>& raw_speech = get_single_audio(audios);
+        const std::vector<float>& raw_speech = validate_single_audio_and_get(audios);
         OptionalWhisperGenerationConfig whisper_config = std::nullopt;
         if (generation_config.has_value()) {
             whisper_config = to_whisper_config(generation_config.value());
