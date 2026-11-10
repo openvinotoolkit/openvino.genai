@@ -114,6 +114,25 @@ ov::genai::VLMModels gemma4_models() {
     return models;
 }
 
+constexpr char qwen35_chat_template[] =
+    "{%- if enable_thinking is undefined or enable_thinking is true %}think{%- else %}direct{%- endif %}"
+    ":{{ messages[0]['content'] }}";
+
+ov::genai::GGUFTokenizerParameters byte_level_bpe_config(const std::string& pre) {
+    std::vector<std::string> vocab{"<|endoftext|>", "a", "b"};
+    std::vector<int32_t> types{3, 1, 1};
+    ov::Tensor type_tensor(ov::element::i32, {types.size()});
+    std::memcpy(type_tensor.data(), types.data(), type_tensor.get_byte_size());
+    ov::Tensor eos(ov::element::u32, {});
+    eos.data<uint32_t>()[0] = 0;
+    return ov::genai::GGUFTokenizerParameters({{"model", std::string("gpt2")},
+                                               {"pre", pre},
+                                               {"tokens", vocab},
+                                               {"token_type", type_tensor},
+                                               {"merges", std::vector<std::string>{}},
+                                               {"eos_token_id", eos},
+                                               {"chat_template", std::string(qwen35_chat_template)}});
+}
 }  // namespace
 
 TEST(GGUFTokenizer, FimEndOfGenerationAliasesMatchLlamaCPU) {
@@ -577,4 +596,22 @@ TEST(GGUFMultimodal, ProjectorWidthsMustMatchLanguage) {
     EXPECT_THROW(validate_gguf_multimodal_dimensions(language, models), ov::Exception);
     models.models["audio_embeddings"] = embedding(4);
     EXPECT_NO_THROW(validate_gguf_multimodal_dimensions(language, models));
+}
+
+TEST(GGUFTokenizer, Qwen35ChatTemplateUndefinedTestsArePatched) {
+    ov::genai::GGUFTokenizer tokenizer(byte_level_bpe_config("qwen35"));
+    ov::genai::ChatHistory history({{{"role", "user"}, {"content", "a"}}});
+    EXPECT_EQ(tokenizer.get_original_chat_template(), qwen35_chat_template);
+    EXPECT_EQ(tokenizer.apply_chat_template(history, false), "think:a");
+    history.set_extra_context(ov::genai::JsonContainer({{"enable_thinking", false}}));
+    EXPECT_EQ(tokenizer.apply_chat_template(history, false), "direct:a");
+
+    tokenizer.set_chat_template("{% if custom is undefined %}set{% endif %}");
+    EXPECT_EQ(tokenizer.apply_chat_template(history, false), "set");
+    EXPECT_EQ(tokenizer.apply_chat_template(history, false, "{% if other is undefined %}call{% endif %}"), "call");
+}
+
+TEST(GGUFTokenizer, NonQwen35ChatTemplateIsNotPatched) {
+    ov::genai::GGUFTokenizer tokenizer(byte_level_bpe_config("qwen2"));
+    EXPECT_EQ(tokenizer.get_chat_template(), qwen35_chat_template);
 }

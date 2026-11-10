@@ -4,8 +4,9 @@
 #pragma once
 
 #include <filesystem>
-#include <set>
+#include <functional>
 #include <map>
+#include <set>
 #include <tuple>
 #include <unordered_map>
 
@@ -88,6 +89,11 @@ const T* get_if_exist(const std::map<std::string, GGUFMetaData>& tokenizer_confi
  * pattern matched.
  */
 std::string patch_gguf_chat_template(const std::string& chat_template);
+
+/// \brief Returns the model-specific chat template patcher selected by the GGUF tokenizer metadata,
+///        or an empty function if the tokenizer needs none.
+std::function<std::string(const std::string&)> gguf_chat_template_patcher(
+    const std::map<std::string, GGUFMetaData>& tokenizer_config);
 
 }  // namespace genai
 }  // namespace ov
