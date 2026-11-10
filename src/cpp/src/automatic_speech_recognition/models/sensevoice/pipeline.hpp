@@ -5,13 +5,13 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "automatic_speech_recognition/models/sensevoice/windowing.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "config.hpp"
 #include "feature_extractor.hpp"
@@ -36,7 +36,10 @@ private:
     SenseVoiceSmallConfig m_config;
     SenseVoiceSmallFeatureExtractor m_feature_extractor;
     ov::InferRequest m_request;
-    std::unique_ptr<SenseVoiceWindowing> m_windowing;
+    // Limits of the compiled model inputs. Audio longer than `m_max_window_samples` is split into windows.
+    size_t m_max_batch = std::numeric_limits<size_t>::max();
+    size_t m_padded_frames = 0;
+    size_t m_max_window_samples = std::numeric_limits<size_t>::max();
 };
 
 }  // namespace ov::genai
