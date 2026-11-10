@@ -342,6 +342,23 @@ python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 
 
 > **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
 
+For an already-exported Qwen3-ASR IR, `--genai` uses the native GenAI pipeline and tokenizer;
+the `qwen-asr` Python package is needed only for the Optimum reference path. Supply audio with
+`--media`, rather than a text-generation prompt. Shared NPU configuration files may contain LLM
+settings: the Qwen3-ASR encoder filters decoder-only options, while the decoder retains them.
+
+The encoder-decoder pipeline requires a stateful decoder with KV-cache variables and a
+`beam_idx` input on every device. Export Qwen3-ASR with
+`--task automatic-speech-recognition-with-past` and do not use `--disable-stateful`, for example:
+
+```sh
+optimum-cli export openvino --model Qwen/Qwen3-ASR-1.7B --weight-format fp16 --task automatic-speech-recognition-with-past models/qwen3-asr-1.7b-fp16
+```
+
+Explicitly selecting `--task automatic-speech-recognition` exports without past-key-value reuse.
+A directory name containing `stateful` or `use_cache: true` in the configuration does not
+make such a decoder stateful; adding a dummy `beam_idx` input does not restore its missing cache.
+
 
 ### Text Rerank models
 ```sh

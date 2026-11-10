@@ -4,7 +4,6 @@
 #include "decoder.hpp"
 
 #include <algorithm>
-#include <cstring>
 #include <map>
 
 #include "openvino/genai/generation_handle.hpp"
@@ -17,10 +16,25 @@ Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
                                  const std::string& device,
                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model =
-        core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
+    auto model = read_model(models_path, properties);
+    ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+    utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
     m_request = compiled_model.create_infer_request();
+}
+
+std::shared_ptr<ov::Model> Qwen3ASRDecoder::read_model(const std::filesystem::path& models_path,
+                                                       const ov::AnyMap& properties) {
+    ov::Core core = utils::singleton_core();
+    const auto model_path = models_path / "openvino_decoder_model.xml";
+    auto model = core.read_model(model_path, {}, properties);
+    OPENVINO_ASSERT(!model->get_variables().empty() && utils::has_input(model, "beam_idx"),
+                    "The ASR decoder '",
+                    model_path.string(),
+                    "' must be a stateful model with KV-cache variables and a 'beam_idx' input. "
+                    "Re-export with '--task automatic-speech-recognition-with-past' and without '--disable-stateful'. "
+                    "Adding 'beam_idx' alone does not provide the missing KV cache.");
+
+    return model;
 }
 
 void Qwen3ASRDecoder::set_seed(size_t seed) {
@@ -188,7 +202,6 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
         asr_raw_metrics.decode_inference_durations.emplace_back(infer_ms);
 
         logits = m_request.get_tensor("logits");
-
         const auto sample_start = std::chrono::steady_clock::now();
         m_sampler.sample(active_sequence_groups, logits);
         raw_metrics.m_sampling_durations.emplace_back(

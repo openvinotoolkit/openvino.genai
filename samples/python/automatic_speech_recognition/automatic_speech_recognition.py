@@ -7,6 +7,29 @@ import openvino_genai
 import librosa
 
 
+def format_mean_std(pair, unit="ms"):
+    return f"{pair.mean:.2f} +- {pair.std:.2f} {unit}"
+
+
+def print_perf_metrics(result):
+    perf = result.perf_metrics
+    asr_raw = perf.asr_raw_metrics
+
+    print("\n=== Performance Metrics ===")
+    print(f"Load time: {perf.get_load_time():.2f} ms")
+    print(f"Total generate duration: {format_mean_std(perf.get_generate_duration())}")
+    print(f"Encoder inference: {format_mean_std(perf.get_encode_inference_duration())}")
+    print(f"Decoder TTFT: {format_mean_std(perf.get_ttft())}")
+    print(f"Decoder inference: {format_mean_std(perf.get_decode_inference_duration())}")
+    print(f"TPOT: {format_mean_std(perf.get_tpot(), 'ms/token')}")
+    print(f"Throughput: {format_mean_std(perf.get_throughput(), 'tokens/s')}")
+
+    if asr_raw.encode_inference_durations:
+        print(f"Encoder raw calls: {len(asr_raw.encode_inference_durations)}")
+    if asr_raw.decode_inference_durations:
+        print(f"Decoder raw steps: {len(asr_raw.decode_inference_durations)}")
+
+
 def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
@@ -23,6 +46,7 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("wav_file_path", help="Path to the WAV file")
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
+    parser.add_argument("--perf", action="store_true", help="Print performance metrics in addition to the transcription")
     args = parser.parse_args()
 
     ov_config = dict()
@@ -54,6 +78,8 @@ def main():
     result = pipe.generate(raw_speech, config)
 
     print(result)
+    if args.perf:
+        print_perf_metrics(result)
 
     if result.chunks:
         for chunk in result.chunks[0]:
