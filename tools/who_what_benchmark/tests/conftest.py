@@ -59,6 +59,14 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-fun-asr",
         "convert_args": ["--weight-format", "fp32"],
     },
+    "tiny-random-qwen3-asr": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-asr",
+        "convert_args": ["--task", "automatic-speech-recognition"],
+    },
+    "whisper-tiny": {
+        "name": "openai/whisper-tiny",
+        "convert_args": ["--weight-format", "fp32"],
+    },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
@@ -69,6 +77,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-llava": {
         "name": "optimum-intel-internal-testing/tiny-random-llava",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-mistral3": {
+        "name": "optimum-intel-internal-testing/tiny-random-mistral3",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
     "Qwen2-VL-2B-Instruct": {

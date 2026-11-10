@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -44,6 +44,11 @@ class ASRDecodedResults:
         perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
+        metadata:           optional model-specific metadata for each transcription.
+                            Models without metadata support leave this unset (None in Python).
+                            When present, metadata[i] corresponds to texts[i]. Each map holds
+                            model-defined key/value metadata and may be empty when no metadata
+                            is predicted.
     """
     def __repr__(self) -> str:
         ...
@@ -52,6 +57,9 @@ class ASRDecodedResults:
         ...
     @property
     def languages(self) -> list[str]:
+        ...
+    @property
+    def metadata(self) -> list[dict[str, typing.Any]] | None:
         ...
     @property
     def perf_metrics(self) -> ASRPerfMetrics:
@@ -176,6 +184,12 @@ class ASRGenerationConfig(GenerationConfig):
         :param context: System prompt context prepended to Qwen3-ASR transcription requests.
         :type context: Optional[str]
     
+        SenseVoiceSmall parameters:
+    
+        :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                        Defaults to False (`woitn`); when True, the `withitn` mode is used.
+        :type use_itn: bool
+    
         For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
         see GenerationConfig documentation.
     """
@@ -186,6 +200,7 @@ class ASRGenerationConfig(GenerationConfig):
     language: str | None
     return_timestamps: bool
     task: str | None
+    use_itn: bool
     word_timestamps: bool
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
@@ -311,22 +326,27 @@ class ASRPipeline:
                         Only supported for Qwen3-ASR. Required when requesting
                         generate(..., word_timestamps=True).
         """
-    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
+    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat] | collections.abc.Sequence[collections.abc.Sequence[typing.SupportsFloat]], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
-            High level generate that receives raw speech as a vector of floats and returns decoded output.
+            High level generate that receives raw speech as a single audio input or a batch of audio inputs and returns decoded output.
+            The generation configuration applies to all audio inputs. Batch results are returned in input order.
+            Batches must be non-empty. Models without batching support accept at most one audio input per call,
+            either directly or as a batch of one.
         
-            :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-            :type audio_inputs: list[float]
+            :param audio_inputs: a single audio input as a list of floats, or a non-empty list of such lists for a batch.
+                                 Each audio input is required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+            :type audio_inputs: list[float] | list[list[float]]
         
             :param generation_config: generation_config
             :type generation_config: ASRGenerationConfig
         
-            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
-                             Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
-            :type : Callable[[str], bool], ov.genai.StreamerBase
+            :param streamer: streamer either as a callback or as a StreamerBase instance.
+                             The callback receives decoded text and may return None or an integer StreamingStatus value.
+                             Handling of stop statuses depends on the model. Streaming is not supported for batches larger than one.
+            :type streamer: Callable[[str], int | None] | StreamerBase | None
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to ASRGenerationConfig fields.
-            :type : dict
+            :type kwargs: dict
         
             :return: return results in decoded form
             :rtype: ASRDecodedResults
@@ -422,6 +442,12 @@ class ASRPipeline:
         
             :param context: System prompt context prepended to Qwen3-ASR transcription requests.
             :type context: Optional[str]
+        
+            SenseVoiceSmall parameters:
+        
+            :param use_itn: Whether to enable inverse text normalization for SenseVoiceSmall.
+                            Defaults to False (`woitn`); when True, the `withitn` mode is used.
+            :type use_itn: bool
         
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
@@ -1293,6 +1319,9 @@ class ContinuousBatchingPipeline:
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
         ...
     @typing.overload
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, **kwargs) -> GenerationHandle:
+        ...
+    @typing.overload
     def add_request(self, request_id: typing.SupportsInt, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
@@ -1783,6 +1812,12 @@ class FluxTransformer2DModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
+class GGUFTokenizer(Tokenizer):
+    """
+    Tokenizer built from a local GGUF file.
+    """
+    def __init__(self, gguf_path: os.PathLike | str | bytes, **kwargs) -> None:
+        ...
 class Gemma3TextEncoder:
     """
     Gemma3TextEncoder class.
@@ -1873,6 +1908,7 @@ class GenerationConfig:
         tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
         num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
                                             verification. Total tree nodes = num_assistant_tokens + 1 (including root).
+                                            Must not exceed 100. Larger values are rejected by validate().
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
@@ -2885,6 +2921,7 @@ class LLMPipeline:
             tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
             num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
                                                 verification. Total tree nodes = num_assistant_tokens + 1 (including root).
+                                                Must not exceed 100. Larger values are rejected by validate().
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, device: str, config: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
@@ -2988,6 +3025,7 @@ class LLMPipeline:
             tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
             num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
                                                 verification. Total tree nodes = num_assistant_tokens + 1 (including root).
+                                                Must not exceed 100. Larger values are rejected by validate().
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
@@ -3104,6 +3142,10 @@ class LTX2VideoTransformer3DModel:
         """
     def get_config(self) -> LTX2VideoTransformer3DModel.Config:
         ...
+    def has_input(self, name: str) -> bool:
+        """
+        Returns whether the export has an input with this exact name.
+        """
     def infer(self, video_latent: openvino._pyopenvino.Tensor, audio_latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat, isolate_modalities: bool = False, spatio_temporal_guidance_blocks: collections.abc.Sequence[typing.SupportsInt] = []) -> tuple[openvino._pyopenvino.Tensor, openvino._pyopenvino.Tensor]:
         """
                         Performs joint video and audio inference.
@@ -3130,6 +3172,13 @@ class LTX2VideoTransformer3DModel:
                         Sets a model input tensor by name.
                         tensor_name (str): Name of the tensor input.
                         tensor (ov.Tensor): Tensor to set.
+        """
+    def set_rope_coords(self, video_coords: openvino._pyopenvino.Tensor, audio_coords: openvino._pyopenvino.Tensor) -> None:
+        """
+                        Initializes positional inputs from f32 patch boundaries.
+                        video_coords (ov.Tensor): Shape [B, 3, video_sequence_length, 2].
+                        audio_coords (ov.Tensor): Shape [B, 1, audio_sequence_length, 2].
+                        Computes and binds external RoPE, or binds coordinates for legacy exports.
         """
 class LTX2Vocoder:
     """
@@ -3437,13 +3486,29 @@ class OmniTalkerSpeechConfig:
         :type speaker: str | openvino.Tensor
     
         :param audio_chunk_frames: Number of codec frames accumulated before streaming each
-            audio chunk. Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at
-            24 kHz), but the code2wav vocoder trims its convolutional warmup from the first frame of
-            every decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This
-            is a property of the vocoder graph, not a miscount. Larger chunks amortize the fixed
-            warmup cost; very small chunks (e.g. 1) also risk audible seams between independently
-            decoded chunks in streaming mode.
+            audio chunk. Must be >= 1. Each frame decodes to S samples, the product of the
+            checkpoint's code2wav `upsample_rates` and `upsampling_ratios`. The code2wav vocoder trims
+            its convolutional warmup of W samples once per utterance, so the first chunk of N frames
+            yields S*N - W samples and every later chunk yields S*N. Streamed audio has the same length
+            as non-streamed audio. This holds while `audio_chunk_left_context_frames` > 0. For the
+            standard Qwen3-Omni, S = 1920 (80ms at 24 kHz) and W = 555, so the default first chunk is
+            about 297ms and later chunks are 320ms. Every chunk after the first is decoded
+            together with up to `audio_chunk_left_context_frames` earlier frames, so the vocoder sees
+            their history. That context is decoded again for each chunk, so smaller chunks lower
+            time-to-first-audio but spend more vocoder time per second of audio and can fall behind
+            real time.
         :type audio_chunk_frames: int
+    
+        :param audio_chunk_left_context_frames: Number of earlier codec frames the code2wav vocoder
+            decodes together with each streamed chunk. Their samples are dropped from the output; they
+            only give the chunk's first samples the history a non-streamed decode would see. The first
+            chunk has no history, so the value is capped by the number of frames already streamed.
+            0 decodes every chunk on its own: each chunk then loses the code2wav warmup samples, so
+            streamed audio is shorter than non-streamed audio. Larger values give smoother seams
+            between chunks but cost more vocoder work per chunk. Default is 25, the
+            `left_context_size` of transformers `Qwen3OmniMoeCode2Wav.chunked_decode`. Must be
+            <= 4096. Ignored when no speech streamer is set.
+        :type audio_chunk_left_context_frames: int
     
         :param max_new_tokens: Cap on talker AR steps. Independent of
             `text_config.max_new_tokens` (which caps the thinker text decode). The talker
@@ -3479,6 +3544,12 @@ class OmniTalkerSpeechConfig:
         ...
     @audio_chunk_frames.setter
     def audio_chunk_frames(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def audio_chunk_left_context_frames(self) -> int:
+        ...
+    @audio_chunk_left_context_frames.setter
+    def audio_chunk_left_context_frames(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def cp_temperature(self) -> float | None:
@@ -5360,8 +5431,9 @@ class TalkerBase:
         
                                 Property-bag form of generate(). Recognized kwargs are the OmniTalkerSpeechConfig
                                 fields (return_audio, speaker, speaker_embedding, audio_chunk_frames,
-                                max_new_tokens, rng_seed, talker_temperature, talker_top_k,
-                                talker_repetition_penalty, cp_temperature, cp_top_k), plus speech_streamer.
+                                audio_chunk_left_context_frames, max_new_tokens, rng_seed, talker_temperature,
+                                talker_top_k, talker_repetition_penalty, cp_temperature, cp_top_k), plus
+                                speech_streamer.
                                 Unrecognized keys raise. Fields not given fall back to get_speech_config().
         
                                 :return: TalkerResults
@@ -5615,7 +5687,7 @@ class Text2SpeechPipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
     @typing.overload
-    def generate(self, text: str, speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, text: str, speaker_embedding: typing.Any = None, generation_config: openvino_genai.py_openvino_genai.SpeechGenerationConfig | None = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
@@ -5632,8 +5704,11 @@ class Text2SpeechPipeline:
                                         - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
         
-            :param properties: speech generation parameters specified as properties
-            :type properties: dict
+            :param generation_config: speech generation configuration override
+            :type generation_config: SpeechGenerationConfig or None
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+            :type kwargs: dict
         
             :returns: raw audios of the input texts spoken in the specified speaker's voice;
                       sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
@@ -5716,7 +5791,7 @@ class Text2SpeechPipeline:
             :type ref_codec_ids: openvino.Tensor
         """
     @typing.overload
-    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, generation_config: openvino_genai.py_openvino_genai.SpeechGenerationConfig | None = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
@@ -5733,8 +5808,11 @@ class Text2SpeechPipeline:
                                         - Qwen3-TTS VoiceDesign: ignored and should not be provided.
             :type speaker_embedding: openvino.Tensor or None
         
-            :param properties: speech generation parameters specified as properties
-            :type properties: dict
+            :param generation_config: speech generation configuration override
+            :type generation_config: SpeechGenerationConfig or None
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
+            :type kwargs: dict
         
             :returns: raw audios of the input texts spoken in the specified speaker's voice;
                       sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
@@ -6100,9 +6178,20 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: openvino_genai.py_openvino_genai.ChatHistory | collections.abc.Sequence[dict], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[dict] | None = None, extra_context: dict | None = None) -> str:
+    def apply_chat_template(self, history: openvino_genai.py_openvino_genai.ChatHistory | collections.abc.Sequence[dict], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[dict] | None = None, extra_context: dict | None = None, apply_polyfills: bool = True) -> str:
         """
         Applies a chat template to format chat history into a prompt string.
+        Args:
+         'history' - chat history as a ChatHistory object or a list of message dicts.
+         'add_generation_prompt' - whether to append the prompt that starts the assistant reply.
+         'chat_template' - custom chat template. If empty (default), the tokenizer chat template is used.
+         'tools' - list of tool definitions. If provided, overrides tools from the chat history. Default is None.
+         'extra_context' - dict with additional template variables. If provided, overrides extra_context from the chat history. Default is None.
+         'apply_polyfills' - whether to emulate features that the chat template doesn't support by rewriting the messages before rendering. Default is True.
+            When True, depending on the detected template capabilities minja will apply necessary polyfills to the chat history before rendering the template.
+            When False, the messages are passed to the template unchanged, so content the template doesn't handle may be dropped from the prompt.
+        Returns:
+         A string with the formatted chat history.
         """
     @typing.overload
     def decode(self, tokens: collections.abc.Sequence[typing.SupportsInt], skip_special_tokens: bool = True) -> str:
@@ -6456,8 +6545,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6498,8 +6589,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6540,8 +6633,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6582,8 +6677,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6650,8 +6747,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6692,8 +6791,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -6734,8 +6835,10 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+            :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+                a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+                Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+                slower than real time.
                 Ignored when speech_streamer is not provided.
             :type audio_chunk_frames: int
         

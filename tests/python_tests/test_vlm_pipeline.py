@@ -52,6 +52,7 @@ from optimum.intel.utils.import_utils import is_optimum_version
 from huggingface_hub import snapshot_download
 from openvino_genai import (
     VLMPipeline,
+    Tokenizer,
     GenerationConfig,
     SchedulerConfig,
     ContinuousBatchingPipeline,
@@ -141,6 +142,14 @@ PROMPTS: list[str] = [
     "Describe the image"
 ]
 
+MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
+MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
+MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
+MODEL_QWEN38_FLASH_NEXT = "optimum-intel-internal-testing/tiny-random-qwen38-flash-next"
+MODEL_MINICPMV4_6 = "optimum-intel-internal-testing/tiny-random-minicpmv4_6"
+MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+
 VIDEO_MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
@@ -160,13 +169,14 @@ else:
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
         "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
         "optimum-intel-internal-testing/tiny-random-gemma4-31B",
+        "optimum-intel-internal-testing/tiny-random-minicpmv47",
+        MODEL_QWEN38_FLASH_NEXT,
     ]
 
-MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
-MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
-MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
-MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
-MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+AUDIO_INPUT_SUPPORTED_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
+]
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -189,10 +199,11 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
+        MODEL_MINICPMV4_6,
         MODEL_DEEPSEEK_OCR2,
+        "optimum-intel-internal-testing/tiny-random-mistral3",
         *VIDEO_MODEL_IDS,
     ]
-
 
 ADD_REQUEST_MODEL_IDS = [
     MODEL_IDS[0],
@@ -207,13 +218,16 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    MODEL_QWEN38_FLASH_NEXT: lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
+    "optimum-intel-internal-testing/tiny-random-mistral3": lambda idx: "[IMG]",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpmv47": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
@@ -222,6 +236,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
+    MODEL_MINICPMV4_6: lambda idx: "<|image_pad|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -232,29 +247,35 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    MODEL_QWEN38_FLASH_NEXT: lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|video|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpmv47": lambda idx: "<video>./</video>\n",
 }
 
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-mistral3": 32,
     "qnguyen3/nanoLLaVA": 384,
+    MODEL_MINICPMV4_6: 448,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
     "optimum-intel-internal-testing/tiny-random-qwen2vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
     "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
+    MODEL_QWEN38_FLASH_NEXT: 256,
 }
 
 
 RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 32,
+    MODEL_QWEN38_FLASH_NEXT: 64,
 }
 
 
@@ -318,6 +339,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
         )
+    if "minicpmv47" in model_id and is_transformers_version("<", "5.18.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum supported version is 5.18.0"
+        )
     if "qwen3-vl" in model_id and is_transformers_version("<", "4.57.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
@@ -332,6 +357,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     } and is_transformers_version("<", "5.2.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
+        )
+    if model_id == MODEL_QWEN38_FLASH_NEXT and is_transformers_version("<", "5.17.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Qwen38-Flash-Next. Minimum required is 5.17.0."
         )
     if model_id == "optimum-intel-internal-testing/tiny-random-muse-glimmer" and is_transformers_version("<", "5.15.0"):
         pytest.skip(
@@ -359,6 +388,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if model_id == MODEL_DEEPSEEK_OCR2 and is_transformers_version("<", "5.11.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of DeepSeek-OCR-2. Minimum required is 5.11.0."
+        )
+    if model_id == MODEL_MINICPMV4_6 and is_transformers_version("<", "5.7.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of MiniCPM-V-4.6. Minimum required is 5.7.0."
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
@@ -432,7 +465,7 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        model_cached = retry_request(lambda: snapshot_download(model_id))
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -481,17 +514,17 @@ def _get_ov_model(model_id: str) -> str:
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
 
-        if (
-            isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
-            or model.config.model_type == "qwen3_5"
-            or is_transformers_version(">=", "5.0")
-        ):
-            # Remove audio_tokenizer to avoid serialization issues (audio inputs are not supported).
-            # Setting to None is insufficient because Gemma4Processor.to_dict() still detects
-            # the key and calls .name_or_path on a None object.
-            processor.__dict__.pop("audio_tokenizer", None)
-        else:
-            processor.audio_tokenizer = None
+        if model_id not in AUDIO_INPUT_SUPPORTED_MODELS:
+            if (
+                isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
+                or model.config.model_type == "qwen3_5"
+                or is_transformers_version(">=", "5.0")
+            ):
+                # Setting to None is insufficient because some processors still serialize
+                # audio_tokenizer and access its name_or_path attribute.
+                processor.__dict__.pop("audio_tokenizer", None)
+            else:
+                processor.audio_tokenizer = None
 
         # DeepSeek-OCR-2 tiny-random currently may miss preprocessor_config.json
         # So override processor with AutoImageProcessor in this case.
@@ -505,6 +538,9 @@ def _get_ov_model(model_id: str) -> str:
                 pass
 
         processor.save_pretrained(temp_dir)
+        if model.config.model_type == "mistral3":
+            # Align with optimum-cli: HF repo nests image processor settings in processor_config.json only.
+            processor.image_processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
     manager.execute(convert_to_temp)
@@ -536,6 +572,9 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
+
+    if ov_model == MODEL_QWEN38_FLASH_NEXT and ov_backend == "PA":
+        pytest.xfail("Qwen3.8-Flash-Next model does not support PA backend")
 
     models_path = _get_ov_model(ov_model)
 
@@ -574,6 +613,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         pipeline,
         ov_prompt_lookup,
     )
+
 
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
@@ -616,6 +656,14 @@ parametrize_one_model_pa = pytest.mark.parametrize(
 parametrize_one_model_backends = pytest.mark.parametrize(
     "ov_pipe_model",
     [(MODEL_IDS[0], b) for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+
+
+parametrize_audio_models = pytest.mark.parametrize(
+    "ov_pipe_model",
+    [(model_id, backend) for model_id in AUDIO_INPUT_SUPPORTED_MODELS for backend in ATTENTION_BACKEND],
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
@@ -684,8 +732,9 @@ parametrize_one_model_npu = _parametrize_npu_models(
 
 
 @pytest.fixture(scope="module")
-def ov_continuous_batching_pipe() -> ContinuousBatchingPipeline:
-    models_path = _get_ov_model(MODEL_IDS[0])
+def ov_continuous_batching_pipe(request: pytest.FixtureRequest) -> ContinuousBatchingPipeline:
+    model_id = getattr(request, "param", MODEL_IDS[0])
+    models_path = _get_ov_model(model_id)
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
@@ -810,6 +859,14 @@ def inverted_video_32x32_tensor(synthetic_video_32x32):
 
 
 @pytest.fixture(scope="module")
+def synthetic_audio_tensor() -> openvino.Tensor:
+    sampling_rate = 16000
+    timestamps = np.arange(sampling_rate, dtype=np.float32) / sampling_rate
+    audio = 0.5 * np.sin(2 * np.pi * 440 * timestamps) + 0.25 * np.sin(2 * np.pi * 880 * timestamps)
+    return openvino.Tensor(audio.astype(np.float32))
+
+
+@pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['handwritten'], "handwritten.png"))
 
@@ -842,7 +899,7 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
 
     res = ov_pipe.generate(
         PROMPTS[0],
@@ -1165,7 +1222,7 @@ def test_vlm_pipeline_chat(
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
 
     ov_pipe.start_chat(system_message)
 
@@ -1314,6 +1371,73 @@ def test_vlm_pipeline_chat_history_multipart_content(
             f"answers_chat_history: {answer_1}\n"
             f"answers_chat_history_multipart_content: {answer_2}"
         )
+
+
+def finish_chat(ov_pipe_model: VlmModelInfo):
+    # Clear chat state left by ChatHistory on the shared pipeline.
+    ov_pipe_model.pipeline.finish_chat()
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_audio_chat_history(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+    prompt = "Describe this audio."
+
+    history = ChatHistory([{"role": "user", "content": prompt}])
+    messages_before = history.get_messages()
+    ov_pipe.generate(
+        history,
+        audios=[synthetic_audio_tensor],
+        generation_config=generation_config,
+    )
+    assert history.get_messages() == messages_before
+    finish_chat(ov_pipe_model)
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_implicit_audio_placement(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+    prompt = "Describe this audio."
+    audios = [synthetic_audio_tensor]
+
+    implicit_result = ov_pipe.generate(prompt, audios=audios, generation_config=generation_config)
+    explicit_result = ov_pipe.generate(prompt + "<|audio|>", audios=audios, generation_config=generation_config)
+
+    assert implicit_result.texts == explicit_result.texts
+    finish_chat(ov_pipe_model)
+
+
+@parametrize_audio_models
+@pytest.mark.parametrize(
+    "prompt,audio_count",
+    [
+        pytest.param("<|audio|><|audio|>Describe.", 1, id="more-placeholders-than-audios"),
+        pytest.param("<|audio|>Describe.", 2, id="fewer-placeholders-than-audios"),
+        pytest.param("<|audio|>Describe.", 0, id="placeholder-without-audio"),
+    ],
+)
+def test_vlm_pipeline_audio_placeholder_count(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+    prompt: str,
+    audio_count: int,
+):
+    history = ChatHistory([{"role": "user", "content": prompt}])
+    with pytest.raises(RuntimeError):
+        ov_pipe_model.pipeline.generate(
+            history,
+            audios=[synthetic_audio_tensor] * audio_count,
+            do_sample=False,
+        )
+    finish_chat(ov_pipe_model)
 
 
 @pytest.fixture(scope="module", params=[
@@ -1916,6 +2040,8 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
+        (MODEL_QWEN38_FLASH_NEXT, "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ]
 
 
@@ -1936,6 +2062,7 @@ if is_transformers_version("<", "5.0"):
 else:
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-phi3-vision", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-minicpmv47", "PA"),
     ]
 
 
@@ -2403,7 +2530,7 @@ def test_audio_rejected_by_non_audio_model():
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=20))
 
 
-def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
+def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=None):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -2437,7 +2564,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     ov_pipe = ov_pipe_model.pipeline
 
     model_id = ov_pipe_model.model_id
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    model_path = Path(model_id)
+    model_cached = str(model_path) if model_path.is_dir() else snapshot_download(model_id)
     model_path = _get_ov_model(model_id)
     optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
 
@@ -2447,6 +2575,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     if video is not None:
         prompt_parts.append("video")
+
+    if audio is not None:
+        prompt_parts.append("audio")
 
     if len(prompt_parts) == 1:
         prompt = f"Describe this {prompt_parts[0]}."
@@ -2481,6 +2612,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
             processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type == "muse_glimmer":
             processor.tokenizer.add_bos_token = False
+        if optimum_model.config.model_type == "gemma4_unified":
+            tokenizer = processor.tokenizer
         if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
@@ -2493,7 +2626,13 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
                 processor.chat_template = tokenizer.chat_template
 
         inputs = optimum_model.preprocess_inputs(
-            text=prompt, image=image, video=video, processor=processor, tokenizer=tokenizer, config=optimum_model.config
+            text=prompt,
+            image=image,
+            video=video,
+            audio=audio,
+            processor=processor,
+            tokenizer=tokenizer,
+            config=optimum_model.config,
         )
 
     max_new_tokens = 100
@@ -2518,6 +2657,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         params["images"] = [openvino.Tensor(image)]
     if video is not None:
         params["videos"] = [openvino.Tensor(video)]
+    if audio is not None:
+        params["audios"] = [openvino.Tensor(audio)]
 
     genai_output = ov_pipe.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
@@ -2540,6 +2681,7 @@ OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen3.5": [(100, 77), (350, 350), (480, 512)],
+    MODEL_QWEN38_FLASH_NEXT: [(100, 77), (350, 350), (480, 512)],
     # (999, 666) resolution fails, result is reasonable and close to optimum-intel output.
     # There is a known image resize incompatibility, so different image sizes are used to test the Gemma 4 model.
     "optimum-intel-internal-testing/tiny-random-gemma4": [(100, 77), (1000, 666), (997, 666), (999, 665), (1920, 1080)],
@@ -2550,12 +2692,15 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(32, 32), (70, 70)],
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(32, 32), (70, 70)],
     "optimum-intel-internal-testing/tiny-random-qwen3.5": [(32, 32), (70, 70)],
+    MODEL_QWEN38_FLASH_NEXT: [(32, 32), (70, 70)],
 }
 
 # test-id glob pattern -> xfail reason
 # test-id's are of the form:
 # "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
+    # mistral3 text-only case
+    "*tiny-random-mistral3/PA/CPP/text-only": "CVS-199308",
     # muse glimmer
     "*tiny-random-muse-glimmer/*/CPP/image*": "CVS-192673",
     "*tiny-random-muse-glimmer/*/CPP/video*": "CVS-192673",
@@ -2587,6 +2732,12 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-qwen3.5/*/video-32x32": "CVS-180070",
     # qwen3.5 cases that use 70x70 video (both CPP and GRAPH preprocessing)
     "*tiny-random-qwen3.5/*/video-70x70": "CVS-180070",
+    # Qwen3.8-Flash-Next image cases
+    "*tiny-random-qwen38-flash-next/*/image-100x77": "CVS-180070",
+    "*tiny-random-qwen38-flash-next/*/image-350x350": "CVS-180070",
+    # Qwen3.8-Flash-Next video cases
+    "*tiny-random-qwen38-flash-next/*/video-*": "CVS-180070",
+    "*tiny-random-qwen38-flash-next/*/preresized-image+video": "CVS-180070",
     # llava-next-video graph pre-processing 'real' resize cases that include video
     "*tiny-random-llava-next-video/*/GRAPH/video*": "CVS-180070",
     "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "CVS-180070",
@@ -2602,6 +2753,9 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
     # deepseek-ocr-2 text-only cases
     "*tiny-random-deepseek-ocr-2/*/text-only": "DeepSeek OCR-2 model requires image input.",
+    # MiniCPM-V-4.7 cases - different images with 32x32 and 176x132 videos (both SDPA and PA)
+    "*tiny-random-minicpmv47/*/CPP/image-*/video-32x32": "CVS-197356",
+    "*tiny-random-minicpmv47/*/CPP/image-*/video-176x132": "CVS-197356",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
@@ -2613,6 +2767,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    MODEL_QWEN38_FLASH_NEXT,
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
 
@@ -2779,6 +2934,15 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
         resized_video = resize_video(resized_video, video_input_resolution)
 
     run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_audio_match_optimum(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    run_compare_genai_optimum(ov_pipe_model, None, None, np.array(synthetic_audio_tensor.data, copy=True))
+    finish_chat(ov_pipe_model)
 
 
 # CDPruner Tests
@@ -3575,9 +3739,12 @@ def test_vlm_eagle3_chat_with_videos(
         "What did you see across both inputs?",
     ]
 
-    def run_two_round_chat(pipe: VLMPipeline, generation_config: GenerationConfig) -> list[str]:
+    def run_two_round_chat(
+        pipe: VLMPipeline, generation_config: GenerationConfig
+    ) -> tuple[list[str], list[object | None]]:
         history = ChatHistory()
         results = []
+        extended_perf_metrics = []
 
         for round_idx, prompt in enumerate(prompts):
             history.append({"role": "user", "content": prompt})
@@ -3591,13 +3758,14 @@ def test_vlm_eagle3_chat_with_videos(
                 **generate_kwargs,
             )
             results.append(result.texts[0].strip())
+            extended_perf_metrics.append(result.extended_perf_metrics)
             history.append({"role": "assistant", "content": result.texts[0]})
 
-        return results
+        return results, extended_perf_metrics
 
     ov_pipe = VLMPipeline(model_path, "CPU")
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    results_without_draft = run_two_round_chat(ov_pipe, generation_config)
+    results_without_draft, _ = run_two_round_chat(ov_pipe, generation_config)
 
     ov_draft = draft_model(draft_model_path, "CPU")
     ov_pipe_with_draft = VLMPipeline(
@@ -3609,8 +3777,30 @@ def test_vlm_eagle3_chat_with_videos(
     generation_config_with_draft_tree = _setup_generation_config(
         ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
     )
-    results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
-    results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft_tree)
+    results_with_draft, metrics_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
+    results_with_draft_tree, metrics_with_draft_tree = run_two_round_chat(
+        ov_pipe_with_draft, generation_config_with_draft_tree
+    )
+    generation_config_without_drafting = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, do_sample=False
+    )
+    generation_config_without_drafting.num_assistant_tokens = 0
+    results_without_drafting, metrics_without_drafting = run_two_round_chat(
+        ov_pipe_with_draft, generation_config_without_drafting
+    )
+
+    for metrics_list in (metrics_with_draft, metrics_with_draft_tree):
+        for metrics in metrics_list:
+            assert metrics is not None
+            assert metrics.draft_model_metrics is not None
+            assert metrics.draft_model_metrics.get_num_generated_tokens() > 0
+
+    for round_idx, metrics in enumerate(metrics_without_drafting):
+        assert metrics is not None
+        draft_tokens = metrics.draft_model_metrics.get_num_generated_tokens()
+        assert draft_tokens == 0, (
+            f"Chat round {round_idx + 1} generated {draft_tokens} draft tokens with drafting disabled."
+        )
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
@@ -3623,6 +3813,57 @@ def test_vlm_eagle3_chat_with_videos(
     )
     assert results_without_draft[1] == results_with_draft_tree[1], (
         "Second mixed-modality chat turn should be the same when Eagle3 draft model and tree search are enabled and disabled."
+    )
+    assert results_without_draft == results_without_drafting, (
+        "Mixed-modality chat results should be the same when drafting is disabled with num_assistant_tokens=0."
+    )
+
+
+def test_vlm_eagle3_prefix_cache_image_identity(cat_tensor: openvino.Tensor):
+    # Two same-sized images with different content share one text prompt. With prefix caching the Eagle3
+    # draft cache identity is bound to the main model's image-aware prefix hash, so the repeated second-image
+    # request must restore the second image's draft blocks rather than the first image's. Draft quality only
+    # affects acceptance, so the main model's validated greedy output must match the no-draft reference here.
+    # The repeated request must also reuse a nonzero aligned prefix, which fails if the draft pipeline never
+    # publishes its completed prompt blocks (alignment would then rewind the main prefix to zero).
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    image_a = cat_tensor
+    image_b = openvino.Tensor(255 - cat_tensor.data)
+    prompt = PROMPTS[2]
+
+    reference = VLMPipeline(model_path, "CPU")
+    reference_config = _setup_generation_config(reference, max_new_tokens=20, do_sample=False)
+    expected_a = reference.generate(prompt, images=[image_a], generation_config=reference_config).texts[0].strip()
+    expected_b = reference.generate(prompt, images=[image_b], generation_config=reference_config).texts[0].strip()
+
+    scheduler = SchedulerConfig()
+    scheduler.enable_prefix_caching = True
+    scheduler.max_num_seqs = 1
+    scheduler.num_kv_blocks = 128
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = True
+    draft_scheduler.num_kv_blocks = 128
+    ov_draft = draft_model(draft_model_path, "CPU", scheduler_config=draft_scheduler)
+    pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler, draft_model=ov_draft)
+    config = _setup_generation_config(pipe, max_new_tokens=20, do_sample=False)
+
+    # Prime both image caches, then repeat the second image to trigger the potential cross-image draft reuse.
+    prefix_hits = []
+    for image, expected in [(image_a, expected_a), (image_b, expected_b), (image_b, expected_b)]:
+        result = pipe.generate(prompt, images=[image], generation_config=config)
+        assert result.texts[0].strip() == expected, (
+            "Eagle3 speculative output with prefix caching must match the no-draft reference across images."
+        )
+        assert result.extended_perf_metrics.draft_model_metrics.get_num_generated_tokens() > 0, (
+            "Draft model must stay active across the cross-image prefix-cache sequence."
+        )
+        prefix_hits.append(result.perf_metrics.get_num_prefix_cache_hit_tokens())
+
+    assert prefix_hits[0] == 0, f"First request must not reuse any prefix on a cold cache, got {prefix_hits[0]}."
+    assert prefix_hits[2] > 0, (
+        f"Repeated request must restore a nonzero aligned prefix, got {prefix_hits[2]}; "
+        "the draft pipeline likely did not publish its completed prompt blocks."
     )
 
 
@@ -3843,3 +4084,78 @@ def test_qwen3_omni_audio_rejected_on_audio_token_id_mismatch(tmp_path: Path) ->
     audio = openvino.Tensor(np.zeros(16000, dtype=np.float32))
     with pytest.raises(RuntimeError, match="does not encode <\\|audio_pad\\|> as the single token"):
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=1))
+
+
+@pytest.fixture(scope="module")
+def gemma3_chat_pipeline():
+    pipeline = VLMPipeline(
+        _get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3"), "CPU", ATTENTION_BACKEND="SDPA"
+    )
+    yield pipeline
+    pipeline.finish_chat()
+
+
+@pytest.mark.parametrize("interrupt_with", ["history", "string", "start_chat"])
+@pytest.mark.parametrize("cancel_replay", [False, True])
+@pytest.mark.transformers_lower_v5(
+    reason="CVS-186059: Gemma3 export fails with an eltwise shape mismatch with Transformers 5.0"
+)
+def test_vlm_sdpa_history_replay_after_interruption(gemma3_chat_pipeline, interrupt_with, cancel_replay):
+    pipeline = gemma3_chat_pipeline
+    pipeline.finish_chat()
+    image = openvino.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = GenerationConfig(max_new_tokens=16 if cancel_replay else 2, do_sample=False, ignore_eos=True)
+    history = ChatHistory([{"role": "user", "content": "Describe the image."}])
+    first = pipeline.generate(history, images=[image], generation_config=config)
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "What else can you see?"})
+    expected = pipeline.generate(history, generation_config=config)
+    if interrupt_with == "history":
+        pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
+    else:
+        if interrupt_with == "start_chat":
+            pipeline.start_chat()
+        pipeline.generate("Hello", generation_config=config)
+    if cancel_replay:
+        chunks = []
+
+        def cancel(chunk):
+            chunks.append(chunk)
+            return StreamingStatus.CANCEL
+
+        cancelled = pipeline.generate(history, generation_config=config, streamer=cancel)
+        assert chunks
+        assert cancelled.perf_metrics.get_num_generated_tokens() < config.max_new_tokens
+    actual = pipeline.generate(history, generation_config=config)
+    assert actual.texts == expected.texts
+    assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()
+
+
+@pytest.mark.parametrize("chat_api", ["start_chat", "ChatHistory"])
+@pytest.mark.transformers_lower_v5(
+    reason="CVS-186059: Gemma3 export fails with an eltwise shape mismatch with Transformers 5.0"
+)
+def test_gemma3_pa_chat_does_not_duplicate_bos(chat_api):
+    model_dir = _get_ov_model("optimum-intel-internal-testing/tiny-random-gemma3")
+    prompt = "Hello"
+    tokenizer = Tokenizer(model_dir)
+    templated = tokenizer.apply_chat_template(ChatHistory([{"role": "user", "content": prompt}]), True)
+    expected_ids = tokenizer.encode(templated, add_special_tokens=False).input_ids.data.flatten().tolist()
+    extra_ids = tokenizer.encode(templated, add_special_tokens=True).input_ids.data.flatten().tolist()
+    assert expected_ids[0] == tokenizer.get_bos_token_id()
+    assert extra_ids == [tokenizer.get_bos_token_id(), *expected_ids]
+
+    input_counts = []
+    for backend in ["SDPA", "PA"]:
+        pipeline = VLMPipeline(model_dir, "CPU", ATTENTION_BACKEND=backend)
+        config = GenerationConfig(max_new_tokens=2, do_sample=False, ignore_eos=True)
+        if chat_api == "start_chat":
+            pipeline.start_chat()
+            try:
+                result = pipeline.generate(prompt, generation_config=config)
+            finally:
+                pipeline.finish_chat()
+        else:
+            result = pipeline.generate(ChatHistory([{"role": "user", "content": prompt}]), generation_config=config)
+        input_counts.append(result.perf_metrics.get_num_input_tokens())
+    assert input_counts == [len(expected_ids), len(expected_ids)]

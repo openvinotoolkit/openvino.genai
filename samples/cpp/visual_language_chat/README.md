@@ -6,18 +6,28 @@ This example showcases inference of Visual language models (VLMs). The applicati
 The following are sample files:
  - [`visual_language_chat.cpp`](./visual_language_chat.cpp) demonstrates basic usage of the VLM pipeline which supports accelerated inference using prompt lookup decoding.
  - [`video_to_text_chat.cpp`](./video_to_text_chat.cpp) demonstrates video to text usage of the VLM pipeline.
+ - [`audio_to_text_chat.cpp`](./audio_to_text_chat.cpp) demonstrates audio to text chat with an audio-capable VLM.
  - [`benchmark_vlm.cpp`](./benchmark_vlm.cpp) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
  - [`visual_language_lora.cpp`](./visual_language_lora.cpp) demonstrates how to apply one or more LoRA adapters to a VLM at runtime.
 
 
 ## Download and convert the model and tokenizers
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
 It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install -r ../../requirements.txt
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model Qwen/Qwen3-VL-2B-Instruct --trust-remote-code Qwen3-VL-2B-Instruct
 ```
 
@@ -74,6 +84,14 @@ A model that supports video input is required to run this sample, for example `l
 `video_to_text_chat ./LLaVA-NeXT-Video-7B-hf/ sample_demo_1.mp4`
 
 Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-media-tags-in-prompt).
+
+## Run audio-to-text chat sample:
+
+Export an audio-capable VLM, such as `google/gemma-4-E2B-it`, using the export command above with the corresponding model ID. The sample requires 16 kHz WAV audio.
+
+You can use 16 kHz example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+
+`audio_to_text_chat ./gemma-4-E2B-it/ how_are_you_doing_today.wav`
 
 ## Run benchmark:
 

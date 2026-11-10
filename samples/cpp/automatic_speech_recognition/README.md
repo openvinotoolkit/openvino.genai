@@ -4,12 +4,21 @@ This example showcases inference of speech recognition models. The application d
 
 ## Download and convert the model and tokenizers
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
 It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install -r ../../requirements.txt
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 
@@ -117,6 +126,36 @@ auto result = pipeline.generate(raw_speech);
 
 result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
 //  He has gone and gone for good answered Polychrome who...
+```
+
+## Continuous batching with Qwen3-ASR
+
+Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
+
+```cpp
+ov::genai::ContinuousBatchingPipeline pipe(model_dir, ov::genai::SchedulerConfig{}, "CPU");
+const std::vector<std::string> wav_file_paths = {"audio_1.wav", "audio_2.wav"};
+auto config = pipe.get_config();
+std::vector<ov::genai::GenerationHandle> handles;
+
+for (const auto& path : wav_file_paths) {
+    auto waveform = utils::audio::read_wav(path);
+    ov::Tensor audio(ov::element::f32, {waveform.size()});
+    std::copy(waveform.begin(), waveform.end(), audio.data<float>());
+
+    const std::vector<ov::Tensor> audios{audio};
+    auto handle = pipe.add_request(handles.size(), "", ov::genai::audios(audios),
+                                   ov::genai::generation_config(config));
+    handles.push_back(handle);
+}
+
+while (pipe.has_non_finished_requests()) {
+    pipe.step();
+}
+
+for (const auto& handle : handles) {
+    std::cout << pipe.get_tokenizer().decode(handle->read_all().front().generated_ids) << '\n';
+}
 ```
 
 ### Troubleshooting

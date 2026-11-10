@@ -4,12 +4,16 @@ This example showcases inference of speech recognition models. The application d
 
 ## Download and convert the model and tokenizers
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
 Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../export-requirements.txt
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 ```
 
 Then, run the export with Optimum CLI:
@@ -150,6 +154,32 @@ result = pipe.generate(raw_speech)
 
 result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 #  He has gone and gone for good answered Polychrome who...
+```
+
+## Continuous batching with Qwen3-ASR
+
+Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
+
+```python
+import librosa
+import openvino as ov
+import openvino_genai as genai
+
+wav_file_paths = ["audio_1.wav", "audio_2.wav"]
+pipe = genai.ContinuousBatchingPipeline(model_dir, genai.SchedulerConfig(), "CPU")
+config = genai.GenerationConfig()
+handles = []
+for request_id, path in enumerate(wav_file_paths):
+    samples, _ = librosa.load(path, sr=16000)
+    handle = pipe.add_request(
+        request_id, "", images=[], videos=[], audios=[ov.Tensor(samples)],
+        generation_config=config,
+    )
+    handles.append(handle)
+while pipe.has_non_finished_requests():
+    pipe.step()
+for handle in handles:
+    print(pipe.get_tokenizer().decode(handle.read_all()[0].generated_ids))
 ```
 
 ### Troubleshooting
