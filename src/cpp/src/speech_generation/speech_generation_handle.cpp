@@ -49,7 +49,7 @@ SpeechGenerationOutput SpeechGenerationHandleImpl::read_all() {
     GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
     while (get_status() == GenerationStatus::RUNNING || m_generation_stream->can_read()) {
         SpeechGenerationOutput chunk = read();
-        if (chunk.waveform.get_size() > 0) {
+        if (chunk.waveform && chunk.waveform.get_size() > 0) {
             const float* chunk_data = chunk.waveform.data<const float>();
             samples.insert(samples.end(), chunk_data, chunk_data + chunk.waveform.get_size());
         }
