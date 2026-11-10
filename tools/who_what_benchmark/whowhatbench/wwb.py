@@ -6,7 +6,6 @@ import difflib
 import numpy as np
 import logging
 import os
-from functools import partial
 from pathlib import Path
 from itertools import zip_longest
 
@@ -23,7 +22,6 @@ from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_support
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
-from whowhatbench.utils import uniform_frame_indices
 from whowhatbench.artifacts_manager import Metrics
 
 # Configure logging
@@ -663,17 +661,7 @@ def load_prompts(args):
         else:
             images = [None] * len(prompts)
         if "videos" in df.columns:
-            # Video cells are paths: decode and sample frames like the default video dataset does.
-            from transformers.video_utils import load_video
-            from whowhatbench.visualtext_evaluator import DEF_VIDEO_FRAMES_AMOUNT
-
-            sample_indices = partial(uniform_frame_indices, num_frames=args.video_frames_num or DEF_VIDEO_FRAMES_AMOUNT)
-            videos = [
-                load_video(resolved, backend="opencv", sample_indices_fn=sample_indices)[0]
-                if (resolved := _resolve_media(v)) is not None
-                else None
-                for v in df["videos"]
-            ]
+            videos = [_resolve_media(v) for v in df["videos"]]
         else:
             videos = [None] * len(prompts)
 

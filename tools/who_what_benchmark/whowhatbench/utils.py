@@ -22,7 +22,6 @@ import pyarrow as pa
 import importlib.metadata
 import pyarrow.parquet as pq
 
-from functools import partial
 from pathlib import Path
 from transformers import set_seed, PreTrainedTokenizer
 from contextlib import contextmanager
@@ -292,19 +291,6 @@ def prepare_default_data_image(num_samples=None):
     return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
-def uniform_frame_indices(metadata, num_frames: int, **kwargs) -> np.ndarray:
-    """``sample_indices_fn`` for transformers.video_utils.load_video: ``num_frames`` frames evenly spread over the whole
-    video, or all frames of a shorter video.
-
-    The positions are computed in floating point and truncated afterwards: ``np.arange(..., dtype=int)`` truncates the
-    step instead, e.g. it selects frames 0-9 of a 19-frame video for 10 frames.
-    """
-    total_num_frames = metadata.total_num_frames
-    if num_frames < total_num_frames:
-        return (np.arange(num_frames) * total_num_frames / num_frames).astype(int)
-    return np.arange(total_num_frames)
-
-
 def prepare_default_data_video(num_samples=None, num_frames=10):
     from huggingface_hub import hf_hub_download
     from transformers.video_utils import load_video
@@ -350,12 +336,17 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
         for sample in video_samples:
             tar.extract(sample, path=extract_dir)
 
+    # if num_frames < total_num_frames, sample each total_num_frames/num_frames frames or sample all frames
+    def default_sample_indices_fn(metadata, **kwargs):
+        total_num_frames = metadata.total_num_frames
+        if num_frames < total_num_frames:
+            return np.arange(0, total_num_frames, total_num_frames / num_frames, dtype=int)
+        return np.arange(0, total_num_frames, dtype=int)
+
     data = []
     for video_rel_path in video_samples:
         video_tensor = load_video(
-            os.path.join(extract_dir, video_rel_path),
-            backend="opencv",
-            sample_indices_fn=partial(uniform_frame_indices, num_frames=num_frames),
+            os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn
         )
         prompt = questions_per_video[video_rel_path]["conversations"][0]["value"].replace("<image>\n", "")
         data.append({"prompts": prompt, "images": None, "videos": video_tensor[0]})
