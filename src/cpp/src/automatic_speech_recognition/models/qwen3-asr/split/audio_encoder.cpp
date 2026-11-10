@@ -9,7 +9,6 @@
 #include <limits>
 
 #include "automatic_speech_recognition/audio_chunk.hpp"
-#include "automatic_speech_recognition/models/qwen3-asr/pipeline_base.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {

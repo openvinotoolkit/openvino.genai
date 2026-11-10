@@ -18,9 +18,6 @@
 
 namespace ov::genai {
 
-// Nominal maximum duration of an audio chunk transcribed in one pass.
-constexpr size_t MAX_ASR_INPUT_SECONDS = 1200;
-
 /**
  * @brief Qwen3-ASR flow shared by all model export layouts: audio chunking, prompt building, output parsing,
  * chunk merging and word-level alignment. Derived classes implement chunk transcription.

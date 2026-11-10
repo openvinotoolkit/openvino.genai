@@ -9,7 +9,6 @@
 #include <map>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -146,6 +145,14 @@ SenseVoiceRichPrefix parse_rich_prefix(ov::genai::Tokenizer& tokenizer,
     return prefix;
 }
 
+// Largest audio length in samples whose features fit into `frames` post-LFR frames.
+constexpr size_t max_audio_samples_for_frames(size_t frames) {
+    using ov::genai::FunASRFeatureExtractor;
+    const size_t max_fbank_frames = frames * FunASRFeatureExtractor::lfr_stride;
+    return (max_fbank_frames - 1) * FunASRFeatureExtractor::frame_shift + FunASRFeatureExtractor::frame_length +
+           FunASRFeatureExtractor::frame_shift - 1;
+}
+
 // Result of one audio chunk. An audio that fits the model limits has a single chunk.
 struct SegmentResult {
     std::string text;
@@ -248,11 +255,13 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
 
     ov::Core& core = utils::singleton_core();
     const std::filesystem::path model_path = models_path / "openvino_model.xml";
-    ov::CompiledModel model;
-    if (device == "NPU") {
-        std::tie(model, m_limits) = compile_sensevoice_for_npu(model_path, properties_copy);
-    } else {
-        model = core.compile_model(model_path, device, properties_copy);
+    ov::CompiledModel model = device == "NPU" ? compile_sensevoice_for_npu(model_path, properties_copy)
+                                              : core.compile_model(model_path, device, properties_copy);
+    const ov::PartialShape input_shape = model.input("input_features").get_partial_shape();
+    if (input_shape.is_static()) {
+        m_max_batch = input_shape[0].get_length();
+        m_padded_frames = input_shape[1].get_length();
+        m_max_audio_samples = max_audio_samples_for_frames(m_padded_frames);
     }
     utils::print_compiled_model_properties(model, "sensevoice small model");
     m_request = model.create_infer_request();
@@ -284,14 +293,14 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     features.reserve(batch_size);
     for (size_t audio_index = 0; audio_index < batch_size; ++audio_index) {
         const std::vector<float>& audio = audios[audio_index];
-        if (audio.size() <= m_limits.max_audio_samples) {
+        if (audio.size() <= m_max_audio_samples) {
             features.push_back(m_feature_extractor.extract(audio));
             chunk_audio_index.push_back(audio_index);
             chunk_samples.push_back(audio.size());
             continue;
         }
         const size_t sampling_rate = FunASRFeatureExtractor::sampling_rate;
-        const size_t max_chunk_seconds = m_limits.max_audio_samples / sampling_rate - CHUNK_BOUNDARY_SEARCH_SECONDS;
+        const size_t max_chunk_seconds = m_max_audio_samples / sampling_rate - CHUNK_BOUNDARY_SEARCH_SECONDS;
         for (const AudioChunk& chunk : split_audio_into_chunks({audio}, sampling_rate, max_chunk_seconds)) {
             features.push_back(m_feature_extractor.extract(chunk.wav));
             chunk_audio_index.push_back(audio_index);
@@ -301,7 +310,7 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     OPENVINO_ASSERT(!streamer || features.size() == 1,
                     "SenseVoiceSmall supports streamers only for audio that is not split into chunks, "
                     "but the audio is longer than ",
-                    m_limits.max_audio_samples / FunASRFeatureExtractor::sampling_rate,
+                    m_max_audio_samples / FunASRFeatureExtractor::sampling_rate,
                     " seconds supported by the model.");
     const auto features_stop_time = std::chrono::steady_clock::now();
     results.perf_metrics.asr_raw_metrics.features_extraction_durations.emplace_back(
@@ -317,11 +326,27 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     std::vector<std::vector<SegmentResult>> audio_segments(batch_size);
 
     const size_t chunk_count = features.size();
-    const size_t group_size = std::min(chunk_count, m_limits.max_batch);
+    const size_t group_size = std::min(chunk_count, m_max_batch);
     for (size_t group_begin = 0; group_begin < chunk_count; group_begin += group_size) {
         const size_t count = std::min(group_size, chunk_count - group_begin);
 
-        const float infer_ms = run_model(features, group_begin, count, language_id, textnorm_id);
+        ov::Tensor speech_lengths(ov::element::i64, ov::Shape{count});
+        const ov::Tensor input_features =
+            stack_padded_features(features, group_begin, count, m_padded_frames, speech_lengths);
+        ov::Tensor language(ov::element::i64, ov::Shape{count});
+        std::fill_n(language.data<int64_t>(), count, language_id);
+        ov::Tensor textnorm(ov::element::i64, ov::Shape{count});
+        std::fill_n(textnorm.data<int64_t>(), count, textnorm_id);
+
+        m_request.set_tensor("input_features", input_features);
+        m_request.set_tensor("speech_lengths", speech_lengths);
+        m_request.set_tensor("language", language);
+        m_request.set_tensor("textnorm", textnorm);
+
+        const auto infer_start_time = std::chrono::steady_clock::now();
+        m_request.infer();
+        const auto infer_stop_time = std::chrono::steady_clock::now();
+        const auto infer_ms = PerfMetrics::get_microsec(infer_stop_time - infer_start_time);
         results.perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
         results.perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(infer_ms);
 
@@ -379,29 +404,6 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
         MicroSeconds(PerfMetrics::get_microsec(stop_time - start_time)));
     results.perf_metrics.evaluate_statistics(start_time);
     return results;
-}
-
-float SenseVoiceSmall::run_model(const std::vector<ov::Tensor>& features,
-                                 size_t begin,
-                                 size_t count,
-                                 int64_t language_id,
-                                 int64_t textnorm_id) {
-    ov::Tensor speech_lengths(ov::element::i64, ov::Shape{count});
-    const ov::Tensor input_features =
-        stack_padded_features(features, begin, count, m_limits.padded_frames, speech_lengths);
-    ov::Tensor language(ov::element::i64, ov::Shape{count});
-    std::fill_n(language.data<int64_t>(), count, language_id);
-    ov::Tensor textnorm(ov::element::i64, ov::Shape{count});
-    std::fill_n(textnorm.data<int64_t>(), count, textnorm_id);
-
-    m_request.set_tensor("input_features", input_features);
-    m_request.set_tensor("speech_lengths", speech_lengths);
-    m_request.set_tensor("language", language);
-    m_request.set_tensor("textnorm", textnorm);
-
-    const auto infer_start_time = std::chrono::steady_clock::now();
-    m_request.infer();
-    return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start_time);
 }
 
 void SenseVoiceSmall::set_generation_config(const ASRGenerationConfig& config) {
