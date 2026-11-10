@@ -3,8 +3,9 @@
 
 """Models that genai-cli converts natively (torch.export + OpenVINO, without optimum-intel).
 
-An exporter is a module of this package with a NativeExporter subclass decorated with @register_exporter; adding the
-module is enough for genai-cli to use it.
+An exporter is a subpackage of this package named after the model type (e.g. molmo2/, with the export in export.py,
+like the per-model directories of transformers), whose __init__.py imports a NativeExporter subclass decorated with
+@register_exporter; adding the subpackage is enough for genai-cli to use it.
 """
 
 import importlib
@@ -17,7 +18,7 @@ _INFRASTRUCTURE_MODULES = {"base", "common"}
 
 
 def _import_exporter_modules() -> None:
-    """Imports every exporter module of the package, so that their @register_exporter decorators run."""
+    """Imports every exporter subpackage of the package, so that their @register_exporter decorators run."""
     for module in pkgutil.iter_modules(__path__):
         if module.name not in _INFRASTRUCTURE_MODULES:
             importlib.import_module(f"{__name__}.{module.name}")

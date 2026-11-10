@@ -585,7 +585,7 @@ def test_register_exporter_rejects_a_second_exporter_for_a_model_type(monkeypatc
 def test_molmo2_hub_download_includes_pytorch_weights():
     from huggingface_hub.utils import filter_repo_objects
 
-    from openvino_genai._cli.exporters import molmo2
+    from openvino_genai._cli.exporters.molmo2 import export as molmo2
 
     files = [
         "config.json",
