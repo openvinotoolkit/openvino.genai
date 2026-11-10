@@ -103,22 +103,53 @@ invalid_configs = [
     dict(max_new_tokens=1, do_sample=True, min_p=-0.1),  # min_p must be >= 0.0
     dict(max_new_tokens=1, do_sample=True, min_p=1.0),  # min_p must be < 1.0
     # beam search
-    dict(max_new_tokens=1, num_beams=2, num_return_sequences=3), # 'num_beams' must be >= 'num_return_sequences'
-    dict(max_new_tokens=1, num_beams=3, num_beam_groups=2), # 'num_beams' must be divisible by 'num_beam_groups'
-    dict(max_new_tokens=1, num_beams=2, num_beam_groups=0), # 'num_beam_groups' must be greater than 0
-    dict(max_new_tokens=1, num_beams=3, do_sample=True), # 'beam sample is not supported
-    dict(max_new_tokens=1, num_beams=3, no_repeat_ngram_size=0), # invalid 'no_repeat_ngram_size'
-    dict(max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=0.0), # 'diversity_penalty' should not be a default value
-    dict(max_new_tokens=1, num_beams=4, diversity_penalty=1.0), # 'diversity_penalty' is used only for grouped beam search
-    dict(max_new_tokens=1, num_beams=2, frequency_penalty=1.0), # 'frequency_penalty' is not supported by beam search
-    dict(max_new_tokens=1, num_beams=2, presence_penalty=1.0), # 'presence_penalty' is not supported by beam search
-    dict(max_new_tokens=1, num_beams=2, repetition_penalty=0.0), # 'repetition_penalty' is not supported by beam search
+    dict(max_new_tokens=1, num_beams=2, num_return_sequences=3),  # 'num_beams' must be >= 'num_return_sequences'
+    dict(max_new_tokens=1, num_beams=3, num_beam_groups=2),  # 'num_beams' must be divisible by 'num_beam_groups'
+    dict(max_new_tokens=1, num_beams=2, num_beam_groups=0),  # 'num_beam_groups' must be greater than 0
+    dict(max_new_tokens=1, num_beams=3, do_sample=True),  # 'beam sample is not supported
+    dict(max_new_tokens=1, num_beams=3, no_repeat_ngram_size=0),  # invalid 'no_repeat_ngram_size'
+    dict(
+        max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=0.0
+    ),  # 'diversity_penalty' should not be a default value
+    dict(
+        max_new_tokens=1, num_beams=4, diversity_penalty=1.0
+    ),  # 'diversity_penalty' is used only for grouped beam search
+    dict(max_new_tokens=1, num_beams=2, frequency_penalty=1.0),  # 'frequency_penalty' is not supported by beam search
+    dict(max_new_tokens=1, num_beams=2, presence_penalty=1.0),  # 'presence_penalty' is not supported by beam search
+    dict(max_new_tokens=1, num_beams=2, repetition_penalty=0.0),  # 'repetition_penalty' is not supported by beam search
+    dict(max_new_tokens=1, num_beams=2, length_penalty=float("nan")),  # 'length_penalty' must be finite
+    dict(max_new_tokens=1, num_beams=2, length_penalty=float("inf")),  # 'length_penalty' must be finite
+    dict(
+        max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=float("nan")
+    ),  # 'diversity_penalty' must be finite
+    dict(
+        max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=float("inf")
+    ),  # 'diversity_penalty' must be finite
     # assistant generation
-    dict(max_new_tokens=1, num_assistant_tokens=2, do_sample=True, num_return_sequences=2), # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
-    dict(max_new_tokens=1, assistant_confidence_threshold=1.0, do_sample=True, num_return_sequences=2), # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
-    dict(max_new_tokens=1, num_assistant_tokens=2, num_beams=2), # beam search is not compatible with assistant generation
-    dict(max_new_tokens=1, assistant_confidence_threshold=1.0, num_assistant_tokens=2), # 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive
-    dict(max_new_tokens=1, max_ngram_size=1), # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=float("nan")
+    ),  # 'assistant_confidence_threshold' must be within [0, 1]
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=-0.5
+    ),  # 'assistant_confidence_threshold' must be within [0, 1]
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=1.5
+    ),  # 'assistant_confidence_threshold' must be within [0, 1]
+    dict(
+        max_new_tokens=1, num_assistant_tokens=2, do_sample=True, num_return_sequences=2
+    ),  # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=1.0, do_sample=True, num_return_sequences=2
+    ),  # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
+    dict(
+        max_new_tokens=1, num_assistant_tokens=2, num_beams=2
+    ),  # beam search is not compatible with assistant generation
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=1.0, num_assistant_tokens=2
+    ),  # 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive
+    dict(
+        max_new_tokens=1, max_ngram_size=1
+    ),  # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
     # TODO: add tests for invalid properties
 ]
 @pytest.mark.parametrize("generation_config_kwargs", invalid_configs)

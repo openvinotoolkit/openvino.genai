@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cmath>
 #include <fstream>
 #include <limits>
 
@@ -344,6 +345,10 @@ void GenerationConfig::validate() const {
         OPENVINO_ASSERT(repetition_penalty == 1.0f, "'repetition_penalty' is not currently supported by beam search and should be 1.0f, but got ", repetition_penalty);
     }
 
+    // beam search penalties: NaN or inf would otherwise turn beam scores into NaN
+    OPENVINO_ASSERT(std::isfinite(length_penalty), "'length_penalty' must be a finite float, but got ", length_penalty);
+    OPENVINO_ASSERT(std::isfinite(diversity_penalty), "'diversity_penalty' must be a finite float, but got ", diversity_penalty);
+
     if (is_multinomial()) {
         OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ", top_p);
         OPENVINO_ASSERT(temperature > 0, "When 'do_sample' is true, temperature must be a strictly positive float, but got ", temperature);
@@ -409,6 +414,10 @@ void GenerationConfig::validate() const {
     }
 
     // assistant generation
+
+    // compared against a token probability, so values outside [0, 1] (and NaN) never behave as intended
+    OPENVINO_ASSERT(assistant_confidence_threshold >= 0.0f && assistant_confidence_threshold <= 1.0f,
+                    "'assistant_confidence_threshold' must be within [0.0; 1.0], but got ", assistant_confidence_threshold);
 
     if (is_assisting_generation()) {
         OPENVINO_ASSERT(!is_beam_search() && num_return_sequences == 1, "Beam search and parallel sampling are not compatible with assistant generation");

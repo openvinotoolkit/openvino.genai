@@ -475,6 +475,11 @@ ov::genai::GenerationConfig get_multinomial_config();
  */
 std::string patch_chat_template_multiline_strings(const std::string& chat_template);
 
+/**
+ * @brief Rewrites "var is undefined" tests, which minja does not support, to the equivalent "not var is defined".
+ */
+std::string patch_chat_template_undefined_tests(const std::string& chat_template);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -49,7 +49,7 @@ FunASR::FunASR(const std::filesystem::path& models_path, const std::string& devi
 ASRDecodedResults FunASR::generate(const AudiosView& audios,
                                    const std::optional<ASRGenerationConfig>& generation_config,
                                    const std::shared_ptr<StreamerBase> streamer) {
-    const std::vector<float>& audio = get_single_audio(audios);
+    const std::vector<float>& audio = validate_single_audio_and_get(audios);
     auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
