@@ -3,6 +3,7 @@
 
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
+#include <atomic>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -100,9 +101,9 @@ public:
         std::vector<ov::genai::SpeechGenerationHandle> handles;
         handles.reserve(texts.size());
 
-        uint64_t request_id = 1;
         for (const auto& text : texts) {
-            handles.push_back(m_cb_impl->add_request(request_id++, text, speaker_embedding, generation_config));
+            const uint64_t request_id = m_next_request_id.fetch_add(1, std::memory_order_relaxed);
+            handles.push_back(m_cb_impl->add_request(request_id, text, speaker_embedding, generation_config));
         }
 
         while (m_cb_impl->has_non_finished_requests()) {
@@ -135,6 +136,7 @@ public:
 
 private:
     std::shared_ptr<ov::genai::Qwen3TTSContinuousBatchingPipelineImpl> m_cb_impl;
+    std::atomic<uint64_t> m_next_request_id{1};
 };
 
 }  // namespace
