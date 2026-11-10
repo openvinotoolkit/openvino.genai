@@ -123,23 +123,11 @@ private:
     /// timestamp ("%.1f") followed by the frame start token, the pooled patch tokens and the frame end token.
     std::string build_video_tokens(const EncodedVideo& video) const;
 
-    /// @brief Read the Molmo2 processor (processor_config.json) and video sampling
-    /// (video_preprocessor_config.json) options.
-    void read_molmo2_configs(const std::filesystem::path& config_dir);
+    /// @brief Checks the video sampling options of the video processor config.
+    void validate_video_config(const std::filesystem::path& config_dir) const;
 
     /// @brief Whether a token is an image or frame special token (token_type_ids == 1).
     bool is_image_token(int64_t id) const;
-
-    /// @brief Molmo2Processor options from processor_config.json and the video sampling options.
-    bool m_image_use_col_tokens = true;
-    int m_use_single_crop_col_tokens = -1;  // -1: follow m_image_use_col_tokens
-    bool m_use_single_crop_start_token = false;
-    bool m_video_use_col_tokens = false;
-    bool m_use_frame_special_tokens = true;
-    std::string m_frame_sample_mode = "uniform_last_frame";
-    size_t m_num_frames = 4;
-    float m_max_fps = 2.0f;
-    float m_sampling_fps = 2.0f;
 
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
 

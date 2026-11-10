@@ -723,7 +723,7 @@ InputsEmbedderMolmo2::InputsEmbedderMolmo2(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
-        read_molmo2_configs(model_dir);
+        validate_video_config(model_dir);
     }
 
 InputsEmbedderMolmo2::InputsEmbedderMolmo2(
@@ -734,47 +734,25 @@ InputsEmbedderMolmo2::InputsEmbedderMolmo2(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-        read_molmo2_configs(config_dir_path);
+        validate_video_config(config_dir_path);
     }
 
-void InputsEmbedderMolmo2::read_molmo2_configs(const std::filesystem::path& config_dir) {
-    auto read = [](const nlohmann::json& json, const char* key, auto& value) {
-        if (has_value(json, key)) {
-            value = json.at(key).get<std::decay_t<decltype(value)>>();
-        }
-    };
-    auto read_single_crop_col_tokens = [&](const nlohmann::json& json) {
-        if (has_value(json, "use_single_crop_col_tokens")) {
-            m_use_single_crop_col_tokens = json.at("use_single_crop_col_tokens").get<bool>() ? 1 : 0;
-        }
-    };
-    const ProcessorJsons jsons = read_processor_jsons(config_dir);
-    // Molmo2Processor saves its options in processor_config.json; values in the image processor config are kept as
-    // defaults.
-    for (const nlohmann::json* json : {&jsons.image, &jsons.processor}) {
-        read(*json, "image_use_col_tokens", m_image_use_col_tokens);
-        read(*json, "use_single_crop_start_token", m_use_single_crop_start_token);
-        read_single_crop_col_tokens(*json);
-    }
-    read(jsons.processor, "video_use_col_tokens", m_video_use_col_tokens);
-    read(jsons.processor, "use_frame_special_tokens", m_use_frame_special_tokens);
-    const nlohmann::json& video = jsons.video;
-    read(video, "frame_sample_mode", m_frame_sample_mode);
-    // num_frames is checked as a JSON integer: converting a negative value to size_t would give a huge frame limit.
+void InputsEmbedderMolmo2::validate_video_config(const std::filesystem::path& config_dir) const {
+    // VideoProcessorConfig narrows num_frames to size_t: the JSON value is checked first, so that -1 is not taken as a
+    // huge frame limit and 2.5 not as 2.
+    const nlohmann::json& video = read_processor_jsons(config_dir).video;
     if (has_value(video, "num_frames")) {
         const nlohmann::json& num_frames = video.at("num_frames");
         OPENVINO_ASSERT(num_frames.is_number_unsigned() && num_frames.get<uint64_t>() > 0,
                         "Molmo2 video preprocessing: num_frames must be a positive integer, got ", num_frames.dump());
-        m_num_frames = num_frames.get<size_t>();
     }
-    read(video, "max_fps", m_max_fps);
-    read(video, "sampling_fps", m_sampling_fps);
     // sample_frames divides by the frame rates and selects up to num_frames frames: invalid values would make it select
     // no frames or never stop adding indices. A non-positive max_fps disables the frame rate limit.
-    OPENVINO_ASSERT(std::isfinite(m_sampling_fps) && m_sampling_fps > 0.0f,
-                    "Molmo2 video preprocessing: sampling_fps must be a positive number, got ", m_sampling_fps);
-    OPENVINO_ASSERT(std::isfinite(m_max_fps),
-                    "Molmo2 video preprocessing: max_fps must be a finite number, got ", m_max_fps);
+    const VideoProcessorConfig config = m_vision_encoder->get_video_processor_config();
+    OPENVINO_ASSERT(std::isfinite(config.sampling_fps) && config.sampling_fps > 0.0f,
+                    "Molmo2 video preprocessing: sampling_fps must be a positive number, got ", config.sampling_fps);
+    OPENVINO_ASSERT(std::isfinite(config.max_fps),
+                    "Molmo2 video preprocessing: max_fps must be a finite number, got ", config.max_fps);
 }
 
 std::string InputsEmbedderMolmo2::build_image_tokens(size_t resized_h, size_t resized_w,
@@ -785,11 +763,12 @@ std::string InputsEmbedderMolmo2::build_image_tokens(size_t resized_h, size_t re
     const std::string& im_col = m_vlm_config.molmo2_im_col;
     const std::string& low_res_im_start = m_vlm_config.molmo2_low_res_im_start;
 
+    const ProcessorConfig config = m_vision_encoder->get_processor_config();
     std::string result;
     // Low-resolution (global) section.
     {
-        bool use_col = m_use_single_crop_col_tokens < 0 ? m_image_use_col_tokens : (m_use_single_crop_col_tokens != 0);
-        const std::string& start_tok = m_use_single_crop_start_token ? low_res_im_start : im_start;
+        bool use_col = config.use_single_crop_col_tokens.value_or(config.image_use_col_tokens);
+        const std::string& start_tok = config.use_single_crop_start_token ? low_res_im_start : im_start;
         result += start_tok;
         for (size_t r = 0; r < resized_h; ++r) {
             for (size_t c = 0; c < resized_w; ++c) result += im_patch;
@@ -799,7 +778,7 @@ std::string InputsEmbedderMolmo2::build_image_tokens(size_t resized_h, size_t re
     }
     // High-resolution section.
     {
-        bool use_col = m_image_use_col_tokens;
+        bool use_col = config.image_use_col_tokens;
         result += im_start;
         for (size_t r = 0; r < high_h; ++r) {
             for (size_t c = 0; c < high_w; ++c) result += im_patch;
@@ -829,6 +808,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderMolmo2::encode_videos(const s
                                                                          const std::vector<VideoMetadata>& videos_metadata) {
     OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
                     "Number of videos and videos metadata must match if metadata provided.");
+    const VideoProcessorConfig config = m_vision_encoder->get_video_processor_config();
+    // The number of frames Molmo2 samples when the video processor config does not set num_frames.
+    constexpr size_t default_num_frames = 4;
+    const size_t num_frames = config.num_frames > 0 ? config.num_frames : default_num_frames;
     std::vector<EncodedVideo> encoded_videos;
     for (size_t i = 0; i < videos.size(); ++i) {
         const size_t total_frames = videos[i].get_shape().at(0);
@@ -838,10 +821,11 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderMolmo2::encode_videos(const s
                         "Molmo2: the video fps must be a non-negative finite number (0 if unknown), got ", metadata.fps);
         if (metadata.fps == 0.0f) {
             // Without metadata the frames are treated as sampled at the model's sampling rate.
-            metadata.fps = m_sampling_fps;
+            metadata.fps = config.sampling_fps;
         }
         if (metadata.frames_indices.empty()) {
-            metadata.frames_indices = sample_frames(total_frames, metadata.fps, m_frame_sample_mode, m_num_frames, m_max_fps);
+            metadata.frames_indices =
+                sample_frames(total_frames, metadata.fps, config.frame_sample_mode, num_frames, config.max_fps);
         }
         const ov::Tensor sampled = sample_video_if_needed(videos[i], metadata);
         EncodedVideo encoded = m_vision_encoder->encode_frames(to_single_image_tensors({sampled}));
@@ -852,8 +836,9 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderMolmo2::encode_videos(const s
 }
 
 std::string InputsEmbedderMolmo2::build_video_tokens(const EncodedVideo& video) const {
-    const std::string& start = m_use_frame_special_tokens ? std::string("<frame_start>") : m_vlm_config.molmo2_im_start;
-    const std::string& end = m_use_frame_special_tokens ? std::string("<frame_end>") : m_vlm_config.molmo2_im_end;
+    const VideoProcessorConfig config = m_vision_encoder->get_video_processor_config();
+    const std::string start = config.use_frame_special_tokens ? "<frame_start>" : m_vlm_config.molmo2_im_start;
+    const std::string end = config.use_frame_special_tokens ? "<frame_end>" : m_vlm_config.molmo2_im_end;
     const size_t grid_h = video.resized_source_size.height;
     const size_t grid_w = video.resized_source_size.width;
     std::string result;
@@ -864,7 +849,7 @@ std::string InputsEmbedderMolmo2::build_video_tokens(const EncodedVideo& video) 
         result += (f > 0 ? " " : "") + std::string(timestamp) + " " + start;
         for (size_t r = 0; r < grid_h; ++r) {
             for (size_t c = 0; c < grid_w; ++c) result += m_vlm_config.molmo2_im_patch;
-            if (m_video_use_col_tokens) result += m_vlm_config.molmo2_im_col;
+            if (config.video_use_col_tokens) result += m_vlm_config.molmo2_im_col;
         }
         result += end;
     }

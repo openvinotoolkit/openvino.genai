@@ -98,6 +98,10 @@ void VisionEncoder::resolve_processor_configs(const std::filesystem::path& confi
             "'. Falling back to " + preprocessor_config_filename + " for video processing configuration.");
         m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, preprocessor_config_filename.c_str());
     }
+
+    // Processor-level options are saved at the top level of processor_config.json.
+    m_processor_config.read_processor_options(parsed_processor_config);
+    m_video_processor_config.read_processor_options(parsed_processor_config);
 }
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& config_dir, ConfigOnlyTag) {
