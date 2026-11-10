@@ -53,11 +53,6 @@ class VLMInputsPreprocessor(ABC):
         else:
             self.images = image
 
-    def cache_prefix_length(self, inputs: dict, prefix_len: int) -> int:
-        """Number of leading tokens of ``inputs`` whose cached states stay valid, at most ``prefix_len`` (the length
-        of the common token prefix of ``inputs`` and the cached history)."""
-        return prefix_len
-
     def align_inputs_with_cache(self, model: Any, inputs: dict, full_tokenized_chat: torch.Tensor, prefix_len: int):
         return inputs
 
