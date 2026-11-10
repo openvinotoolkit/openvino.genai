@@ -159,6 +159,9 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
     } else if (backend == SpeechBackend::Qwen3TTS) {
         auto tokenizer = ov::genai::Tokenizer(root_dir);
         const bool explicitly_requires_pa = utils::explicitly_requires_paged_attention(properties, is_npu_requested);
+        OPENVINO_ASSERT(!is_npu_requested || !explicitly_requires_pa,
+                         "Qwen3-TTS PagedAttention is not supported on device '", device,
+                         "'. Use ATTENTION_BACKEND='SDPA' without PagedAttention-specific properties.");
         if (is_npu_requested || attention_backend == ov::genai::SDPA_BACKEND) {
             m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, pipeline_properties, tokenizer);
             std::cout << "[Qwen3-TTS] Selected SDPA backend ("
