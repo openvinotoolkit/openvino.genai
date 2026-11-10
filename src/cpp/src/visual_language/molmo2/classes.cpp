@@ -931,9 +931,8 @@ ov::Tensor InputsEmbedderMolmo2::apply_chat_template_tokenize(const std::string&
     text = expand_segments(text, m_segment_types);
 
     // Like Molmo2Processor, the tokenizer itself adds no special tokens and the sequence starts with a single BOS
-    // token (the EOS token when the tokenizer has no BOS). Adding it here, before get_encoded_input_ids aligns the
-    // tokens with the chat history, keeps the cache-state bookkeeping in sync with the embedded sequence: in an
-    // incremental chat the full history is encoded, so only the first turn brings the BOS into the KV cache.
+    // token (the EOS token when the tokenizer has no BOS). It is added here, before get_encoded_input_ids registers
+    // the sequence, so the cache-state bookkeeping sees the exact embedded sequence.
     const bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : false;
     ov::Tensor encoded = m_tokenizer.encode(text, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
     int64_t bos = m_tokenizer.get_bos_token_id();
@@ -948,12 +947,6 @@ ov::Tensor InputsEmbedderMolmo2::apply_chat_template_tokenize(const std::string&
         int64_t* ids = input_ids.data<int64_t>();
         ids[0] = bos;
         std::copy_n(encoded_data, length, ids + 1);
-    }
-    const int64_t* input_data = input_ids.data<const int64_t>();
-    m_num_patch_tokens = static_cast<size_t>(
-        std::count(input_data, input_data + input_ids.get_size(), m_vlm_config.molmo2_image_patch_id));
-    if (m_is_chat_conversation) {
-        drop_stale_cached_image_tokens(input_ids);
     }
     encode_timer.end();
     if (apply_template) {
@@ -974,56 +967,12 @@ bool InputsEmbedderMolmo2::is_image_token(int64_t id) const {
            id == m_vlm_config.molmo2_frame_end_token_id || id == m_vlm_config.molmo2_image_low_res_id;
 }
 
-void InputsEmbedderMolmo2::drop_stale_cached_image_tokens(const ov::Tensor& input_ids) {
-    std::vector<int64_t>& state = m_cache_state.get_state();
-    if (state.empty()) {
-        return;
-    }
-    // Image tokens attend to each other bidirectionally at prefill, so the cached states of earlier image tokens
-    // differ from the states the whole conversation gives them once new image tokens follow. Like processing the
-    // whole conversation, everything from the first cached image token is computed again.
-    const int64_t* ids = input_ids.data<const int64_t>();
-    const size_t length = input_ids.get_size();
-    const size_t common = utils::get_first_history_difference(input_ids, state);
-    auto is_image = [this](int64_t id) {
-        return is_image_token(id);
-    };
-    const int64_t* first_cached_image = std::find_if(ids, ids + common, is_image);
-    if (first_cached_image == ids + common || std::none_of(ids + common, ids + length, is_image)) {
-        return;
-    }
-    const size_t keep = static_cast<size_t>(first_cached_image - ids);
-    m_cache_state.num_tokens_to_trim += state.size() - keep;
-    state.resize(keep);
-    m_cache_state.reset_mem_state = state.empty() || m_cache_state.needs_reset();
-}
-
 ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
     return get_inputs_embeds(prompt, images, {}, metrics, recalculate_merged_embeddings, image_sequence, {}, {});
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderMolmo2::get_lm_extra_inputs() const {
     return m_lm_extra_inputs;
-}
-
-void InputsEmbedderMolmo2::update_chat_history(const std::string& decoded_results,
-                                               const ov::genai::GenerationStatus generation_finish_status) {
-    IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status);
-    if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
-        // The pipeline drops the cancelled turn together with its media.
-        m_conversation_images = std::move(m_previous_conversation_images);
-        m_conversation_videos = std::move(m_previous_conversation_videos);
-    }
-    m_previous_conversation_images.clear();
-    m_previous_conversation_videos.clear();
-}
-
-void InputsEmbedderMolmo2::finish_chat() {
-    IInputsEmbedder::finish_chat();
-    m_conversation_images.clear();
-    m_conversation_videos.clear();
-    m_previous_conversation_images.clear();
-    m_previous_conversation_videos.clear();
 }
 
 ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(
@@ -1039,49 +988,24 @@ ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(
     const size_t seq_len = input_ids.get_size();
     const int64_t* ids = input_ids.data<const int64_t>();
 
-    // The n-th image (video) segment of the tokenized text belongs to the n-th image (video) of the conversation,
-    // whether the chat template keeps the segments in place or groups them. The pipeline passes either all media of
-    // the conversation or, in an incremental chat, only the new ones; the features of earlier media are kept, since
-    // the template can move them into the part of the text that has to be embedded again.
-    const std::vector<char>& types = m_segment_types;
-    m_previous_conversation_images = m_conversation_images;
-    m_previous_conversation_videos = m_conversation_videos;
-    const size_t total_images = static_cast<size_t>(std::count(types.begin(), types.end(), kImageSegment));
-    const size_t total_videos = types.size() - total_images;
-    auto update_media = [](const char* kind,
-                           std::vector<ov::Tensor>& known,
-                           size_t total,
-                           const std::vector<size_t>& sequence,
-                           auto features) {
-        if (sequence.size() == total) {
-            known.clear();
-        }
-        for (size_t id : sequence) {
-            known.push_back(features(id));
-        }
-        OPENVINO_ASSERT(known.size() == total,
-                        "Molmo2: the prompt has ", total, " ", kind, " segments, but ", known.size(), " ", kind,
-                        " embeddings are known in the conversation");
-    };
-    update_media("image", m_conversation_images, total_images, image_sequence, [&](size_t id) {
-        return images.at(id).resized_source;
-    });
-    update_media("video", m_conversation_videos, total_videos, videos_sequence, [&](size_t id) {
-        return videos.at(id).video_features;
-    });
+    // The pipelines embed the whole text with all media of the conversation (Molmo2 chats run with the full history
+    // on every turn), so the n-th image (video) segment of the text belongs to the n-th image (video) of the sequence,
+    // whether the chat template moved the segments to the front or the prompt keeps them in place.
+    const size_t total_images =
+        static_cast<size_t>(std::count(m_segment_types.begin(), m_segment_types.end(), kImageSegment));
+    const size_t total_videos = m_segment_types.size() - total_images;
+    OPENVINO_ASSERT(image_sequence.size() == total_images && videos_sequence.size() == total_videos,
+                    "Molmo2: the prompt has ", total_images, " image and ", total_videos, " video segments, but ",
+                    image_sequence.size(), " images and ", videos_sequence.size(), " videos are passed");
     std::vector<const ov::Tensor*> segment_features;
-    segment_features.reserve(types.size());
-    size_t next_image = 0, next_video = 0, conversation_rows = 0;
-    for (char type : types) {
-        segment_features.push_back(type == kImageSegment ? &m_conversation_images[next_image++]
-                                                         : &m_conversation_videos[next_video++]);
-        conversation_rows += segment_features.back()->get_shape().at(1);
+    segment_features.reserve(m_segment_types.size());
+    size_t next_image = 0, next_video = 0, num_rows = 0;
+    for (char type : m_segment_types) {
+        const ov::Tensor& features = type == kImageSegment ? images.at(image_sequence[next_image++]).resized_source
+                                                           : videos.at(videos_sequence[next_video++]).video_features;
+        segment_features.push_back(&features);
+        num_rows += features.get_shape().at(1);
     }
-    // Like the reference implementation, the "<im_patch>" tokens of the whole text must match the vision features of
-    // the conversation exactly, so that a tokenizer or config mismatch fails instead of dropping features.
-    OPENVINO_ASSERT(m_num_patch_tokens == conversation_rows,
-                    "Molmo2: the text has ", m_num_patch_tokens, " image patch tokens, but the vision encoders produced ",
-                    conversation_rows, " embeddings for its images and videos");
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
@@ -1102,17 +1026,11 @@ ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(
     }
     m_lm_extra_inputs["token_type_ids"] = token_type_ids;
 
-    // The embedded tokens are a suffix of the text (the rest is in the KV cache), so they hold its last visual
-    // segments. Like the reference implementation, their "<im_patch>" tokens must match the vision features exactly.
-    std::vector<const ov::Tensor*> vision_features;
-    size_t num_rows = 0;
-    for (size_t i = segment_features.size(); i > 0 && num_rows < num_patches; --i) {
-        vision_features.insert(vision_features.begin(), segment_features[i - 1]);
-        num_rows += segment_features[i - 1]->get_shape().at(1);
-    }
+    // Like the reference implementation, the "<im_patch>" tokens must match the vision features exactly, so that a
+    // tokenizer or config mismatch fails instead of dropping features.
     OPENVINO_ASSERT(num_patches == num_rows,
-                    "Molmo2: the prompt has ", num_patches, " image patch tokens, but the vision encoders produced ",
-                    num_rows, " embeddings");
+                    "Molmo2: the text has ", num_patches, " image patch tokens, but the vision encoders produced ",
+                    num_rows, " embeddings for its images and videos");
 
     // Additive merge: Molmo2 adds pooled image / frame features to the "<im_patch>" placeholder embeddings in order.
     float* embeds_data = inputs_embeds.data<float>();
@@ -1121,12 +1039,12 @@ ov::Tensor InputsEmbedderMolmo2::get_inputs_embeds(
         if (ids[i] != patch_id) {
             continue;
         }
-        while (row >= vision_features.at(feature)->get_shape().at(1)) {
+        while (row >= segment_features.at(feature)->get_shape().at(1)) {
             ++feature;
             row = 0;
         }
         float* dst = embeds_data + i * hidden;
-        const float* src = vision_features[feature]->data<const float>() + row * hidden;
+        const float* src = segment_features[feature]->data<const float>() + row * hidden;
         for (size_t h = 0; h < hidden; ++h) {
             dst[h] += src[h];
         }

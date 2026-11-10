@@ -106,17 +106,12 @@ public:
 
     NormalizedPrompt normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const override;
 
-    void update_chat_history(const std::string& decoded_results,
-                             const ov::genai::GenerationStatus generation_finish_status) override;
-
-    void finish_chat() override;
-
 protected:
     /// @brief Finishes the Molmo2 prompt layout once the prompt formatting is known (normalize_prompt runs before
-    /// it is set), tokenizes it and prepends the BOS token before get_encoded_input_ids registers the sequence, so the
-    /// cache-state bookkeeping sees the exact embedded sequence. In a text rendered by the chat template (a chat
-    /// history or a prompt that needs the template), the visual tokens are moved in front of the conversation the
-    /// way the checkpoint chat template places the media; raw prompts keep them in place.
+    /// it is set), tokenizes it and prepends the BOS token before get_encoded_input_ids registers the sequence. In a
+    /// text rendered by the chat template (a chat history or a prompt that needs the template), the visual tokens are
+    /// moved in front of the conversation the way the checkpoint chat template places the media; raw prompts keep
+    /// them in place. The pipelines run Molmo2 chats with the full history on every turn, so the whole text is embedded.
     ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
 
 private:
@@ -135,10 +130,6 @@ private:
     /// @brief Whether a token is an image or frame special token (token_type_ids == 1).
     bool is_image_token(int64_t id) const;
 
-    /// @brief In a chat, drops the cached tokens from the first cached image token on when the tokenized text brings
-    /// new image tokens after them: bidirectional attention between image tokens changes the states of the cached ones.
-    void drop_stale_cached_image_tokens(const ov::Tensor& input_ids);
-
     /// @brief Molmo2Processor options from processor_config.json and the video sampling options.
     bool m_image_use_col_tokens = true;
     int m_use_single_crop_col_tokens = -1;  // -1: follow m_image_use_col_tokens
@@ -152,16 +143,10 @@ private:
 
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
 
-    /// @brief Types of the visual segments (images / videos) of the last tokenized text, in token order.
+    /// @brief Types of the visual segments (images / videos) of the last tokenized text, in token order: the layout
+    /// apply_chat_template_tokenize produced for get_inputs_embeds of the same request (raw prompts can interleave
+    /// images and videos).
     std::vector<char> m_segment_types;
-    /// @brief Number of "<im_patch>" tokens of the last tokenized text.
-    size_t m_num_patch_tokens = 0;
-    /// @brief Vision features of the images / videos of the current conversation, in conversation order, and their
-    /// state before the last get_inputs_embeds (restored when the pipeline drops a cancelled turn).
-    std::vector<ov::Tensor> m_conversation_images;
-    std::vector<ov::Tensor> m_conversation_videos;
-    std::vector<ov::Tensor> m_previous_conversation_images;
-    std::vector<ov::Tensor> m_previous_conversation_videos;
 };
 
 } // namespace ov::genai

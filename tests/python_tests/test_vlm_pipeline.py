@@ -4300,7 +4300,7 @@ def test_molmo2_chat_reembeds_images_the_template_moves(
     car_tensor: openvino.Tensor,
 ):
     # An image of the second turn goes in front of the first "User:" turn together with the image of the first turn,
-    # so the first image is embedded again.
+    # so the second turn embeds the whole conversation with both images.
     pipe = VLMPipeline(molmo2_dir, "CPU", ATTENTION_BACKEND=backend)
     history = ChatHistory()
     history.append({"role": "user", "content": "Describe."})
@@ -4316,28 +4316,42 @@ def test_molmo2_chat_reembeds_images_the_template_moves(
     assert second == reference.texts
 
 
+@pytest.mark.parametrize("chat_api", ["ChatHistory", "start_chat"])
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_molmo2_chat_recomputes_cached_images_when_an_image_is_added(
     molmo2_dir: Path,
     backend: str,
+    chat_api: str,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
     handwritten_tensor: openvino.Tensor,
 ):
-    # The third image goes right after the first two, which stay in the cached prefix. Image tokens attend to each
-    # other bidirectionally, so the cached states of the first two images must be computed again.
+    # The third image goes right after the first two, before the text of the first turn. Image tokens attend to each
+    # other bidirectionally, so the states of the first two images change: Molmo2 chats embed the whole conversation
+    # with all its images on every turn instead of reusing the KV cache of the first turn.
     # The greedy texts of the tiny model do not depend on the image states: the second turn compares beam search scores
     # (log probabilities) with the full history instead. f32 everywhere: the CPU plugin compresses the KV cache by
     # default, which alone changes the scores of cached tokens.
     properties = {"ATTENTION_BACKEND": backend, "KV_CACHE_PRECISION": "f32", "INFERENCE_PRECISION_HINT": "f32"}
     beam_search = GenerationConfig(max_new_tokens=4, num_beams=2, num_return_sequences=1)
     pipe = VLMPipeline(molmo2_dir, "CPU", **properties)
-    history = ChatHistory()
-    history.append({"role": "user", "content": "Compare."})
-    first = pipe.generate(history, images=[cat_tensor, car_tensor], generation_config=_molmo2_config()).texts[0]
-    history.append({"role": "assistant", "content": first})
-    history.append({"role": "user", "content": "And now?"})
-    second = pipe.generate(history, images=[handwritten_tensor], generation_config=beam_search)
+    if chat_api == "ChatHistory":
+        history = ChatHistory()
+        history.append({"role": "user", "content": "Compare."})
+        first = pipe.generate(history, images=[cat_tensor, car_tensor], generation_config=_molmo2_config()).texts[0]
+        history.append({"role": "assistant", "content": first})
+        history.append({"role": "user", "content": "And now?"})
+        second = pipe.generate(history, images=[handwritten_tensor], generation_config=beam_search)
+    else:
+        # The deprecated start_chat() API keeps the media of the conversation in the pipeline.
+        pipe.start_chat()
+        try:
+            first = pipe.generate(
+                "Compare.", images=[cat_tensor, car_tensor], generation_config=_molmo2_config()
+            ).texts[0]
+            second = pipe.generate("And now?", images=[handwritten_tensor], generation_config=beam_search)
+        finally:
+            pipe.finish_chat()
 
     expected_layout = f"Image 1<|image|>Image 2<|image|>Image 3<|image|>User: Compare. {first}User: And now? Assistant:"
     beam_search.apply_chat_template = False
