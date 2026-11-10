@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'BagelImageGenerationConfig', 'BagelPerfMetrics', 'BagelPipeline', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -1036,6 +1036,116 @@ class AutoencoderKLLTXVideo:
                         height (int): Video height.
                         width (int): Video width.
         """
+class BagelImageGenerationConfig:
+    """
+    BAGEL text-to-image / image editing config.
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def cfg_img_scale(self) -> float:
+        """
+        Image editing only.
+        """
+    @cfg_img_scale.setter
+    def cfg_img_scale(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def cfg_interval(self) -> tuple[float, float] | None:
+        """
+        Defaults to (0.4, 1.0) for text-to-image and (0.0, 1.0) for image editing.
+        """
+    @cfg_interval.setter
+    def cfg_interval(self, arg0: tuple[typing.SupportsFloat, typing.SupportsFloat] | None) -> None:
+        ...
+    @property
+    def cfg_renorm_min(self) -> float:
+        ...
+    @cfg_renorm_min.setter
+    def cfg_renorm_min(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def cfg_text_scale(self) -> float:
+        ...
+    @cfg_text_scale.setter
+    def cfg_text_scale(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def num_inference_steps(self) -> int:
+        ...
+    @num_inference_steps.setter
+    def num_inference_steps(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def seed(self) -> int:
+        """
+        Matches numpy.random.RandomState(seed).randn.
+        """
+    @seed.setter
+    def seed(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def size(self) -> int:
+        """
+        Text-to-image output side.
+        """
+    @size.setter
+    def size(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def timestep_shift(self) -> float:
+        ...
+    @timestep_shift.setter
+    def timestep_shift(self, arg0: typing.SupportsFloat) -> None:
+        ...
+class BagelPerfMetrics:
+    """
+    BAGEL compile and per-stage inference times.
+    """
+    @property
+    def compile_ms(self) -> list[tuple[str, float]]:
+        """
+        (name, ms) per compile_model and per NPUW_BAGEL static variant compiled on first use.
+        """
+    @property
+    def first_call_ms(self) -> float:
+        """
+        Sum of first calls of new variants (compile + one inference).
+        """
+    @property
+    def infer_ms(self) -> list[tuple[str, float]]:
+        """
+        (stage, ms) per call, variant compile excluded.
+        """
+class BagelPipeline:
+    """
+    BAGEL-7B-MoT pipeline: VQA, text-to-image and image editing.
+    """
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, tokenizer_path: os.PathLike | str | bytes = ..., **kwargs) -> None:
+        """
+                    BagelPipeline class constructor.
+                    models_path (os.PathLike): Directory with the BAGEL IRs and bagel_ov_config.json.
+                    device (str): Inference device.
+                    tokenizer_path (os.PathLike): Directory with openvino_tokenizer.xml / openvino_detokenizer.xml;
+                        models_path if empty.
+                    kwargs: Properties applied on top of the default per-model configuration.
+        """
+    def edit_image(self, image: openvino._pyopenvino.Tensor, prompt: str, config: BagelImageGenerationConfig = ...) -> openvino._pyopenvino.Tensor:
+        """
+        Edits a u8 RGB image; returns a u8 [1, H, W, 3] RGB tensor.
+        """
+    def generate_image(self, prompt: str, config: BagelImageGenerationConfig = ...) -> openvino._pyopenvino.Tensor:
+        """
+        Text-to-image; returns a u8 [1, H, W, 3] RGB tensor.
+        """
+    def generate_text(self, prompt: str, image: openvino._pyopenvino.Tensor | None = None, max_new_tokens: typing.SupportsInt = 256, system_prompt: str = '') -> str:
+        """
+        Answers the prompt, optionally about a u8 RGB image with [1, H, W, 3] or [H, W, 3] layout.
+        """
+    def get_perf_metrics(self) -> BagelPerfMetrics:
+        ...
+    def reset_perf_metrics(self) -> None:
+        ...
 class CLIPTextModel:
     """
     CLIPTextModel class.
