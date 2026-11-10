@@ -802,16 +802,27 @@ def test_sensevoice_npu_matches_cpu():
 
 @pytest.mark.sensevoice
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_sensevoice_npu_rejects_audio_longer_than_30_seconds():
+def test_sensevoice_npu_splits_audio_longer_than_30_seconds():
     model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
     path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
     read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
     npu_pipe = ov_genai.ASRPipeline(path, "NPU", **NPUW_CPU_PROPERTIES)
 
-    sampling_rate = 16000
-    assert npu_pipe.generate(np.zeros(30 * sampling_rate, dtype=np.float32).tolist()).texts
-    with pytest.raises(RuntimeError, match="supports audio up to 30 seconds"):
-        npu_pipe.generate(np.zeros(30 * sampling_rate + 1, dtype=np.float32).tolist())
+    samples = get_audio_dataset(long_form=False)
+    short_audio = samples[0]
+    long_audio = np.concatenate(samples[:10])
+    assert len(long_audio) > 30 * 16000
+
+    result = npu_pipe.generate(long_audio)
+    assert len(result.texts) == 1
+    assert len(result.languages) == 1
+    assert len(result.metadata) == 1
+
+    batch = npu_pipe.generate([short_audio, long_audio])
+    assert batch.texts == [npu_pipe.generate(short_audio).texts[0], result.texts[0]]
+
+    with pytest.raises(RuntimeError, match="streamers only for audio that is not split into chunks"):
+        npu_pipe.generate(long_audio, streamer=lambda _: False)
 
 
 @pytest.mark.parametrize(

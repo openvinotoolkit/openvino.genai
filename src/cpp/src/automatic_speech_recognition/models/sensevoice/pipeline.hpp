@@ -5,27 +5,19 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "automatic_speech_recognition/models/sensevoice/input_limits.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "config.hpp"
 #include "feature_extractor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 
 namespace ov::genai {
-
-// Constraints of the compiled model inputs. Default values mean no constraint.
-struct SenseVoiceInputLimits {
-    size_t max_batch = std::numeric_limits<size_t>::max();
-    // Features are zero-padded to at least this number of frames.
-    size_t padded_frames = 0;
-    size_t max_audio_samples = std::numeric_limits<size_t>::max();
-};
 
 class SenseVoiceSmall : public ASRPipelineImplBase {
 public:
