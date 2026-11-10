@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <memory>
+#include <utility>
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embeddings_registry.hpp"
@@ -17,6 +20,24 @@ namespace ov::genai {
 enum class ModelInputType {
     TOKENS,
     EMBEDDINGS
+};
+
+/// @brief Abandon a thinker -> talker bridge that is still in `slot` when the scope exits: a bridge
+/// left there was never consumed by a decode loop, and without abandon() the talker reading the
+/// other end would wait forever. Whoever takes the bridge out of the slot (std::exchange to null)
+/// becomes responsible for ending it. Used on the m_pending_omni_streamer member so a bridge from
+/// one generate() call can never leak into the next one, and on a local in the public AnyMap
+/// overloads so property validation cannot throw past an open bridge.
+struct PendingOmniStreamerGuard {
+    std::shared_ptr<OmniStreamerBase>& slot;
+    ~PendingOmniStreamerGuard() noexcept {
+        if (auto unconsumed = std::exchange(slot, nullptr)) {
+            try {
+                unconsumed->abandon();
+            } catch (...) {
+            }
+        }
+    }
 };
 
 

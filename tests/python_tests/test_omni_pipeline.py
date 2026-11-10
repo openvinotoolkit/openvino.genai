@@ -1689,6 +1689,46 @@ def test_prefix_cache_survives_stop_string_trim_at_block_end(omni_model_path: Pa
     assert list(stopped) == reference[: len(stopped)]
 
 
+@requires_paged_attention
+@pytest.mark.parametrize("as_history", [False, True], ids=["prompt", "history"])
+def test_cb_generate_feeds_and_closes_omni_streamer(omni_model_path: Path, as_history: bool) -> None:
+    """ContinuousBatchingPipeline.generate(omni_streamer=...) must write every token to the bridge and end() it.
+
+    A bridge that is accepted but not forwarded would leave the reader blocked in read() forever.
+    """
+    pipe = ContinuousBatchingPipeline(omni_model_path, SchedulerConfig(), "CPU")
+    channel = ov_genai.OmniChannel()
+    max_new_tokens = 4
+    config = _omni_outputs_config(max_new_tokens)
+    prompt = "Describe a calm morning."
+    inputs = [ChatHistory([{"role": "user", "content": prompt}])] if as_history else [prompt]
+
+    outcome: list[list[VLMDecodedResults] | Exception] = []
+
+    def think() -> None:
+        try:
+            outcome.append(pipe.generate(inputs, [[]], [[]], [config], omni_streamer=channel))
+        except Exception as error:
+            outcome.append(error)
+
+    thinker = threading.Thread(target=think)
+    thinker.start()
+    steps: list[dict[str, Any]] = []
+    while (step := channel.read()) is not None:
+        steps.append(step)
+    thinker.join(timeout=600)
+
+    assert not thinker.is_alive(), "the thinker thread did not finish"
+    if isinstance(outcome[0], Exception):
+        raise outcome[0]
+    assert channel.truncated() is False, "generate() must end() the bridge, not abandon() it"
+    full_token_ids = list(outcome[0][0].full_token_ids[0])
+    streamed = [token for step in steps for token in step["tokens"]]
+    assert streamed == full_token_ids
+    assert steps[0]["prompt_length"] == len(full_token_ids) - max_new_tokens
+    assert sum(len(step.get("hidden_states", [])) for step in steps) == len(full_token_ids) - 1
+
+
 # The tiny CI model's tokenizer lacks the audio tokens, so audio dies in the merge assert; audio
 # tests use a real export instead. `expected_audio_pads` is the upstream formula, which the
 # encoder matches since the disjoint-window fix (CVS-193623).

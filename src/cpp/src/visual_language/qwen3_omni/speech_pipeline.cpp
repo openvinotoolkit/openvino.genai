@@ -913,11 +913,21 @@ public:
         return m_prompt_length && ensure_tokens(*m_prompt_length);
     }
 
-    /// @brief Block until at least `count` hidden states have arrived. @see ensure_tokens.
-    bool ensure_hidden_states(size_t count) {
+    /// @brief Block until at least `count` prompt hidden states have arrived, or the first generated
+    /// token has: a hidden state is written no later than the token it predicted, so once the thinker
+    /// has sampled past the prompt, every prompt hidden state it will ever provide is already here.
+    /// Waiting for the count alone would drain the stream to its end when the thinker caps how many
+    /// hidden states it keeps and the prompt is longer than that cap.
+    /// @return Whether `count` hidden states arrived; false means the missing positions stay uncaptured.
+    bool ensure_prompt_hidden_states(size_t count) {
         OPENVINO_ASSERT(m_collect_hidden_states,
                         "ThinkerStream: hidden states were already released; nothing waits for them twice");
-        while (m_hidden_states.size() < count && pump()) {
+        OPENVINO_ASSERT(m_prompt_length && count <= *m_prompt_length,
+                        "ThinkerStream: only prompt positions can be waited for, got ",
+                        count,
+                        " with prompt_length ",
+                        m_prompt_length ? std::to_string(*m_prompt_length) : "unknown");
+        while (m_hidden_states.size() < count && m_tokens.size() <= *m_prompt_length && pump()) {
         }
         return m_hidden_states.size() >= count;
     }
@@ -1197,15 +1207,18 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::shared_ptr<Omn
     // Multimodal prompt tokens are projected from thinker hidden states, indexed by absolute
     // position; every such position is below seg_start. A chunked prefill spreads those states over
     // several writes, so wait for them instead of falling back to word embeddings on a state that is
-    // merely late. Skipped entirely when the prompt has no multimodal tokens, so a text-only prompt
-    // never waits — not even on a thinker that reports no hidden states at all.
+    // merely late. The wait ends with the first generated token at the latest: the thinker caps the
+    // hidden states it keeps, so a prompt past that cap never reaches seg_start states and the
+    // uncaptured positions take the word-embedding fallback, exactly as on the batch path. Skipped
+    // entirely when the prompt has no multimodal tokens, so a text-only prompt never waits — not even
+    // on a thinker that reports no hidden states at all.
     const auto& prompt_tokens = stream.tokens();
     const bool prompt_has_multimodal =
         std::any_of(prompt_tokens.begin(), prompt_tokens.begin() + seg_start, [this](int64_t token_id) {
             return is_multimodal_token(token_id);
         });
     if (prompt_has_multimodal) {
-        stream.ensure_hidden_states(seg_start);
+        stream.ensure_prompt_hidden_states(seg_start);
     }
 
     // Row 8 is the thinker's first generated token. This is the one place the talker waits for the

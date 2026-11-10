@@ -203,7 +203,11 @@ auto omni_streamer_base_docstring = R"(
               step carries one token.
           "hidden_states": list[ov.Tensor] -- f32 [1, 1, hidden_size] thinker hidden states,
               co-indexed with the token stream by absolute position across the whole stream, not
-              within one payload; the token stream ends one entry longer. Present only when the
+              within one payload; the token stream ends one entry longer. A hidden state is written
+              in the same step as, or before, the token it predicted, so once a step carries the
+              first generated token, every prompt hidden state the producer will provide has
+              arrived. Continuous batching keeps hidden states for a bounded number of leading
+              positions only, so this stream can end short of the prompt. Present only when the
               backend collects hidden states (continuous batching with
               GenerationConfig.return_omni_outputs).
           "prompt_length": int -- total number of prompt tokens, repeated in each step. Because

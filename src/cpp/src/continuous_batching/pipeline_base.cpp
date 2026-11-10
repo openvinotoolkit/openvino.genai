@@ -637,23 +637,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 namespace {
 
-/// @brief Release the pending thinker -> talker bridge on every exit path, so a bridge from one
-/// generate() call can never leak into the next one (which would write another request's steps
-/// into a talker that already saw end()). ContinuousBatchingImpl::generate takes the bridge out of
-/// the slot; a bridge still in it here was never consumed, so abandon() it, otherwise the talker
-/// reading the other end would wait forever.
-struct PendingOmniStreamerGuard {
-    std::shared_ptr<OmniStreamerBase>& slot;
-    ~PendingOmniStreamerGuard() noexcept {
-        if (auto unconsumed = std::exchange(slot, nullptr)) {
-            try {
-                unconsumed->abandon();
-            } catch (...) {
-            }
-        }
-    }
-};
-
 constexpr const char* OMNI_STREAMER_UNSUPPORTED_BACKEND =
     "Streaming the thinker's output to a talker is supported only by the plain continuous batching "
     "backend; disable speculative decoding, prompt lookup, Eagle3, DFlash and MTP";

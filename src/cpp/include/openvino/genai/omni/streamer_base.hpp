@@ -57,7 +57,11 @@ namespace ov::genai {
  * across the whole stream, not within one payload. They line up position for position, but a single
  * write() may carry a different number of each, and the token stream ends one entry longer: a hidden
  * state is what predicted the *next* token, so the last generated token (typically EOS) is sampled
- * from the previous position's state and never gets one of its own.
+ * from the previous position's state and never gets one of its own. A hidden state is written in the
+ * same write() as, or before, the token it predicted, so once a write carries the first generated
+ * token, every prompt hidden state the producer will provide has arrived. Continuous batching keeps
+ * hidden states for a bounded number of leading positions only, so the hidden-state stream can end
+ * short of the prompt; readers fall back for the positions it never covers.
  *
  * Writes are final: there is no retraction, and a reader may act on a token as soon as it arrives.
  * A token is written at the step it is sampled, which is before a stop string spanning it can be
