@@ -6,6 +6,7 @@
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "utils.hpp"
+#include "whisper/pipeline_base.hpp"
 
 namespace ov::genai {
 
@@ -14,35 +15,35 @@ public:
     WhisperASRPipelineAdapter(const std::filesystem::path& models_path,
                               const std::string& device,
                               const ov::AnyMap& properties)
-        : ASRPipelineImplBase(models_path),
-          m_whisper_pipeline(models_path, device, properties) {}
+        : WhisperASRPipelineAdapter(models_path, create_whisper_pipeline_impl(models_path, device, properties)) {}
 
     void set_generation_config(const ASRGenerationConfig& incoming_config) override {
         ASRGenerationConfig config = incoming_config;
         config.validate();
-        m_whisper_pipeline.set_generation_config(to_whisper_config(config));
+        m_whisper->set_generation_config(to_whisper_config(config));
         m_generation_config = std::move(config);
     }
 
     ASRDecodedResults generate(const AudiosView& audios,
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer) override {
-        const std::vector<float>& raw_speech = validate_single_audio_and_get(audios);
         OptionalWhisperGenerationConfig whisper_config = std::nullopt;
         if (generation_config.has_value()) {
             whisper_config = to_whisper_config(generation_config.value());
         }
 
-        StreamerVariant streamer_variant = streamer ? StreamerVariant{streamer} : StreamerVariant{std::monostate{}};
-
-        WhisperDecodedResults whisper_result =
-            m_whisper_pipeline.generate(raw_speech, std::move(whisper_config), streamer_variant);
-
-        return to_asr_results(std::move(whisper_result));
+        ASRDecodedResults result = to_asr_results(m_whisper->generate(audios, std::move(whisper_config), streamer));
+        result.perf_metrics.load_time = m_load_time_ms;
+        return result;
     }
 
 private:
-    WhisperPipeline m_whisper_pipeline;
+    WhisperASRPipelineAdapter(const std::filesystem::path& models_path,
+                              std::unique_ptr<WhisperPipelineImplBase> whisper)
+        : ASRPipelineImplBase(models_path, whisper->m_tokenizer),
+          m_whisper(std::move(whisper)) {}
+
+    std::unique_ptr<WhisperPipelineImplBase> m_whisper;
 
     static WhisperGenerationConfig to_whisper_config(const ASRGenerationConfig& asr_config) {
         WhisperGenerationConfig config;
@@ -68,6 +69,33 @@ private:
         config.suppress_tokens = asr_config.suppress_tokens;
 
         return config;
+    }
+
+    // Every Whisper result of one batched call carries the same metrics for the whole call.
+    static ASRDecodedResults to_asr_results(std::vector<WhisperDecodedResults>&& whisper_results) {
+        ASRDecodedResults result;
+        for (size_t i = 0; i < whisper_results.size(); ++i) {
+            ASRDecodedResults single = to_asr_results(std::move(whisper_results[i]));
+            if (i == 0) {
+                result.perf_metrics = std::move(single.perf_metrics);
+            }
+            result.texts.push_back(std::move(single.texts.front()));
+            result.scores.push_back(single.scores.front());
+            result.languages.push_back(std::move(single.languages.front()));
+            if (single.chunks.has_value()) {
+                if (!result.chunks.has_value()) {
+                    result.chunks.emplace();
+                }
+                result.chunks->push_back(std::move(single.chunks->front()));
+            }
+            if (single.words.has_value()) {
+                if (!result.words.has_value()) {
+                    result.words.emplace();
+                }
+                result.words->push_back(std::move(single.words->front()));
+            }
+        }
+        return result;
     }
 
     static ASRDecodedResults to_asr_results(WhisperDecodedResults&& whisper_result) {

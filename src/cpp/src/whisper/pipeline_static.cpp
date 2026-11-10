@@ -1058,8 +1058,8 @@ void erase_whisper_generation_config_keys(ov::AnyMap& config_map) {
 namespace ov {
 namespace genai {
 
-WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& models_path,
-                                                              const ov::AnyMap& properties)
+StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& models_path,
+                                             const ov::AnyMap& properties)
     : WhisperPipelineImplBase{models_path}
     , m_sampler(m_tokenizer) {
     GENAI_WARN("The use of \"StaticWhisperPipeline\" on NPU is deprecated and will be removed"
@@ -1144,7 +1144,20 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
-WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
+std::vector<WhisperDecodedResults> StaticWhisperPipeline::generate(const AudiosView& audios,
+                                                                   OptionalWhisperGenerationConfig generation_config,
+                                                                   const std::shared_ptr<StreamerBase> streamer) {
+    OPENVINO_ASSERT(!audios.empty(), "Whisper pipeline expects at least one audio input, got an empty batch.");
+    OPENVINO_ASSERT(audios.size() == 1,
+                    "This Whisper pipeline implementation does not support batched generation. Got ",
+                    audios.size(),
+                    " audio inputs.");
+    std::vector<WhisperDecodedResults> results;
+    results.push_back(generate_single(audios.front(), generation_config, streamer));
+    return results;
+}
+
+WhisperDecodedResults StaticWhisperPipeline::generate_single(
     const RawSpeechInput& raw_speech_input,
     OptionalWhisperGenerationConfig generation_config,
     const std::shared_ptr<StreamerBase> streamer_ptr) {

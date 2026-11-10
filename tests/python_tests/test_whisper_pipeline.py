@@ -771,17 +771,21 @@ def test_sensevoice_batch_streamer(sample_from_dataset, pipelines_fixture, strea
 
 @pytest.mark.parametrize(
     "pipelines_fixture",
-    get_model_pipeline_pair_params([("openai/whisper-tiny", PipelineType.ASR)]),
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]),
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_asr_batch_requires_batch_capable_model(sample_from_dataset, pipelines_fixture):
     _, genai_pipe, _, _ = pipelines_fixture
+    generate_kwargs = {"language": "English", "max_new_tokens": 5}
 
-    assert genai_pipe.generate([sample_from_dataset]).texts == genai_pipe.generate(sample_from_dataset).texts
+    assert (
+        genai_pipe.generate([sample_from_dataset], **generate_kwargs).texts
+        == genai_pipe.generate(sample_from_dataset, **generate_kwargs).texts
+    )
 
     with pytest.raises(RuntimeError, match="only one audio per generate"):
-        genai_pipe.generate([sample_from_dataset, sample_from_dataset])
+        genai_pipe.generate([sample_from_dataset, sample_from_dataset], **generate_kwargs)
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
@@ -1289,6 +1293,55 @@ def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
     result_handler.reset()
 
 
+class InterruptingStreamer(ov_genai.StreamerBase):
+    def __init__(self, action: str) -> None:
+        super().__init__()
+        self.action = action
+        self.writes = 0
+
+    def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+        self.writes += 1
+        if self.writes < 3:
+            return ov_genai.StreamingStatus.RUNNING
+        if self.action == "raise":
+            raise ValueError("streamer failure")
+        return ov_genai.StreamingStatus.CANCEL
+
+    def end(self) -> None:
+        pass
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("action", ["raise", "cancel"])
+def test_interrupted_streaming_leaves_pipeline_reusable(model_descr, sample_from_dataset, action):
+    _, path, _, reference_pipe = read_asr_model(model_descr)
+    genai_pipe = ov_genai.WhisperPipeline(path, "CPU", ENABLE_MMAP=False)
+    expected = reference_pipe.generate(sample_from_dataset)
+
+    if action == "raise":
+        with pytest.raises(ValueError, match="streamer failure"):
+            genai_pipe.generate(sample_from_dataset, streamer=InterruptingStreamer(action))
+    else:
+        interrupted = genai_pipe.generate(sample_from_dataset, streamer=InterruptingStreamer(action))
+        assert expected.texts[0].startswith(interrupted.texts[0].rstrip(" ."))
+        assert len(interrupted.texts[0]) < len(expected.texts[0])
+
+    assert genai_pipe.generate(sample_from_dataset).texts == expected.texts
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_timestamp_decoding_without_progress_raises(model_descr, sample_from_dataset):
+    _, path, _, reference_pipe = read_asr_model(model_descr)
+    genai_pipe = ov_genai.WhisperPipeline(path, "CPU", ENABLE_MMAP=False)
+
+    with pytest.raises(RuntimeError, match="made no progress"):
+        genai_pipe.generate(sample_from_dataset, return_timestamps=True, max_new_tokens=1)
+
+    assert genai_pipe.generate(sample_from_dataset).texts == reference_pipe.generate(sample_from_dataset).texts
+
+
 @pytest.mark.parametrize(
     "pipelines_fixture",
     get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]) + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
@@ -1330,3 +1383,204 @@ def test_attention_backend_without_paged_attention(model_id):
         ov_genai.ASRPipeline(path, "CPU", ATTENTION_BACKEND="PA")
     with pytest.raises(RuntimeError, match="Attention backend must be either 'PA' or 'SDPA'"):
         ov_genai.ASRPipeline(path, "CPU", ATTENTION_BACKEND="SDPA_BACKEND")
+
+
+def chunk_tuples(chunks) -> list[tuple[float, float, str]]:
+    return [(round(float(chunk.start_ts), 2), round(float(chunk.end_ts), 2), chunk.text) for chunk in chunks]
+
+
+def expected_decoder_widths(single_step_counts: list[int]) -> list[int]:
+    return [sum(1 for steps in single_step_counts if steps > step) for step in range(max(single_step_counts))]
+
+
+@functools.lru_cache()
+def read_f32_asr_pipeline(model_descr) -> ov_genai.ASRPipeline:
+    _, path, _, _ = read_asr_model(model_descr, pipeline_type=PipelineType.ASR)
+    return ov_genai.ASRPipeline(path, "CPU", INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="CVS-193539", raises=AssertionError)
+def test_batch_decodes_audios_together_and_drops_finished_rows(model_descr):
+    genai_pipe = read_f32_asr_pipeline(model_descr)
+    samples = get_audio_dataset(long_form=False)[:8]
+
+    singles = [genai_pipe.generate(sample) for sample in samples]
+    single_steps = [len(single.perf_metrics.raw_metrics.m_batch_sizes) for single in singles]
+    assert len(set(single_steps)) > 1
+    batched = genai_pipe.generate(samples)
+
+    assert batched.texts == [single.texts[0] for single in singles]
+    assert batched.languages == [single.languages[0] for single in singles]
+    assert list(batched.perf_metrics.raw_metrics.m_batch_sizes) == expected_decoder_widths(single_steps)
+    assert len(batched.perf_metrics.asr_raw_metrics.encode_inference_durations) == 1
+    assert genai_pipe.generate([samples[0]]).texts == singles[0].texts
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"long_form": True, "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("return_timestamps", [False, True])
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="CVS-193539", raises=AssertionError)
+def test_batch_mixed_short_and_long_audio_matches_single_audio(model_descr, sample_from_dataset, return_timestamps):
+    genai_pipe = read_f32_asr_pipeline(model_descr)
+    shorts = get_audio_dataset(long_form=False)
+    samples = [sample_from_dataset[: 45 * 16000], shorts[15], shorts[0], shorts[28]]
+
+    singles = [genai_pipe.generate(sample, return_timestamps=return_timestamps) for sample in samples]
+    batched = genai_pipe.generate(samples, return_timestamps=return_timestamps)
+
+    assert batched.texts == [single.texts[0] for single in singles]
+    assert batched.languages == [single.languages[0] for single in singles]
+    if return_timestamps:
+        assert [chunk_tuples(chunks) for chunks in batched.chunks] == [
+            chunk_tuples(single.chunks[0]) for single in singles
+        ]
+    else:
+        assert batched.chunks is None
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"long_form": True, "sample_id": 0}], indirect=True)
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="CVS-193539", raises=AssertionError)
+def test_batch_long_form_regrows_rows_between_windows(model_descr, sample_from_dataset):
+    genai_pipe = read_f32_asr_pipeline(model_descr)
+    samples = [
+        get_audio_dataset(long_form=False)[0],
+        sample_from_dataset[15 * 16000 : 55 * 16000],
+        sample_from_dataset[: 70 * 16000],
+    ]
+    generate_kwargs = {"language": "en", "task": "transcribe", "initial_prompt": "The following is a talk."}
+
+    singles = [genai_pipe.generate(sample, **generate_kwargs) for sample in samples]
+    batched = genai_pipe.generate(samples, **generate_kwargs)
+
+    assert batched.texts == [single.texts[0] for single in singles]
+    short_form_steps = len(singles[0].perf_metrics.raw_metrics.m_batch_sizes)
+    long_form_widths = list(batched.perf_metrics.raw_metrics.m_batch_sizes)[short_form_steps:]
+    assert long_form_widths[0] == 2
+    assert any(later > earlier for earlier, later in zip(long_form_widths, long_form_widths[1:]))
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+def test_batch_detects_language_per_audio(model_descr):
+    genai_pipe = read_f32_asr_pipeline(model_descr)
+    samples = [
+        get_multilingual_audio_dataset("fr")[0],
+        get_audio_dataset(long_form=False)[0],
+        get_multilingual_audio_dataset("de")[0],
+    ]
+
+    assert genai_pipe.generate(samples, max_new_tokens=30).languages == ["fr", "en", "de"]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "request_kwargs,expected_message",
+    [
+        pytest.param({"num_beams": 2, "num_return_sequences": 1}, "greedy decoding only", id="beam_search"),
+        pytest.param({"do_sample": True, "top_k": 5}, "greedy decoding only", id="sampling"),
+        pytest.param({"word_timestamps": True}, "word_timestamps", id="word_timestamps"),
+        pytest.param(
+            {"streamer": lambda subword: ov_genai.StreamingStatus.RUNNING},
+            "only supported with a single",
+            id="streamer",
+        ),
+        pytest.param({"device": "AUTO"}, "supported on CPU only", id="device"),
+    ],
+)
+def test_batch_rejects_unsupported_request_and_recovers(model_descr, request_kwargs, expected_message):
+    request_kwargs = dict(request_kwargs)
+    device = request_kwargs.pop("device", None)
+    if device is None:
+        genai_pipe = read_f32_asr_pipeline(model_descr)
+    else:
+        _, path, _, _ = read_asr_model(model_descr, pipeline_type=PipelineType.ASR)
+        genai_pipe = ov_genai.ASRPipeline(path, device, ENABLE_MMAP=False)
+    samples = get_audio_dataset(long_form=False)[:2]
+
+    with pytest.raises(RuntimeError, match=expected_message):
+        genai_pipe.generate(samples, max_new_tokens=10, **request_kwargs)
+
+    recovered = genai_pipe.generate(samples[:1] if device else samples, max_new_tokens=10)
+    assert len(recovered.texts) == (1 if device else 2)
+    assert all(recovered.texts)
+
+
+def get_effective_cpu_inference_precision(properties: dict) -> openvino.Type:
+    parameter = openvino.opset13.parameter([1], np.float32)
+    model = openvino.Model([openvino.opset13.relu(parameter)], [parameter])
+    return openvino.Core().compile_model(model, "CPU", properties).get_property("INFERENCE_PRECISION_HINT")
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("precision", ["f32", "bf16"])
+def test_batch_requires_f32_inference_precision(model_descr, precision):
+    _, path, _, _ = read_asr_model(model_descr, pipeline_type=PipelineType.ASR)
+    genai_pipe = ov_genai.ASRPipeline(path, "CPU", INFERENCE_PRECISION_HINT=precision, ENABLE_MMAP=False)
+    samples = get_audio_dataset(long_form=False)[:2]
+
+    if get_effective_cpu_inference_precision({"INFERENCE_PRECISION_HINT": precision}) == openvino.Type.f32:
+        assert all(genai_pipe.generate(samples, max_new_tokens=30).texts)
+        return
+
+    with pytest.raises(RuntimeError, match="validated only with f32 inference precision"):
+        genai_pipe.generate(samples, max_new_tokens=30)
+    assert genai_pipe.generate(samples[0], max_new_tokens=30).texts[0]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_single_audio_generation_after_batches_matches_fresh_pipeline(model_descr, sample_from_dataset):
+    _, path, _, _ = read_asr_model(model_descr, word_timestamps=True)
+    properties = {"word_timestamps": True, "INFERENCE_PRECISION_HINT": "f32", "ENABLE_MMAP": False}
+    fresh_pipe = ov_genai.WhisperPipeline(path, "CPU", **properties)
+    reused_pipe = ov_genai.WhisperPipeline(path, "CPU", **properties)
+    shorts = get_audio_dataset(long_form=False)
+
+    before_batches = reused_pipe.generate(sample_from_dataset, max_new_tokens=100)
+    first_batch = reused_pipe.generate(shorts[:4], max_new_tokens=100, word_timestamps=False)
+    reused_pipe.generate(shorts[:2], max_new_tokens=100, word_timestamps=False)
+    assert reused_pipe.generate(sample_from_dataset, max_new_tokens=100).texts == before_batches.texts
+
+    def run_single_audio_modes(genai_pipe):
+        streamed = []
+        streamer_result = genai_pipe.generate(
+            sample_from_dataset, max_new_tokens=100, streamer=lambda subword: streamed.append(subword)
+        )
+        beam = genai_pipe.generate(sample_from_dataset, max_new_tokens=100, num_beams=2, num_return_sequences=1)
+        timestamps = genai_pipe.generate(sample_from_dataset, max_new_tokens=100, return_timestamps=True)
+        words = genai_pipe.generate(sample_from_dataset, max_new_tokens=100, word_timestamps=True)
+        return (
+            streamer_result.texts,
+            "".join(streamed),
+            beam.texts,
+            chunk_tuples(timestamps.chunks),
+            [(word.word, round(word.start_ts, 2), round(word.end_ts, 2)) for word in words.words],
+        )
+
+    assert run_single_audio_modes(reused_pipe) == run_single_audio_modes(fresh_pipe)
+    regrown_batch = reused_pipe.generate(shorts[:4], max_new_tokens=100, word_timestamps=False)
+    assert [result.texts for result in regrown_batch] == [result.texts for result in first_batch]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_whisper_pipeline_batch_overload(model_descr, sample_from_dataset):
+    _, _, _, genai_pipe = read_asr_model(model_descr)
+    _, _, _, word_pipe = read_asr_model(model_descr, word_timestamps=True)
+
+    assert not isinstance(genai_pipe.generate(sample_from_dataset.tolist(), max_new_tokens=30), list)
+    assert isinstance(genai_pipe.generate(raw_speech_inputs=[sample_from_dataset], max_new_tokens=30), list)
+    with pytest.raises(RuntimeError, match="empty batch"):
+        genai_pipe.generate(raw_speech_inputs=[], max_new_tokens=30)
+
+    beam_kwargs = {"max_new_tokens": 30, "num_beams": 2, "num_return_sequences": 1}
+    assert [result.texts for result in genai_pipe.generate([sample_from_dataset], **beam_kwargs)] == [
+        genai_pipe.generate(sample_from_dataset, **beam_kwargs).texts
+    ]
+    streamed = []
+    genai_pipe.generate([sample_from_dataset], max_new_tokens=30, streamer=lambda subword: streamed.append(subword))
+    assert streamed
+    single_words = word_pipe.generate(sample_from_dataset, max_new_tokens=30, word_timestamps=True).words
+    batched_words = word_pipe.generate([sample_from_dataset], max_new_tokens=30, word_timestamps=True)[0].words
+    assert [word.word for word in batched_words] == [word.word for word in single_words]

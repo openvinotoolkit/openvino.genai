@@ -3,17 +3,15 @@
 
 #pragma once
 
-#include <functional>
 #include <vector>
 
+#include "automatic_speech_recognition/audios_view.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
 
 void erase_allowed_asr_ctor_properties(ov::AnyMap& properties);
-
-using AudiosView = std::vector<std::reference_wrapper<const std::vector<float>>>;
 
 class ASRPipelineImplBase {
 public:

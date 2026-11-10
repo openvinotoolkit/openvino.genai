@@ -434,6 +434,54 @@ Whisper can predict timestamps for each segment of speech, which is useful for s
     </TabItemJS>
 </LanguageTabs>
 
+
+#### Batched Transcription
+
+Whisper transcribes multiple audio inputs together on CPU. Pass a list of waveforms instead of a single waveform.
+The encoder and decoder process the inputs as a batch, and the decoder stops computing an input as soon as its
+transcription is complete. Multilingual models detect the language of each input independently unless `language` is
+set. English-only models do not perform language detection.
+
+Short-form and long-form audio can be mixed. Long-form audio (longer than 30 seconds) always uses timestamp decoding
+internally, even when timestamps are not requested in the returned result. Because their decoder prompts differ,
+short-form and long-form inputs are processed in separate cohorts when `return_timestamps=False`. Batched execution
+may introduce small numerical differences compared with single-audio transcription, occasionally affecting generated
+tokens.
+
+Results preserve input order: `texts[i]`, `languages[i]` and, with `return_timestamps=True`, `chunks[i]` correspond to
+the i-th input. Generation settings apply to the entire batch. Batches of more than one input require CPU execution
+with an effective inference precision of FP32 and support greedy decoding only; beam search, sampling, word timestamps,
+streaming, reduced inference precision (bf16, f16) and devices other than CPU are rejected. On CPUs that default to a
+lower inference precision, such as bf16 or f16, create the pipeline with `INFERENCE_PRECISION_HINT="f32"` or
+`EXECUTION_MODE_HINT="ACCURACY"` to transcribe batches. Single-audio transcription keeps the device's default
+inference precision.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = ov_genai.ASRPipeline(model_path, "CPU")
+
+        result = pipe.generate([raw_speech_1, raw_speech_2], return_timestamps=True)
+        for text, language in zip(result.texts, result.languages):
+            print(language, text)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::ASRPipeline pipe(model_path, "CPU");
+
+        ov::genai::AudioInputs audio_batch = std::vector<std::vector<float>>{raw_speech_1, raw_speech_2};
+        auto result = pipe.generate(audio_batch, ov::genai::return_timestamps(true));
+        for (size_t i = 0; i < result.texts.size(); ++i) {
+            std::cout << result.languages[i] << ": " << result.texts[i] << '\n';
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+`WhisperPipeline` provides the same batching through `generate()` with a list of waveforms, which returns one
+`WhisperDecodedResults` per input.
+
 #### Word-level Timestamps Prediction
 
 Whisper can predict timestamps for each word of speech, which provides more granular timing information compared to segment-level timestamps.

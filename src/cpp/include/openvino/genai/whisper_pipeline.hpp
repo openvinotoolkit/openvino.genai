@@ -118,15 +118,13 @@ struct WhisperDecodedResults {
     }
 };
 
+class WhisperPipelineImplBase;
+
 /**
  * @brief Automatic speech recognition pipeline
  */
 class OPENVINO_GENAI_EXPORTS WhisperPipeline {
-    class WhisperPipelineImplBase;
     std::unique_ptr<WhisperPipelineImplBase> m_impl;
-
-    class StaticWhisperPipeline;
-    class WhisperPipelineStatefulImpl;
 
 public:
     /**
@@ -183,6 +181,43 @@ public:
         return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
     }
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map);
+
+    /**
+     * @brief Generates transcriptions for a batch of independent audio inputs.
+     *
+     * Results are returned in input order. A single-element batch uses
+     * the same generation behavior as a single-input request.
+     *
+     * Multi-audio generation supports CPU execution with effective f32
+     * inference precision and greedy decoding. Short-form and long-form
+     * audio, segment timestamps, and per-input language detection are
+     * supported. Beam search, sampling, streaming, and word timestamps
+     * are not supported for multi-audio requests.
+     *
+     * Performance metrics describe the entire generation call and are
+     * included in every result.
+     *
+     * @param raw_speech_inputs Non-empty batch of 16 kHz audio waveforms.
+     * @param generation_config Optional configuration shared by all inputs.
+     * @param streamer Optional streamer, supported only for one audio.
+     * @return One result per input, preserving input order.
+     */
+    std::vector<WhisperDecodedResults> generate(const std::vector<RawSpeechInput>& raw_speech_inputs,
+                                                OptionalWhisperGenerationConfig generation_config = std::nullopt,
+                                                StreamerVariant streamer = std::monostate());
+
+    /**
+     * @brief Generates transcriptions for a batch of raw speech inputs using generation properties shared by all
+     * inputs. Supported configurations and results are the same as for the generation configuration overload.
+     */
+    template <typename... Properties>
+    util::EnableIfAllStringAny<std::vector<WhisperDecodedResults>, Properties...> generate(
+        const std::vector<RawSpeechInput>& raw_speech_inputs,
+        Properties&&... properties) {
+        return generate(raw_speech_inputs, AnyMap{std::forward<Properties>(properties)...});
+    }
+    std::vector<WhisperDecodedResults> generate(const std::vector<RawSpeechInput>& raw_speech_inputs,
+                                                const ov::AnyMap& config_map);
 
     ov::genai::Tokenizer get_tokenizer();
     WhisperGenerationConfig get_generation_config() const;

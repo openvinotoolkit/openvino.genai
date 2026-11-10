@@ -16,15 +16,19 @@
 namespace ov {
 namespace genai {
 
-class WhisperPipeline::StaticWhisperPipeline : public WhisperPipeline::WhisperPipelineImplBase {
+class StaticWhisperPipeline : public WhisperPipelineImplBase {
 public:
     StaticWhisperPipeline(const std::filesystem::path& model_path, const ov::AnyMap& properties);
 
-    WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
-                                   OptionalWhisperGenerationConfig generation_config,
-                                   const std::shared_ptr<StreamerBase> streamer) override;
+    std::vector<WhisperDecodedResults> generate(const AudiosView& audios,
+                                                OptionalWhisperGenerationConfig generation_config,
+                                                const std::shared_ptr<StreamerBase> streamer) override;
 
 private:
+    WhisperDecodedResults generate_single(const RawSpeechInput& raw_speech_input,
+                                          OptionalWhisperGenerationConfig generation_config,
+                                          const std::shared_ptr<StreamerBase> streamer);
+
     WhisperInitializedModels m_models;
     Sampler m_sampler;
 };

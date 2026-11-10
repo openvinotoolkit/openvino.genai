@@ -57,6 +57,35 @@ auto whisper_generate_docstring = R"(
     :rtype: WhisperDecodedResults
 )";
 
+auto whisper_batch_generate_docstring = R"(
+    Generates transcriptions for a batch of independent audio inputs.
+
+    :param raw_speech_inputs: Non-empty batch of 16 kHz audio waveforms, each a list of floats normalized to
+                              approximately [-1, 1].
+    :type raw_speech_inputs: list[list[float]]
+
+    :param generation_config: Optional configuration shared by all inputs.
+    :type generation_config: WhisperGenerationConfig or a dict
+
+    :param streamer: Optional streamer, supported only for one audio.
+    :type streamer: Callable[[str], StreamingStatus | int | None] or ov.genai.StreamerBase
+
+    :param kwargs: Arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
+    :type kwargs: dict
+
+    :return: One result per input, preserving input order.
+    :rtype: list[WhisperDecodedResults]
+
+    Each input is processed independently, and results are returned in input order. A single-element batch uses the
+    same generation behavior as a single-input request.
+
+    Multi-audio generation supports CPU execution with effective f32 inference precision and greedy decoding.
+    Short-form and long-form audio, segment timestamps, and per-input language detection are supported. Beam search,
+    sampling, streaming, and word timestamps are not supported for multi-audio requests.
+
+    Performance metrics describe the entire generation call and are included in every result.
+)";
+
 auto whisper_decoded_results_docstring = R"(
     Structure to store resulting text outputs and scores.
 
@@ -273,6 +302,24 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
     return py::cast(res);
 }
 
+py::object call_whisper_batch_generate(WhisperPipeline& pipe,
+                                       const std::vector<RawSpeechInput>& raw_speech_inputs,
+                                       const OptionalWhisperGenerationConfig& config,
+                                       const pyutils::PyBindStreamerVariant& py_streamer,
+                                       const py::kwargs& kwargs) {
+    OptionalWhisperGenerationConfig base_config = config.has_value() ? config : pipe.get_generation_config();
+
+    auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
+
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    std::vector<ov::genai::WhisperDecodedResults> res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(raw_speech_inputs, updated_config, streamer);
+    }
+    return py::cast(res);
+}
+
 }  // namespace
 
 void init_whisper_pipeline(py::module_& m) {
@@ -402,6 +449,24 @@ void init_whisper_pipeline(py::module_& m) {
             py::arg("streamer") = std::monostate(),
             "streamer",
             (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str())
+
+        // Registered after the single-input overload so that a flat list of floats still binds to one audio.
+        .def(
+            "generate",
+            [](WhisperPipeline& pipe,
+               const std::vector<RawSpeechInput>& raw_speech_inputs,
+               const OptionalWhisperGenerationConfig& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer,
+               const py::kwargs& kwargs) -> py::typing::List<ov::genai::WhisperDecodedResults> {
+                return call_whisper_batch_generate(pipe, raw_speech_inputs, generation_config, streamer, kwargs);
+            },
+            py::arg("raw_speech_inputs"),
+            "Non-empty batch of audios, each a list of floats normalized to near [-1, 1] range and sampled at 16 kHz.",
+            py::arg("generation_config") = std::nullopt,
+            "generation_config shared by all inputs",
+            py::arg("streamer") = std::monostate(),
+            "streamer, supported only for a single-element batch",
+            (whisper_batch_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str())
 
         .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
         .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)
