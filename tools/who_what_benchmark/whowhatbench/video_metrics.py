@@ -13,8 +13,9 @@ VideoQuality
 
 ObjectPresence
     For the objects listed with a prompt (column "objects", "; "-separated), the fraction of sampled frames
-    in which an open-vocabulary detector (OWLv2) finds the object. "object_presence" averages over the
-    objects; "objects_lost" names the objects the base model shows and the target does not.
+    in which an open-vocabulary detector (OWLv2, detection score >= threshold, 0.1 by default) finds the
+    object. "object_presence" averages over the objects, "object_scores" gives the fraction per object, and
+    "objects_lost" names the objects the base model shows and the target does not.
 """
 
 import json
@@ -25,6 +26,7 @@ import urllib.request
 import cv2
 import numpy as np
 import torch
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +165,11 @@ class VideoQuality:
 
     def evaluate(self, data_gold, data_prediction):
         n = min(len(data_gold), len(data_prediction))
-        base = [self.score_video(path) for path in data_gold["videos"].values[:n]]
-        target = [self.score_video(path) for path in data_prediction["videos"].values[:n]]
+        pairs = zip(data_gold["videos"].values[:n], data_prediction["videos"].values[:n])
+        base, target = [], []
+        for gold, prediction in tqdm(pairs, total=n, desc="Video quality evaluation"):
+            base.append(self.score_video(gold))
+            target.append(self.score_video(prediction))
         aggregate, per_video = {}, {}
         for name in self.metrics:
             agg, per = _paired_results(name, [s[name] for s in base], [s[name] for s in target])
@@ -176,7 +181,7 @@ class VideoQuality:
 class ObjectPresence:
     PRESENT = 0.5  # an object counts as shown when it is found in at least this fraction of the frames
 
-    def __init__(self, model_id=DETECTOR_MODEL_ID, threshold=0.2, max_frames=8, device="cpu"):
+    def __init__(self, model_id=DETECTOR_MODEL_ID, threshold=0.1, max_frames=8, device="cpu"):
         self.model_id = model_id
         self.threshold = threshold
         self.max_frames = max_frames
@@ -244,18 +249,29 @@ class ObjectPresence:
         if not any(objects_per_row):
             logger.warning("object_presence: no objects known for these prompts (no 'objects' column), metric skipped")
             return {}, {}
-        base, target, lost = [], [], []
-        for i, objects in enumerate(objects_per_row):
+        base, target, scores_base, scores_target, lost = [], [], [], [], []
+        for i, objects in tqdm(list(enumerate(objects_per_row)), desc="Object presence evaluation"):
             if not objects:
                 base.append(float("nan"))
                 target.append(float("nan"))
+                scores_base.append("")
+                scores_target.append("")
                 lost.append("")
                 continue
             b = self.score_video(data_gold["videos"].values[i], objects)
             t = self.score_video(data_prediction["videos"].values[i], objects)
             base.append(float(b.mean()))
             target.append(float(t.mean()))
+            scores_base.append(self.format_scores(objects, b))
+            scores_target.append(self.format_scores(objects, t))
             lost.append("; ".join(o for o, pb, pt in zip(objects, b, t) if pb >= self.PRESENT and pt < self.PRESENT))
         aggregate, per_video = _paired_results("object_presence", base, target)
+        per_video["object_scores"] = scores_target
+        per_video["object_scores_base"] = scores_base
         per_video["objects_lost"] = lost
         return aggregate, per_video
+
+    @staticmethod
+    def format_scores(objects, fractions):
+        """Per-object fraction of frames, e.g. "woman=1.00; black dress=0.00"."""
+        return "; ".join(f"{name}={fraction:.2f}" for name, fraction in zip(objects, fractions))

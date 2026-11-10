@@ -13,7 +13,7 @@
         "width": 256,
         "height": 256,
         "guidance_scale": 3,
-        "objects": "woman; black dress"
+        "objects": "woman"
     },
     {
         "prompt": "A man with graying hair, a beard, and a gray shirt looks down and to his right, then turns his head to the left. The camera angle is a close-up, focused on the man's face. The lighting is dim, with a greenish tint. The scene appears to be real-life footage.",
@@ -53,7 +53,7 @@
         "width": 704,
         "height": 480,
         "guidance_scale": 1,
-        "objects": "waves; rocks; clouds"
+        "objects": "waves; rocks"
     },
     {
         "prompt": "A man walks towards a window, looks out, and then turns around. He has short, dark hair, dark skin, and is wearing a brown coat over a red and gray scarf. He walks from left to right towards a window, his gaze fixed on something outside. The camera follows him from behind at a medium distance. The room is brightly lit, with white walls and a large window covered by a white curtain. As he approaches the window, he turns his head slightly to the left, then back to the right. He then turns his entire body to the right, facing the window. The camera remains stationary as he stands in front of the window. The scene is captured in real-life footage.",

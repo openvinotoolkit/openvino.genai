@@ -79,6 +79,8 @@ def test_object_presence_scores_and_lost_objects(two_videos, monkeypatch):
 
     assert per_video["object_presence_base"] == [1.0]
     assert per_video["object_presence"] == [0.5]
+    assert per_video["object_scores_base"] == ["couch=1.00; tie=1.00"]
+    assert per_video["object_scores"] == ["couch=1.00; tie=0.00"]
     assert per_video["objects_lost"] == ["tie"]
     assert aggregate["object_presence_delta"] == pytest.approx(-0.5)
 
@@ -102,6 +104,10 @@ def test_object_presence_falls_back_to_built_in_objects(two_videos, monkeypatch)
     assert metric.objects_per_row(gold, pred, 1) == [["man in a suit", "tie", "woman", "couch", "chair"]]
     _, per_video = metric.evaluate(gold, pred)
     assert per_video["object_presence"] == [1.0] and per_video["objects_lost"] == [""]
+
+
+def test_default_threshold_matches_owlv2_examples():
+    assert ObjectPresence().threshold == 0.1
 
 
 def test_parse_objects():
