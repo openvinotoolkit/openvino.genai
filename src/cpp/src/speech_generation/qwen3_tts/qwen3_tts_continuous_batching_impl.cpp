@@ -250,6 +250,7 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     GenerationConfig sampling_params = generation_config;
     sampling_params.set_eos_token_id(static_cast<size_t>(m_engine.ids().codec_eos_token_id));
     sampling_params.max_new_tokens = max_new_tokens;
+    sampling_params.min_new_tokens = std::min(sampling_params.min_new_tokens, max_new_tokens);
     sampling_params.max_length = SIZE_MAX;
     sampling_params.validate();
 
