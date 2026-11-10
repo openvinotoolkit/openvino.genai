@@ -22,12 +22,8 @@ enum class ModelInputType {
     EMBEDDINGS
 };
 
-/// @brief Abandon a thinker -> talker bridge that is still in `slot` when the scope exits: a bridge
-/// left there was never consumed by a decode loop, and without abandon() the talker reading the
-/// other end would wait forever. Whoever takes the bridge out of the slot (std::exchange to null)
-/// becomes responsible for ending it. Used on the m_pending_omni_streamer member so a bridge from
-/// one generate() call can never leak into the next one, and on a local in the public AnyMap
-/// overloads so property validation cannot throw past an open bridge.
+/// @brief Abandon a thinker -> talker bridge still owned by the current generate() scope. Once
+/// ownership is transferred to a decode loop, that loop becomes responsible for ending the bridge.
 struct PendingOmniStreamerGuard {
     std::shared_ptr<OmniStreamerBase>& slot;
     ~PendingOmniStreamerGuard() noexcept {
@@ -91,13 +87,6 @@ protected:
     ModelInputType m_model_input_type = ModelInputType::TOKENS;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
-
-    // Thinker -> talker bridge for the current generate() call, stashed by the omni_streamer-aware
-    // overloads and read by the decode loop in ContinuousBatchingImpl::generate. Threaded as a
-    // member rather than a parameter so the chain of generate() virtuals down to the decode loop
-    // stays untouched; the overloads reset it with a scoped guard on every exit path.
-    // Null on every non-Omni path, which is what keeps those paths byte-for-byte unchanged.
-    std::shared_ptr<OmniStreamerBase> m_pending_omni_streamer;
 
     std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
 
@@ -203,6 +192,17 @@ public:
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) = 0;
 
+    /// @brief Low-level generation with a thinker -> talker bridge. Backends that do not support
+    ///        bridge streaming reject it; the plain continuous batching implementation overrides it.
+    virtual std::vector<EncodedGenerationResult> generate_with_omni_streamer(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt);
+
     /**
      * Performs monolitic generation based on text prompts
      */
@@ -243,22 +243,8 @@ public:
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer
-    );
-
-    /**
-     * Same as above, additionally forwarding each decode step to a thinker -> talker bridge.
-     * Non-virtual: it only stashes the bridge for the decode loop and delegates.
-     */
-    std::vector<VLMDecodedResults> generate(
-        const std::vector<std::string>& prompts,
-        const std::vector<std::vector<ov::Tensor>>& images,
-        const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
-        const std::vector<std::vector<ov::Tensor>>& audios,
-        const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer,
-        const std::shared_ptr<OmniStreamerBase>& omni_streamer
+        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
     );
 
 
@@ -302,19 +288,8 @@ public:
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer
-    );
-
-    /// @see the prompts overload taking an omni_streamer.
-    std::vector<VLMDecodedResults> generate(
-        const std::vector<ChatHistory>& histories,
-        const std::vector<std::vector<ov::Tensor>>& images,
-        const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
-        const std::vector<std::vector<ov::Tensor>>& audios,
-        const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer,
-        const std::shared_ptr<OmniStreamerBase>& omni_streamer
+        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
     );
 
     /**

@@ -334,7 +334,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
              const std::vector<std::vector<ov::Tensor>>& audios_vector,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) {
+             const StreamerVariant& streamer,
+             std::shared_ptr<OmniStreamerBase> omni_streamer) {
+    PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
@@ -509,12 +511,23 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
     }
     std::vector<VLMDecodedResults> results;
-    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
-                                                                    sampling_params,
-                                                                    streamer,
-                                                                    position_ids_list,
-                                                                    original_prompt_ids_list,
-                                                                    lm_extra_inputs_list);
+    std::vector<EncodedGenerationResult> encoded_results;
+    if (omni_streamer) {
+        encoded_results = generate_with_omni_streamer(input_embeds_list,
+                                                      sampling_params,
+                                                      streamer,
+                                                      std::exchange(omni_streamer, nullptr),
+                                                      position_ids_list,
+                                                      original_prompt_ids_list,
+                                                      lm_extra_inputs_list);
+    } else {
+        encoded_results = generate(input_embeds_list,
+                                   sampling_params,
+                                   streamer,
+                                   position_ids_list,
+                                   original_prompt_ids_list,
+                                   lm_extra_inputs_list);
+    }
     for (size_t i = 0; i < prompts.size(); i++) {
         utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
         auto result = encoded_results[i];
@@ -637,28 +650,25 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 namespace {
 
-constexpr const char* OMNI_STREAMER_UNSUPPORTED_BACKEND =
+constexpr char OMNI_STREAMER_UNSUPPORTED_BACKEND[] =
     "Streaming the thinker's output to a talker is supported only by the plain continuous batching "
     "backend; disable speculative decoding, prompt lookup, Eagle3, DFlash and MTP";
 
 }  // namespace
 
-std::vector<VLMDecodedResults>
-ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-    const std::vector<std::string>& prompts,
-    const std::vector<std::vector<ov::Tensor>>& images_vector,
-    const std::vector<std::vector<ov::Tensor>>& videos_vector,
-    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
-    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+std::vector<EncodedGenerationResult>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_omni_streamer(
+    const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::shared_ptr<OmniStreamerBase>& omni_streamer
+    std::shared_ptr<OmniStreamerBase> omni_streamer,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
+    const std::optional<std::vector<ov::Tensor>>& prompt_ids,
+    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list
 ) {
-    PendingOmniStreamerGuard guard{m_pending_omni_streamer};
-    m_pending_omni_streamer = omni_streamer;
-    auto results = generate(prompts, images_vector, videos_vector, videos_metadata_vector, audios_vector, sampling_params, streamer);
-    OPENVINO_ASSERT(!m_pending_omni_streamer, OMNI_STREAMER_UNSUPPORTED_BACKEND);
-    return results;
+    PendingOmniStreamerGuard bridge_guard{omni_streamer};
+    OPENVINO_ASSERT(!omni_streamer, OMNI_STREAMER_UNSUPPORTED_BACKEND);
+    return generate(input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list);
 }
 
 std::vector<VLMDecodedResults>
@@ -670,25 +680,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::vector<ov::Tensor>>& audios_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::shared_ptr<OmniStreamerBase>& omni_streamer
+    std::shared_ptr<OmniStreamerBase> omni_streamer
 ) {
-    PendingOmniStreamerGuard guard{m_pending_omni_streamer};
-    m_pending_omni_streamer = omni_streamer;
-    auto results = generate(histories, images_vector, videos_vector, videos_metadata_vector, audios_vector, sampling_params, streamer);
-    OPENVINO_ASSERT(!m_pending_omni_streamer, OMNI_STREAMER_UNSUPPORTED_BACKEND);
-    return results;
-}
-
-std::vector<VLMDecodedResults>
-ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-    const std::vector<ChatHistory>& histories,
-    const std::vector<std::vector<ov::Tensor>>& images_vector,
-    const std::vector<std::vector<ov::Tensor>>& videos_vector,
-    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
-    const std::vector<std::vector<ov::Tensor>>& audios_vector,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer
-) {
+    PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
     OPENVINO_ASSERT(histories.size() == sampling_params.size(),
@@ -710,7 +704,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
     // Omni speech needs the exact prompt-token slice the Thinker consumed, but collecting it must
     // not force ChatHistory through the string path (which would misplace multimodal tokens).
-    const bool capture_prompt_ids = m_pending_omni_streamer ||
+    const bool capture_prompt_ids = omni_streamer ||
                                     std::any_of(sampling_params.begin(), sampling_params.end(),
                                                 [](const GenerationConfig& params) {
                                                     return params.return_omni_outputs ||
@@ -797,12 +791,23 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     }
 
-    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
-                                                                    sampling_params,
-                                                                    streamer,
-                                                                    position_ids_list,
-                                                                    original_prompt_ids_list,
-                                                                    lm_extra_inputs_list);
+    std::vector<EncodedGenerationResult> encoded_results;
+    if (omni_streamer) {
+        encoded_results = generate_with_omni_streamer(input_embeds_list,
+                                                      sampling_params,
+                                                      streamer,
+                                                      std::exchange(omni_streamer, nullptr),
+                                                      position_ids_list,
+                                                      original_prompt_ids_list,
+                                                      lm_extra_inputs_list);
+    } else {
+        encoded_results = generate(input_embeds_list,
+                                   sampling_params,
+                                   streamer,
+                                   position_ids_list,
+                                   original_prompt_ids_list,
+                                   lm_extra_inputs_list);
+    }
     std::vector<VLMDecodedResults> results;
     results.reserve(encoded_results.size());
 
@@ -916,8 +921,7 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
 
         const auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
-        const bool capture_prompt_ids = m_pending_omni_streamer || sampling_params.is_prompt_lookup() ||
-                        sampling_params.is_assisting_generation();
+        const bool capture_prompt_ids = sampling_params.is_prompt_lookup() || sampling_params.is_assisting_generation();
         const size_t cache_size_before =
             capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 

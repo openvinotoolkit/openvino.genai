@@ -1020,6 +1020,24 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
+    return generate_with_omni_streamer(input_ids,
+                                       sampling_params,
+                                       streamer,
+                                       nullptr,
+                                       position_ids_list,
+                                       prompt_ids,
+                                       lm_extra_inputs_list);
+}
+
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_with_omni_streamer(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    std::shared_ptr<OmniStreamerBase> omni_streamer,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
+    const std::optional<std::vector<ov::Tensor>>& prompt_ids,
+    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
+    PendingOmniStreamerGuard bridge_guard{omni_streamer};
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
     generate_timer.start();
@@ -1082,13 +1100,11 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
-    // Checked before add_request so a rejected call leaves no request behind. The bridge stays in
-    // m_pending_omni_streamer until the OmniStepForwarder below takes it, so a throw in between
-    // still reaches the guard in IContinuousBatchingPipeline::generate, which abandons it.
-    OPENVINO_ASSERT(!m_pending_omni_streamer || input_ids.size() == 1,
+    // Checked before add_request so a rejected call leaves no request behind.
+    OPENVINO_ASSERT(!omni_streamer || input_ids.size() == 1,
                     "Streaming the thinker's output to a talker requires batch size 1, got ",
                     input_ids.size(), " requests");
-    OPENVINO_ASSERT(!m_pending_omni_streamer ||
+    OPENVINO_ASSERT(!omni_streamer ||
                         sampling_params[0].num_return_sequences == 1 && !sampling_params[0].is_beam_search(),
                     "Streaming the thinker's output to a talker requires a single sequence per request "
                     "(num_return_sequences == 1, no beam search)");
@@ -1121,11 +1137,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
 
     GenerationHandle& generation = generations.at(0);
 
-    // Thinker -> talker bridge, if the caller passed one via ov::genai::omni_streamer. Built after
-    // add_request so the sequence it follows exists; it needs the same hidden states the batch path
-    // collects, so it only ever has something to forward when return_omni_outputs enabled them.
-    // Taking the bridge out of the slot marks it consumed for IContinuousBatchingPipeline::generate.
-    OmniStepForwarder omni_forwarder(std::exchange(m_pending_omni_streamer, nullptr), all_requests);
+    // Build the bridge forwarder after add_request so the sequence it follows exists.
+    OmniStepForwarder omni_forwarder(omni_streamer, all_requests);
+    omni_streamer.reset();
 
     streamer_ptr->start();
     m_sampler->clear_structured_output_compile_times();

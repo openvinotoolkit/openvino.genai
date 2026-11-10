@@ -66,8 +66,6 @@ CBGenerateProperties extract_cb_generate_properties(const ov::AnyMap& properties
 
     auto omni_streamer_iter = properties_map.find(ov::genai::omni_streamer.name());
     if (omni_streamer_iter != properties_map.end()) {
-        OPENVINO_ASSERT(omni_streamer_iter->second.is<std::shared_ptr<OmniStreamerBase>>(),
-            "omni_streamer property has to be of type std::shared_ptr<ov::genai::OmniStreamerBase>");
         properties.omni_streamer = omni_streamer_iter->second.as<std::shared_ptr<OmniStreamerBase>>();
     }
 

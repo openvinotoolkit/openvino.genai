@@ -671,17 +671,12 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
                     "Media properties are required for VLM generate with properties map. "
                     "Use the text-only generate overload for LLM requests.");
 
-    auto images = CBGenerateProperties::resolve_property(properties.images_batches, batch_size);
-    auto videos = CBGenerateProperties::resolve_property(properties.videos_batches, batch_size);
-    auto videos_metadata = CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size);
-    auto audios = CBGenerateProperties::resolve_property(properties.audios_batches, batch_size);
-
     return m_impl->generate(
         prompts,
-        images,
-        videos,
-        videos_metadata,
-        audios,
+        CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
         properties.streamer,
         std::exchange(properties.omni_streamer, nullptr)
@@ -722,17 +717,12 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
                     "Media properties are required for VLM generate with properties map. "
                     "Use the text-only generate overload for LLM requests.");
 
-    auto images = CBGenerateProperties::resolve_property(properties.images_batches, batch_size);
-    auto videos = CBGenerateProperties::resolve_property(properties.videos_batches, batch_size);
-    auto videos_metadata = CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size);
-    auto audios = CBGenerateProperties::resolve_property(properties.audios_batches, batch_size);
-
     return m_impl->generate(
         histories,
-        images,
-        videos,
-        videos_metadata,
-        audios,
+        CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
         properties.streamer,
         std::exchange(properties.omni_streamer, nullptr)
