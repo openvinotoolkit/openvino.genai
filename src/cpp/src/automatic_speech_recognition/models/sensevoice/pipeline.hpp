@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -17,6 +18,14 @@
 #include "openvino/runtime/infer_request.hpp"
 
 namespace ov::genai {
+
+// Constraints of the compiled model inputs. Default values mean no constraint.
+struct SenseVoiceInputLimits {
+    size_t max_batch = std::numeric_limits<size_t>::max();
+    // Features are zero-padded to at least this number of frames.
+    size_t padded_frames = 0;
+    size_t max_audio_samples = std::numeric_limits<size_t>::max();
+};
 
 class SenseVoiceSmall : public ASRPipelineImplBase {
 public:
@@ -32,9 +41,17 @@ private:
     ASRGenerationConfig resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const;
     void validate_generation_config(const ASRGenerationConfig& config) const;
 
+    // Runs the model on `count` audios starting at `begin` and returns the inference duration in microseconds.
+    float run_model(const std::vector<ov::Tensor>& features,
+                    size_t begin,
+                    size_t count,
+                    int64_t language_id,
+                    int64_t textnorm_id);
+
     SenseVoiceSmallConfig m_config;
     SenseVoiceSmallFeatureExtractor m_feature_extractor;
     ov::InferRequest m_request;
+    SenseVoiceInputLimits m_limits;
 };
 
 }  // namespace ov::genai

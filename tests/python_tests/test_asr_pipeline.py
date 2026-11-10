@@ -23,7 +23,13 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs, get_default_llm_properties
+from utils.constants import (
+    NPUW_CPU_PROPERTIES,
+    get_ov_cache_converted_models_dir,
+    extra_generate_kwargs,
+    get_default_llm_properties,
+)
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
@@ -767,6 +773,45 @@ def test_sensevoice_batch_streamer(sample_from_dataset, pipelines_fixture, strea
 
     with pytest.raises(RuntimeError, match="streamers only for a single audio input"):
         genai_pipe.generate([sample_from_dataset, sample_from_dataset], streamer=streamer)
+
+
+@pytest.mark.sensevoice
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_sensevoice_npu_matches_cpu():
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    cpu_pipe = ov_genai.ASRPipeline(path, "CPU", INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False)
+    npu_pipe = ov_genai.ASRPipeline(path, "NPU", **NPUW_CPU_PROPERTIES)
+
+    samples = get_audio_dataset(long_form=False)
+    # The NPU model has static shapes: shorter audio is zero-padded and real lengths are passed to the model.
+    audios = [samples[0], samples[2], samples[1]]
+    for audio in audios:
+        expected = cpu_pipe.generate(audio)
+        actual = npu_pipe.generate(audio)
+        assert actual.texts == expected.texts
+        assert actual.languages == expected.languages
+        assert actual.metadata == expected.metadata
+
+    expected = cpu_pipe.generate(audios)
+    actual = npu_pipe.generate(audios)
+    assert actual.texts == expected.texts
+    assert actual.metadata == expected.metadata
+
+
+@pytest.mark.sensevoice
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_sensevoice_npu_rejects_audio_longer_than_30_seconds():
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    npu_pipe = ov_genai.ASRPipeline(path, "NPU", **NPUW_CPU_PROPERTIES)
+
+    sampling_rate = 16000
+    assert npu_pipe.generate(np.zeros(30 * sampling_rate, dtype=np.float32).tolist()).texts
+    with pytest.raises(RuntimeError, match="supports audio up to 30 seconds"):
+        npu_pipe.generate(np.zeros(30 * sampling_rate + 1, dtype=np.float32).tolist())
 
 
 @pytest.mark.parametrize(
