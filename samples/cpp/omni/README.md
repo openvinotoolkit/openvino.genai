@@ -63,6 +63,12 @@ This sample takes exactly one audio file. The [Python sample](../../python/omni/
 
 Compatible with Qwen3-Omni models exported to OpenVINO format.
 
+To convert a model, install [../../export-requirements.txt](../../export-requirements.txt):
+
+```bash
+pip install -r ../../export-requirements.txt
+```
+
 Export using [Optimum Intel](https://github.com/huggingface/optimum-intel) CLI or Python API.
 
 ## Configuration
