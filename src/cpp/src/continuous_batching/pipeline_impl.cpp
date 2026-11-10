@@ -943,7 +943,7 @@ public:
     /// @brief A bridge still open here was neither ended nor abandoned by the decode loop, so the
     /// loop left through an exception the loop's own catch did not see (a throwing text streamer,
     /// or the bridge's write()). Abandon it so the reader does not block forever.
-    ~OmniStepForwarder() {
+    ~OmniStepForwarder() noexcept {
         abandon();
     }
 
@@ -976,7 +976,8 @@ public:
         m_forwarded_hidden_states = hidden_states.size();
 
         return m_streamer->write({omni_stream::tokens(step_tokens),
-                                  omni_stream::hidden_states(step_hidden_states)});
+                                  omni_stream::hidden_states(step_hidden_states),
+                                  omni_stream::prompt_length(m_prompt_ids.size())});
     }
 
     /// @brief Close the write end. Idempotent, so the exception path can call it without racing
@@ -992,8 +993,11 @@ public:
     /// got are a prefix and stop instead of speaking a half sentence to its end. @see end.
     void abandon() {
         if (m_streamer) {
-            m_streamer->abandon();
-            m_streamer.reset();
+            auto streamer = std::exchange(m_streamer, nullptr);
+            try {
+                streamer->abandon();
+            } catch (...) {
+            }
         }
     }
 
@@ -1141,6 +1145,22 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
                 raw_perf_counters.m_sampling_durations.emplace_back(m_pipeline_metrics.sampling_duration);
             }
+
+            stream_tokens(streamer_ptr, generation);
+
+            switch (omni_forwarder.flush()) {
+            case StreamingStatus::CANCEL:
+                generation->cancel();
+                break;
+            case StreamingStatus::STOP:
+                generation->stop();
+                break;
+            case StreamingStatus::TOOL_CALL_STOP:
+                generation->stop(GenerationFinishReason::TOOL_CALL);
+                break;
+            default:
+                break;
+            }
         } catch (...) {
             const std::exception_ptr error = std::current_exception();
             bool pipeline_failed = false;
@@ -1161,21 +1181,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             // Release the talker too, otherwise it blocks forever on a thinker that threw.
             omni_forwarder.abandon();
             std::rethrow_exception(error);
-        }
-        stream_tokens(streamer_ptr, generation);
-
-        switch (omni_forwarder.flush()) {
-        case StreamingStatus::CANCEL:
-            generation->cancel();
-            break;
-        case StreamingStatus::STOP:
-            generation->stop();
-            break;
-        case StreamingStatus::TOOL_CALL_STOP:
-            generation->stop(GenerationFinishReason::TOOL_CALL);
-            break;
-        default:
-            break;
         }
     }
 

@@ -3530,13 +3530,18 @@ class OmniStreamerBase:
     
         write(step: dict) -> StreamingStatus:
             Called once per VLM decode step. Ignore unknown keys. Known keys:
-              "tokens": list[int] -- token ids produced by this step: every prompt token on prefill,
-                  one token per decode step.
+              "tokens": list[int] -- token ids produced by this step; continuous batching may split a
+                  long prefill across writes when the prompt exceeds batch capacity, and each decode
+                  step carries one token.
               "hidden_states": list[ov.Tensor] -- f32 [1, 1, hidden_size] thinker hidden states,
                   co-indexed with the token stream by absolute position across the whole stream, not
                   within one payload; the token stream ends one entry longer. Present only when the
                   backend collects hidden states (continuous batching with
                   GenerationConfig.return_omni_outputs).
+              "prompt_length": int -- total number of prompt tokens, repeated in each step. Because
+                  continuous batching may split prefill when the prompt exceeds batch capacity, an early
+                  step may not contain the assistant header; wait until this many tokens have arrived
+                  before locating the assistant segment.
             Return StreamingStatus.RUNNING to continue, STOP or TOOL_CALL_STOP to stop, CANCEL to
             cancel the VLM.
     

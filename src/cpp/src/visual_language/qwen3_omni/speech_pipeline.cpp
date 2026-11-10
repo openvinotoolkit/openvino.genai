@@ -881,9 +881,8 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
 /// or trailing row t is. They end at different lengths on purpose: a hidden state is what predicted
 /// the *next* token, so the last generated token never gets one (see OmniStreamerBase).
 ///
-/// Note what is *not* tracked: where the prompt stops and generation starts. The bridge does not mark
-/// it — the first write carries every prompt token and may already carry the first generated one — and
-/// nothing here needs it. Everything is expressed as a position inside the assistant segment instead.
+/// The bridge carries the prompt length so a chunked prefill can be fully buffered before locating the
+/// assistant segment. This preserves the batch path's segment selection when the prompt spans writes.
 ///
 /// A stop string that the thinker rewinds after writing cannot be taken back off the bridge, so the
 /// talker may speak a token the caller's text does not show. The bridge delivers a token at the step
@@ -905,6 +904,13 @@ public:
         while (m_tokens.size() < count && pump()) {
         }
         return m_tokens.size() >= count;
+    }
+
+    /// @brief Buffer the complete prompt, waiting through every chunk of a split prefill.
+    bool ensure_prompt() {
+        while (!m_prompt_length && pump()) {
+        }
+        return m_prompt_length && ensure_tokens(*m_prompt_length);
     }
 
     /// @brief Block until at least `count` hidden states have arrived. @see ensure_tokens.
@@ -961,6 +967,16 @@ private:
             const auto step_tokens = tokens_it->second.as<std::vector<int64_t>>();
             m_tokens.insert(m_tokens.end(), step_tokens.begin(), step_tokens.end());
         }
+        const auto prompt_length_it = step->find(omni_stream::prompt_length.name());
+        if (prompt_length_it != step->end()) {
+            const size_t prompt_length = prompt_length_it->second.as<size_t>();
+            OPENVINO_ASSERT(!m_prompt_length || *m_prompt_length == prompt_length,
+                            "ThinkerStream: prompt_length changed from ",
+                            m_prompt_length.value_or(prompt_length),
+                            " to ",
+                            prompt_length);
+            m_prompt_length = prompt_length;
+        }
         if (m_collect_hidden_states) {
             const auto hidden_states_it = step->find(omni_stream::hidden_states.name());
             if (hidden_states_it != step->end()) {
@@ -976,6 +992,7 @@ private:
     std::shared_ptr<OmniTextSourceBase> m_source;
     std::vector<int64_t> m_tokens;
     std::vector<ov::Tensor> m_hidden_states;
+    std::optional<size_t> m_prompt_length;
     bool m_collect_hidden_states = true;
     bool m_ended = false;
     bool m_truncated = false;
@@ -1153,19 +1170,20 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::shared_ptr<Omn
 
     ThinkerStream stream(text_source);
 
-    // The first write carries the whole prompt, so one step is enough to anchor the segment the
-    // talker speaks. An <|im_start|>assistant that the thinker *generates* does not re-anchor it,
-    // where the batch path would: pathological input, and re-anchoring would mean discarding a
-    // prefill and everything already spoken.
-    if (!stream.ensure_tokens(1)) {
-        GENAI_WARN("Speech: thinker stream carried no tokens, cannot generate speech");
-        return abandon_speech(streamer_guard, speech_start_time);
+    if (!stream.ensure_prompt()) {
+        if (stream.truncated()) {
+            return abandon_speech(streamer_guard, speech_start_time);
+        }
+        OPENVINO_ASSERT(false, "Thinker stream ended before providing the complete prompt boundary");
     }
     const auto segment = find_last_assistant_segment(stream.tokens());
-    if (!segment) {
-        GENAI_WARN("Speech: no assistant segment in the thinker prompt, cannot generate speech");
-        return abandon_speech(streamer_guard, speech_start_time);
-    }
+    OPENVINO_ASSERT(segment.has_value(),
+                    "Speech generation could not find an assistant segment in the thinker prompt. "
+                    "Configured im_start_token_id=",
+                    m_config.im_start_token_id,
+                    ", assistant_token_id=",
+                    m_config.assistant_token_id,
+                    "; verify these role token IDs in the model's config.json match its tokenizer.");
     const size_t seg_start = segment->first;
 
     // The three header rows are the least the talker can be prefilled on. This only blocks when the

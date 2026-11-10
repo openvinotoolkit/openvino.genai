@@ -230,11 +230,13 @@ class TestOmniPipelineAccessors:
         assert not isinstance(exc_info.value, TypeError), f"blob ctor overload did not resolve: {exc_info.value}"
 
 
-def _step(*tokens: int, hidden_size: int = 0) -> dict[str, Any]:
-    """One OmniStreamerBase.write() payload: the token ids plus one hidden state per token when hidden_size > 0."""
+def _step(*tokens: int, hidden_size: int = 0, prompt_length: int | None = None) -> dict[str, Any]:
+    """One bridge step with optional hidden states and prompt-boundary metadata."""
     step: dict[str, Any] = {"tokens": list(tokens)}
     if hidden_size:
         step["hidden_states"] = [ov.Tensor(np.full((1, 1, hidden_size), token, dtype=np.float32)) for token in tokens]
+    if prompt_length is not None:
+        step["prompt_length"] = prompt_length
     return step
 
 
@@ -248,13 +250,14 @@ class TestOmniChannel:
 
     def test_reads_steps_in_write_order(self) -> None:
         channel = ov_genai.OmniChannel()
-        assert channel.write(_step(1, 2, 3, hidden_size=4)) == ov_genai.StreamingStatus.RUNNING
+        assert channel.write(_step(1, 2, 3, hidden_size=4, prompt_length=3)) == ov_genai.StreamingStatus.RUNNING
         assert channel.write(_step(4)) == ov_genai.StreamingStatus.RUNNING
         channel.end()
 
         first = channel.read()
         assert first is not None
         assert first["tokens"] == [1, 2, 3]
+        assert first["prompt_length"] == 3
         assert [tensor.shape for tensor in first["hidden_states"]] == [[1, 1, 4]] * 3
         assert [float(tensor.data[0, 0, 0]) for tensor in first["hidden_states"]] == [1.0, 2.0, 3.0]
         second = channel.read()

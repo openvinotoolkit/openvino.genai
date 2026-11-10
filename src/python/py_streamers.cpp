@@ -122,7 +122,7 @@ auto omni_speech_streamer_base_docstring = R"(
         Called when speech generation completes (always, even on early stop).
 )";
 
-// Step payload of the thinker -> talker bridge, as a dict on the Python side. The two documented
+// Step payload of the thinker -> talker bridge, as a dict on the Python side. The documented
 // keys are converted with their declared types so a Python writer can pass an empty list where the
 // generic converter would produce an empty ov::Any; unknown keys go through the generic converter.
 ov::AnyMap omni_step_from_py(const py::dict& step) {
@@ -134,6 +134,8 @@ ov::AnyMap omni_step_from_py(const py::dict& step) {
             data[key] = value.cast<std::vector<int64_t>>();
         } else if (key == ov::genai::omni_stream::hidden_states.name()) {
             data[key] = value.cast<std::vector<ov::Tensor>>();
+        } else if (key == ov::genai::omni_stream::prompt_length.name()) {
+            data[key] = value.cast<size_t>();
         } else {
             py::dict single;
             single[item.first] = item.second;
@@ -196,13 +198,18 @@ auto omni_streamer_base_docstring = R"(
 
     write(step: dict) -> StreamingStatus:
         Called once per VLM decode step. Ignore unknown keys. Known keys:
-          "tokens": list[int] -- token ids produced by this step: every prompt token on prefill,
-              one token per decode step.
+          "tokens": list[int] -- token ids produced by this step; continuous batching may split a
+              long prefill across writes when the prompt exceeds batch capacity, and each decode
+              step carries one token.
           "hidden_states": list[ov.Tensor] -- f32 [1, 1, hidden_size] thinker hidden states,
               co-indexed with the token stream by absolute position across the whole stream, not
               within one payload; the token stream ends one entry longer. Present only when the
               backend collects hidden states (continuous batching with
               GenerationConfig.return_omni_outputs).
+          "prompt_length": int -- total number of prompt tokens, repeated in each step. Because
+              continuous batching may split prefill when the prompt exceeds batch capacity, an early
+              step may not contain the assistant header; wait until this many tokens have arrived
+              before locating the assistant segment.
         Return StreamingStatus.RUNNING to continue, STOP or TOOL_CALL_STOP to stop, CANCEL to
         cancel the VLM.
 

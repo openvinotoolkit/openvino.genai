@@ -644,9 +644,12 @@ namespace {
 /// reading the other end would wait forever.
 struct PendingOmniStreamerGuard {
     std::shared_ptr<OmniStreamerBase>& slot;
-    ~PendingOmniStreamerGuard() {
+    ~PendingOmniStreamerGuard() noexcept {
         if (auto unconsumed = std::exchange(slot, nullptr)) {
-            unconsumed->abandon();
+            try {
+                unconsumed->abandon();
+            } catch (...) {
+            }
         }
     }
 };
@@ -724,10 +727,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
     // Omni speech needs the exact prompt-token slice the Thinker consumed, but collecting it must
     // not force ChatHistory through the string path (which would misplace multimodal tokens).
-    const bool capture_prompt_ids = std::any_of(sampling_params.begin(), sampling_params.end(),
-                                                 [](const GenerationConfig& params) {
-                                                     return params.return_omni_outputs || params.is_assisting_generation();
-                                                 });
+    const bool capture_prompt_ids = m_pending_omni_streamer ||
+                                    std::any_of(sampling_params.begin(), sampling_params.end(),
+                                                [](const GenerationConfig& params) {
+                                                    return params.return_omni_outputs ||
+                                                           params.is_assisting_generation();
+                                                });
 
     std::vector<VLMChatContext> chat_contexts;
     chat_contexts.reserve(histories.size());
@@ -928,7 +933,8 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
 
         const auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
-        const bool capture_prompt_ids = sampling_params.is_prompt_lookup() || sampling_params.is_assisting_generation();
+        const bool capture_prompt_ids = m_pending_omni_streamer || sampling_params.is_prompt_lookup() ||
+                        sampling_params.is_assisting_generation();
         const size_t cache_size_before =
             capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 

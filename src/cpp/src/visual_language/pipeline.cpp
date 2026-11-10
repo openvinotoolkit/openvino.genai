@@ -35,6 +35,13 @@ namespace {
         "normally, because OmniPipeline then runs the talker over the finished text instead.");
 }
 
+void abandon_omni_streamer(const std::shared_ptr<OmniStreamerBase>& streamer) noexcept {
+    try {
+        streamer->abandon();
+    } catch (...) {
+    }
+}
+
 void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     switch (vlm_config.model_type) {
@@ -65,6 +72,7 @@ VLMDecodedResults VLMPipelineBase::generate(const std::string& prompt,
                                           const StreamerVariant& streamer,
                                           const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
     if (omni_streamer) {
+        abandon_omni_streamer(omni_streamer);
         throw_omni_streaming_not_implemented();
     }
     return generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
@@ -79,6 +87,7 @@ VLMDecodedResults VLMPipelineBase::generate(const ChatHistory& history,
                                           const StreamerVariant& streamer,
                                           const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
     if (omni_streamer) {
+        abandon_omni_streamer(omni_streamer);
         throw_omni_streaming_not_implemented();
     }
     return generate(history, images, videos, audios, videos_metadata, generation_config, streamer);

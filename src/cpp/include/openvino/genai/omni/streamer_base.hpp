@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -38,20 +39,25 @@ namespace ov::genai {
  * VLM may pass more than an older streamer reads.
  *
  * Keys written by the Qwen3-Omni VLM stage:
- *   - `omni_stream::tokens` (std::vector<int64_t>) — token ids produced by this step. The prefill
- *     step carries every prompt token; each decode step carries exactly one.
+ *   - `omni_stream::tokens` (std::vector<int64_t>) — token ids produced by this step. Continuous
+ *     batching may split a long prefill across multiple writes when the prompt exceeds its batch
+ *     capacity; each decode step carries exactly one token.
  *   - `omni_stream::hidden_states` (std::vector<ov::Tensor>) — f32 thinker hidden states, each of
  *     shape [1, 1, hidden_size]. This is the same per-token layout as
  *     VLMDecodedResults::intermediate_hidden_states, so a step payload is literally a slice of what
  *     the batch path hands the talker. Present only when the backend collects hidden states
  *     (continuous batching with GenerationConfig::return_omni_outputs); check before reading.
  *     Tensors are ref-counted handles, so keeping them past the call is fine.
+ *   - `omni_stream::prompt_length` (size_t) — total number of prompt tokens, repeated in each
+ *     write. Continuous batching may split prefill when the prompt exceeds its batch capacity, so an
+ *     early write may not yet contain the assistant header. A reader that locates the assistant
+ *     segment should wait until it has this many tokens.
  *
- * The two keys are separate streams that a reader concatenates independently; align them by
- * absolute position across the whole stream, not within one payload. They line up position for
- * position, but a single write() may carry a different number of each, and the token stream ends
- * one entry longer: a hidden state is what predicted the *next* token, so the last generated token
- * (typically EOS) is sampled from the previous position's state and never gets one of its own.
+ * The token and hidden-state streams are concatenated independently; align them by absolute position
+ * across the whole stream, not within one payload. They line up position for position, but a single
+ * write() may carry a different number of each, and the token stream ends one entry longer: a hidden
+ * state is what predicted the *next* token, so the last generated token (typically EOS) is sampled
+ * from the previous position's state and never gets one of its own.
  *
  * Writes are final: there is no retraction, and a reader may act on a token as soon as it arrives.
  * A token is written at the step it is sampled, which is before a stop string spanning it can be
@@ -101,7 +107,9 @@ public:
 /// @brief Typed names for the keys of the OmniStreamerBase::write() payload. Kept in their own
 /// namespace because `tokens` / `hidden_states` are too generic to sit directly in ov::genai.
 /// Use them on both ends so the two sides can't drift:
-///     write(ov::AnyMap{omni_stream::tokens(ids), omni_stream::hidden_states(hs)});
+///     write(ov::AnyMap{omni_stream::tokens(ids),
+///                      omni_stream::hidden_states(hs),
+///                      omni_stream::prompt_length(n)});
 ///     const auto ids = data.at(omni_stream::tokens.name()).as<std::vector<int64_t>>();
 namespace omni_stream {
 
@@ -111,6 +119,10 @@ static constexpr ov::Property<std::vector<int64_t>> tokens{"tokens"};
 /// @brief Thinker hidden states for this step: f32 [1, 1, hidden_size] tensors, co-indexed with
 /// `tokens` by absolute position across the stream rather than within a single payload.
 static constexpr ov::Property<std::vector<ov::Tensor>> hidden_states{"hidden_states"};
+
+/// @brief Total number of prompt tokens, repeated in each payload so readers can wait for the full
+/// prompt before locating the assistant segment when prefill is chunked.
+static constexpr ov::Property<size_t> prompt_length{"prompt_length"};
 
 }  // namespace omni_stream
 
