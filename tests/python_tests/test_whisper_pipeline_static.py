@@ -18,6 +18,8 @@ import openvino_tokenizers
 import openvino
 import pytest
 import pathlib
+import json
+import numpy as np
 
 # This test suite is designed specifically to validate the functionality
 # and robustness of the WhisperStaticPipeline on NPUW:CPU.
@@ -315,3 +317,44 @@ def test_dynamic_whisper_stateful_generation_compare_with_cpu(model_descr, sampl
     expected, actual_out = get_results_cpu_npu_dynamic(model_path, sample_from_dataset)
 
     compare_results_with_assert(expected, actual_out)
+
+
+@pytest.fixture(scope="module")
+def qwen3_asr_npu_pipelines():
+    from utils.asr_utils.qwen3_asr import qwen3_asr_model_path
+
+    model_path = pathlib.Path(qwen3_asr_model_path())
+    model_config = json.loads((model_path / "config.json").read_text())
+    preprocessor = json.loads((model_path / "preprocessor_config.json").read_text())
+    chunk_frames = 2 * model_config["thinker_config"]["audio_config"].get("n_window", 100)
+    cpu = ov_genai.ASRPipeline(model_path, "CPU")
+    npu = ov_genai.ASRPipeline(model_path, "NPU", **NPUW_CPU_PROPERTIES)
+    return cpu, npu, chunk_frames, preprocessor["hop_length"], preprocessor["sampling_rate"]
+
+
+@pytest.mark.parametrize("encoder_chunks", [1.0, 1.5, 2.0])
+def test_qwen3_asr_npu_full_partial_and_repeated_chunks(qwen3_asr_npu_pipelines, encoder_chunks):
+    cpu, npu, chunk_frames, hop_length, _ = qwen3_asr_npu_pipelines
+    rng = np.random.default_rng(42)
+    audio = (rng.standard_normal(int(chunk_frames * hop_length * encoder_chunks)) * 0.01).astype(np.float32)
+    generation = {"language": "English", "max_new_tokens": 8}
+
+    expected = cpu.generate(audio.tolist(), **generation)
+    first = npu.generate(audio.tolist(), **generation)
+    repeated = npu.generate(audio.tolist(), **generation)
+
+    assert first.texts == repeated.texts == expected.texts
+    assert first.languages == repeated.languages == expected.languages
+
+
+def test_qwen3_asr_npu_capacity_includes_chunk_boundary_search(qwen3_asr_npu_pipelines):
+    _, npu, _, _, sampling_rate = qwen3_asr_npu_pipelines
+    audio = np.full(66 * sampling_rate, 0.01, dtype=np.float32)
+    audio[62 * sampling_rate : 63 * sampling_rate] = 0.0
+    generation = {"language": "English", "max_new_tokens": 8}
+
+    first = npu.generate(audio.tolist(), **generation)
+    repeated = npu.generate(audio.tolist(), **generation)
+
+    assert first.texts == repeated.texts
+    assert len(first.perf_metrics.asr_raw_metrics.encode_inference_durations) == 2

@@ -17,6 +17,8 @@ class Qwen3ASRDecoder {
 public:
     Qwen3ASRDecoder(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
+    virtual ~Qwen3ASRDecoder() = default;
+
     EncodedResults generate(const ov::Tensor& input_ids,
                             const ov::Tensor& encoder_hidden_state,
                             const ASRGenerationConfig& config,
@@ -26,8 +28,15 @@ public:
 
     void set_seed(size_t seed);
 
-private:
+protected:
+    Qwen3ASRDecoder() = default;
+
+    static std::shared_ptr<ov::Model> read_model(const std::filesystem::path& models_path,
+                                                 const ov::AnyMap& properties);
+
     InferRequest m_request;
+
+private:
     Sampler m_sampler;
 };
 

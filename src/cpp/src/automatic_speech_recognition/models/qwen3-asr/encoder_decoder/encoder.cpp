@@ -4,6 +4,7 @@
 #include "encoder.hpp"
 
 #include <cstring>
+#include <iostream>
 
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
@@ -13,32 +14,48 @@ namespace ov::genai {
 Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
                                  const std::string& device,
                                  const ov::AnyMap& properties)
-    : m_model_config{models_path / "config.json"} {
+    : Qwen3ASREncoder(models_path) {
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model =
         core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
+    utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
     m_request = compiled_model.create_infer_request();
 }
+
+Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path)
+    : m_model_config{models_path / "config.json"} {}
 
 ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
     const size_t remainder_frames = features.n_frames % m_encoder_chunk_frames;
 
     ov::Tensor input_tensor = chunk_mel_features(features);
-    m_request.set_tensor("input_features", input_tensor);
+    std::cout << "[INFO] Qwen3ASREncoder: input_features shape = " << input_tensor.get_shape() << std::endl;
 
-    m_request.infer();
+    ov::Tensor chunked_output = infer(input_tensor);
+
+    std::cout << "[INFO] Qwen3ASREncoder: last_hidden_state shape = " << chunked_output.get_shape() << std::endl;
 
     // whisper implementation has remote_tensor optimization when last_hidden_state set to decoder without copy
     // qwen3-asr encoder chunking inference requires merging after inference
     // access to last_hidden_state tensor data -> data copy to host memory -> cannot use remote_tensor optimization
     // consider pre-post processing for chunked inference to avoid data copy and remote_tensor optimization
-    const ov::Tensor chunked_output = m_request.get_tensor("last_hidden_state");
     ov::Tensor output = merge_chunked_encoder_output(chunked_output, remainder_frames);
 
-    m_request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, 0, 0}));
+    reset_input();
 
     return output;
+}
+
+ov::Tensor Qwen3ASREncoder::infer(const ov::Tensor& input) {
+    m_request.set_tensor("input_features", input);
+    m_request.infer();
+    return m_request.get_tensor("last_hidden_state");
+}
+
+void Qwen3ASREncoder::reset_input() {
+    const ov::Shape reset_shape{0, 0, 0};
+    std::cout << "[INFO] Qwen3ASREncoder: resetting input_features with shape = " << reset_shape << std::endl;
+    m_request.set_tensor("input_features", ov::Tensor(ov::element::f32, reset_shape));
 }
 
 ov::Tensor Qwen3ASREncoder::chunk_mel_features(const WhisperFeatures& features) {

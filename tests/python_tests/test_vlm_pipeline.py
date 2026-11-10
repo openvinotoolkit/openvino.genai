@@ -1707,6 +1707,27 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
+@pytest.mark.transformers_lower_v5(reason="CVS-186059: gemma3 fails with transformers 5.0")
+def test_vlm_npu_gemma3_vision_encoder(cat_tensor):
+    models_path = _get_ov_model(MODEL_GEMMA)
+    # DEVICE puts the encoder on NPU with a static shape, the rest of the pipeline stays on CPU.
+    properties = {
+        "MODEL_PROPERTIES": {
+            "vision_embeddings": {"DEVICE": "NPU", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"},
+        }
+    }
+
+    cpu_pipe = VLMPipeline(models_path, "CPU")
+    npuw_pipe = VLMPipeline(models_path, "CPU", config=properties)
+    # NPUW runs the encoder on CPU here, so greedy output must match the default CPU pipeline exactly.
+    generation_config = _setup_generation_config(cpu_pipe, max_new_tokens=10, do_sample=False)
+
+    cpu_res = cpu_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    npuw_res = npuw_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    assert npuw_res.texts[0] == cpu_res.texts[0]
+
+
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_auto_embeddings_duration(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
@@ -1757,6 +1778,49 @@ def test_vlm_npu_auto_config(cat_tensor):
     generation_config = _setup_generation_config(ov_pipe)
 
     ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+
+@pytest.mark.xfail(reason="Needs NPUW_VISION_MERGER, added in openvinotoolkit/openvino#39483", strict=False)
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_vlm_npu_vision_merger(cat_image):
+    models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen2vl")
+    npuw_cpu = {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
+    properties = {
+        # The decoder options in DEVICE_PROPERTIES must not reach the merger.
+        "DEVICE_PROPERTIES": {"NPU": {**npuw_cpu, "MAX_PROMPT_LEN": 4096}},
+        "MODEL_PROPERTIES": {
+            "vision_embeddings_merger": {
+                **npuw_cpu,
+                "NPUW_VISION_MERGER": "YES",
+                "NPUW_VISION_MERGER_MAX_LEN": 1024,
+            }
+        },
+    }
+
+    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
+    generation_config = _setup_generation_config(ov_pipe)
+
+    # Different image sizes give different token counts, all handled by the one statically compiled merger.
+    for size in (336, 224):
+        image = openvino.Tensor(cat_image.resize((size, size)))
+        res = ov_pipe.generate(PROMPTS[0], images=[image], generation_config=generation_config)
+        assert res.texts[0]
+
+
+def test_vlm_vision_merger_disabled(cat_image):
+    models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen2vl")
+    # The NPUW keys of a disabled merger must not reach the CPU plugin.
+    properties = {
+        "MODEL_PROPERTIES": {
+            "vision_embeddings_merger": {"NPUW_VISION_MERGER": "NO", "NPUW_VISION_MERGER_MAX_LEN": 1024}
+        }
+    }
+
+    ov_pipe = VLMPipeline(models_path, "CPU", config=properties)
+    generation_config = _setup_generation_config(ov_pipe)
+
+    res = ov_pipe.generate(PROMPTS[0], images=[openvino.Tensor(cat_image)], generation_config=generation_config)
+    assert res.texts[0]
 
 
 @parametrize_one_model_npu
