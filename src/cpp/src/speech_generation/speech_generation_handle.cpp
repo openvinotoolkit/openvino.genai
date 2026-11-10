@@ -53,6 +53,9 @@ SpeechGenerationOutput SpeechGenerationHandleImpl::read_all() {
             const float* chunk_data = chunk.waveform.data<const float>();
             samples.insert(samples.end(), chunk_data, chunk_data + chunk.waveform.get_size());
         }
+        if (chunk.output_sample_rate != 0) {
+            result.output_sample_rate = chunk.output_sample_rate;
+        }
         finish_reason = chunk.finish_reason;
         if (chunk.speaker_embedding) {
             result.speaker_embedding = chunk.speaker_embedding;

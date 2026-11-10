@@ -350,9 +350,11 @@ void init_speech_generation_pipeline(py::module_& m) {
     py::class_<SpeechGenerationOutput>(m,
                                        "SpeechGenerationOutput",
                                        "One incremental unit of audio produced for a single add_request() session. "
+                                       "output_sample_rate gives the waveform rate in samples per second. "
                                        "The final output also carries resolved Qwen3-TTS Base voice-cloning artifacts.")
         .def(py::init<>())
         .def_readwrite("waveform", &SpeechGenerationOutput::waveform)
+        .def_readonly("output_sample_rate", &SpeechGenerationOutput::output_sample_rate)
         .def_readwrite("finish_reason", &SpeechGenerationOutput::finish_reason)
         .def_readwrite("speaker_embedding", &SpeechGenerationOutput::speaker_embedding)
         .def_readwrite("ref_codec_ids", &SpeechGenerationOutput::ref_codec_ids);

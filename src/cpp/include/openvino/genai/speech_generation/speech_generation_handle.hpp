@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include "openvino/genai/generation_handle.hpp"
@@ -17,6 +18,8 @@ namespace genai {
 struct SpeechGenerationOutput {
     // PCM float32 waveform samples produced since the previous read() call for this request.
     ov::Tensor waveform;
+    /// Sample rate, in samples per second, of waveform.
+    uint32_t output_sample_rate = 0;
     GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
     // Resolved Qwen3-TTS Base speaker embedding, when generated from reference audio.
     ov::Tensor speaker_embedding;

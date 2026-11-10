@@ -232,6 +232,7 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
         SpeechGenerationStream::Ptr stream = SpeechGenerationStream::create();
         SpeechGenerationOutput output;
         output.waveform = ov::Tensor(ov::element::f32, ov::Shape{0});
+        output.output_sample_rate = m_engine.output_sample_rate();
         output.finish_reason = GenerationFinishReason::LENGTH;
         output.speaker_embedding = effective_speaker_embedding;
         output.ref_codec_ids = effective_ref_codec_ids;
@@ -543,6 +544,7 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
 
     SpeechGenerationOutput output;
     output.waveform = wav_tensor;
+    output.output_sample_rate = m_engine.output_sample_rate();
     output.finish_reason = sequence_group->get_sequences().front()->get_finish_reason();
     output.speaker_embedding = state.speaker_embedding;
     output.ref_codec_ids = state.ref_codec_ids;
