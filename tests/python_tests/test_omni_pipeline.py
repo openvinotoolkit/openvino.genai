@@ -1404,17 +1404,44 @@ class TestOmniPipelineRealModel:
 
         channel = ov_genai.OmniChannel()
         vlm_results: list[ov_genai.VLMDecodedResults] = []
-        thinker = threading.Thread(
-            target=lambda: vlm_results.append(
-                vlm.generate("Describe this.", generation_config=text_config, omni_streamer=channel)
-            )
-        )
-        thinker.start()
-        talker_result = talker.generate(channel, speech_on)
-        thinker.join(timeout=600)
+        talker_results: list[ov_genai.TalkerResults] = []
+        errors: list[Exception] = []
 
-        assert not thinker.is_alive(), "the thinker thread did not finish"
+        def think() -> None:
+            try:
+                vlm_results.append(vlm.generate("Describe this.", generation_config=text_config, omni_streamer=channel))
+            except Exception as error:
+                channel.abandon()
+                errors.append(error)
+
+        def speak() -> None:
+            try:
+                talker_results.append(talker.generate(channel, speech_on))
+            except Exception as error:
+                channel.abort()
+                errors.append(error)
+
+        thinker = threading.Thread(
+            target=think,
+            daemon=True,
+        )
+        speaker = threading.Thread(target=speak, daemon=True)
+        thinker.start()
+        speaker.start()
+        thinker.join(timeout=600)
+        speaker.join(timeout=600)
+
+        if thinker.is_alive() or speaker.is_alive():
+            channel.abandon()
+            thinker.join(timeout=10)
+            speaker.join(timeout=10)
+
+        assert not thinker.is_alive(), "the thinker thread did not finish within 600 seconds"
+        assert not speaker.is_alive(), "the talker thread did not finish within 600 seconds"
+        if errors:
+            raise errors[0]
         assert vlm_results[0].texts == reference.texts
+        talker_result = talker_results[0]
         assert len(talker_result.waveforms) == 1
         waveform = talker_result.waveforms[0].data.reshape(-1)
         assert np.array_equal(waveform, reference_waveform), (
@@ -1697,36 +1724,21 @@ def test_cb_generate_feeds_and_closes_omni_streamer(omni_model_path: Path, as_hi
     A bridge that is accepted but not forwarded would leave the reader blocked in read() forever.
     """
     pipe = ContinuousBatchingPipeline(omni_model_path, SchedulerConfig(), "CPU")
-    channel = ov_genai.OmniChannel()
+    streamer = RecordingOmniStreamer()
     max_new_tokens = 4
     config = _omni_outputs_config(max_new_tokens)
     prompt = "Describe a calm morning."
     inputs = [ChatHistory([{"role": "user", "content": prompt}])] if as_history else [prompt]
 
-    outcome: list[list[VLMDecodedResults] | Exception] = []
+    results = pipe.generate(inputs, [[]], [[]], [config], omni_streamer=streamer)
 
-    def think() -> None:
-        try:
-            outcome.append(pipe.generate(inputs, [[]], [[]], [config], omni_streamer=channel))
-        except Exception as error:
-            outcome.append(error)
-
-    thinker = threading.Thread(target=think)
-    thinker.start()
-    steps: list[dict[str, Any]] = []
-    while (step := channel.read()) is not None:
-        steps.append(step)
-    thinker.join(timeout=600)
-
-    assert not thinker.is_alive(), "the thinker thread did not finish"
-    if isinstance(outcome[0], Exception):
-        raise outcome[0]
-    assert channel.truncated() is False, "generate() must end() the bridge, not abandon() it"
-    full_token_ids = list(outcome[0][0].full_token_ids[0])
-    streamed = [token for step in steps for token in step["tokens"]]
+    assert streamer.ended == 1, "generate() must end() the bridge"
+    assert streamer.abandoned == 0, "successful generation must not abandon() the bridge"
+    full_token_ids = list(results[0].full_token_ids[0])
+    streamed = [token for step in streamer.steps for token in step["tokens"]]
     assert streamed == full_token_ids
-    assert steps[0]["prompt_length"] == len(full_token_ids) - max_new_tokens
-    assert sum(len(step.get("hidden_states", [])) for step in steps) == len(full_token_ids) - 1
+    assert streamer.steps[0]["prompt_length"] == len(full_token_ids) - max_new_tokens
+    assert sum(len(step.get("hidden_states", [])) for step in streamer.steps) == len(full_token_ids) - 1
 
 
 # The tiny CI model's tokenizer lacks the audio tokens, so audio dies in the merge assert; audio
