@@ -46,8 +46,7 @@ DraftProposal make_draft_proposal(const SamplingDistribution& distribution, cons
 float proposal_probability(const DraftProposal& proposal, int64_t token_id);
 
 // Checks a proposal that reaches the main pipeline: it is not empty and a sparse one has a probability per id.
-// Debug builds also check that it is a distribution over non-negative ids; the draft sampler builds every proposal
-// from a normalized distribution, so release builds skip that pass. Sparse ids are distinct by construction.
+// The draft sampler builds every proposal from the normalized distribution it drew from, with distinct ids.
 void validate_draft_proposal(const DraftProposal& proposal);
 
 }  // namespace ov::genai::detail

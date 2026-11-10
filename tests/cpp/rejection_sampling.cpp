@@ -59,6 +59,18 @@ Logits candidate_logits(std::vector<Token> candidates, bool defer_expf) {
     return logits;
 }
 
+// validate_draft_proposal checks only the shape of a proposal; the draft sampler must record a distribution.
+void expect_distribution(const DraftProposal& proposal) {
+    EXPECT_NO_THROW(detail::validate_draft_proposal(proposal));
+    EXPECT_TRUE(std::all_of(proposal.token_ids.begin(), proposal.token_ids.end(), [](int64_t token_id) {
+        return token_id >= 0;
+    }));
+    EXPECT_TRUE(std::all_of(proposal.probabilities.begin(), proposal.probabilities.end(), [](float probability) {
+        return probability >= 0.0f && std::isfinite(probability);
+    }));
+    EXPECT_NEAR(std::accumulate(proposal.probabilities.begin(), proposal.probabilities.end(), 0.0), 1.0, 1e-3);
+}
+
 float total_variation_distance(const std::vector<float>& a, const std::vector<float>& b) {
     float distance = 0.0f;
     for (size_t i = 0; i < a.size(); ++i) {
@@ -190,14 +202,9 @@ TEST(RejectionSampling, DrawsTheDenseTailItsProposalRecords) {
     EXPECT_NEAR(tail_frequency(config), recorded_tail_mass, 0.004) << "probabilities in m_vector";
 }
 
-// Release builds check the shape of a proposal; debug builds also check that it is a distribution.
-TEST(RejectionSampling, RejectsInvalidDistributions) {
+TEST(RejectionSampling, RejectsMalformedProposals) {
     EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{}), ov::Exception);
     EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{0, 1}, {1.0f}}), ov::Exception);
-#ifndef NDEBUG
-    EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{0}, {0.75f}}), ov::Exception);
-    EXPECT_THROW(detail::validate_draft_proposal(DraftProposal{{-1}, {1.0f}}), ov::Exception);
-#endif
 }
 
 TEST(RejectionSampling, UsesUniformFallbackForInvalidSamplingLogits) {
@@ -232,10 +239,8 @@ TEST(RejectionSampling, NormalizesFullVocabularyProposalsWithEqualTails) {
 
     const auto proposal = detail::make_draft_proposal(distribution);
     ASSERT_TRUE(proposal.is_dense());
-    EXPECT_NO_THROW(detail::validate_draft_proposal(proposal));
+    expect_distribution(proposal);
     EXPECT_NEAR(distribution.probability_of(0), proposal.probabilities[0], 1e-6f);
-    const double proposal_total = std::accumulate(proposal.probabilities.begin(), proposal.probabilities.end(), 0.0);
-    EXPECT_NEAR(proposal_total, 1.0, 1e-3);
 }
 
 // The same row as a candidate list, as top-p or min-p without top-k can leave it.
@@ -251,10 +256,8 @@ TEST(RejectionSampling, NormalizesLargeCandidateProposalsWithEqualTails) {
 
     const auto proposal = detail::make_draft_proposal(distribution);
     ASSERT_FALSE(proposal.is_dense());
-    EXPECT_NO_THROW(detail::validate_draft_proposal(proposal));
+    expect_distribution(proposal);
     EXPECT_NEAR(distribution.probability_of(0), proposal.probabilities[0], 1e-6f);
-    const double proposal_total = std::accumulate(proposal.probabilities.begin(), proposal.probabilities.end(), 0.0);
-    EXPECT_NEAR(proposal_total, 1.0, 1e-3);
 }
 
 TEST(RejectionSampling, CapturesTheDistributionUsedToSampleDraftTokens) {
@@ -274,7 +277,7 @@ TEST(RejectionSampling, CapturesTheDistributionUsedToSampleDraftTokens) {
     ASSERT_EQ(sequence->get_generated_len(), 1);
     const auto& proposal = sequence->get_draft_proposal(0);
     ASSERT_TRUE(proposal.is_dense());
-    EXPECT_NO_THROW(detail::validate_draft_proposal(proposal));
+    expect_distribution(proposal);
     EXPECT_GT(proposal.probabilities[2], proposal.probabilities[1]);
     EXPECT_GT(proposal.probabilities[1], proposal.probabilities[0]);
 }
@@ -389,7 +392,7 @@ TEST(RejectionSampling, RecoversTheTargetDistributionOverFilteredCandidates) {
     const auto draft = candidate_logits({{0.4f, 1}, {0.2f, 3}, {0.2f, 4}, {0.1f, 0}}, false);
     const auto proposal = detail::make_draft_proposal(SamplingDistribution(draft));
     ASSERT_FALSE(proposal.is_dense());
-    EXPECT_NO_THROW(detail::validate_draft_proposal(proposal));
+    expect_distribution(proposal);
 
     std::vector<float> reference(vocab_size, 0.0f);
     double total = 0.0;
