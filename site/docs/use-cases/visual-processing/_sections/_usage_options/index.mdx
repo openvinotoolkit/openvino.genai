@@ -186,16 +186,13 @@ Two `OmniTalkerSpeechConfig` fields control the chunks:
 - `audio_chunk_left_context_frames` - the number of earlier frames the vocoder decodes together with each chunk, so the chunk starts with the same history as a non-streamed decode. The default is 25. Larger values give smoother seams between chunks, but cost more vocoder time. 0 decodes every chunk on its own: each chunk then loses the warmup samples, so the streamed audio is shorter than the non-streamed audio.
 
 Without a speech streamer, both fields have no effect and the whole audio is returned in `speech_result.waveforms`.
-To run the VLM and talker on different devices, construct them separately and pass them to `OmniPipeline`, as shown in the C++ and Python examples. The JavaScript API currently accepts one device for the combined pipeline.
 
 <LanguageTabs>
     <TabItemPython>
         ```python
         import openvino_genai as ov_genai
 
-        vlm = ov_genai.VLMPipeline(model_path, "GPU")
-        talker = ov_genai.Talker(model_path, "CPU")
-        pipe = ov_genai.OmniPipeline(vlm, talker)
+        pipe = ov_genai.OmniPipeline(model_path, "CPU")
 
         text_config = ov_genai.GenerationConfig()
         text_config.max_new_tokens = 100
@@ -215,9 +212,7 @@ To run the VLM and talker on different devices, construct them separately and pa
     <TabItemCpp>
         ```cpp
         int main() {
-            auto vlm = std::make_shared<ov::genai::VLMPipeline>(model_path, "GPU");
-            auto talker = std::make_shared<ov::genai::Talker>(model_path, "CPU");
-            ov::genai::OmniPipeline pipe(vlm, talker);
+            ov::genai::OmniPipeline pipe(model_path, "CPU");
 
             ov::genai::GenerationConfig text_config;
             text_config.max_new_tokens = 100;
