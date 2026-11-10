@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -15,6 +14,7 @@
 #include <vector>
 
 #include "automatic_speech_recognition/models/sensevoice/npu/static_model.hpp"
+#include "automatic_speech_recognition/models/sensevoice/windowing.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "utils.hpp"
@@ -146,36 +146,6 @@ SenseVoiceRichPrefix parse_rich_prefix(ov::genai::Tokenizer& tokenizer,
     return prefix;
 }
 
-// Feeds every audio to the model as a single window.
-class WholeAudioWindowing final : public ov::genai::SenseVoiceWindowing {
-public:
-    size_t max_batch() const override {
-        return std::numeric_limits<size_t>::max();
-    }
-
-    size_t padded_frames() const override {
-        return 0;
-    }
-
-    ov::genai::SenseVoiceWindows split(const ov::genai::AudiosView& audios) const override {
-        ov::genai::SenseVoiceWindows result;
-        for (size_t audio_index = 0; audio_index < audios.size(); ++audio_index) {
-            const std::vector<float>& audio = audios[audio_index];
-            result.windows.push_back({audio_index, &audio});
-        }
-        return result;
-    }
-
-    ov::genai::SenseVoiceTranscript merge(const std::vector<ov::genai::SenseVoiceTranscript>& windows,
-                                          const std::optional<std::string>& forced_language) const override {
-        ov::genai::SenseVoiceTranscript result = windows.front();
-        if (forced_language.has_value() && *forced_language != "auto") {
-            result.language = *forced_language;
-        }
-        return result;
-    }
-};
-
 }  // namespace
 
 namespace ov::genai {
@@ -195,9 +165,9 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
                                               : core.compile_model(model_path, device, properties_copy);
     const ov::PartialShape input_shape = model.input("input_features").get_partial_shape();
     if (input_shape.is_static()) {
-        m_windowing = create_static_windowing(input_shape[0].get_length(), input_shape[1].get_length());
-    } else {
-        m_windowing = std::make_unique<WholeAudioWindowing>();
+        m_max_batch = input_shape[0].get_length();
+        m_padded_frames = input_shape[1].get_length();
+        m_max_window_samples = FunASRFeatureExtractor::max_samples(m_padded_frames);
     }
     utils::print_compiled_model_properties(model, "sensevoice small model");
     m_request = model.create_infer_request();
@@ -221,11 +191,11 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
     const auto features_start_time = std::chrono::steady_clock::now();
-    const SenseVoiceWindows windows = m_windowing->split(audios);
+    const std::vector<AudioChunk> windows = split_audio_into_windows(audios, m_max_window_samples);
     std::vector<ov::Tensor> features;
-    features.reserve(windows.windows.size());
-    for (const SenseVoiceWindow& window : windows.windows) {
-        features.push_back(m_feature_extractor.extract(*window.samples));
+    features.reserve(windows.size());
+    for (const AudioChunk& window : windows) {
+        features.push_back(m_feature_extractor.extract(window.wav));
     }
     const auto features_stop_time = std::chrono::steady_clock::now();
     results.perf_metrics.asr_raw_metrics.features_extraction_durations.emplace_back(
@@ -241,13 +211,13 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     std::vector<std::vector<SenseVoiceTranscript>> audio_windows(batch_size);
 
     const size_t window_count = features.size();
-    const size_t group_size = std::min(window_count, m_windowing->max_batch());
+    const size_t group_size = std::min(window_count, m_max_batch);
     for (size_t group_begin = 0; group_begin < window_count; group_begin += group_size) {
         const size_t count = std::min(group_size, window_count - group_begin);
 
         ov::Tensor speech_lengths(ov::element::i64, ov::Shape{count});
         const ov::Tensor input_features =
-            stack_padded_features(features, group_begin, count, m_windowing->padded_frames(), speech_lengths);
+            stack_padded_features(features, group_begin, count, m_padded_frames, speech_lengths);
         ov::Tensor language(ov::element::i64, ov::Shape{count});
         std::fill_n(language.data<int64_t>(), count, language_id);
         ov::Tensor textnorm(ov::element::i64, ov::Shape{count});
@@ -276,8 +246,8 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
             transcript.language = prefix.language;
             transcript.emotion = prefix.emotion;
             transcript.event = prefix.event;
-            const SenseVoiceWindow& window = windows.windows[group_begin + b];
-            transcript.samples = window.samples->size();
+            const AudioChunk& window = windows[group_begin + b];
+            transcript.samples = window.wav.size();
             const std::vector<int64_t> transcription_token_ids(token_ids.begin() + prefix.rich_token_count,
                                                                token_ids.end());
 
@@ -286,7 +256,7 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
             detokenization_stop_time = std::chrono::steady_clock::now();
             detokenization_microseconds += PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
             generated_token_count += token_ids.size();
-            audio_windows[window.audio_index].push_back(std::move(transcript));
+            audio_windows[window.orig_batch].push_back(std::move(transcript));
 
             if (streamer) {
                 streamer->write(transcription_token_ids);
@@ -300,7 +270,7 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     std::vector<ov::AnyMap> metadata;
     metadata.reserve(batch_size);
     for (const std::vector<SenseVoiceTranscript>& transcripts : audio_windows) {
-        SenseVoiceTranscript audio_result = m_windowing->merge(transcripts, config.language);
+        SenseVoiceTranscript audio_result = merge_transcripts(transcripts, config.language);
         results.texts.push_back(std::move(audio_result.text));
         results.scores.push_back(0.0f);
         results.languages.push_back(std::move(audio_result.language));

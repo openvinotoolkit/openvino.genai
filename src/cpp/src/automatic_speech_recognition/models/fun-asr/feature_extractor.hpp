@@ -32,6 +32,21 @@ public:
     static constexpr size_t lfr_window = 7;
     static constexpr size_t lfr_stride = 6;
 
+    // Number of filter-bank frames extract() computes for `samples` samples.
+    static constexpr size_t fbank_frames(size_t samples) {
+        return samples < frame_length ? 1 : 1 + (samples - frame_length) / frame_shift;
+    }
+
+    // Number of low-frame-rate frames extract() returns for `fbank_frame_count` filter-bank frames.
+    static constexpr size_t lfr_frames(size_t fbank_frame_count) {
+        return (fbank_frame_count + lfr_stride - 1) / lfr_stride;
+    }
+
+    // Largest number of samples for which extract() returns at most `frames` low-frame-rate frames.
+    static constexpr size_t max_samples(size_t frames) {
+        return (frames * lfr_stride - 1) * frame_shift + frame_length + frame_shift - 1;
+    }
+
     /**
      * @param dither Dither amplitude applied before DC-offset removal and pre-emphasis. Set to 0 to disable.
      */

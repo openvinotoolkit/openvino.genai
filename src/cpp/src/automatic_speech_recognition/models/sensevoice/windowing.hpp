@@ -4,28 +4,16 @@
 #pragma once
 
 #include <cstddef>
-#include <deque>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "automatic_speech_recognition/audio_chunk.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 
 namespace ov::genai {
 
-// Part of an audio that is transcribed by a single model inference.
-struct SenseVoiceWindow {
-    size_t audio_index;
-    const std::vector<float>* samples;
-};
-
-// Windows of all audios in the input order. `storage` owns samples of windows cut from longer audio.
-struct SenseVoiceWindows {
-    std::vector<SenseVoiceWindow> windows;
-    std::deque<std::vector<float>> storage;
-};
-
-// Transcription of a window or of a whole audio. `language` is empty if it was not recognized.
+// Transcription of a window of audio or of a whole audio. `language` is empty if it was not recognized.
 struct SenseVoiceTranscript {
     std::string text;
     std::string language;
@@ -35,21 +23,19 @@ struct SenseVoiceTranscript {
 };
 
 /**
- * Defines how audio is fed to the model: which inputs the model accepts and how audio that does not fit them
- * is split into windows and merged back.
+ * Splits each audio longer than `max_window_samples` into windows at low-energy positions.
+ * Shorter audio is a single window. `orig_batch` of a window is the index of its audio.
  */
-class SenseVoiceWindowing {
-public:
-    virtual ~SenseVoiceWindowing() = default;
+std::vector<AudioChunk> split_audio_into_windows(const AudiosView& audios, size_t max_window_samples);
 
-    // Maximum number of windows in one inference.
-    virtual size_t max_batch() const = 0;
-    // Features of shorter windows are zero-padded to this number of frames.
-    virtual size_t padded_frames() const = 0;
-    virtual SenseVoiceWindows split(const AudiosView& audios) const = 0;
-    // Merges transcripts of all windows of one audio. A language other than "auto" in `forced_language` is used as is.
-    virtual SenseVoiceTranscript merge(const std::vector<SenseVoiceTranscript>& windows,
-                                       const std::optional<std::string>& forced_language) const = 0;
-};
+/**
+ * Merges transcripts of the windows of one audio. Texts are joined, language, emotion and event are chosen by the
+ * largest total window duration. A language other than "auto" in `forced_language` is used as is.
+ *
+ * Limitation: when streaming, tokens of consecutive windows are written without a separator, so a space between
+ * windows of space-delimited languages can be missing in the streamed text compared to the merged text.
+ */
+SenseVoiceTranscript merge_transcripts(const std::vector<SenseVoiceTranscript>& windows,
+                                       const std::optional<std::string>& forced_language);
 
 }  // namespace ov::genai
