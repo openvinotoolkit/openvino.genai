@@ -93,7 +93,7 @@ image = ov.Tensor(np.asarray(Image.open("image.jpg").convert("RGB"))[None])
 print(pipe.generate("Describe the image.", images=[image], max_new_tokens=64))
 ```
 
-In C++, pass `ov::genai::mmproj_path("mmproj.gguf")` to the `VLMPipeline` constructor.
+In C++, pass `ov::AnyMap{{"mmproj_path", std::string("mmproj.gguf")}}` to the `VLMPipeline` constructor.
 The existing image, video, audio, and chat APIs apply.
 Speculative decoding with `draft_model` is not supported for GGUF `VLMPipeline`.
 

@@ -148,6 +148,7 @@ and projector frontends. Registration happens before model loading and conversio
     <TabItemCpp>
         ```cpp
         #include <filesystem>
+        #include <string>
         #include <vector>
         #include <openvino/genai/continuous_batching_pipeline.hpp>
         #include <openvino/genai/extensions.hpp>
@@ -165,7 +166,7 @@ and projector frontends. Registration happens before model loading and conversio
             ov::genai::ContinuousBatchingPipeline batching(
                 "model.gguf", ov::genai::SchedulerConfig{}, "CPU", properties);
             ov::genai::VLMPipeline vlm(
-                "model.gguf", "CPU", ov::genai::mmproj_path("mmproj.gguf"), extensions);
+                "model.gguf", "CPU", ov::AnyMap{{"mmproj_path", std::string("mmproj.gguf")}, extensions});
         }
         ```
 
