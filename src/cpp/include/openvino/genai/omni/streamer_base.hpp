@@ -21,11 +21,11 @@ namespace ov::genai {
  * with that step's tokens and thinker hidden states, so the talker can start speaking before
  * text generation finishes.
  *
- * Inherit and implement write(), end() and abandon(). A typical implementation is a queue that also
- * inherits OmniTextSourceBase, so the same object is the VLM's sink and the talker's source. OmniPipeline
- * builds its own bridge and takes none from the caller, so a custom one is for driving the two
- * stages yourself: pass it to the VLMPipeline::generate() overload that takes an omni_streamer,
- * and to TalkerBase::generate() as the text source.
+ * Inherit and implement write(), end() and abandon(). A typical custom bridge is a queue implementing
+ * both OmniStreamerBase and OmniTextSourceBase. OmniPipeline creates its own OmniChannel for built-in
+ * streaming and does not accept a caller-provided bridge. To drive custom stages yourself, pass your
+ * bridge to the VLMPipeline::generate() overload that takes an omni_streamer, and to
+ * TalkerBase::generate() as the text source.
  *
  * Prefer an unbounded queue. Bounding it makes write() block as soon as the talker falls behind,
  * stalling text generation to save memory the non-streaming path spends anyway on

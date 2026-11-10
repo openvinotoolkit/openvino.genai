@@ -17,8 +17,8 @@ namespace ov::genai {
  *
  * This is the mirror of OmniStreamerBase: what a producer passed to write() is what read() returns,
  * with the same keys (see the `omni_stream` namespace in omni/streamer_base.hpp) and in the same
- * order. A class that inherits both interfaces is the bridge itself — OmniChannel is the built-in
- * one; OmniPipeline hands the same object to the VLM as a sink and to the talker as a source.
+ * order. OmniChannel implements both interfaces as the built-in bridge. In streaming mode,
+ * OmniPipeline passes that channel instance to the VLM as a sink and to the talker as a source.
  *
  * read() blocks until a step is available or the stream ends, so the talker thread parks instead of
  * spinning. It must not block forever on a VLM that stopped early or threw: one of

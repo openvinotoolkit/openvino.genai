@@ -191,10 +191,11 @@ auto omni_streamer_base_docstring = R"(
     write() once per decode step with that step's tokens and thinker hidden states, so a talker
     reading the other end can start speaking before text generation finishes.
 
-    Inherit and implement write(), end() and abandon(). OmniChannel is the built-in implementation
-    that also implements OmniTextSourceBase; OmniPipeline builds one itself when
-    GenerationConfig.stream_text2speech is set, so a custom one is for driving VLMPipeline and
-    Talker yourself.
+    Inherit and implement write(), end() and abandon(). A typical custom bridge is a queue
+    implementing both OmniStreamerBase and OmniTextSourceBase. OmniPipeline creates its own
+    OmniChannel for built-in streaming and does not accept a caller-provided bridge. To drive custom
+    stages yourself, pass your bridge to VLMPipeline.generate(..., omni_streamer=...) and to
+    Talker.generate(...) as the text source.
 
     write(step: dict) -> StreamingStatus:
         Called once per VLM decode step. Ignore unknown keys. Known keys:
@@ -235,7 +236,9 @@ auto omni_text_source_base_docstring = R"(
     VLMDecodedResults.
 
     Inherit and implement read() and truncated(). What a producer passed to OmniStreamerBase.write()
-    is what read() returns, with the same keys and in the same order.
+    is what read() returns, with the same keys and in the same order. OmniChannel implements both
+    interfaces as the built-in bridge. In streaming mode, OmniPipeline passes that channel instance
+    to the VLM as a sink and to the talker as a source.
 
     read() -> dict | None:
         Take the next VLM step, blocking until one arrives or the stream ends. Return None once the
