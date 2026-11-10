@@ -261,40 +261,6 @@ SenseVoiceSmall does not currently generate segment-level or word-level timestam
 For supported languages, word-level timestamps can be generated separately using `ASRForcedAligner`: first transcribe the audio with SenseVoiceSmall, then pass the audio and transcription to the standalone aligner. See [Word-level Timestamps Prediction](#word-level-timestamps-prediction) for details.
 :::
 
-#### NPU Support
-
-SenseVoiceSmall can run on NPU with the same `ASRPipeline` API. NPU requires static shapes, so the pipeline reshapes the model to a single audio with a fixed input length covering 30 seconds, and zero-pads shorter audio. The real feature length is passed to the model, so padding does not affect the transcription, language, `emotion` and `event`.
-
-<LanguageTabs>
-    <TabItemPython>
-        ```python
-        pipe = ov_genai.ASRPipeline(model_path, "NPU")
-        result = pipe.generate(raw_speech)
-        ```
-    </TabItemPython>
-    <TabItemCpp>
-        ```cpp
-        ov::genai::ASRPipeline pipe(model_path, "NPU");
-        auto result = pipe.generate(raw_speech);
-        ```
-    </TabItemCpp>
-    <TabItemJS>
-        ```javascript
-        const pipeline = await ASRPipeline(modelPath, "NPU");
-        const result = await pipeline.generate(rawSpeech);
-        ```
-    </TabItemJS>
-</LanguageTabs>
-
-:::note NPU limitations
-- The model accepts at most 30 seconds of audio at 16 kHz per inference. Longer audio is split into chunks at low-energy positions near the chunk boundary, each chunk is transcribed separately, and the texts are joined. CPU and GPU transcribe the whole audio at once, so results for audio longer than 30 seconds can differ between devices.
-- For audio split into chunks, `languages[i]`, and the `emotion` and `event` metadata are the values with the largest total chunk duration. `EMO_UNKNOWN` emotion and `Speech` event are used only if no other value is recognized. A language set in the generation config is used as is.
-- Streaming is not supported for audio longer than 30 seconds.
-- Audio batches are processed one chunk at a time, so batching does not improve throughput on NPU.
-- Audio shorter than 30 seconds is padded, so the inference time does not depend on the audio length.
-- Model compilation takes a while on the first run. Set the `CACHE_DIR` property to reuse the compiled model.
-:::
-
 #### Emotion and Event Metadata
 
 SenseVoiceSmall reports recognized `emotion` and `event` tags through `ASRDecodedResults.metadata`. This optional field is part of the generic ASR API, where `metadata[i]` corresponds to `texts[i]`. The detected language is available separately through `languages`.

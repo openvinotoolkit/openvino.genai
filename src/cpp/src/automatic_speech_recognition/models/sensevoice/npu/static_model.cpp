@@ -11,9 +11,7 @@
 
 namespace ov::genai {
 
-std::pair<ov::CompiledModel, SenseVoiceInputLimits> compile_sensevoice_for_npu(
-    const std::filesystem::path& model_path,
-    const ov::AnyMap& properties) {
+ov::CompiledModel compile_sensevoice_for_npu(const std::filesystem::path& model_path, const ov::AnyMap& properties) {
     constexpr size_t max_audio_seconds = 30;
     constexpr size_t max_audio_samples = max_audio_seconds * FunASRFeatureExtractor::sampling_rate;
     constexpr size_t max_fbank_frames =
@@ -35,11 +33,7 @@ std::pair<ov::CompiledModel, SenseVoiceInputLimits> compile_sensevoice_for_npu(
                     {"language", ov::PartialShape{1}},
                     {"textnorm", ov::PartialShape{1}}});
 
-    SenseVoiceInputLimits limits;
-    limits.max_batch = 1;
-    limits.padded_frames = padded_frames;
-    limits.max_audio_samples = max_audio_samples;
-    return {core.compile_model(model, "NPU", properties), limits};
+    return core.compile_model(model, "NPU", properties);
 }
 
 }  // namespace ov::genai
