@@ -28,22 +28,14 @@ namespace ov::genai {
 
 namespace {
 
-// Patches the vision merger sub-model with the adapters taken from `properties`. Must be called before the model is
-// compiled. The returned controller is only needed by the dynamic modes, where the adapter weights live in the infer
-// request state; in the static modes it has nothing to do at inference time.
-std::optional<AdapterController> create_vision_adapter_controller(const std::shared_ptr<ov::Model>& model,
-                                                                  const std::string& device,
-                                                                  const ov::AnyMap& properties) {
-    auto forwarded = properties.find(utils::FORWARDED_ADAPTERS_PROPERTY);
-    if (forwarded == properties.end()) {
-        return std::nullopt;
+constexpr char LORA_VISION_TENSOR_SUBPATH[] = "model.visual.";
+
+AdapterConfig to_vision_config(AdapterConfig config) {
+    if (config.get_tensor_name_prefix()) {
+        config.set_tensor_name_prefix(std::string("base_model.model.") + LORA_VISION_TENSOR_SUBPATH);
     }
-    auto adapters = forwarded->second.as<AdapterConfig>();
-    if (!adapters) {
-        return std::nullopt;
-    }
-    adapters.set_tensor_name_prefix(QWEN_VL_VISION_LORA_TENSOR_NAME_PREFIX);
-    return AdapterController(model, adapters, device);
+    set_foreign_tensor_name_prefix(config, std::nullopt);
+    return config;
 }
 
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
@@ -967,7 +959,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     if (std::filesystem::exists(merger_path)) {
         auto model = utils::singleton_core().read_model(merger_path);
         utils::request_vl_sdpa_transformations(model);
-        m_vision_adapter_controller = create_vision_adapter_controller(model, device, device_config);
+        init_vision_lora(model, device, device_config);
 
         auto compiled_model = utils::singleton_core().compile_model(
             model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
@@ -1002,7 +994,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
         utils::request_vl_sdpa_transformations(model);
-        m_vision_adapter_controller = create_vision_adapter_controller(model, device, device_config);
+        init_vision_lora(model, device, device_config);
 
         auto compiled_model = utils::singleton_core().compile_model(
             model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
@@ -1331,13 +1323,29 @@ std::string InputsEmbedderQwen2VL::get_last_pruned_prompt(const std::string& ori
     return pruned_prompt;
 }
 
-void InputsEmbedderQwen2VL::set_adapters(const std::optional<AdapterConfig>& adapters) {
-    m_vision_adapters = adapters;
-    if (m_vision_adapters) {
-        // The prefixes in the incoming config address the language model, the vision controller keeps its own ones.
-        m_vision_adapters->set_tensor_name_prefix(std::nullopt);
-        set_foreign_tensor_name_prefix(*m_vision_adapters, std::nullopt);
+void InputsEmbedderQwen2VL::init_vision_lora(const std::shared_ptr<ov::Model>& merger,
+                                          const std::string& device,
+                                          const ov::AnyMap& properties) {
+    auto forwarded = properties.find(utils::FORWARDED_ADAPTERS_PROPERTY);
+    if (forwarded == properties.end()) {
+        return;
     }
+    auto adapters = forwarded->second.as<AdapterConfig>();
+    if (!adapters) {
+        return;
+    }
+    adapters.set_tensor_name_prefix("base_model.model.");
+    const auto vision_config = to_vision_config(adapters);
+    m_lora_tensor_prefix = vision_config.get_tensor_name_prefix();
+    m_vision_adapter_controller = AdapterController(merger, vision_config, device);
+}
+
+std::optional<std::string> InputsEmbedderQwen2VL::get_lora_tensor_prefix() const {
+    return m_lora_tensor_prefix;
+}
+
+void InputsEmbedderQwen2VL::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_vision_adapters = adapters ? std::optional(to_vision_config(*adapters)) : std::nullopt;
 }
 
 void InputsEmbedderQwen2VL::apply_vision_adapters(ov::InferRequest& request) {

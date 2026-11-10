@@ -119,6 +119,7 @@ public:
         const std::vector<EncodedVideo>& videos) const override;
 
     void set_adapters(const std::optional<AdapterConfig>& adapters) override;
+    std::optional<std::string> get_lora_tensor_prefix() const override;
 
 protected:
     // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
@@ -144,6 +145,11 @@ protected:
     std::optional<AdapterController> m_vision_adapter_controller;
     // Adapters requested for the next generation, forwarded from the pipeline generation config.
     std::optional<AdapterConfig> m_vision_adapters;
+    std::optional<std::string> m_lora_tensor_prefix;
+
+    void init_vision_lora(const std::shared_ptr<ov::Model>& merger,
+                          const std::string& device,
+                          const ov::AnyMap& properties);
 
     // Uploads the LoRA state into a merger infer request taken from the pool. Does nothing in the static modes,
     // where the adapter weights are already baked into the compiled model.

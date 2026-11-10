@@ -161,18 +161,23 @@ private:
             properties_copy, ov::device::properties.name(), { }
         );
 
+        const auto embedder_device = m_is_npu ? "AUTO" : device;
+        if (m_is_npu) {
+            npu_auto_default_properties(device_properties);
+        }
+        if (!device_properties.empty()) {
+            properties_copy[ov::device::properties.name()] = device_properties;
+        }
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
+
         if (m_generation_config.adapters) {
-            m_generation_config.adapters->set_tensor_name_prefix(
-                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
-            );
-            set_foreign_tensor_name_prefix(*m_generation_config.adapters, QWEN_VL_VISION_LORA_TENSOR_NAME_PREFIX);
+            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, m_inputs_embedder->get_lora_tensor_prefix());
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
         ov::CompiledModel compiled_language_model;
-        auto embedder_device = device;
         if (m_is_npu) {
-            embedder_device = "AUTO";
             utils::KVDesc kv_desc;
             update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
@@ -180,7 +185,6 @@ private:
                 lm_properties,
                 kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
-            npu_auto_default_properties(device_properties);
         } else {
             // Slice-before-matmul rewrites LM logits to be produced only for the last token.
             // After this transformation, the non-NPU path returns logits with seq_len == 1,
@@ -198,14 +202,6 @@ private:
             // Subsequent unchanged applies on this request can then skip state uploads.
             m_adapter_controller->apply(m_language);
         }
-
-        // Reinsert device_properties so InputsEmbedder sub-models can resolve
-        // per-role and per-device overrides via utils::get_model_properties(...).
-        if (!device_properties.empty()) {
-            properties_copy[ov::device::properties.name()] = device_properties;
-        }
-
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
 
         finalize_initialization(language_model, kv_pos);
     }
@@ -243,10 +239,8 @@ private:
         const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         if (m_generation_config.adapters) {
-            m_generation_config.adapters->set_tensor_name_prefix(
-                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
-            );
-            set_foreign_tensor_name_prefix(*m_generation_config.adapters, QWEN_VL_VISION_LORA_TENSOR_NAME_PREFIX);
+            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, m_inputs_embedder->get_lora_tensor_prefix());
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
