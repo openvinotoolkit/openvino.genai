@@ -26,25 +26,30 @@ int64_t resolve_language_id(const std::map<std::string, int64_t>& lid_dict,
     return it->second;
 }
 
-ov::Tensor stack_padded_features(const std::vector<ov::Tensor>& features, ov::Tensor& speech_lengths) {
-    const size_t batch_size = features.size();
+// Zero-pads features of `count` audios starting at `begin` to at least `min_frames`; `speech_lengths` keeps real lengths.
+ov::Tensor stack_padded_features(const std::vector<ov::Tensor>& features,
+                                 size_t begin,
+                                 size_t count,
+                                 size_t min_frames,
+                                 ov::Tensor& speech_lengths) {
     int64_t* lengths = speech_lengths.data<int64_t>();
-    size_t max_frames = 0;
-    for (size_t b = 0; b < batch_size; ++b) {
-        const size_t frames = features[b].get_shape()[1];
+    size_t max_frames = min_frames;
+    for (size_t b = 0; b < count; ++b) {
+        const size_t frames = features[begin + b].get_shape()[1];
         lengths[b] = static_cast<int64_t>(frames);
         max_frames = std::max(max_frames, frames);
     }
-    if (batch_size == 1) {
-        return features.front();
+    if (count == 1 && max_frames == features[begin].get_shape()[1]) {
+        return features[begin];
     }
 
-    const size_t feature_size = features.front().get_shape()[2];
-    ov::Tensor batch(ov::element::f32, ov::Shape{batch_size, max_frames, feature_size});
+    const size_t feature_size = features[begin].get_shape()[2];
+    ov::Tensor batch(ov::element::f32, ov::Shape{count, max_frames, feature_size});
     float* data = batch.data<float>();
     std::fill_n(data, batch.get_size(), 0.0f);
-    for (size_t b = 0; b < batch_size; ++b) {
-        std::copy_n(features[b].data<const float>(), features[b].get_size(), data + b * max_frames * feature_size);
+    for (size_t b = 0; b < count; ++b) {
+        const ov::Tensor& item = features[begin + b];
+        std::copy_n(item.data<const float>(), item.get_size(), data + b * max_frames * feature_size);
     }
     return batch;
 }
@@ -138,6 +143,39 @@ SenseVoiceRichPrefix parse_rich_prefix(ov::genai::Tokenizer& tokenizer,
     return prefix;
 }
 
+// NPU requires static shapes: batch 1 and a fixed number of frames covering the maximum audio duration.
+ov::CompiledModel compile_for_npu(ov::Core& core,
+                                  const std::filesystem::path& model_path,
+                                  const ov::AnyMap& properties,
+                                  ov::genai::SenseVoiceInputLimits& limits) {
+    using ov::genai::FunASRFeatureExtractor;
+    constexpr size_t max_audio_seconds = 30;
+    constexpr size_t max_audio_samples = max_audio_seconds * FunASRFeatureExtractor::sampling_rate;
+    constexpr size_t max_fbank_frames =
+        1 + (max_audio_samples - FunASRFeatureExtractor::frame_length) / FunASRFeatureExtractor::frame_shift;
+    constexpr size_t max_lfr_frames =
+        (max_fbank_frames + FunASRFeatureExtractor::lfr_stride - 1) / FunASRFeatureExtractor::lfr_stride;
+    // The model prepends 4 query tokens (language, event/emotion, textnorm) to the encoder sequence.
+    // NPU prefers sequence lengths aligned to 16, so the padded input is sized to make the encoder sequence aligned.
+    constexpr size_t prefix_query_tokens = 4;
+    constexpr size_t sequence_alignment = 16;
+    constexpr size_t padded_frames =
+        (max_lfr_frames + prefix_query_tokens + sequence_alignment - 1) / sequence_alignment * sequence_alignment -
+        prefix_query_tokens;
+
+    std::shared_ptr<ov::Model> model = core.read_model(model_path);
+    model->reshape({{"input_features",
+                     ov::PartialShape{1, padded_frames, ov::genai::SenseVoiceSmallFeatureExtractor::feature_size}},
+                    {"speech_lengths", ov::PartialShape{1}},
+                    {"language", ov::PartialShape{1}},
+                    {"textnorm", ov::PartialShape{1}}});
+
+    limits.max_batch = 1;
+    limits.padded_frames = padded_frames;
+    limits.max_audio_samples = max_audio_samples;
+    return core.compile_model(model, "NPU", properties);
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -152,7 +190,9 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
     erase_allowed_asr_ctor_properties(properties_copy);
 
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel model = core.compile_model(models_path / "openvino_model.xml", device, properties_copy);
+    const std::filesystem::path model_path = models_path / "openvino_model.xml";
+    ov::CompiledModel model = device == "NPU" ? compile_for_npu(core, model_path, properties_copy, m_limits)
+                                              : core.compile_model(model_path, device, properties_copy);
     utils::print_compiled_model_properties(model, "sensevoice small model");
     m_request = model.create_infer_request();
 }
@@ -174,76 +214,81 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     results.perf_metrics.load_time = m_load_time_ms;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
+    for (const std::vector<float>& audio : audios) {
+        OPENVINO_ASSERT(audio.size() <= m_limits.max_audio_samples,
+                        "SenseVoiceSmall supports audio up to ",
+                        m_limits.max_audio_samples / FunASRFeatureExtractor::sampling_rate,
+                        " seconds with this model, but received ",
+                        audio.size(),
+                        " samples at ",
+                        FunASRFeatureExtractor::sampling_rate,
+                        " Hz.");
+    }
+
     const auto features_start_time = std::chrono::steady_clock::now();
     std::vector<ov::Tensor> features;
     features.reserve(batch_size);
     for (const std::vector<float>& audio : audios) {
         features.push_back(m_feature_extractor.extract(audio));
     }
-    ov::Tensor speech_lengths(ov::element::i64, ov::Shape{batch_size});
-    const ov::Tensor input_features = stack_padded_features(features, speech_lengths);
     const auto features_stop_time = std::chrono::steady_clock::now();
     results.perf_metrics.asr_raw_metrics.features_extraction_durations.emplace_back(
         MicroSeconds(PerfMetrics::get_microsec(features_stop_time - features_start_time)));
 
-    ov::Tensor language(ov::element::i64, ov::Shape{batch_size});
-    std::fill_n(language.data<int64_t>(), batch_size, resolve_language_id(m_config.lid_dict, config.language));
-    ov::Tensor textnorm(ov::element::i64, ov::Shape{batch_size});
+    const int64_t language_id = resolve_language_id(m_config.lid_dict, config.language);
     const std::string textnorm_key = config.use_itn ? "withitn" : "woitn";
-    std::fill_n(textnorm.data<int64_t>(), batch_size, m_config.textnorm_dict.at(textnorm_key));
-
-    m_request.set_tensor("input_features", input_features);
-    m_request.set_tensor("speech_lengths", speech_lengths);
-    m_request.set_tensor("language", language);
-    m_request.set_tensor("textnorm", textnorm);
-
-    const auto infer_start_time = std::chrono::steady_clock::now();
-    m_request.infer();
-    const auto infer_stop_time = std::chrono::steady_clock::now();
-    const auto infer_ms = PerfMetrics::get_microsec(infer_stop_time - infer_start_time);
-    results.perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
-    results.perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(infer_ms);
-
-    const ov::Tensor logits = m_request.get_tensor("logits");
-    const ov::Tensor encoder_out_lens = m_request.get_tensor("encoder_out_lens");
+    const int64_t textnorm_id = m_config.textnorm_dict.at(textnorm_key);
 
     float detokenization_microseconds = 0.0f;
     size_t generated_token_count = 0;
     std::chrono::steady_clock::time_point detokenization_stop_time;
     std::vector<ov::AnyMap> metadata;
     metadata.reserve(batch_size);
-    for (size_t b = 0; b < batch_size; ++b) {
-        const std::vector<int64_t> token_ids = ctc_greedy_decode(logits, encoder_out_lens, b, m_config.blank_id);
 
-        const SenseVoiceRichPrefix rich_prefix = parse_rich_prefix(m_tokenizer, token_ids, m_config.lid_dict);
-        const std::vector<int64_t> transcription_token_ids(token_ids.begin() + rich_prefix.rich_token_count,
-                                                           token_ids.end());
+    const size_t group_size = std::min(batch_size, m_limits.max_batch);
+    for (size_t group_begin = 0; group_begin < batch_size; group_begin += group_size) {
+        const size_t count = std::min(group_size, batch_size - group_begin);
 
-        const auto detokenization_start_time = std::chrono::steady_clock::now();
-        const std::string text = m_tokenizer.decode(transcription_token_ids);
-        detokenization_stop_time = std::chrono::steady_clock::now();
-        detokenization_microseconds += PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
-        generated_token_count += token_ids.size();
+        const float infer_ms = run_model(features, group_begin, count, language_id, textnorm_id);
+        results.perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
+        results.perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(infer_ms);
 
-        results.texts.push_back(text);
-        results.scores.push_back(0.0f);
-        const std::string result_language = (config.language.has_value() && config.language.value() != "auto")
-                                                ? config.language.value()
-                                                : rich_prefix.language;
-        results.languages.push_back(result_language);
+        const ov::Tensor logits = m_request.get_tensor("logits");
+        const ov::Tensor encoder_out_lens = m_request.get_tensor("encoder_out_lens");
 
-        ov::AnyMap metadata_entry;
-        if (rich_prefix.emotion.has_value()) {
-            metadata_entry.emplace("emotion", rich_prefix.emotion.value());
-        }
-        if (rich_prefix.event.has_value()) {
-            metadata_entry.emplace("event", rich_prefix.event.value());
-        }
-        metadata.push_back(std::move(metadata_entry));
+        for (size_t b = 0; b < count; ++b) {
+            const std::vector<int64_t> token_ids = ctc_greedy_decode(logits, encoder_out_lens, b, m_config.blank_id);
 
-        if (streamer) {
-            streamer->write(transcription_token_ids);
-            streamer->end();
+            const SenseVoiceRichPrefix rich_prefix = parse_rich_prefix(m_tokenizer, token_ids, m_config.lid_dict);
+            const std::vector<int64_t> transcription_token_ids(token_ids.begin() + rich_prefix.rich_token_count,
+                                                               token_ids.end());
+
+            const auto detokenization_start_time = std::chrono::steady_clock::now();
+            const std::string text = m_tokenizer.decode(transcription_token_ids);
+            detokenization_stop_time = std::chrono::steady_clock::now();
+            detokenization_microseconds += PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
+            generated_token_count += token_ids.size();
+
+            results.texts.push_back(text);
+            results.scores.push_back(0.0f);
+            const std::string result_language = (config.language.has_value() && config.language.value() != "auto")
+                                                    ? config.language.value()
+                                                    : rich_prefix.language;
+            results.languages.push_back(result_language);
+
+            ov::AnyMap metadata_entry;
+            if (rich_prefix.emotion.has_value()) {
+                metadata_entry.emplace("emotion", rich_prefix.emotion.value());
+            }
+            if (rich_prefix.event.has_value()) {
+                metadata_entry.emplace("event", rich_prefix.event.value());
+            }
+            metadata.push_back(std::move(metadata_entry));
+
+            if (streamer) {
+                streamer->write(transcription_token_ids);
+                streamer->end();
+            }
         }
     }
     results.metadata = std::move(metadata);
@@ -257,6 +302,29 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
         MicroSeconds(PerfMetrics::get_microsec(stop_time - start_time)));
     results.perf_metrics.evaluate_statistics(start_time);
     return results;
+}
+
+float SenseVoiceSmall::run_model(const std::vector<ov::Tensor>& features,
+                                 size_t begin,
+                                 size_t count,
+                                 int64_t language_id,
+                                 int64_t textnorm_id) {
+    ov::Tensor speech_lengths(ov::element::i64, ov::Shape{count});
+    const ov::Tensor input_features =
+        stack_padded_features(features, begin, count, m_limits.padded_frames, speech_lengths);
+    ov::Tensor language(ov::element::i64, ov::Shape{count});
+    std::fill_n(language.data<int64_t>(), count, language_id);
+    ov::Tensor textnorm(ov::element::i64, ov::Shape{count});
+    std::fill_n(textnorm.data<int64_t>(), count, textnorm_id);
+
+    m_request.set_tensor("input_features", input_features);
+    m_request.set_tensor("speech_lengths", speech_lengths);
+    m_request.set_tensor("language", language);
+    m_request.set_tensor("textnorm", textnorm);
+
+    const auto infer_start_time = std::chrono::steady_clock::now();
+    m_request.infer();
+    return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start_time);
 }
 
 void SenseVoiceSmall::set_generation_config(const ASRGenerationConfig& config) {
