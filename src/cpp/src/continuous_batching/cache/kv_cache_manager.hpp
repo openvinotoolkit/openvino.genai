@@ -154,18 +154,22 @@ class KVCacheManager : public ICacheManager {
     }
 
     // Rebuilds the full `chunk_base_ptrs.N` table (key chunk pointers followed by value chunk
-    // pointers, see PagedAttentionExtension::has_chunk_base_ptrs) and rebinds it. Cheap: this only
-    // copies a handful of int64 pointers, never KV data.
+    // pointers, see PagedAttentionExtension::has_chunk_base_ptrs). The tensor is the plugin's own (USM host) one, bound
+    // once and only reshaped/refilled on growth: a user host tensor would be copied to the device on every inference.
     void refresh_chunk_base_ptrs_tensor(size_t decoder_layer_id) {
         const size_t num_chunks = m_key_chunks[decoder_layer_id].size();
-        ov::Tensor chunk_base_ptrs(ov::element::i64, ov::Shape{2 * num_chunks});
-        auto* data = chunk_base_ptrs.data<int64_t>();
+        const ov::Shape required_shape{2 * num_chunks};
+        if (!m_chunk_base_ptrs[decoder_layer_id]) {
+            m_chunk_base_ptrs[decoder_layer_id] = m_request.get_tensor(std::string("chunk_base_ptrs.") + std::to_string(decoder_layer_id));
+        }
+        if (m_chunk_base_ptrs[decoder_layer_id].get_shape() != required_shape) {
+            m_chunk_base_ptrs[decoder_layer_id].set_shape(required_shape);
+        }
+        auto* data = m_chunk_base_ptrs[decoder_layer_id].data<int64_t>();
         for (size_t i = 0; i < num_chunks; ++i) {
             data[i] = usm_pointer_of(m_key_chunks[decoder_layer_id][i]);
             data[num_chunks + i] = usm_pointer_of(m_value_chunks[decoder_layer_id][i]);
         }
-        m_chunk_base_ptrs[decoder_layer_id] = chunk_base_ptrs;
-        m_request.set_tensor(std::string("chunk_base_ptrs.") + std::to_string(decoder_layer_id), chunk_base_ptrs);
     }
 
     // Table mode: rebuilds the per-chunk pointer tables and binds them as the `key_cache.N` / `value_cache.N` inputs.
@@ -178,8 +182,10 @@ class KVCacheManager : public ICacheManager {
             key_ptrs[i] = usm_pointer_of(m_key_chunks[decoder_layer_id][i]);
             value_ptrs[i] = usm_pointer_of(m_value_chunks[decoder_layer_id][i]);
         }
-        auto to_tensor = [](const std::vector<int64_t>& words) {
-            ov::Tensor tensor(ov::element::i64, ov::Shape{words.size()});
+        // USM host memory: the plugin binds it as is, whereas a plain host tensor is copied to the device on every
+        // inference and the kernel launcher then reads it back from the device to register the chunk pointers.
+        auto to_tensor = [this](const std::vector<int64_t>& words) {
+            ov::Tensor tensor = m_context.create_host_tensor(ov::element::i64, ov::Shape{words.size()});
             std::memcpy(tensor.data<int64_t>(), words.data(), words.size() * sizeof(int64_t));
             return tensor;
         };

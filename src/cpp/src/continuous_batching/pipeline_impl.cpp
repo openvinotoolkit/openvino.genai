@@ -346,6 +346,15 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
+        const size_t prompt_len = sequence_group->get_prompt_len();
+        const size_t hit_tokens = sequence_group->get_num_processed_tokens();
+        GENAI_INFO("[PREFIX_CACHE] request=%llu %s prompt_tokens=%zu cached_tokens=%zu (%.1f%%) tokens_to_prefill=%zu",
+                   static_cast<unsigned long long>(sequence_group->get_request_id()),
+                   hit_tokens ? "HIT" : "MISS",
+                   prompt_len,
+                   hit_tokens,
+                   prompt_len ? 100.0 * static_cast<double>(hit_tokens) / static_cast<double>(prompt_len) : 0.0,
+                   prompt_len - hit_tokens);
     }
 
     {

@@ -117,11 +117,9 @@ struct SchedulerConfig {
     void validate() const {
         OPENVINO_ASSERT(!enable_prefix_caching || !cache_interval_multiplier.has_value() || cache_interval_multiplier.value() > 0,
                 "SchedulerConfig cache_interval_multiplier must be greater than 0 when prefix caching is enabled");
-        // Cache eviction and prefix caching address cache blocks by absolute physical index and are not chunk-aware yet.
+        // Cache eviction addresses cache blocks by absolute physical index and is not chunk-aware yet.
         OPENVINO_ASSERT(!use_chunked_kv_cache || !use_cache_eviction,
                 "SchedulerConfig use_chunked_kv_cache is not yet supported together with use_cache_eviction");
-        OPENVINO_ASSERT(!use_chunked_kv_cache || !enable_prefix_caching,
-                "SchedulerConfig use_chunked_kv_cache is not yet supported together with enable_prefix_caching");
     }
 
     bool operator==(const SchedulerConfig& other) const {
