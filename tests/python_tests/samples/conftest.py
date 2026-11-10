@@ -50,6 +50,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "SmolLM2-360M": {"name": "HuggingFaceTB/SmolLM2-360M", "convert_args": ["--trust-remote-code"]},
     "WhisperTiny": {"name": "openai/whisper-tiny", "convert_args": ["--trust-remote-code", "--weight-format", "fp16"]},
+    "tiny-random-sense-voice-small": {
+        "name": "optimum-intel-internal-testing/tiny-random-sense-voice-small",
+        "convert_args": ["--trust-remote-code"],
+    },
     "Qwen2.5-0.5B-Instruct": {"name": "Qwen/Qwen2.5-0.5B-Instruct", "convert_args": ["--trust-remote-code"]},
     "Qwen2.5-0.5B-Instruct-GGUF": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
