@@ -600,22 +600,16 @@ def load_visual_text_model(
                         model_kwargs["torch_dtype"],
                     )
                 model_kwargs.update({"torch_dtype": torch.float32})
+            elif config.model_type == "molmo2":
+                # The remote code of molmo2 checkpoints registers the model only under AutoModelForImageTextToText.
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+                model_kwargs["trust_remote_code"] = True
             elif transformers_version < Version("5.0.0"):
-                # Remote-code image-text-to-text models may register their class
-                # only under ``AutoModelForImageTextToText`` in their ``auto_map``
-                # (e.g. molmo2). ``AutoModelForVision2Seq`` would then fail to
-                # resolve the remote class, so prefer the class the model config
-                # actually advertises. This stays generic: it is driven by the
-                # model's own ``auto_map`` metadata, not by a hard-coded id.
-                auto_map = getattr(config, "auto_map", None) or {}
-                if "AutoModelForImageTextToText" in auto_map and "AutoModelForVision2Seq" not in auto_map:
-                    from transformers import AutoModelForImageTextToText
+                from transformers import AutoModelForVision2Seq
 
-                    model_cls = AutoModelForImageTextToText
-                else:
-                    from transformers import AutoModelForVision2Seq
-
-                    model_cls = AutoModelForVision2Seq
+                model_cls = AutoModelForVision2Seq
             else:
                 from transformers import AutoModelForImageTextToText
 
