@@ -287,8 +287,10 @@ SenseVoiceSmall can run on NPU with the same `ASRPipeline` API. NPU requires sta
 </LanguageTabs>
 
 :::note NPU limitations
-- Each audio must be at most 30 seconds long at 16 kHz. Longer audio raises an error.
-- Audio batches are processed one audio at a time, so batching does not improve throughput on NPU.
+- The model accepts at most 30 seconds of audio at 16 kHz per inference. Longer audio is split into chunks at low-energy positions near the chunk boundary, each chunk is transcribed separately, and the texts are joined. CPU and GPU transcribe the whole audio at once, so results for audio longer than 30 seconds can differ between devices.
+- For audio split into chunks, `languages[i]`, and the `emotion` and `event` metadata are the values with the largest total chunk duration. `EMO_UNKNOWN` emotion and `Speech` event are used only if no other value is recognized. A language set in the generation config is used as is.
+- Streaming is not supported for audio longer than 30 seconds.
+- Audio batches are processed one chunk at a time, so batching does not improve throughput on NPU.
 - Audio shorter than 30 seconds is padded, so the inference time does not depend on the audio length.
 - Model compilation takes a while on the first run. Set the `CACHE_DIR` property to reuse the compiled model.
 :::

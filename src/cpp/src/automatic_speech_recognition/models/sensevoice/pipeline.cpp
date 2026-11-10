@@ -9,9 +9,12 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
+#include "automatic_speech_recognition/audio_chunk.hpp"
+#include "automatic_speech_recognition/models/sensevoice/npu/static_model.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "utils.hpp"
@@ -143,37 +146,91 @@ SenseVoiceRichPrefix parse_rich_prefix(ov::genai::Tokenizer& tokenizer,
     return prefix;
 }
 
-// NPU requires static shapes: batch 1 and a fixed number of frames covering the maximum audio duration.
-ov::CompiledModel compile_for_npu(ov::Core& core,
-                                  const std::filesystem::path& model_path,
-                                  const ov::AnyMap& properties,
-                                  ov::genai::SenseVoiceInputLimits& limits) {
-    using ov::genai::FunASRFeatureExtractor;
-    constexpr size_t max_audio_seconds = 30;
-    constexpr size_t max_audio_samples = max_audio_seconds * FunASRFeatureExtractor::sampling_rate;
-    constexpr size_t max_fbank_frames =
-        1 + (max_audio_samples - FunASRFeatureExtractor::frame_length) / FunASRFeatureExtractor::frame_shift;
-    constexpr size_t max_lfr_frames =
-        (max_fbank_frames + FunASRFeatureExtractor::lfr_stride - 1) / FunASRFeatureExtractor::lfr_stride;
-    // The model prepends 4 query tokens (language, event/emotion, textnorm) to the encoder sequence.
-    // NPU prefers sequence lengths aligned to 16, so the padded input is sized to make the encoder sequence aligned.
-    constexpr size_t prefix_query_tokens = 4;
-    constexpr size_t sequence_alignment = 16;
-    constexpr size_t padded_frames =
-        (max_lfr_frames + prefix_query_tokens + sequence_alignment - 1) / sequence_alignment * sequence_alignment -
-        prefix_query_tokens;
+// Result of one audio chunk. An audio that fits the model limits has a single chunk.
+struct SegmentResult {
+    std::string text;
+    SenseVoiceRichPrefix prefix;
+    size_t samples = 0;
+};
 
-    std::shared_ptr<ov::Model> model = core.read_model(model_path);
-    model->reshape({{"input_features",
-                     ov::PartialShape{1, padded_frames, ov::genai::SenseVoiceSmallFeatureExtractor::feature_size}},
-                    {"speech_lengths", ov::PartialShape{1}},
-                    {"language", ov::PartialShape{1}},
-                    {"textnorm", ov::PartialShape{1}}});
+struct AudioResult {
+    std::string text;
+    std::string language;
+    std::optional<std::string> emotion;
+    std::optional<std::string> event;
+};
 
-    limits.max_batch = 1;
-    limits.padded_frames = padded_frames;
-    limits.max_audio_samples = max_audio_samples;
-    return core.compile_model(model, "NPU", properties);
+using Votes = std::vector<std::pair<std::string, size_t>>;
+
+// Returns the value with the largest total weight. Values listed in `ignored` are used only if nothing else is voted.
+std::optional<std::string> weighted_vote(const Votes& votes, const std::vector<std::string>& ignored) {
+    const auto tally = [&](bool skip_ignored) -> std::optional<std::string> {
+        Votes totals;
+        for (const auto& [value, weight] : votes) {
+            if (skip_ignored && std::find(ignored.begin(), ignored.end(), value) != ignored.end()) {
+                continue;
+            }
+            const auto it = std::find_if(totals.begin(), totals.end(), [&](const auto& total) {
+                return total.first == value;
+            });
+            if (it == totals.end()) {
+                totals.emplace_back(value, weight);
+            } else {
+                it->second += weight;
+            }
+        }
+        if (totals.empty()) {
+            return std::nullopt;
+        }
+        return std::max_element(totals.begin(),
+                                totals.end(),
+                                [](const auto& a, const auto& b) {
+                                    return a.second < b.second;
+                                })
+            ->first;
+    };
+    if (const auto value = tally(true)) {
+        return value;
+    }
+    return tally(false);
+}
+
+// Merges chunk results of one audio. Language, emotion and event are voted weighted by chunk duration.
+AudioResult merge_segments(const std::vector<SegmentResult>& segments, const std::optional<std::string>& forced_language) {
+    Votes languages;
+    Votes emotions;
+    Votes events;
+    for (const SegmentResult& segment : segments) {
+        if (!segment.prefix.language.empty()) {
+            languages.emplace_back(segment.prefix.language, segment.samples);
+        }
+        if (segment.prefix.emotion.has_value()) {
+            emotions.emplace_back(*segment.prefix.emotion, segment.samples);
+        }
+        if (segment.prefix.event.has_value()) {
+            events.emplace_back(*segment.prefix.event, segment.samples);
+        }
+    }
+
+    AudioResult result;
+    result.language = (forced_language.has_value() && *forced_language != "auto")
+                          ? *forced_language
+                          : weighted_vote(languages, {}).value_or("");
+    result.emotion = weighted_vote(emotions, {"EMO_UNKNOWN"});
+    result.event = weighted_vote(events, {"Speech"});
+
+    // Words are not separated by spaces in these languages.
+    const bool joined_without_space = result.language == "zh" || result.language == "ja" || result.language == "yue";
+    for (const SegmentResult& segment : segments) {
+        if (segment.text.empty()) {
+            continue;
+        }
+        if (!result.text.empty() && !joined_without_space) {
+            result.text += ' ';
+        }
+        result.text += segment.text;
+    }
+    return result;
 }
 
 }  // namespace
@@ -189,10 +246,14 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
 
-    ov::Core core = utils::singleton_core();
+    ov::Core& core = utils::singleton_core();
     const std::filesystem::path model_path = models_path / "openvino_model.xml";
-    ov::CompiledModel model = device == "NPU" ? compile_for_npu(core, model_path, properties_copy, m_limits)
-                                              : core.compile_model(model_path, device, properties_copy);
+    ov::CompiledModel model;
+    if (device == "NPU") {
+        std::tie(model, m_limits) = compile_sensevoice_for_npu(model_path, properties_copy);
+    } else {
+        model = core.compile_model(model_path, device, properties_copy);
+    }
     utils::print_compiled_model_properties(model, "sensevoice small model");
     m_request = model.create_infer_request();
 }
@@ -214,23 +275,34 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     results.perf_metrics.load_time = m_load_time_ms;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
-    for (const std::vector<float>& audio : audios) {
-        OPENVINO_ASSERT(audio.size() <= m_limits.max_audio_samples,
-                        "SenseVoiceSmall supports audio up to ",
-                        m_limits.max_audio_samples / FunASRFeatureExtractor::sampling_rate,
-                        " seconds with this model, but received ",
-                        audio.size(),
-                        " samples at ",
-                        FunASRFeatureExtractor::sampling_rate,
-                        " Hz.");
-    }
-
     const auto features_start_time = std::chrono::steady_clock::now();
+    // Features of audio chunks and the index of the audio each chunk belongs to. Audio longer than the model
+    // limit is split into chunks, otherwise the audio is a single chunk.
     std::vector<ov::Tensor> features;
+    std::vector<size_t> chunk_audio_index;
+    std::vector<size_t> chunk_samples;
     features.reserve(batch_size);
-    for (const std::vector<float>& audio : audios) {
-        features.push_back(m_feature_extractor.extract(audio));
+    for (size_t audio_index = 0; audio_index < batch_size; ++audio_index) {
+        const std::vector<float>& audio = audios[audio_index];
+        if (audio.size() <= m_limits.max_audio_samples) {
+            features.push_back(m_feature_extractor.extract(audio));
+            chunk_audio_index.push_back(audio_index);
+            chunk_samples.push_back(audio.size());
+            continue;
+        }
+        const size_t sampling_rate = FunASRFeatureExtractor::sampling_rate;
+        const size_t max_chunk_seconds = m_limits.max_audio_samples / sampling_rate - CHUNK_BOUNDARY_SEARCH_SECONDS;
+        for (const AudioChunk& chunk : split_audio_into_chunks({audio}, sampling_rate, max_chunk_seconds)) {
+            features.push_back(m_feature_extractor.extract(chunk.wav));
+            chunk_audio_index.push_back(audio_index);
+            chunk_samples.push_back(chunk.wav.size());
+        }
     }
+    OPENVINO_ASSERT(!streamer || features.size() == 1,
+                    "SenseVoiceSmall supports streamers only for audio that is not split into chunks, "
+                    "but the audio is longer than ",
+                    m_limits.max_audio_samples / FunASRFeatureExtractor::sampling_rate,
+                    " seconds supported by the model.");
     const auto features_stop_time = std::chrono::steady_clock::now();
     results.perf_metrics.asr_raw_metrics.features_extraction_durations.emplace_back(
         MicroSeconds(PerfMetrics::get_microsec(features_stop_time - features_start_time)));
@@ -242,12 +314,12 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     float detokenization_microseconds = 0.0f;
     size_t generated_token_count = 0;
     std::chrono::steady_clock::time_point detokenization_stop_time;
-    std::vector<ov::AnyMap> metadata;
-    metadata.reserve(batch_size);
+    std::vector<std::vector<SegmentResult>> audio_segments(batch_size);
 
-    const size_t group_size = std::min(batch_size, m_limits.max_batch);
-    for (size_t group_begin = 0; group_begin < batch_size; group_begin += group_size) {
-        const size_t count = std::min(group_size, batch_size - group_begin);
+    const size_t chunk_count = features.size();
+    const size_t group_size = std::min(chunk_count, m_limits.max_batch);
+    for (size_t group_begin = 0; group_begin < chunk_count; group_begin += group_size) {
+        const size_t count = std::min(group_size, chunk_count - group_begin);
 
         const float infer_ms = run_model(features, group_begin, count, language_id, textnorm_id);
         results.perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
@@ -259,37 +331,42 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
         for (size_t b = 0; b < count; ++b) {
             const std::vector<int64_t> token_ids = ctc_greedy_decode(logits, encoder_out_lens, b, m_config.blank_id);
 
-            const SenseVoiceRichPrefix rich_prefix = parse_rich_prefix(m_tokenizer, token_ids, m_config.lid_dict);
-            const std::vector<int64_t> transcription_token_ids(token_ids.begin() + rich_prefix.rich_token_count,
+            SegmentResult segment;
+            segment.prefix = parse_rich_prefix(m_tokenizer, token_ids, m_config.lid_dict);
+            segment.samples = chunk_samples[group_begin + b];
+            const std::vector<int64_t> transcription_token_ids(token_ids.begin() + segment.prefix.rich_token_count,
                                                                token_ids.end());
 
             const auto detokenization_start_time = std::chrono::steady_clock::now();
-            const std::string text = m_tokenizer.decode(transcription_token_ids);
+            segment.text = m_tokenizer.decode(transcription_token_ids);
             detokenization_stop_time = std::chrono::steady_clock::now();
             detokenization_microseconds += PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
             generated_token_count += token_ids.size();
-
-            results.texts.push_back(text);
-            results.scores.push_back(0.0f);
-            const std::string result_language = (config.language.has_value() && config.language.value() != "auto")
-                                                    ? config.language.value()
-                                                    : rich_prefix.language;
-            results.languages.push_back(result_language);
-
-            ov::AnyMap metadata_entry;
-            if (rich_prefix.emotion.has_value()) {
-                metadata_entry.emplace("emotion", rich_prefix.emotion.value());
-            }
-            if (rich_prefix.event.has_value()) {
-                metadata_entry.emplace("event", rich_prefix.event.value());
-            }
-            metadata.push_back(std::move(metadata_entry));
+            audio_segments[chunk_audio_index[group_begin + b]].push_back(std::move(segment));
 
             if (streamer) {
                 streamer->write(transcription_token_ids);
                 streamer->end();
             }
         }
+    }
+
+    std::vector<ov::AnyMap> metadata;
+    metadata.reserve(batch_size);
+    for (const std::vector<SegmentResult>& segments : audio_segments) {
+        AudioResult audio_result = merge_segments(segments, config.language);
+        results.texts.push_back(std::move(audio_result.text));
+        results.scores.push_back(0.0f);
+        results.languages.push_back(std::move(audio_result.language));
+
+        ov::AnyMap metadata_entry;
+        if (audio_result.emotion.has_value()) {
+            metadata_entry.emplace("emotion", audio_result.emotion.value());
+        }
+        if (audio_result.event.has_value()) {
+            metadata_entry.emplace("event", audio_result.event.value());
+        }
+        metadata.push_back(std::move(metadata_entry));
     }
     results.metadata = std::move(metadata);
 

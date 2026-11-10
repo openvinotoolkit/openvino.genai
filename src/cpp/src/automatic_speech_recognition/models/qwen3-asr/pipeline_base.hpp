@@ -11,12 +11,15 @@
 #include <utility>
 #include <vector>
 
-#include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
+#include "automatic_speech_recognition/audio_chunk.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "openvino/genai/automatic_speech_recognition/forced_aligner.hpp"
 #include "whisper/feature_extractor.hpp"
 
 namespace ov::genai {
+
+// Nominal maximum duration of an audio chunk transcribed in one pass.
+constexpr size_t MAX_ASR_INPUT_SECONDS = 1200;
 
 /**
  * @brief Qwen3-ASR flow shared by all model export layouts: audio chunking, prompt building, output parsing,
