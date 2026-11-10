@@ -821,8 +821,9 @@ def test_sensevoice_npu_splits_audio_longer_than_30_seconds():
     batch = npu_pipe.generate([short_audio, long_audio])
     assert batch.texts == [npu_pipe.generate(short_audio).texts[0], result.texts[0]]
 
-    with pytest.raises(RuntimeError, match="streamers only for audio that is not split into chunks"):
-        npu_pipe.generate(long_audio, streamer=lambda _: False)
+    # Streamed tokens of consecutive windows are written without a separator, so only the resulting text is compared.
+    streamed = npu_pipe.generate(long_audio, streamer=lambda _: False)
+    assert streamed.texts == result.texts
 
 
 @pytest.mark.parametrize(
