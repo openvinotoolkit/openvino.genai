@@ -12,8 +12,10 @@ exported through optimum-intel. In both cases the model is exported with the tra
 with, provided by an ephemeral uv overlay when the installed version differs.
 """
 
+import importlib.util
 import json
 import logging
+import shutil
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
@@ -21,6 +23,27 @@ from pathlib import Path
 from openvino_genai._cli.args import add_export_openvino_args
 
 logger = logging.getLogger("openvino_genai._cli")
+
+# The distributions of the openvino-genai[export] extra (pyproject.toml) and the modules they provide.
+_EXPORT_REQUIREMENTS = {
+    "torch": "torch",
+    "torchvision": "torchvision",
+    "transformers": "transformers",
+    "huggingface_hub": "huggingface_hub",
+    "nncf": "nncf",
+    "packaging": "packaging",
+    "uv": "uv",
+}
+
+
+def _missing_export_requirements() -> list[str]:
+    """The distributions of the openvino-genai[export] extra that are not installed. Only looks the modules up, so
+    the check is cheap and works before any of them is imported."""
+    missing = [name for name, module in _EXPORT_REQUIREMENTS.items() if importlib.util.find_spec(module) is None]
+    # Like uv_env.find_uv, a uv executable on PATH can be used instead of the uv package.
+    if "uv" in missing and shutil.which("uv") is not None:
+        missing.remove("uv")
+    return missing
 
 
 def _build_parser() -> ArgumentParser:
@@ -103,6 +126,9 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = _build_parser()
     args = parser.parse_args(argv)
+    # Without the export extra, genai-cli export would fail later on a generic ModuleNotFoundError.
+    if missing := _missing_export_requirements():
+        parser.error(f"genai-cli export needs {', '.join(missing)}: pip install openvino-genai[export]")
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("[genai-cli] %(message)s"))
     logger.addHandler(handler)

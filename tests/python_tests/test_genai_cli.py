@@ -33,6 +33,24 @@ def _export_args(*argv: str):
     return cli_main._build_parser().parse_args(["export", *argv])
 
 
+@pytest.mark.parametrize("uv_on_path", [False, True])
+def test_missing_export_requirements_are_reported(tmp_path, monkeypatch, capsys, uv_on_path):
+    """Without openvino-genai[export], genai-cli export stops with a hint instead of a ModuleNotFoundError."""
+    find_spec = cli_main.importlib.util.find_spec
+    monkeypatch.setattr(
+        cli_main.importlib.util, "find_spec", lambda name: None if name in ("nncf", "uv") else find_spec(name)
+    )
+    monkeypatch.setattr(cli_main.shutil, "which", lambda name: "/usr/bin/uv" if uv_on_path else None)
+    monkeypatch.setattr(cli_main, "_export_openvino", lambda *args: pytest.fail("must not export"))
+
+    with pytest.raises(SystemExit) as error:
+        cli_main.main(["export", "-m", str(_checkpoint(tmp_path, "llama")), str(tmp_path / "out")])
+    assert error.value.code == 2
+    # A uv executable on PATH is used like the uv package.
+    missing = "nncf" if uv_on_path else "nncf, uv"
+    assert f"genai-cli export needs {missing}: pip install openvino-genai[export]" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     "weight_format",
     [
