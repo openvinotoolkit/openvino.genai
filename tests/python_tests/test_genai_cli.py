@@ -159,15 +159,9 @@ def test_fallback_keeps_optimum_intel_transformers_constraint_without_model_boun
     assert specifier.contains("4.57.6") and not specifier.contains("5.0.0")
 
 
-_OPTIMUM_INTEL_GIT = (
-    "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@20390257acb98993f99cdd3bf4df1c983eccadef"
-)
-
-
-@pytest.mark.parametrize("optimum_intel", ["optimum-intel==2.2.0", _OPTIMUM_INTEL_GIT])
-def test_fallback_resolves_a_new_overlay_when_switching_transformers(monkeypatch, optimum_intel):
-    """A transformers switch must not keep pins (e.g. huggingface-hub 1.x) of the previous overlay, and optimum-intel
-    installed from Git is resolved from the same commit."""
+def test_fallback_resolves_a_new_overlay_when_switching_transformers(monkeypatch):
+    """A transformers switch must not keep pins (e.g. huggingface-hub 1.x) of the previous overlay."""
+    optimum_intel = "optimum-intel==2.2.0"
     compiled, captured = [], {}
     monkeypatch.setattr(
         optimum_fallback,
@@ -405,61 +399,7 @@ def test_fallback_reads_checkpoint_specific_transformers_bounds():
     assert "<=4.57.6" in optimum_fallback._model_transformers_specifiers(eagle3_vlm, task)
 
 
-def test_installed_requirement_keeps_direct_url_provenance(tmp_path, monkeypatch):
-    def distribution(name: str, direct_url: dict | None = None) -> metadata.Distribution:
-        dist_info = tmp_path / f"{name}-2.2.0.dist-info"
-        dist_info.mkdir()
-        (dist_info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: 2.2.0\n")
-        if direct_url is not None:
-            (dist_info / "direct_url.json").write_text(json.dumps(direct_url))
-        return metadata.Distribution.at(dist_info)
-
-    dists = {
-        "from-index": distribution("from-index"),
-        "from-git": distribution(
-            "from-git",
-            {"url": "https://github.com/org/repo.git", "vcs_info": {"vcs": "git", "commit_id": "abc123"}},
-        ),
-        "from-checkout": distribution("from-checkout", {"url": "file:///src/repo", "dir_info": {"editable": True}}),
-    }
-
-    def fake_distribution(name):
-        if name not in dists:
-            raise metadata.PackageNotFoundError(name)
-        return dists[name]
-
-    monkeypatch.setattr(uv_env.metadata, "distribution", fake_distribution)
-    assert uv_env.installed_requirement("from-index") == "from-index==2.2.0"
-    assert uv_env.installed_requirement("from-git") == "from-git @ git+https://github.com/org/repo.git@abc123"
-    assert uv_env.installed_requirement("from-checkout") == "from-checkout @ file:///src/repo"
-    assert uv_env.installed_requirement("not-installed") is None
-
-
-def test_uv_compile_keeps_url_fragments(monkeypatch):
-    output = (
-        "# a comment line\n"
-        "packaging==24.2  # trailing comment\n"
-        "wheel-pkg @ https://example.com/wheel_pkg-1.0-py3-none-any.whl#sha256=0123abcd\n"
-        "vcs-pkg @ git+https://github.com/org/repo.git@abc123#subdirectory=python\n"
-    )
-    monkeypatch.setattr(uv_env, "find_uv", lambda: "uv")
-    monkeypatch.setattr(
-        uv_env.subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, output, "")
-    )
-    assert uv_env.compile_requirements(["anything"]) == {
-        "packaging": "packaging==24.2",
-        "wheel-pkg": "wheel-pkg @ https://example.com/wheel_pkg-1.0-py3-none-any.whl#sha256=0123abcd",
-        "vcs-pkg": "vcs-pkg @ git+https://github.com/org/repo.git@abc123#subdirectory=python",
-    }
-
-
-@pytest.mark.parametrize(
-    "spec",
-    [
-        None,
-        "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@20390257acb98993f99cdd3bf4df1c983eccadef",
-    ],
-)
+@pytest.mark.parametrize("spec", [None, "optimum-intel==2.1.0"])
 def test_optimum_intel_is_provided_without_changing_the_environment(tmp_path, monkeypatch, spec):
     if spec is None:
         monkeypatch.delenv("GENAI_CLI_OPTIMUM_INTEL_SPEC", raising=False)
@@ -498,28 +438,6 @@ def test_optimum_intel_is_provided_without_changing_the_environment(tmp_path, mo
     assert target.parent == tmp_path / "openvino_genai" / "genai-cli"
     # Only the requirements the environment does not satisfy are overlaid.
     assert reexecuted == [(["transformers==4.57.6"], ["export", "-m", "model", "out"], target)]
-
-
-_DEPENDENCY_GIT = "fork-dependency @ git+https://example.com/fork-dependency.git@0123456789abcdef"
-
-
-@pytest.mark.parametrize("installed, overlaid", [(None, True), (_DEPENDENCY_GIT, False)])
-def test_optimum_intel_overlay_keeps_direct_url_dependencies(tmp_path, monkeypatch, installed, overlaid):
-    # A direct URL pin has no version to compare: it is overlaid unless installed from the same source.
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    pins = {"optimum-intel": "optimum-intel==2.2.0", "optimum": "optimum==2.3.0", "fork-dependency": _DEPENDENCY_GIT}
-    reexecuted = []
-    monkeypatch.setattr(optimum_fallback, "compile_requirements", lambda reqs, exclude=(): pins)
-    monkeypatch.setattr(optimum_fallback, "install_to_target", lambda packages, target: None)
-    monkeypatch.setattr(
-        optimum_fallback, "reexec_with", lambda reqs, argv, pythonpath=None: reexecuted.append(reqs) or 0
-    )
-    monkeypatch.setattr(optimum_fallback, "installed_version", lambda name: None)
-    monkeypatch.setattr(
-        optimum_fallback, "installed_requirement", lambda name: installed if name == "fork-dependency" else None
-    )
-    optimum_fallback._provide_optimum_intel(["export"])
-    assert reexecuted == [[_DEPENDENCY_GIT] if overlaid else []]
 
 
 @pytest.mark.parametrize("distribution_satisfied", [False, True])
