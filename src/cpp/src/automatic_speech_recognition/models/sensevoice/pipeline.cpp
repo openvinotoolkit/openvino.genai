@@ -173,8 +173,10 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
 
     ov::Core& core = utils::singleton_core();
     const std::filesystem::path model_path = models_path / "openvino_model.xml";
-    ov::CompiledModel model = device == "NPU" ? compile_sensevoice_for_npu(model_path, chunk_seconds, properties_copy)
-                                              : core.compile_model(model_path, device, properties_copy);
+    // Also matches qualified names such as NPU.0.
+    const bool is_npu = device.rfind("NPU", 0) == 0;
+    ov::CompiledModel model = is_npu ? compile_sensevoice_for_npu(model_path, device, chunk_seconds, properties_copy)
+                                     : core.compile_model(model_path, device, properties_copy);
     const ov::PartialShape input_shape = model.input("input_features").get_partial_shape();
     if (input_shape.is_static()) {
         OPENVINO_ASSERT(input_shape.size() == 3,
@@ -187,6 +189,7 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
                         input_shape[0].get_length(),
                         ".");
         m_max_batch = 1;
+        OPENVINO_ASSERT(input_shape[1].get_length() > 0, "SenseVoiceSmall requires a positive frame count.");
         m_padded_frames = input_shape[1].get_length();
         m_max_window_samples = FunASRFeatureExtractor::max_samples_for_frames(m_padded_frames);
     }
@@ -223,11 +226,11 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
     const auto features_start_time = std::chrono::steady_clock::now();
-    const std::vector<AudioChunk> windows = split_audio_into_windows(audios, m_max_window_samples);
+    const std::vector<AudioWindow> windows = split_audio_into_windows(audios, m_max_window_samples);
     std::vector<ov::Tensor> features;
     features.reserve(windows.size());
-    for (const AudioChunk& window : windows) {
-        features.push_back(m_feature_extractor.extract(window.wav));
+    for (const AudioWindow& window : windows) {
+        features.push_back(m_feature_extractor.extract(window.samples()));
     }
     const auto features_stop_time = std::chrono::steady_clock::now();
     results.perf_metrics.asr_raw_metrics.features_extraction_durations.emplace_back(
@@ -244,6 +247,7 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
 
     const size_t window_count = features.size();
     const size_t group_size = std::min(window_count, m_max_batch);
+    bool stopped = false;
     for (size_t group_begin = 0; group_begin < window_count; group_begin += group_size) {
         const size_t count = std::min(group_size, window_count - group_begin);
 
@@ -278,8 +282,8 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
             transcript.language = prefix.language;
             transcript.emotion = prefix.emotion;
             transcript.event = prefix.event;
-            const AudioChunk& window = windows[group_begin + b];
-            transcript.samples = window.wav.size();
+            const AudioWindow& window = windows[group_begin + b];
+            transcript.samples = window.samples().size();
             const std::vector<int64_t> transcription_token_ids(token_ids.begin() + prefix.rich_token_count,
                                                                token_ids.end());
 
@@ -289,11 +293,15 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
             detokenization_microseconds +=
                 PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
             generated_token_count += token_ids.size();
-            audio_windows[window.orig_batch].push_back(std::move(transcript));
+            audio_windows[window.audio_index].push_back(std::move(transcript));
 
-            if (streamer) {
-                streamer->write(transcription_token_ids);
+            if (streamer && streamer->write(transcription_token_ids) != StreamingStatus::RUNNING) {
+                stopped = true;
+                break;
             }
+        }
+        if (stopped) {
+            break;
         }
     }
     if (streamer) {

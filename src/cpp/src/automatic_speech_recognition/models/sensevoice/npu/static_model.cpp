@@ -12,6 +12,7 @@
 namespace ov::genai {
 
 ov::CompiledModel compile_sensevoice_for_npu(const std::filesystem::path& model_path,
+                                             const std::string& device,
                                              std::optional<size_t> window_seconds,
                                              const ov::AnyMap& properties) {
     constexpr size_t default_window_seconds = 30;
@@ -27,14 +28,14 @@ ov::CompiledModel compile_sensevoice_for_npu(const std::filesystem::path& model_
         prefix_query_tokens;
 
     ov::Core& core = utils::singleton_core();
-    std::shared_ptr<ov::Model> model = core.read_model(model_path);
+    std::shared_ptr<ov::Model> model = core.read_model(model_path, {}, properties);
     model->reshape(
         {{"input_features", ov::PartialShape{1, padded_frames, SenseVoiceSmallFeatureExtractor::feature_size}},
          {"speech_lengths", ov::PartialShape{1}},
          {"language", ov::PartialShape{1}},
          {"textnorm", ov::PartialShape{1}}});
 
-    return core.compile_model(model, "NPU", properties);
+    return core.compile_model(model, device, properties);
 }
 
 }  // namespace ov::genai

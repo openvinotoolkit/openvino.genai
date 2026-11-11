@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <string>
 
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/properties.hpp"
@@ -17,6 +18,7 @@ namespace ov::genai {
  * and longer audio split.
  */
 ov::CompiledModel compile_sensevoice_for_npu(const std::filesystem::path& model_path,
+                                             const std::string& device,
                                              std::optional<size_t> window_seconds,
                                              const ov::AnyMap& properties);
 
