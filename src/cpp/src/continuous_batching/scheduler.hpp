@@ -486,6 +486,13 @@ public:
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group,
                                size_t max_processed_tokens = std::numeric_limits<size_t>::max()) {
+        if (m_config.use_cache_offload && m_config.num_kv_blocks == 0 && m_config.cache_size == 0) {
+            // Blocks are read back into free cache blocks, which a dynamically sized cache only has once schedule()
+            // has sized it, so a request arriving first has to size it here and keep it growing afterwards.
+            m_cache_orchestrator->ensure_sequence_token_capacity({{sequence_group->get_prompt_len(), 1}});
+            m_cache_orchestrator->ensure_sequence_capacity(sequence_group);
+            m_dynamic_memory_allocation = true;
+        }
         m_cache_orchestrator->restore_cached_blocks(sequence_group, max_processed_tokens);
     }
 
