@@ -23,18 +23,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-PROMPTS: list[str] = [
-    "What is in the image?",
-    "What is special about this image?",
-    "Describe the image"
-]
+PROMPTS: list[str] = ["What is in the image?", "What is special about this image?", "Describe the image"]
 
 ATTENTION_BACKEND: list[str] = ["PA", "SDPA"]
 
 TEST_IMAGE_URLS = {
-    'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
-    'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
-    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350'
+    "cat": "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11",
+    "car": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
+    "handwritten": "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350",
 }
 
 
@@ -78,7 +74,8 @@ def _get_ov_model(model_id: str) -> str:
                 device="CPU",
                 export=True,
                 load_in_8bit=False,
-                trust_remote_code=model_id in {
+                trust_remote_code=model_id
+                in {
                     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
                     "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
                     "optimum-intel-internal-testing/tiny-random-internvl2",
@@ -101,9 +98,7 @@ def _get_ov_model(model_id: str) -> str:
             if tokenizer.chat_template is None:
                 tokenizer.chat_template = processor.chat_template
         tokenizer.save_pretrained(temp_dir)
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer, with_detokenizer=True
-        )
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
         openvino.save_model(ov_tokenizer, temp_dir / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, temp_dir / "openvino_detokenizer.xml")
 
@@ -180,12 +175,13 @@ def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: st
             image = download_image(link)
             image.save(image_path)
         return image
+
     return retry(implementation, PIL.UnidentifiedImageError)
 
 
 @pytest.fixture(scope="module")
 def cat_image(pytestconfig: pytest.Config):
-    return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['cat'], "cat.jpg")
+    return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS["cat"], "cat.jpg")
 
 
 @pytest.fixture(scope="module")

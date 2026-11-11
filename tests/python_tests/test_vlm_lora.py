@@ -80,7 +80,9 @@ def vision_lora_reference(request: pytest.FixtureRequest, vision_lora, cat_tenso
     return backend, reference.texts[0]
 
 
-@pytest.mark.parametrize("mode", [AdapterConfig.Mode.MODE_STATIC, AdapterConfig.Mode.MODE_DYNAMIC, AdapterConfig.Mode.MODE_FUSE])
+@pytest.mark.parametrize(
+    "mode", [AdapterConfig.Mode.MODE_STATIC, AdapterConfig.Mode.MODE_DYNAMIC, AdapterConfig.Mode.MODE_FUSE]
+)
 def test_vlm_vision_lora(mode, vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor) -> None:
     models_path, adapter = vision_lora
     backend, reference = vision_lora_reference
@@ -105,7 +107,9 @@ def test_vlm_vision_lora(mode, vision_lora, vision_lora_reference, cat_tensor: o
 
 
 @pytest.mark.parametrize("use_chat_history", [False, True])
-def test_vlm_vision_lora_switched_per_generate(use_chat_history, vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor) -> None:
+def test_vlm_vision_lora_switched_per_generate(
+    use_chat_history, vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor
+) -> None:
     models_path, adapter = vision_lora
     backend, without_adapters = vision_lora_reference
     config = GenerationConfig(max_new_tokens=10, do_sample=False)
@@ -141,7 +145,9 @@ def test_vlm_vision_lora_cb_constructors(with_tokenizer, vision_lora, cat_tensor
     )
 
     if with_tokenizer:
-        pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), SchedulerConfig(), "CPU", adapters=adapters)
+        pipe = ContinuousBatchingPipeline(
+            models_path, Tokenizer(models_path), SchedulerConfig(), "CPU", adapters=adapters
+        )
     else:
         pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU", {"adapters": adapters})
 
