@@ -118,14 +118,20 @@ private:
             std::variant<int64_t, std::vector<int64_t>, std::monostate> token_variant = m_squeue.pull();
 
             // wait for streamer_ptr result
+            StreamingStatus status = StreamingStatus::RUNNING;
             if (auto token = std::get_if<int64_t>(&token_variant)) {
-                m_status = _get_streaming_status(m_streamer_ptr->write(*token));
+                status = _get_streaming_status(m_streamer_ptr->write(*token));
             } else if (auto tokens = std::get_if<std::vector<int64_t>>(&token_variant)) {
-                m_status = _get_streaming_status(m_streamer_ptr->write(*tokens));
+                status = _get_streaming_status(m_streamer_ptr->write(*tokens));
             } else if (auto stop_token = std::get_if<std::monostate>(&token_variant)) {
                 break;
             } else {
                 OPENVINO_THROW("Internal error: unsupported threaded streamer value");
+            }
+
+            // Storing RUNNING would overwrite the destructor's STOP.
+            if (status != StreamingStatus::RUNNING) {
+                m_status = status;
             }
         }
     }
