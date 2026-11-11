@@ -182,6 +182,13 @@
   components:
     - tokenizers
 
+- name: genai-cli tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_genai_cli.py
+  timeout: 15
+  components:
+    - genai_cli
+
 # Test timed out on Windows. Ticket: 198295
 # - name: API tests
 #   cmd: |-

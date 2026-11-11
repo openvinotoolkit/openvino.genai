@@ -246,6 +246,11 @@
 'category: Python API':
 - 'src/python/**/*'
 
+'category: genai cli':
+- 'src/python/openvino_genai/_cli/**/*'
+- 'tests/python_tests/test_genai_cli.py'
+- 'tests/python_tests/utils/export.py'
+
 'category: CPP API':
 - 'src/cpp/include/openvino/genai/**/*'
 
