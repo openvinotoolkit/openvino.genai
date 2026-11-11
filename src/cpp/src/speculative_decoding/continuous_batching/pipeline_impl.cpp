@@ -808,6 +808,12 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_a
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::dflash_draft_multistep() {
     bool ran_forward = false;
     float step_duration = 0.0f;
+    // step() frees the requests that run out of KV cache, so their per-request inputs are cleared by id.
+    std::vector<uint64_t> request_ids;
+    request_ids.reserve(m_requests.size());
+    for (const auto& request : m_requests) {
+        request_ids.push_back(request->get_request_id());
+    }
     if (!m_dflash_draft_windows.empty()) {
         const auto step_start = std::chrono::steady_clock::now();
         step();
@@ -815,13 +821,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::d
         // A step that schedules nothing returns before the forward and keeps the previous inference_duration.
         ran_forward = get_metrics().scheduled_requests > 0;
     }
+    for (const uint64_t request_id : request_ids) {
+        m_scheduler->clear_expected_num_scheduled_tokens(request_id);
+        m_model_runner->set_initial_hidden_state(request_id, ov::Tensor{});
+    }
 
     size_t num_candidates = 0;
     for (auto& request : m_requests) {
-        const uint64_t request_id = request->get_request_id();
         request->pause_generation(true);
-        m_scheduler->clear_expected_num_scheduled_tokens(request_id);
-        m_model_runner->set_initial_hidden_state(request_id, ov::Tensor{});
         const auto running_sequences = request->get_running_sequences();
         if (running_sequences.empty()) {
             continue;
