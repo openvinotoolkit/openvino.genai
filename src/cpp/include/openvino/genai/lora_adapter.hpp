@@ -109,7 +109,7 @@ private:
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
     std::optional<std::string> tensor_name_prefix;
-    // Tensor applied by another AdapterController
+    // Prefix of tensors applied by another AdapterController
     std::optional<std::string> foreign_tensor_name_prefix;
 
     friend struct AdapterControllerImpl;

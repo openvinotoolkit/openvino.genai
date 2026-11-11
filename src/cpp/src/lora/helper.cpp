@@ -28,8 +28,9 @@ bool update_adapters_from_properties (const AnyMap& properties, std::optional<Ad
     return false;
 }
 
-AnyMap forward_adapters_to_submodels (const AnyMap& properties) {
-    std::optional<AdapterConfig> adapters;
+AnyMap forward_adapters_to_submodels (const AnyMap& properties,
+                                     const std::optional<AdapterConfig>& default_adapters) {
+    auto adapters = default_adapters;
     AnyMap result = *extract_adapters_from_properties(properties, &adapters);
     if (adapters) {
         result[utils::FORWARDED_ADAPTERS_PROPERTY] = *adapters;

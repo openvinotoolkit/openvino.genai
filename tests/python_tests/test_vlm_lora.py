@@ -12,7 +12,10 @@ import pytest
 from openvino_genai import (
     Adapter,
     AdapterConfig,
+    ContinuousBatchingPipeline,
     GenerationConfig,
+    SchedulerConfig,
+    Tokenizer,
     VLMPipeline,
 )
 
@@ -121,3 +124,30 @@ def test_vlm_vision_lora_switched_per_generate(vision_lora, vision_lora_referenc
     assert generate(pipe) == alpha_1, "An omitted adapters argument must keep the configuration of the constructor"
     assert generate(pipe, adapters=dynamic(2.0)) == alpha_2, "Changing only the alpha must upload the new alpha"
     assert generate(pipe, adapters=AdapterConfig()) == without_adapters, "Dropping the adapter must undo it"
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("with_tokenizer", [False, True])
+def test_vlm_vision_lora_cb_constructors(with_tokenizer, vision_lora, cat_tensor: openvino.Tensor) -> None:
+    models_path, adapter = vision_lora
+    adapters = AdapterConfig(adapter, 1.0, AdapterConfig.Mode.MODE_DYNAMIC)
+    config = GenerationConfig(max_new_tokens=10, do_sample=False)
+    reference = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="PA", adapters=adapters).generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=config
+    )
+
+    if with_tokenizer:
+        pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), SchedulerConfig(), "CPU", adapters=adapters)
+    else:
+        pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU", {"adapters": adapters})
+
+    config.adapters = adapters
+    adapted = pipe.generate([PROMPTS[0]], images=[[cat_tensor]], generation_config=[config])
+    assert adapted[0].texts[0] == reference.texts[0]
+
+    config.adapters = AdapterConfig()
+    without_adapters = pipe.generate([PROMPTS[0]], images=[[cat_tensor]], generation_config=[config])
+    reference_without_adapters = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="PA").generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=GenerationConfig(max_new_tokens=10, do_sample=False)
+    )
+    assert without_adapters[0].texts[0] == reference_without_adapters.texts[0]
