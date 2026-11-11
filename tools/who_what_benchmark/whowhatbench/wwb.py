@@ -23,6 +23,7 @@ from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
 from whowhatbench.artifacts_manager import Metrics
+from whowhatbench.video_metrics import VideoQuality
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -630,7 +631,11 @@ def check_args(args):
     else:
         allowed_metrics = {Metrics.SIMILARITY.value}
     if not set(args.metrics) <= allowed_metrics:
-        raise ValueError(f"For --model-type {args.model_type}, supported --metrics are: {', '.join(sorted(allowed_metrics))}.")
+        raise ValueError(
+            f"For --model-type {args.model_type}, supported --metrics are: {', '.join(sorted(allowed_metrics))}."
+        )
+    if Metrics.VIDEO_QUALITY.value in args.metrics:
+        VideoQuality.check_requirements()  # a missing optional package must fail here, not after generation
 
 
 def load_prompts(args):

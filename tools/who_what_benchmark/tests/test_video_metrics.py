@@ -34,6 +34,7 @@ def test_read_frames_and_flicker(two_videos):
 
 
 def test_video_quality_reports_base_target_delta(two_videos, monkeypatch):
+    monkeypatch.setattr(VideoQuality, "REQUIREMENTS", {})  # no pyiqa needed: MUSIQ is stubbed below
     metric = VideoQuality(metrics=["imaging_quality", "temporal_flicker"])
     monkeypatch.setattr(metric, "imaging_quality", lambda frames: float(frames.mean()))  # no MUSIQ download
     gold = pd.DataFrame({"videos": [two_videos[0]]})
@@ -58,6 +59,13 @@ def test_video_quality_reports_base_target_delta(two_videos, monkeypatch):
 def test_video_quality_rejects_unknown_metric():
     with pytest.raises(ValueError):
         VideoQuality(metrics=["sharpness"])
+
+
+def test_video_quality_checks_optional_packages_at_construction(monkeypatch):
+    monkeypatch.setattr(VideoQuality, "REQUIREMENTS", {"imaging_quality": ("wwb_no_such_package", "no-such-package")})
+    with pytest.raises(ImportError, match="pip install no-such-package"):
+        VideoQuality(metrics=["imaging_quality"])
+    VideoQuality(metrics=["temporal_flicker"])  # metrics without optional packages still construct
 
 
 def test_object_presence_scores_and_lost_objects(two_videos, monkeypatch):

@@ -18,6 +18,7 @@ ObjectPresence
     "objects_lost" names the objects the base model shows and the target does not.
 """
 
+import importlib
 import json
 import logging
 import os
@@ -35,6 +36,14 @@ MUSIQ_URL = "https://github.com/chaofengc/IQA-PyTorch/releases/download/v0.1-wei
 AESTHETIC_URL = "https://raw.githubusercontent.com/LAION-AI/aesthetic-predictor/main/sa_0_4_vit_l_14_linear.pth"
 CLIP_MODEL_ID = "openai/clip-vit-large-patch14"
 DETECTOR_MODEL_ID = "google/owlv2-base-patch16-ensemble"
+
+
+def _import(module, package):
+    """Import an optional dependency, naming the package to install when it is missing."""
+    try:
+        return importlib.import_module(module)
+    except ImportError as exc:
+        raise ImportError(f"{module} is not available ({exc}); install it with: pip install {package}") from exc
 
 
 def _fetch(url):
@@ -91,11 +100,13 @@ def _paired_results(name, base_values, target_values):
 
 class VideoQuality:
     METRICS = ("imaging_quality", "aesthetic_quality", "temporal_flicker")
+    REQUIREMENTS = {"imaging_quality": ("pyiqa.archs.musiq_arch", "pyiqa")}  # optional packages, per metric
 
     def __init__(self, metrics=METRICS, max_frames=16, device="cpu"):
         unknown = set(metrics) - set(self.METRICS)
         if unknown:
             raise ValueError(f"Unknown video quality metrics: {sorted(unknown)}")
+        self.check_requirements(metrics)
         self.metrics = list(metrics)
         self.max_frames = max_frames
         self.device = device
@@ -103,12 +114,17 @@ class VideoQuality:
         self._clip = None
         self._aesthetic_head = None
 
+    @classmethod
+    def check_requirements(cls, metrics=METRICS):
+        """Import the optional packages the metrics need. The models themselves load lazily at scoring time;
+        this runs at start-up so that a missing package fails before the videos are generated."""
+        for name in metrics:
+            if name in cls.REQUIREMENTS:
+                _import(*cls.REQUIREMENTS[name])
+
     def _musiq_model(self):
         if self._musiq is None:
-            try:
-                from pyiqa.archs.musiq_arch import MUSIQ
-            except ImportError as exc:
-                raise ImportError("imaging_quality needs the pyiqa package: pip install pyiqa") from exc
+            MUSIQ = _import(*self.REQUIREMENTS["imaging_quality"]).MUSIQ
             state = torch.load(_fetch(MUSIQ_URL), map_location="cpu")
             self._musiq = MUSIQ(pretrained=False).eval().to(self.device)
             self._musiq.load_state_dict(state.get("params", state))

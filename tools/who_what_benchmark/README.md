@@ -199,7 +199,7 @@ from a degraded one. Two optional metrics score every video on its own and repor
 difference per video:
 
 * `video_quality`: imaging quality (MUSIQ, needs `pip install pyiqa`), aesthetic quality (LAION predictor on CLIP ViT-L/14
-  features) and temporal flicker. The formulas follow VBench, so the values are comparable with VBench results.
+  features) and temporal flicker. The formulas follow VBench (Huang, 2023), so the values are comparable with VBench results.
 * `object_presence`: fraction of frames in which an open-vocabulary detector (OWLv2) finds the objects listed for the prompt.
   The built-in prompts carry their objects; a custom dataset provides them in an `objects` column, separated by `;`.
   The `objects_lost` column names the objects the base model shows and the target does not.
