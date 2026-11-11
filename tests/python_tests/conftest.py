@@ -16,6 +16,7 @@ from utils.constants import (
 )
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
+from utils.export import export_command, export_with_genai_cli, native_genai_cli_model_type
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -59,6 +60,9 @@ def _get_ov_model(model_id: str) -> str:
 
     def convert_to_temp(temp_dir: Path) -> None:
         model_cached = retry_request(lambda: snapshot_download(model_id))
+        if native_genai_cli_model_type(model_cached) is not None:
+            export_with_genai_cli(model_cached, temp_dir, ["--trust-remote-code"])
+            return
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -270,27 +274,20 @@ def image_generation_model(request):
     manager = AtomicDownloadManager(model_path)
 
     def convert_model(temp_path: Path) -> None:
-        command = [
-            "optimum-cli",
-            "export",
-            "openvino",
-            "--model",
-            model_name,
-            "--trust-remote-code",
-            "--weight-format",
-            "fp16",
-        ]
+        options = ["--trust-remote-code", "--weight-format", "fp16"]
         export_task = IMAGE_GEN_MODEL_EXPORT_TASKS.get(model_id)
         if export_task is not None:
-            command += ["--task", export_task]
-        command.append(str(temp_path))
+            options += ["--task", export_task]
+        command = export_command(model_name, temp_path, options)
         logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, encoding="utf-8", text=True, capture_output=True))
 
     try:
         manager.execute(convert_model)
     except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Stdout:\n{error.stdout}\nStderr:\n{error.stderr}")
+        logger.exception(
+            f"{error.cmd[0]} returned {error.returncode}. Stdout:\n{error.stdout}\nStderr:\n{error.stderr}"
+        )
         raise
 
     return str(model_path)
