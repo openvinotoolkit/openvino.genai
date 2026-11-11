@@ -3,12 +3,9 @@
 
 #include "omni/pipeline_impl.hpp"
 
-#include <chrono>
 #include <utility>
 
-#include "omni/speech_streamer_utils.hpp"
 #include "openvino/core/except.hpp"
-#include "openvino/genai/perf_metrics.hpp"
 
 namespace ov::genai {
 
@@ -31,40 +28,6 @@ void enforce_text_config_compatible_with_audio(const GenerationConfig& text_conf
                     text_config.num_return_sequences,
                     "); the talker consumes a single hidden-state stream");
 }
-
-/// @brief Keeps every speech chunk and forwards it to the caller's streamer.
-class CollectingSpeechStreamer : public OmniSpeechStreamerBase {
-public:
-    explicit CollectingSpeechStreamer(const OmniSpeechStreamerVariant& streamer)
-        : m_streamer(streamer),
-          m_is_active(is_speech_streamer_active(streamer)) {}
-
-    StreamingStatus write(const ov::Tensor& audio_chunk) override {
-        const float* samples = audio_chunk.data<const float>();
-        m_samples.insert(m_samples.end(), samples, samples + audio_chunk.get_size());
-        return m_is_active ? invoke_speech_streamer(m_streamer, audio_chunk) : StreamingStatus::RUNNING;
-    }
-
-    void end() override {
-        if (m_is_active) {
-            end_speech_streamer(m_streamer);
-        }
-    }
-
-    ov::Tensor waveform() const {
-        if (m_samples.empty()) {
-            return {};
-        }
-        ov::Tensor waveform(ov::element::f32, {1, 1, m_samples.size()});
-        std::copy(m_samples.begin(), m_samples.end(), waveform.data<float>());
-        return waveform;
-    }
-
-private:
-    const OmniSpeechStreamerVariant& m_streamer;
-    bool m_is_active;
-    std::vector<float> m_samples;
-};
 
 }  // namespace
 
@@ -90,8 +53,6 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate_speech_in_stream(
     const OmniTalkerSpeechConfig& talker_speech_config,
     const StreamerVariant& streamer,
     const OmniSpeechStreamerVariant& speech_streamer) {
-    const auto collector = std::make_shared<CollectingSpeechStreamer>(speech_streamer);
-    const auto start_time = std::chrono::steady_clock::now();
     VLMDecodedResults vlm_result = generate(ov::AnyMap{
         ov::genai::images(images),
         ov::genai::videos(videos),
@@ -100,18 +61,10 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate_speech_in_stream(
         ov::genai::generation_config(text_config),
         ov::genai::streamer(streamer),
         ov::genai::talker_speech_config(talker_speech_config),
-        ov::genai::speech_streamer(std::shared_ptr<OmniSpeechStreamerBase>(collector)),
-        {STREAM_SPEECH_CHUNKS_ARG_NAME, is_speech_streamer_active(speech_streamer)},
+        ov::genai::speech_streamer(speech_streamer),
     });
     OmniDecodedResults omni_result;
     static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
-    ov::Tensor waveform = collector->waveform();
-    if (waveform) {
-        omni_result.speech_result.perf_metrics.num_generated_samples = waveform.get_size();
-        omni_result.speech_result.waveforms.push_back(std::move(waveform));
-    }
-    omni_result.speech_result.perf_metrics.generation_time_ms =
-        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time) / 1000.0f;
     return omni_result;
 }
 

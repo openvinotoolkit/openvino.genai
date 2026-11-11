@@ -126,11 +126,13 @@ InputsEmbedderLFM3Omni::InputsEmbedderLFM3Omni(const VLMConfig& vlm_config,
                                                const std::string& device,
                                                const ov::AnyMap device_config)
     : InputsEmbedderLFM3VL(vlm_config, model_dir, tokenizer, device, device_config),
-      m_audio_encoder(std::make_unique<AudioEncoderLFM3>(
-          utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
-          model_dir,
-          device,
-          device_config)),
+      m_make_audio_encoder([model_dir, device, device_config] {
+          return std::make_unique<AudioEncoderLFM3>(
+              utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
+              model_dir,
+              device,
+              device_config);
+      }),
       m_suppressed_token_ids(read_suppressed_token_ids(model_dir)) {}
 
 InputsEmbedderLFM3Omni::InputsEmbedderLFM3Omni(const VLMConfig& vlm_config,
@@ -141,11 +143,14 @@ InputsEmbedderLFM3Omni::InputsEmbedderLFM3Omni(const VLMConfig& vlm_config,
                                                const ov::AnyMap device_config)
     : InputsEmbedderLFM3VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
       m_suppressed_token_ids(read_suppressed_token_ids(config_dir_path)) {
-    const auto& [model, weights] = utils::get_model_weights_pair(models_map, "audio_encoder");
-    m_audio_encoder = std::make_unique<AudioEncoderLFM3>(utils::singleton_core().read_model(model, weights),
-                                                         config_dir_path,
-                                                         device,
-                                                         device_config);
+    const ModelsMap audio_encoder_map = utils::select_models(models_map, {"audio_encoder"});
+    m_make_audio_encoder = [audio_encoder_map, config_dir_path, device, device_config] {
+        const auto& [model, weights] = utils::get_model_weights_pair(audio_encoder_map, "audio_encoder");
+        return std::make_unique<AudioEncoderLFM3>(utils::singleton_core().read_model(model, weights),
+                                                  config_dir_path,
+                                                  device,
+                                                  device_config);
+    };
 }
 
 const std::set<int64_t>& InputsEmbedderLFM3Omni::get_suppressed_token_ids() const {
@@ -160,6 +165,9 @@ std::vector<EncodedAudio> InputsEmbedderLFM3Omni::encode_audios(const std::vecto
         if (audio.get_size() == 0) {
             encoded_audios.push_back({ov::Tensor(), 0});
             continue;
+        }
+        if (!m_audio_encoder) {
+            m_audio_encoder = m_make_audio_encoder();
         }
         ov::Tensor features = m_audio_encoder->encode(audio);
         const size_t num_audio_tokens = features.get_shape()[0];

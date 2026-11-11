@@ -370,8 +370,6 @@ void init_omni_pipeline(py::module_& m) {
         .def_readwrite("cp_repetition_penalty", &OmniTalkerSpeechConfig::cp_repetition_penalty);
 
     // PyTalkerBase is the trampoline that lets a Python subclass satisfy the pure virtuals.
-    // generate() is bound further down, once TalkerResults is registered, so its signature
-    // renders as a Python type rather than a raw C++ name.
     auto talker_base = py::class_<TalkerBase, PyTalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
         R"(Abstract speech-output backend for OmniPipeline.
 
@@ -446,31 +444,6 @@ void init_omni_pipeline(py::module_& m) {
                 kwargs: Device properties.
              )");
 
-    py::class_<ov::genai::TalkerPerfMetrics>(m, "TalkerPerfMetrics",
-        R"(Performance metrics for Talker speech generation.
-
-        Parameters:
-        num_generated_samples:  number of audio samples generated (waveform length).
-        generation_time_ms:     total speech generation time in milliseconds. LFM3-Omni decodes
-                                text and speech in one loop, so its value is the whole generate() call.
-        )")
-        .def(py::init<>())
-        .def_readonly("num_generated_samples", &ov::genai::TalkerPerfMetrics::num_generated_samples)
-        .def_readonly("generation_time_ms", &ov::genai::TalkerPerfMetrics::generation_time_ms);
-
-    py::class_<ov::genai::TalkerResults>(m, "TalkerResults",
-        R"(Output of the talker speech backend. Holds speech waveforms and perf metrics.
-
-        Parameters:
-        waveforms:       speech waveform tensors (one per result, present when return_audio=True).
-        perf_metrics:    speech-side perf metrics (TalkerPerfMetrics).
-        )")
-        .def(py::init<>())
-        .def_readonly("waveforms", &ov::genai::TalkerResults::waveforms)
-        .def_readonly("perf_metrics", &ov::genai::TalkerResults::perf_metrics);
-
-    // Deferred from the TalkerBase registration so OmniTalkerSpeechConfig and TalkerResults render
-    // as Python types in the signature rather than raw C++ names.
     talker_base.def("generate",
                     [](TalkerBase& self,
                        const VLMDecodedResults& vlm_result,
@@ -513,18 +486,16 @@ void init_omni_pipeline(py::module_& m) {
                     )");
 
     py::class_<OmniDecodedResults, VLMDecodedResults>(m, "OmniDecodedResults",
-        R"(Omni-specific decoded results including speech outputs.
-
-        Extends VLMDecodedResults with a TalkerResults that holds speech waveforms and perf metrics.
+        R"(Result of OmniPipeline.generate.
 
         Parameters:
         texts:           vector of resulting sequences (inherited from DecodedResults).
         scores:          scores for each sequence (inherited from DecodedResults).
         perf_metrics:    text-side perf metrics (inherited from VLMDecodedResults).
-        speech_result:   TalkerResults with waveforms and perf_metrics.
+        speech_result:   TalkerResults with waveforms and perf_metrics (inherited from VLMDecodedResults);
+                         empty when speech was not requested.
         )")
-        .def(py::init<>())
-        .def_readonly("speech_result", &OmniDecodedResults::speech_result);
+        .def(py::init<>());
 
     py::class_<OmniPipeline>(m, "OmniPipeline", omni_pipeline_docstring)
         .def(py::init([](const std::filesystem::path& models_path,

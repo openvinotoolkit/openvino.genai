@@ -111,6 +111,8 @@ order of text and speech:
 answers with speech only. The voice and the language are set in the system prompt, as the model card describes, for
 example `Perform TTS in American English using a female voice.` The `cp_temperature`, `cp_top_k` and
 `cp_repetition_penalty` fields control speech sampling; `speaker` and the `talker_*` fields are rejected.
+`VLMPipeline` returns the same speech: pass `talker_speech_config` to `generate()` and read
+`VLMDecodedResults.speech_result`. A speech streamer is optional for both pipelines.
 
 <LanguageTabs>
     <TabItemPython>

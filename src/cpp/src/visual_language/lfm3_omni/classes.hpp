@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 
 #include "circular_buffer_queue.hpp"
@@ -92,6 +93,8 @@ public:
     const std::set<int64_t>& get_suppressed_token_ids() const override;
 
 private:
+    // Built on the first non-empty audio, so prompts without audio need neither the encoder nor its compile time.
+    std::function<std::unique_ptr<AudioEncoderLFM3>()> m_make_audio_encoder;
     std::unique_ptr<AudioEncoderLFM3> m_audio_encoder;
     std::set<int64_t> m_suppressed_token_ids;
 };

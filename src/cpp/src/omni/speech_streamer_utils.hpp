@@ -6,7 +6,6 @@
 #include <exception>
 #include <functional>
 #include <memory>
-#include <string>
 #include <type_traits>
 #include <variant>
 
@@ -15,10 +14,6 @@
 #include "openvino/runtime/tensor.hpp"
 
 namespace ov::genai {
-
-// Internal AnyMap key: false when OmniPipeline collects the waveform but the caller set no speech streamer. Speech is
-// then decoded once at the end, so the chunk settings do not change the waveform.
-inline const std::string STREAM_SPEECH_CHUNKS_ARG_NAME = "stream_speech_chunks";
 
 inline StreamingStatus invoke_speech_streamer(const OmniSpeechStreamerVariant& streamer, const ov::Tensor& chunk) {
     return std::visit(

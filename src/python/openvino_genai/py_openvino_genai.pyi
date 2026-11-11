@@ -3321,21 +3321,17 @@ class MeanStdPair:
         ...
 class OmniDecodedResults(VLMDecodedResults):
     """
-    Omni-specific decoded results including speech outputs.
-    
-            Extends VLMDecodedResults with a TalkerResults that holds speech waveforms and perf metrics.
+    Result of OmniPipeline.generate.
     
             Parameters:
             texts:           vector of resulting sequences (inherited from DecodedResults).
             scores:          scores for each sequence (inherited from DecodedResults).
             perf_metrics:    text-side perf metrics (inherited from VLMDecodedResults).
-            speech_result:   TalkerResults with waveforms and perf_metrics.
+            speech_result:   TalkerResults with waveforms and perf_metrics (inherited from VLMDecodedResults);
+                             empty when speech was not requested.
             
     """
     def __init__(self) -> None:
-        ...
-    @property
-    def speech_result(self) -> TalkerResults:
         ...
 class OmniPipeline:
     """
@@ -5541,7 +5537,8 @@ class TalkerPerfMetrics:
         ...
 class TalkerResults:
     """
-    Output of the talker speech backend. Holds speech waveforms and perf metrics.
+    Speech output: waveforms and perf metrics. Returned by TalkerBase.generate and held by
+            VLMDecodedResults.speech_result.
     
             Parameters:
             waveforms:       speech waveform tensors (one per result, present when return_audio=True).
@@ -6500,6 +6497,9 @@ class VLMDecodedResults(DecodedResults):
         texts:            vector of resulting sequences.
         scores:           scores for each sequence.
         metrics:          performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+        speech_result:    speech output of type openvino_genai.TalkerResults. VLMPipeline fills it only for LFM3-Omni
+                          when talker_speech_config.return_audio is True; empty for other models. OmniPipeline also
+                          fills it for Qwen3-Omni. Preview API: subject to change.
     """
     def __init__(self) -> None:
         ...
@@ -6516,6 +6516,9 @@ class VLMDecodedResults(DecodedResults):
         ...
     @property
     def scores(self) -> list[float]:
+        ...
+    @property
+    def speech_result(self) -> TalkerResults:
         ...
     @property
     def texts(self) -> list[str]:

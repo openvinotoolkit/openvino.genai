@@ -3,6 +3,7 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 
+#include <functional>
 #include <optional>
 #include <random>
 #include <utility>
@@ -101,7 +102,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     std::string m_system_message;
     std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
 
-    // LFM3-Omni speaks in the language model stream: the engine replaces the text decode loop.
+    // LFM3-Omni speaks in the language model stream: the engine replaces the text decode loop. It is built on the
+    // first speech request, so text-only use needs neither the speech models nor their compile time.
+    std::function<std::unique_ptr<LFM3OmniSpeechEngine>()> m_make_speech_engine;
     std::unique_ptr<LFM3OmniSpeechEngine> m_speech_engine;
 private:
     void finalize_initialization(
@@ -207,7 +210,13 @@ private:
 
         finalize_initialization(language_model, kv_pos);
         if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && !m_is_npu) {
-            m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device, properties_copy);
+            m_make_speech_engine = [this, models_dir, device, properties_copy] {
+                return std::make_unique<LFM3OmniSpeechEngine>(models_dir,
+                                                              m_language,
+                                                              m_embedding,
+                                                              device,
+                                                              properties_copy);
+            };
         }
     }
 
@@ -257,8 +266,12 @@ private:
         }
         finalize_initialization(language_model, kv_pos);
         if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI) {
-            m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(
-                models_map, config_dir_path, m_language, m_embedding, device, properties_copy);
+            const ModelsMap speech_models =
+                utils::select_models(models_map, {"depth_decoder", "audio_out_embeddings", "audio_decoder"});
+            m_make_speech_engine = [this, speech_models, config_dir_path, device, properties_copy] {
+                return std::make_unique<LFM3OmniSpeechEngine>(
+                    speech_models, config_dir_path, m_language, m_embedding, device, properties_copy);
+            };
         }
     }
 public:
@@ -544,6 +557,16 @@ public:
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
+        if (m_pending_speech_config) {
+            // Speech and text come from one decode loop, so the speech time is the whole call.
+            auto& speech_metrics = decoded.speech_result.perf_metrics;
+            speech_metrics.generation_time_ms =
+                PerfMetrics::get_microsec(generate_end_time - generate_start_time) / 1000.0f;
+            if (finish_info.speech_waveform) {
+                speech_metrics.num_generated_samples = finish_info.speech_waveform.get_size();
+                decoded.speech_result.waveforms.push_back(std::move(finish_info.speech_waveform));
+            }
+        }
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -753,6 +776,16 @@ public:
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
+        if (m_pending_speech_config) {
+            // Speech and text come from one decode loop, so the speech time is the whole call.
+            auto& speech_metrics = decoded.speech_result.perf_metrics;
+            speech_metrics.generation_time_ms =
+                PerfMetrics::get_microsec(generate_end_time - generate_start_time) / 1000.0f;
+            if (generation_finish_info.speech_waveform) {
+                speech_metrics.num_generated_samples = generation_finish_info.speech_waveform.get_size();
+                decoded.speech_result.waveforms.push_back(std::move(generation_finish_info.speech_waveform));
+            }
+        }
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -1048,7 +1081,7 @@ private:
     }
 
     void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const override {
-        if (!m_speech_engine) {
+        if (!m_make_speech_engine) {
             VLMBackend::check_speech_in_stream(speech_config);
         }
         LFM3SpeechRequest::validate(speech_config);
@@ -1060,9 +1093,10 @@ private:
                                                    const GenerationConfig& generation_config,
                                                    const std::shared_ptr<StreamerBase>& streamer,
                                                    utils::CacheState& cache_state) {
-        // The waveform reaches the caller through the speech streamer only.
-        LFM3SpeechRequest request(*m_pending_speech_config, generation_config);
-        request.stream_chunks = m_pending_stream_speech_chunks;
+        const LFM3SpeechRequest request(*m_pending_speech_config, generation_config);
+        if (!m_speech_engine) {
+            m_speech_engine = m_make_speech_engine();
+        }
         const LFM3SpeechResult speech = m_speech_engine->generate(inputs_embeds,
                                                                   attention_mask,
                                                                   last_prompt_token,
@@ -1087,6 +1121,7 @@ private:
         finish_info.results.finish_reasons = {speech.finish_reason};
         finish_info.results.perf_metrics.raw_metrics = speech.raw_perf_metrics;
         finish_info.streaming_finish_status = speech.status;
+        finish_info.speech_waveform = speech.waveform;
         return finish_info;
     }
 };

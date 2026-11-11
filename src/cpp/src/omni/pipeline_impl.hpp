@@ -76,7 +76,7 @@ private:
     void assert_omni_capable() const;
 
     /// @brief Speech decoded by the VLM: talker_speech_config goes through its AnyMap generate(), and the
-    /// waveform comes back through the speech streamer.
+    /// waveform comes back in VLMDecodedResults::speech_result.
     OmniDecodedResults generate_speech_in_stream(const std::function<VLMDecodedResults(const ov::AnyMap&)>& generate,
                                                  const std::vector<ov::Tensor>& images,
                                                  const std::vector<ov::Tensor>& videos,
