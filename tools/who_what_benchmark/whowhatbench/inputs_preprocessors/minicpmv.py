@@ -107,11 +107,7 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
             if self.chat_mode:
                 raise ValueError("Chat mode is not supported when there is no chat_template in processor or tokenizer.")
             else:
-                prompt = (
-                    f"<|im_start|>user\n{im_suffix}{text}<|im_end|>\n<|im_start|>assistant\n"
-                    if media
-                    else text
-                )
+                prompt = f"<|im_start|>user\n{im_suffix}{text}<|im_end|>\n<|im_start|>assistant\n" if media else text
 
         if self.has_video:
             inputs = processor(
