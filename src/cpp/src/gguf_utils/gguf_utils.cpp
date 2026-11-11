@@ -3,6 +3,7 @@
 
 #include "gguf_utils.hpp"
 
+#include <utility>
 #include <vector>
 
 #include "model_desc.hpp"
@@ -20,6 +21,8 @@ const std::string FRONTEND_GGUF_READER = "FRONTEND";
 const std::string LEGACY_GGUF_READER = "LEGACY";
 
 namespace gguf_utils {
+
+const std::string GGUF_MTP_TARGET_PROPERTY = "GGUF_MTP_TARGET";
 
 GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
     GGUFProperties result;
@@ -41,6 +44,10 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
         result.legacy_reader = reader == LEGACY_GGUF_READER;
         result.rest.erase(reader_it);
     }
+    if (const auto it = result.rest.find(GGUF_MTP_TARGET_PROPERTY); it != result.rest.end()) {
+        result.mtp_target = it->second.as<GGUFModelHolder>();
+        result.rest.erase(it);
+    }
 
     return result;
 }
@@ -48,6 +55,8 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
 std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_path,
                                          const GGUFProperties& properties) {
 #ifdef ENABLE_GGUF
+    if (properties.mtp_target && *properties.mtp_target)
+        return std::exchange(*properties.mtp_target, nullptr);
     try {
         const auto draft = properties.rest.find(utils::DRAFT_MODEL_ARG_NAME);
         const bool embeddings = draft != properties.rest.end() &&
@@ -76,12 +85,14 @@ std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_pa
 #endif
 }
 
-std::shared_ptr<ov::Model> read_gguf_mtp_model(const std::filesystem::path& model_path,
-                                               const GGUFProperties& properties) {
+GGUFMtpModels read_gguf_mtp_models(const std::filesystem::path& model_path, const GGUFProperties& properties) {
 #ifdef ENABLE_GGUF
     OPENVINO_ASSERT(!properties.legacy_reader.value_or(false), "GGUF MTP drafts require GGUF_READER=\"FRONTEND\".");
     OPENVINO_ASSERT(!properties.enable_save_ov_model, "Saving a GGUF MTP draft is not supported.");
-    return convert_gguf_with_frontend(model_path.string(), true, "mtp");
+    GGUFMtpModels models;
+    models.target = convert_gguf_with_frontend(model_path.string(), true, "mtp", &models.draft);
+    OPENVINO_ASSERT(models.draft, "The GGUF frontend did not produce an MTP draft for ", model_path.string());
+    return models;
 #else
     OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif

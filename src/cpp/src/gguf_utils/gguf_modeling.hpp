@@ -10,10 +10,12 @@
 /// \brief Load and convert a .gguf file with the OpenVINO GGUF frontend.
 ///
 /// GenAIExtension prepares stateful caches and GenAI IO inside the frontend conversion.
-/// Registration is scoped to this frontend instance.
+/// Registration is scoped to this frontend instance. Component "mtp" also returns the file's
+/// MTP draft through mtp_draft; it shares weight buffers with the returned target.
 std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
                                                       bool embeddings = false,
-                                                      const std::string& component = {});
+                                                      const std::string& component = {},
+                                                      std::shared_ptr<ov::Model>* mtp_draft = nullptr);
 
 /// \brief Convert a .gguf file into an ov::Model.
 ///

@@ -74,14 +74,13 @@ print(pipe.generate(history, max_new_tokens=64))
 
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
 
-## Bonsai-2 with embedded MTP
+## Multi-token prediction (MTP)
 
-The GGUF frontend supports an embedded single-block Qwen3.5 MTP draft.
-As in llama.cpp, MTP is opt-in: set `speculative_type="mtp"` and GenAI builds the
-draft from the NextN block of the same GGUF file, then runs its existing MTP
-speculative decoder. The draft is converted from the file separately from the
-target and is compiled with the target device and properties. This requires a
-compatible OpenVINO GGUF frontend and GenAI build containing GGUF MTP support.
+Some GGUF checkpoints store NextN draft blocks after the target layers
+(`<arch>.nextn_predict_layers`). As in llama.cpp, MTP is opt-in: set `speculative_type="mtp"`
+and GenAI converts the file once into the target and its draft, then runs its MTP speculative
+decoder. Weights read by both models, such as the token embeddings, are unpacked once and
+share host memory. The draft is compiled with the target device and properties.
 
 | llama.cpp | OpenVINO GenAI |
 | --- | --- |
@@ -89,16 +88,14 @@ compatible OpenVINO GGUF frontend and GenAI build containing GGUF MTP support.
 | `-md draft.gguf` | `LLMPipeline(..., draft_model_path="draft.gguf")` |
 | `--spec-draft-n-max N` (default 3) | `generate(..., num_assistant_tokens=N)` (default 3 for MTP) |
 
-`speculative_type="mtp"` selects `GGUF_READER="FRONTEND"` when the reader is not
-set. `draft_model_path` also accepts a GGUF file with MTP layers, or an OpenVINO
-IR directory. Use `draft_model()` instead when the draft needs a different device
-or properties.
+`speculative_type="mtp"` selects `GGUF_READER="FRONTEND"` when the reader is not set.
+`draft_model_path` also accepts another GGUF file with MTP layers, or an OpenVINO IR directory.
+Use `draft_model()` instead when the draft needs a different device or properties.
 
-The PrismML publishes official single-file MTP checkpoints,
+The GGUF frontend currently builds drafts for `qwen35` checkpoints with one NextN block that
+shares the target token embeddings, such as PrismML's
 `Ternary-Bonsai-2-4B-PQ2_0-MTP-Q8_0.gguf` and `Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf`.
-They contain the PQ2_0 target weights plus a Q8_0 NextN block
-(`qwen35.nextn_predict_layers=1`), so the same file serves as target and draft.
-Plain Bonsai-2 PQ2_0 GGUF files do **not** contain MTP weights.
+GGUF files without NextN weights cannot be used for MTP.
 
 ```python
 import openvino_genai as genai
@@ -111,16 +108,10 @@ print(pipe.generate("What is the capital of France?", max_new_tokens=64, do_samp
                     num_assistant_tokens=2))
 ```
 
-uses paged attention, greedy decoding, one returned sequence and a fixed
-positive `num_assistant_tokens`; an unset value means 3. Confidence-based drafting and tree search are
-not supported. Recurrent-state capacity must cover both live requests and MTP
-verification scratch. With a custom `scheduler_config`, set
-`num_linear_attention_blocks` to at least the number of live requests plus
-`num_assistant_tokens + 1`.
-The target and draft must share token embeddings; checkpoints with a separate
-NextN embedding table are rejected.
-Loading the draft or target with the legacy reader,
-or saving this decomposed pipeline through `ENABLE_SAVE_OV_MODEL`, is unsupported
-and raises an error. Start with string/chat inputs; no external tokenizer export
-or separate MTP IR directory is needed. MTP acceptance and speed depend on the
-checkpoint, prompt and hardware; enabling it does not guarantee a speedup.
+GGUF MTP uses paged attention, greedy decoding, one returned sequence and a fixed positive
+`num_assistant_tokens`; an unset value means 3. Confidence-based drafting and tree search are
+not supported. Recurrent-state capacity must cover both live requests and MTP verification
+scratch. With a custom `scheduler_config`, set `num_linear_attention_blocks` to at least the
+number of live requests plus `num_assistant_tokens + 1`. The legacy reader and
+`ENABLE_SAVE_OV_MODEL` are not supported with MTP and raise an error. MTP acceptance and speed
+depend on the checkpoint, prompt and hardware; enabling it does not guarantee a speedup.

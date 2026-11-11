@@ -97,6 +97,13 @@ ov::AnyMap resolve_draft_model_request(const std::filesystem::path& models_path,
         draft_properties.erase(ov::genai::gguf_reader.name());
         draft_properties.erase(ov::genai::enable_save_ov_model.name());
     }
+    if (is_gguf_model(models_path) && is_gguf_model(source) && std::filesystem::equivalent(models_path, source)) {
+        // One conversion yields both models, so they share weight buffers.
+        auto target = std::make_shared<std::shared_ptr<ov::Model>>();
+        resolved[utils::DRAFT_MODEL_ARG_NAME] = gguf_mtp_draft_model(source, device, draft_properties, target);
+        resolved[gguf_utils::GGUF_MTP_TARGET_PROPERTY] = target;
+        return resolved;
+    }
     resolved.insert(ov::genai::draft_model(source, device, draft_properties));
     return resolved;
 }
