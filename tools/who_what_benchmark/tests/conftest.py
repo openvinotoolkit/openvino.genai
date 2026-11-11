@@ -3,6 +3,7 @@ import pytest
 import logging
 import shutil
 import subprocess  # nosec B404
+import sys
 
 from pathlib import Path
 from typing import Any, Callable, Dict
@@ -175,9 +176,7 @@ def convert_model(model_name: str) -> str:
         if "--weight-format" not in convert_args:
             convert_args.extend(["--weight-format", "fp16"])
         command = [
-            "optimum-cli",
-            "export",
-            "openvino",
+            *_export_tool(MODELS[model_id]["name"]),
             "--model",
             MODELS[model_id]["name"],
             *convert_args,
@@ -189,10 +188,26 @@ def convert_model(model_name: str) -> str:
     try:
         manager.execute(convert)
     except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.stderr}")
+        logger.exception(f"{error.cmd[0]} returned {error.returncode}. Output:\n{error.stderr}")
         raise
 
     return str(model_path)
+
+
+def _export_tool(model: str) -> list[str]:
+    """genai-cli for the models it converts natively, optimum-cli for all others (same export options).
+
+    Mirrors export_command of tests/python_tests/utils/export.py, which the WWB tests cannot import. WWB can be
+    installed next to an openvino-genai release that has no genai-cli, hence the ImportError fallback.
+    """
+    try:
+        from openvino_genai._cli.main import native_exporter_for_model
+
+        if native_exporter_for_model(model)[1] is not None:
+            return [sys.executable, "-m", "openvino_genai._cli", "export"]
+    except ImportError:  # openvino_genai built without genai-cli
+        pass
+    return ["optimum-cli", "export", "openvino"]
 
 
 @pytest.fixture(scope="session", autouse=True)
