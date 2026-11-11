@@ -705,6 +705,52 @@ TEST(TestBlockManager, TemporaryReservationReclaimsOldestCheckpointFirst) {
     }
 }
 
+// Blocks released back to back must be evicted in release order. The steady clock often returns the same value for
+// consecutive calls, so ordering by its raw timestamps leaves the choice to the hash table's iteration order, which
+// differs from run to run. Repeated with different tokens, so each round lands in a different hash table layout.
+TEST(TestBlockManager, PrefixCacheEvictsBlocksInReleaseOrderEvenWhenReleasedBackToBack) {
+    constexpr size_t block_size = 4;
+    constexpr size_t num_rounds = 64;
+    for (size_t round = 0; round < num_rounds; ++round) {
+        const int64_t base = static_cast<int64_t>(round) * 100;
+        ov::genai::BlockManager manager(3, true, block_size);
+
+        std::vector<ov::genai::SequenceGroup::Ptr> cached_groups;
+        std::vector<uint64_t> cached_ids;
+        for (int64_t i = 0; i < 3; ++i) {
+            auto group = create_sequence_group({base + i * 4, base + i * 4 + 1, base + i * 4 + 2, base + i * 4 + 3},
+                                               static_cast<uint64_t>(1000 + round * 10 + i));
+            group->schedule_tokens(block_size);
+            manager.append_slots(group);
+            group->finish_iteration();
+            cached_ids.push_back(group->get_running_sequences().front()->get_id());
+            cached_groups.push_back(group);
+        }
+        // Released immediately one after the other, oldest first; with no time passing between the calls.
+        for (const uint64_t id : cached_ids) {
+            manager.free_sequence(id);
+        }
+
+        auto newcomer = create_sequence_group({base + 90, base + 91, base + 92, base + 93}, 5000 + round);
+        newcomer->schedule_tokens(block_size);
+        manager.append_slots(newcomer);
+        newcomer->finish_iteration();
+
+        // Only the oldest released block may have been overwritten; the two newer ones must still be restorable.
+        auto probe_oldest = create_sequence_group({base, base + 1, base + 2, base + 3, base + 50}, 6000 + round);
+        auto probe_middle = create_sequence_group({base + 4, base + 5, base + 6, base + 7, base + 50}, 7000 + round);
+        auto probe_newest = create_sequence_group({base + 8, base + 9, base + 10, base + 11, base + 50}, 8000 + round);
+        EXPECT_FALSE(manager.restore_cached_blocks(probe_oldest)) << "round " << round;
+        EXPECT_TRUE(manager.restore_cached_blocks(probe_middle)) << "round " << round;
+        EXPECT_TRUE(manager.restore_cached_blocks(probe_newest)) << "round " << round;
+
+        for (const auto& probe : {probe_middle, probe_newest}) {
+            manager.free_sequence(probe->get_running_sequences().front()->get_id());
+        }
+        manager.free_sequence(newcomer->get_running_sequences().front()->get_id());
+    }
+}
+
 TEST(TestBlockManager, PrefixCachingRollbackUnregistersInvalidatedBoundaryBeforeDivergentRewrite) {
     constexpr size_t block_size = 4;
     ov::genai::BlockManager block_manager(8, true, block_size);

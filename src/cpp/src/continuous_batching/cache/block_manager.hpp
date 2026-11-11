@@ -9,6 +9,7 @@
 #include <optional>
 #include <set>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <limits>
@@ -19,6 +20,23 @@
 #include "sequence_group.hpp"
 
 namespace ov::genai {
+
+/**
+ * @brief Timestamp for ordering cache blocks by recency, always later than the previous one.
+ *
+ * The steady clock can return the same value for consecutive calls. Blocks released back to back then tie, and the
+ * eviction choice among them falls to hash table iteration order, which differs from run to run.
+ */
+inline std::chrono::steady_clock::time_point next_block_timestamp() {
+    static std::atomic<std::chrono::steady_clock::rep> last_ticks{0};
+    const auto now_ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto previous_ticks = last_ticks.load(std::memory_order_relaxed);
+    std::chrono::steady_clock::rep next_ticks = 0;
+    do {
+        next_ticks = std::max(now_ticks, previous_ticks + 1);
+    } while (!last_ticks.compare_exchange_weak(previous_ticks, next_ticks, std::memory_order_relaxed));
+    return std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(next_ticks));
+}
 
 class CacheBlock {
     int m_ref_count;
@@ -35,7 +53,7 @@ public:
           m_index(index),
           m_hash(0),
           m_has_published_hash(false),
-          m_timestamp(std::chrono::steady_clock::now()) { }
+          m_timestamp(next_block_timestamp()) { }
 
     int get_index() const {
         return m_index;
@@ -250,7 +268,7 @@ class OverwritableBlocksHashStore {
         BlocksPerLayer blocks_for_all_layers = it->second;
         for (auto& block_ptr : blocks_for_all_layers) {
 
-            block_ptr->set_timestamp(std::chrono::steady_clock::now());
+            block_ptr->set_timestamp(next_block_timestamp());
             block_ptr->increment();
         }
         m_blocks.erase(it);
@@ -876,7 +894,7 @@ public:
             }
 
             // update block with new hash
-            const auto timestamp = std::chrono::steady_clock::now();
+            const auto timestamp = next_block_timestamp();
             for (auto& block : result.blocks) {
                 block->set_hash(hash);
                 block->set_timestamp(timestamp);
@@ -938,7 +956,7 @@ public:
         m_overwriteable_blocks.m_blocks.erase(hash);
         for (const auto& block : blocks) {
             block->increment();
-            block->set_timestamp(std::chrono::steady_clock::now());
+            block->set_timestamp(next_block_timestamp());
         }
     }
 
@@ -3005,7 +3023,7 @@ private:
             auto blocks = m_allocator.get_cached_block(sequence->get_hash(content_len, m_block_size),
                                                        m_prefix_hash_to_cached_blocks);
             OPENVINO_ASSERT(!blocks.empty(), "Prefix restore plan became unavailable for token position ", content_len);
-            const auto timestamp = std::chrono::steady_clock::now();
+            const auto timestamp = next_block_timestamp();
             for (size_t layer_idx = 0; layer_idx < block_table.size(); layer_idx++) {
                 auto& block = blocks[layer_idx];
                 block->set_timestamp(timestamp);
