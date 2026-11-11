@@ -29,7 +29,7 @@ int64_t resolve_language_id(const std::map<std::string, int64_t>& lid_dict,
     return it->second;
 }
 
-// Zero-pads features of `count` audios starting at `begin` to at least `min_frames`; `speech_lengths` keeps real lengths.
+// Zero-pads features of `count` audios from `begin` to at least `min_frames`; `speech_lengths` keeps real lengths.
 ov::Tensor stack_padded_features(const std::vector<ov::Tensor>& features,
                                  size_t begin,
                                  size_t count,
@@ -165,6 +165,10 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
                                               : core.compile_model(model_path, device, properties_copy);
     const ov::PartialShape input_shape = model.input("input_features").get_partial_shape();
     if (input_shape.is_static()) {
+        OPENVINO_ASSERT(input_shape.size() == 3,
+                        "SenseVoiceSmall expects input_features of rank 3, but the model has rank ",
+                        input_shape.size(),
+                        ".");
         OPENVINO_ASSERT(input_shape[0].get_length() == 1,
                         "SenseVoiceSmall does not support a static input shape with batch size greater than 1, but the "
                         "model has batch size ",
@@ -259,7 +263,8 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
             const auto detokenization_start_time = std::chrono::steady_clock::now();
             transcript.text = m_tokenizer.decode(transcription_token_ids);
             detokenization_stop_time = std::chrono::steady_clock::now();
-            detokenization_microseconds += PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
+            detokenization_microseconds +=
+                PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
             generated_token_count += token_ids.size();
             audio_windows[window.orig_batch].push_back(std::move(transcript));
 
