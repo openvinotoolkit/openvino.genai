@@ -27,8 +27,22 @@ using ModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
 static constexpr ov::Property<std::filesystem::path> blob_path{"blob_path"};
 
 /**
- * @brief device_mapping property maps sub-model role names (for example, "text_embeddings_per_layer",
- * "text_embeddings", "vision_embeddings", "language_model") to target OpenVINO execution devices.
+ * @brief device_mapping property maps sub-model role names (such as "text_embeddings_per_layer",
+ * "text_embeddings", "vision_embeddings", "audio_embeddings", "resampler", "multi_modal_projector",
+ * "vision_embeddings_merger", or "language_model") to target OpenVINO execution devices.
+ *
+ * When the pipeline runs on a GPU device, "text_embeddings_per_layer" (Per-Layer Embeddings)
+ * defaults to "CPU" so its embedding table is memory-mapped in host RAM unless explicitly
+ * overridden.
+ *
+ * Device placement precedence (highest to lowest):
+ * 1. MODEL_PROPERTIES[role]["device"] (or "DEVICE")
+ * 2. device_mapping[role]
+ * 3. Role-specific default ("CPU" for "text_embeddings_per_layer" on GPU)
+ * 4. Pipeline target device
+ *
+ * Compile properties for a role are merged on top of the resolved device in order:
+ * global properties -> DEVICE_PROPERTIES[resolved_device] -> MODEL_PROPERTIES[role].
  */
 static constexpr ov::Property<std::map<std::string, std::string>> device_mapping{"device_mapping"};
 

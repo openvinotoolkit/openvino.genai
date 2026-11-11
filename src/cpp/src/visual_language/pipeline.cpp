@@ -77,6 +77,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     Sampler m_sampler;
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
+    bool m_use_intermediate_remote_tensor = false;
     bool m_has_position_ids = true;
     size_t m_image_id = 0;
     size_t m_video_id = 0;
@@ -105,6 +106,8 @@ private:
     ) {
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
+        m_use_intermediate_remote_tensor =
+            !m_is_npu && m_embedding && m_embedding->is_remote_context_compatible(m_language.get_compiled_model());
 
         utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
         cache_state.set_cache_types(utils::get_cache_types(*language_model));
@@ -131,8 +134,6 @@ private:
         const std::string& device,
         const ov::AnyMap& properties
     ) {
-        m_is_npu = device.find("NPU") != std::string::npos;
-
         utils::validate_vlm_model_properties(properties);
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
@@ -149,6 +150,7 @@ private:
         //     MODEL_PROPERTIES: { "language_model": {...}, "vision_embeddings": {...} }
         // }
         auto [lm_device, lm_properties] = utils::get_model_device_and_properties(properties_copy, "language_model", device);
+        m_is_npu = lm_device.find("NPU") != std::string::npos;
 
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
@@ -164,7 +166,9 @@ private:
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
         if (m_is_npu) {
-            embedder_device = "AUTO";
+            if (device.find("NPU") != std::string::npos) {
+                embedder_device = "AUTO";
+            }
             utils::KVDesc kv_desc;
             update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
@@ -172,7 +176,9 @@ private:
                 lm_properties,
                 kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
-            npu_auto_default_properties(device_properties);
+            if (embedder_device == "AUTO") {
+                npu_auto_default_properties(device_properties);
+            }
         } else {
             // Slice-before-matmul rewrites LM logits to be produced only for the last token.
             // After this transformation, the non-NPU path returns logits with seq_len == 1,
@@ -210,14 +216,15 @@ private:
         const std::string& device,
         const ov::AnyMap& properties
     ) {
-        m_is_npu = device.find("NPU") != std::string::npos;
-        OPENVINO_ASSERT(!m_is_npu,
-            "VLMPipeline initialization from string isn't supported for NPU device");
-
         utils::validate_vlm_model_properties(properties);
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
+
+        const auto [lm_device, lm_properties] = utils::get_model_device_and_properties(properties_copy, "language_model", device);
+        m_is_npu = lm_device.find("NPU") != std::string::npos;
+        OPENVINO_ASSERT(!m_is_npu,
+            "VLMPipeline initialization from string isn't supported for NPU device");
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
@@ -225,8 +232,6 @@ private:
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
-
-        const auto [lm_device, lm_properties] = utils::get_model_device_and_properties(properties_copy, "language_model", device);
 
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix(
@@ -367,10 +372,9 @@ public:
 
         setup_generation_config(generation_config);
 
-        bool intermediate_remote_tensor = true;
+        bool intermediate_remote_tensor = m_use_intermediate_remote_tensor;
         if (m_is_npu) {
             validate_inputs_for_npu(images, videos, generation_config);
-            intermediate_remote_tensor = false;
         }
 
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
@@ -616,10 +620,9 @@ public:
 
         setup_generation_config(generation_config);
 
-        bool intermediate_remote_tensor = true;
+        bool intermediate_remote_tensor = m_use_intermediate_remote_tensor;
         if (m_is_npu) {
             validate_inputs_for_npu(images, videos, generation_config);
-            intermediate_remote_tensor = false;
         }
 
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
@@ -1035,7 +1038,8 @@ VLMPipeline::VLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
-    if (device == "NPU") {
+    const std::string lm_device = utils::get_model_device(properties, "language_model", device);
+    if (lm_device.find("NPU") != std::string::npos) {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_shared<VLMPipelineImpl>(models_dir, device, properties);
@@ -1060,7 +1064,8 @@ VLMPipeline::VLMPipeline(
 #endif
             } catch (const ov::Exception& exception) {
                 utils::log_paged_attention_fallback(exception);
-                language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
+                language_model = utils::singleton_core().read_model(
+                    language_model_path, {}, utils::get_model_properties(properties, "language_model"));
             }
         }
 
@@ -1087,7 +1092,8 @@ VLMPipeline::VLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
-    if (device == "NPU") {
+    const std::string lm_device = utils::get_model_device(properties, "language_model", device);
+    if (lm_device.find("NPU") != std::string::npos) {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_shared<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
