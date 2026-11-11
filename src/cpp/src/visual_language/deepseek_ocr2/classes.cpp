@@ -308,10 +308,12 @@ VisionEncoderDeepseekOCR2::VisionEncoderDeepseekOCR2(const std::filesystem::path
                                                      const std::string& device,
                                                      const ov::AnyMap properties)
     : VisionEncoder(model_dir, device, properties) {
+    const auto [tiles_device, tiles_properties] =
+        utils::get_model_device_and_properties(properties, "vision_embeddings_tiles", device);
     auto compiled_tiles = utils::singleton_core().compile_model(
         model_dir / "openvino_vision_embeddings_tiles_model.xml",
-        device,
-        utils::get_model_properties(properties, "vision_embeddings_tiles", device));
+        tiles_device,
+        tiles_properties);
 
     m_ireq_queue_vision_encoder_tiles = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_tiles.get_property(ov::optimal_number_of_infer_requests),
@@ -328,11 +330,13 @@ VisionEncoderDeepseekOCR2::VisionEncoderDeepseekOCR2(const ModelsMap& models_map
                                                      const ov::AnyMap properties)
     : VisionEncoder(models_map, config_dir_path, device, properties) {
     const auto& [tiles_model, tiles_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings_tiles");
+    const auto [tiles_device, tiles_properties] =
+        utils::get_model_device_and_properties(properties, "vision_embeddings_tiles", device);
     auto compiled_tiles = utils::singleton_core().compile_model(
         tiles_model,
         tiles_weights,
-        device,
-        utils::get_model_properties(properties, "vision_embeddings_tiles", device));
+        tiles_device,
+        tiles_properties);
 
     m_ireq_queue_vision_encoder_tiles = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_tiles.get_property(ov::optimal_number_of_infer_requests),

@@ -26,5 +26,11 @@ using ModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
  */
 static constexpr ov::Property<std::filesystem::path> blob_path{"blob_path"};
 
+/**
+ * @brief device_mapping property maps sub-model role names (for example, "text_embeddings_per_layer",
+ * "text_embeddings", "vision_embeddings", "language_model") to target OpenVINO execution devices.
+ */
+static constexpr ov::Property<std::map<std::string, std::string>> device_mapping{"device_mapping"};
+
 }  // namespace genai
 }  // namespace ov

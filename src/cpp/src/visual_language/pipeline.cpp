@@ -148,7 +148,7 @@ private:
         // {
         //     MODEL_PROPERTIES: { "language_model": {...}, "vision_embeddings": {...} }
         // }
-        auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
+        auto [lm_device, lm_properties] = utils::get_model_device_and_properties(properties_copy, "language_model", device);
 
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
@@ -158,7 +158,7 @@ private:
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
-            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, lm_device);
         }
 
         ov::CompiledModel compiled_language_model;
@@ -179,7 +179,7 @@ private:
             // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
             utils::apply_slice_before_matmul_transformation(language_model);
             compiled_language_model = utils::singleton_core().compile_model(
-                language_model, device, lm_properties);
+                language_model, lm_device, lm_properties);
         }
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
 
@@ -226,20 +226,21 @@ private:
 
         const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
+        const auto [lm_device, lm_properties] = utils::get_model_device_and_properties(properties_copy, "language_model", device);
+
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
-            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, lm_device);
         }
 
         // Slice-before-matmul rewrites LM logits to be produced only for the last token.
         // After this transformation, default path returns logits with seq_len == 1,
         // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
         utils::apply_slice_before_matmul_transformation(language_model);
-        const auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
         m_language = utils::singleton_core().compile_model(
-            language_model, device, lm_properties).create_infer_request();
+            language_model, lm_device, lm_properties).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
         if (m_adapter_controller) {
             // Initialize LoRA state before the first generation and reuse constructor-prepared tensors.

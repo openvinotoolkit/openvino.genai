@@ -180,16 +180,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     SchedulerConfig normalized_config = scheduler_config;
     normalized_config.validate();
 
-    // Resolve per-role MODEL_PROPERTIES overlay for the language model and
-    // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
-    const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
+    // Resolve per-role device and MODEL_PROPERTIES overlay for the language model and
+    // strip GenAI-only meta keys before reaching the OV plugin.
+    const auto [language_model_device, language_model_properties] =
+        utils::get_model_device_and_properties(properties, "language_model", device);
+    m_device = language_model_device;
 
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller =
-            AdapterController(model, *m_generation_config.adapters, device);  // TODO: Make the prefix name configurable
+            AdapterController(model, *m_generation_config.adapters, language_model_device);  // TODO: Make the prefix name configurable
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
@@ -200,7 +202,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                                                   // a forked container may not be the same container
     }
 
-    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, language_model_device, *filtered_properties);
     std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
     const bool all_gpu_device =
         std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& device) {

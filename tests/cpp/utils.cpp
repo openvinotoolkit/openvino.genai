@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 #include <openvino/runtime/properties.hpp>
+#include "openvino/genai/common_types.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
 #include "utils.hpp"
 
@@ -264,6 +265,145 @@ TEST(TestValidateVlmModelProperties, throws_with_role_name_in_message) {
     } catch (const ov::Exception& e) {
         EXPECT_NE(std::string(e.what()).find("bogus_role"), std::string::npos);
     }
+}
+
+TEST(TestValidateVlmModelProperties, accepts_known_roles_in_device_mapping) {
+    ov::AnyMap props = {
+        ov::genai::device_mapping(std::map<std::string, std::string>{
+            {"text_embeddings_per_layer", "CPU"},
+            {"text_embeddings", "CPU"},
+            {"audio_embeddings", "GPU"},
+            {"vision_embeddings_tiles", "GPU"},
+        }),
+    };
+    EXPECT_NO_THROW(validate_vlm_model_properties(props));
+}
+
+TEST(TestValidateVlmModelProperties, throws_on_unknown_role_in_device_mapping) {
+    ov::AnyMap props = {
+        {DEVICE_MAPPING_PROPERTY, ov::AnyMap{
+            {"invalid_submodel_role", std::string("CPU")},
+        }},
+    };
+    EXPECT_THROW(validate_vlm_model_properties(props), ov::Exception);
+}
+
+// --- get_model_device & get_model_device_and_properties tests ---
+
+TEST(TestGetModelDevice, ple_defaults_to_cpu_when_pipeline_on_gpu) {
+    ov::AnyMap props;
+    EXPECT_EQ(get_model_device(props, "text_embeddings_per_layer", "GPU"), "CPU");
+    EXPECT_EQ(get_model_device(props, "text_embeddings_per_layer", "GPU.0"), "CPU");
+    EXPECT_EQ(get_model_device(props, "text_embeddings_per_layer", "GPU.1"), "CPU");
+    EXPECT_EQ(get_model_device(props, "text_embeddings_per_layer", "CPU"), "CPU");
+}
+
+TEST(TestGetModelDevice, other_models_default_to_pipeline_device_on_gpu) {
+    ov::AnyMap props;
+    EXPECT_EQ(get_model_device(props, "text_embeddings", "GPU"), "GPU");
+    EXPECT_EQ(get_model_device(props, "vision_embeddings", "GPU"), "GPU");
+    EXPECT_EQ(get_model_device(props, "language_model", "GPU"), "GPU");
+}
+
+TEST(TestGetModelDevice, device_mapping_overrides_default_with_any_map) {
+    ov::AnyMap props = {
+        {DEVICE_MAPPING_PROPERTY, ov::AnyMap{
+            {"text_embeddings_per_layer", std::string("GPU")},
+            {"text_embeddings", std::string("CPU")},
+        }},
+    };
+    EXPECT_EQ(get_model_device(props, "text_embeddings_per_layer", "GPU"), "GPU");
+    EXPECT_EQ(get_model_device(props, "text_embeddings", "GPU"), "CPU");
+    EXPECT_EQ(get_model_device(props, "vision_embeddings", "GPU"), "GPU");
+}
+
+TEST(TestGetModelDevice, device_mapping_overrides_default_with_std_map_property) {
+    ov::AnyMap props = {
+        ov::genai::device_mapping(std::map<std::string, std::string>{
+            {"text_embeddings_per_layer", "GPU.0"},
+            {"text_embeddings", "CPU"},
+        }),
+    };
+    EXPECT_EQ(get_model_device(props, "text_embeddings_per_layer", "GPU.0"), "GPU.0");
+    EXPECT_EQ(get_model_device(props, "text_embeddings", "GPU.0"), "CPU");
+}
+
+TEST(TestGetModelDevice, model_properties_device_overrides_device_mapping_and_default) {
+    ov::AnyMap props = {
+        ov::genai::device_mapping(std::map<std::string, std::string>{
+            {"text_embeddings_per_layer", "CPU"},
+            {"text_embeddings", "GPU"},
+        }),
+        {PER_MODEL_PROPERTIES, ov::AnyMap{
+            {"text_embeddings_per_layer", ov::AnyMap{{"device", std::string("GPU")}}},
+            {"text_embeddings", ov::AnyMap{{"DEVICE", std::string("CPU")}}},
+        }},
+    };
+    EXPECT_EQ(get_model_device(props, "text_embeddings_per_layer", "GPU"), "GPU");
+    EXPECT_EQ(get_model_device(props, "text_embeddings", "GPU"), "CPU");
+}
+
+TEST(TestGetModelDeviceAndProperties, strips_device_mapping_and_role_device_and_selects_resolved_device_properties) {
+    ov::AnyMap props = {
+        {"CACHE_DIR", std::string("/tmp")},
+        ov::genai::device_mapping(std::map<std::string, std::string>{
+            {"text_embeddings", "CPU"},
+        }),
+        {ov::device::properties.name(), ov::AnyMap{
+            {"GPU", ov::AnyMap{{"PERF_HINT", std::string("LATENCY")}}},
+            {"CPU", ov::AnyMap{{"NUM_STREAMS", std::string("1")}}},
+        }},
+        {PER_MODEL_PROPERTIES, ov::AnyMap{
+            {"text_embeddings_per_layer", ov::AnyMap{
+                {"ENABLE_MMAP", true},
+            }},
+            {"vision_embeddings", ov::AnyMap{
+                {"device", std::string("CPU")},
+                {"INFERENCE_PRECISION_HINT", std::string("f32")},
+            }},
+        }},
+    };
+
+    // 1. text_embeddings_per_layer defaults to CPU when default_device is GPU, so it gets CPU DEVICE_PROPERTIES
+    const auto [ple_device, ple_props] =
+        get_model_device_and_properties(props, "text_embeddings_per_layer", "GPU");
+    EXPECT_EQ(ple_device, "CPU");
+    EXPECT_EQ(ple_props.count(DEVICE_MAPPING_PROPERTY), 0u);
+    EXPECT_EQ(ple_props.count(PER_MODEL_PROPERTIES), 0u);
+    EXPECT_EQ(ple_props.count(ov::device::properties.name()), 0u);
+    EXPECT_EQ(ple_props.count("PERF_HINT"), 0u);
+    ASSERT_EQ(ple_props.count("NUM_STREAMS"), 1u);
+    EXPECT_EQ(ple_props.at("NUM_STREAMS").as<std::string>(), "1");
+    ASSERT_EQ(ple_props.count("ENABLE_MMAP"), 1u);
+    EXPECT_EQ(ple_props.at("ENABLE_MMAP").as<bool>(), true);
+
+    // 2. text_embeddings mapped via device_mapping to CPU gets CPU DEVICE_PROPERTIES
+    const auto [emb_device, emb_props] =
+        get_model_device_and_properties(props, "text_embeddings", "GPU");
+    EXPECT_EQ(emb_device, "CPU");
+    EXPECT_EQ(emb_props.count(DEVICE_MAPPING_PROPERTY), 0u);
+    ASSERT_EQ(emb_props.count("NUM_STREAMS"), 1u);
+    EXPECT_EQ(emb_props.at("NUM_STREAMS").as<std::string>(), "1");
+
+    // 3. vision_embeddings mapped via MODEL_PROPERTIES["vision_embeddings"]["device"] = "CPU"
+    //    strips "device" key from final plugin properties
+    const auto [vis_device, vis_props] =
+        get_model_device_and_properties(props, "vision_embeddings", "GPU");
+    EXPECT_EQ(vis_device, "CPU");
+    EXPECT_EQ(vis_props.count("device"), 0u);
+    EXPECT_EQ(vis_props.count("DEVICE"), 0u);
+    ASSERT_EQ(vis_props.count("INFERENCE_PRECISION_HINT"), 1u);
+    EXPECT_EQ(vis_props.at("INFERENCE_PRECISION_HINT").as<std::string>(), "f32");
+    ASSERT_EQ(vis_props.count("NUM_STREAMS"), 1u);
+    EXPECT_EQ(vis_props.at("NUM_STREAMS").as<std::string>(), "1");
+
+    // 4. language_model stays on GPU and gets GPU DEVICE_PROPERTIES
+    const auto [lm_device, lm_props] =
+        get_model_device_and_properties(props, "language_model", "GPU");
+    EXPECT_EQ(lm_device, "GPU");
+    ASSERT_EQ(lm_props.count("PERF_HINT"), 1u);
+    EXPECT_EQ(lm_props.at("PERF_HINT").as<std::string>(), "LATENCY");
+    EXPECT_EQ(lm_props.count("NUM_STREAMS"), 0u);
 }
 
 namespace {

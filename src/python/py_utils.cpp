@@ -146,7 +146,9 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "++NPUW_LLM_PREFILL_CONFIG",
         "++NPUW_LLM_SHARED_HEAD_CONFIG",
         "MODEL_PROPERTIES",
-        "DEVICE_PROPERTIES"
+        "DEVICE_PROPERTIES",
+        "device_mapping",
+        "DEVICE_MAPPING"
     };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
@@ -342,6 +344,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             // check value type
             if (py::isinstance<py::int_>(it.second)) {
                 check_type(PY_TYPE::INT, detected_value_type);
+            } else if (py::isinstance<py::str>(it.second)) {
+                check_type(PY_TYPE::STR, detected_value_type);
             }
         }
         if (_dict.empty()) {
@@ -353,6 +357,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             switch (detected_value_type) {
             case PY_TYPE::INT:
                 return _dict.cast<std::map<std::string, int64_t>>();
+            case PY_TYPE::STR:
+                return _dict.cast<std::map<std::string, std::string>>();
             default:
                 OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
             }

@@ -863,8 +863,10 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
     input_shapes["rotary_pos_emb"] = pos_emb_shape;  // it's a fixed shape: { 1, 1025, 1408 }
     model->reshape(input_shapes);
 
+    const auto [vision_device, vision_properties] =
+        utils::get_model_device_and_properties(properties, "vision_embeddings", device);
     auto compiled_model = utils::singleton_core().compile_model(
-        model, device, utils::get_model_properties(properties, "vision_embeddings", device));
+        model, vision_device, vision_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -891,10 +893,11 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
     initialize_vision_encoder_queue(model, device, properties);
 
+    const auto [projection_device, projection_properties] =
+        utils::get_model_device_and_properties(properties, "vision_projection", device);
     auto compiled_model_vision =
         utils::singleton_core().compile_model(
-            model_dir / "openvino_vision_projection_model.xml", device,
-            utils::get_model_properties(properties, "vision_projection", device));
+            model_dir / "openvino_vision_projection_model.xml", projection_device, projection_properties);
     initialize_vision_projection_queue(compiled_model_vision);
 
     initialize_merge_model_queue();
@@ -918,9 +921,10 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
 
     const auto& [vision_projection_model, vision_projection_weights] =
         utils::get_model_weights_pair(models_map, "vision_projection");
+    const auto [projection_device, projection_properties] =
+        utils::get_model_device_and_properties(properties, "vision_projection", device);
     auto compiled_model = utils::singleton_core().compile_model(
-        vision_projection_model, vision_projection_weights, device,
-        utils::get_model_properties(properties, "vision_projection", device));
+        vision_projection_model, vision_projection_weights, projection_device, projection_properties);
     initialize_vision_projection_queue(compiled_model);
 
     initialize_merge_model_queue();

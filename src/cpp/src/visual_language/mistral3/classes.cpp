@@ -190,9 +190,10 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
     const std::string& device,
     const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
+    const auto [projector_device, projector_properties] =
+        utils::get_model_device_and_properties(device_config, "multi_modal_projector", device);
     auto compiled_model = utils::singleton_core().compile_model(
-        model_dir / "openvino_multi_modal_projector_model.xml", device,
-        utils::get_model_properties(device_config, "multi_modal_projector", device));
+        model_dir / "openvino_multi_modal_projector_model.xml", projector_device, projector_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM multi-modal projector model");
     m_ireq_queue_multi_modal_projector = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -211,9 +212,10 @@ InputsEmbedderMistral3::InputsEmbedderMistral3(
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
     const auto& projector_model = utils::get_model_weights_pair(models_map, "multi_modal_projector").first;
     const auto& projector_weights = utils::get_model_weights_pair(models_map, "multi_modal_projector").second;
+    const auto [projector_device, projector_properties] =
+        utils::get_model_device_and_properties(device_config, "multi_modal_projector", device);
     auto compiled_model = utils::singleton_core().compile_model(
-        projector_model, projector_weights, device,
-        utils::get_model_properties(device_config, "multi_modal_projector", device));
+        projector_model, projector_weights, projector_device, projector_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM multi-modal projector model");
     m_ireq_queue_multi_modal_projector = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
