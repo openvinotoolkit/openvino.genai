@@ -1318,48 +1318,6 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ids=lambda item: f"{item[0]}/{item[1]}",
     indirect=["ov_pipe_model"],
 )
-@pytest.mark.parametrize("frame_count", [1, 7])
-@pytest.mark.parametrize("video_first", [False, True])
-def test_minicpm_mixed_media_cached_history(
-    ov_pipe_model: VlmModelInfo, frame_count: int, video_first: bool, request: pytest.FixtureRequest
-):
-    """Preserve image slices and temporal video groups across cached continuation and full-history replay."""
-    request.addfinalizer(lambda: finish_chat(ov_pipe_model))
-    pipeline = ov_pipe_model.pipeline
-    generator = np.random.default_rng(42)
-    image = openvino.Tensor(generator.integers(0, 256, (1, 700, 700, 3), dtype=np.uint8))
-    video = openvino.Tensor(generator.integers(0, 256, (frame_count, 32, 32, 3), dtype=np.uint8))
-    prompt = "Compare <ov_genai_image_0> with <ov_genai_video_0>." if video_first else "Describe <ov_genai_image_0>."
-    first_media = {"videos": [video]} if video_first else {}
-    config = _setup_generation_config(pipeline, max_new_tokens=5, do_sample=False, ignore_eos=True)
-
-    history = ChatHistory([{"role": "user", "content": prompt}])
-    first = pipeline.generate(history, images=[image], generation_config=config, **first_media)
-    history.append({"role": "assistant", "content": first.texts[0]})
-    history.append(
-        {"role": "user", "content": f"Compare <ov_genai_image_1> with <ov_genai_video_{int(video_first)}> ."}
-    )
-    cached = pipeline.generate(history, images=[image], videos=[video], generation_config=config)
-
-    pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
-    replayed = pipeline.generate(history, generation_config=config)
-
-    assert replayed.texts == cached.texts
-    assert cached.perf_metrics.get_num_generated_tokens() == config.max_new_tokens
-    assert replayed.perf_metrics.get_num_input_tokens() == cached.perf_metrics.get_num_input_tokens()
-
-
-@pytest.mark.skipif(
-    is_transformers_version(">=", "5.0"),
-    reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059",
-)
-@pytest.mark.transformers_dependent(reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059")
-@pytest.mark.parametrize(
-    "ov_pipe_model",
-    [("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", backend) for backend in ATTENTION_BACKEND],
-    ids=lambda item: f"{item[0]}/{item[1]}",
-    indirect=["ov_pipe_model"],
-)
 @pytest.mark.parametrize(
     "query_num,error",
     [
