@@ -132,7 +132,7 @@ ov::Tensor FunASRFeatureExtractor::extract(const std::vector<float>& audio) cons
         }
     }
 
-    const size_t lfr_frame_count = lfr_frames(frame_count);
+    const size_t lfr_frame_count = output_frames(audio.size());
     ov::Tensor result(ov::element::f32, {1, lfr_frame_count, mel_bins * lfr_window});
     float* output = result.data<float>();
     constexpr size_t left_context = (lfr_window - 1) / 2;

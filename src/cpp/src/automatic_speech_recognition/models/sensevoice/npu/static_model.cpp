@@ -14,8 +14,7 @@ namespace ov::genai {
 ov::CompiledModel compile_sensevoice_for_npu(const std::filesystem::path& model_path, const ov::AnyMap& properties) {
     constexpr size_t max_audio_seconds = 30;
     constexpr size_t max_audio_samples = max_audio_seconds * FunASRFeatureExtractor::sampling_rate;
-    constexpr size_t max_lfr_frames =
-        FunASRFeatureExtractor::lfr_frames(FunASRFeatureExtractor::fbank_frames(max_audio_samples));
+    constexpr size_t max_lfr_frames = FunASRFeatureExtractor::output_frames(max_audio_samples);
     // The model prepends 4 query tokens (language, event/emotion, textnorm) to the encoder sequence.
     // NPU prefers sequence lengths aligned to 16, so the padded input is sized to make the encoder sequence aligned.
     constexpr size_t prefix_query_tokens = 4;
