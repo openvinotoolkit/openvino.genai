@@ -176,15 +176,19 @@ public:
     }
 
     bool contains(std::size_t hash) const override {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_self_evicting) {
-            // A self-evicting store may have dropped any block since the last probe, so ask it.
-            return find_queued(hash) != nullptr || m_store->has_block(hash);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (find_queued(hash) != nullptr) {
+                return true;
+            }
+            if (!m_self_evicting) {
+                // The store may hold entries this instance never wrote, e.g. a snapshot taken by an earlier
+                // pipeline; probe() finds them.
+                return m_entries.find(hash) != m_entries.end() || m_store_hits.find(hash) != m_store_hits.end();
+            }
         }
-        // The store may hold entries this instance never wrote, e.g. a snapshot taken by an earlier
-        // pipeline; probe() finds them.
-        return m_entries.find(hash) != m_entries.end() || find_queued(hash) != nullptr ||
-               m_store_hits.find(hash) != m_store_hits.end();
+        // A self-evicting store may have dropped any block since the last probe, so ask it, with no lock held.
+        return m_store->has_block(hash);
     }
 
     /**
@@ -198,20 +202,31 @@ public:
         if (chain.empty()) {
             return present;
         }
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::size_t reclaim_epoch = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            reclaim_epoch = m_reclaim_epoch;
+        }
         std::vector<bool> in_store(chain.size(), false);
         try {
             in_store = m_store->has_blocks(chain);
         } catch (const std::exception& error) {
             GENAI_WARN("%s store probe failed: %s", Traits::kKind, error.what());
         }
+        std::lock_guard<std::mutex> lock(m_mutex);
+        // An entry reclaimed during the unlocked store call may still be reported present; remembering that hit
+        // would let persist() adopt and pin a block that is gone, so such an answer is not trusted.
+        const bool store_answer_current = reclaim_epoch == m_reclaim_epoch;
         for (std::size_t i = 0; i < chain.size(); ++i) {
-            const bool stored = i < in_store.size() && in_store[i];
-            if (stored) {
-                remember_store_hit_locked(chain[i]);
-            } else {
-                // An authoritative miss outweighs any earlier hit, e.g. the store evicted it since the last probe.
-                m_store_hits.erase(chain[i]);
+            bool stored = false;
+            if (store_answer_current) {
+                stored = i < in_store.size() && in_store[i];
+                if (stored) {
+                    remember_store_hit_locked(chain[i]);
+                } else {
+                    // An authoritative miss outweighs any earlier hit, e.g. the store evicted it since the last probe.
+                    m_store_hits.erase(chain[i]);
+                }
             }
             present[i] = stored || m_entries.find(chain[i]) != m_entries.end() || find_queued(chain[i]) != nullptr;
             if (m_track_chains) {
@@ -301,41 +316,52 @@ public:
     void prefetch(const std::vector<std::size_t>& hashes) override {
         // Bounds the memory a warm-up can hold before it copies the blocks into the device cache.
         constexpr std::size_t max_prefetch_bytes = 256ull * 1024 * 1024;
-        std::lock_guard<std::mutex> lock(m_mutex);
         const std::size_t max_blocks =
             std::max<std::size_t>(1, max_prefetch_bytes / std::max<std::size_t>(1, m_store->get_block_size()));
         std::vector<std::size_t> wanted;
-        for (const std::size_t hash : hashes) {
-            if (wanted.size() >= max_blocks) {
-                break;
-            }
-            // A block still queued for writing is served from its staging copy, which is closer than the store.
-            if (m_prefetched.find(hash) != m_prefetched.end() || find_queued(hash) != nullptr) {
-                continue;
-            }
-            if (m_self_evicting || m_entries.find(hash) != m_entries.end() ||
-                m_store_hits.find(hash) != m_store_hits.end()) {
-                wanted.push_back(hash);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            for (const std::size_t hash : hashes) {
+                if (wanted.size() >= max_blocks) {
+                    break;
+                }
+                // A block still queued for writing is served from its staging copy, which is closer than the store.
+                if (m_prefetched.find(hash) != m_prefetched.end() || find_queued(hash) != nullptr) {
+                    continue;
+                }
+                if (m_self_evicting || m_entries.find(hash) != m_entries.end() ||
+                    m_store_hits.find(hash) != m_store_hits.end()) {
+                    wanted.push_back(hash);
+                }
             }
         }
         if (wanted.empty()) {
             return;
         }
+
+        std::vector<std::vector<uint8_t>> data;
+        std::vector<bool> found;
+        bool read_succeeded = true;
+        const auto started = std::chrono::steady_clock::now();
         try {
-            std::vector<std::vector<uint8_t>> data;
-            std::vector<bool> found;
-            {
-                offload_tier_detail::ScopedTimer timer(m_statistics.load_disk_us);
-                found = m_store->read_blocks(wanted, data);
-            }
-            for (std::size_t i = 0; i < wanted.size(); ++i) {
-                if (found[i]) {
-                    m_prefetched.emplace(wanted[i], std::move(data[i]));
-                }
-            }
+            found = m_store->read_blocks(wanted, data);
         } catch (const std::exception& error) {
             // The blocks are then read one by one by load_into, which reports its own failures.
             GENAI_WARN("%s prefetch failed: %s", Traits::kKind, error.what());
+            read_succeeded = false;
+        }
+        const auto read_us = static_cast<std::size_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count());
+
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_statistics.load_disk_us += read_us;
+        if (!read_succeeded) {
+            return;
+        }
+        for (std::size_t i = 0; i < wanted.size(); ++i) {
+            if (found[i]) {
+                m_prefetched.emplace(wanted[i], std::move(data[i]));
+            }
         }
     }
 
@@ -428,14 +454,15 @@ public:
 
     /// @return false if @p hash has no published entry to pin.
     bool pin(std::size_t hash) {
-        std::lock_guard<std::mutex> lock(m_mutex);
         if (m_self_evicting) {
             if (!m_store->has_block(hash)) {
                 return false;
             }
+            std::lock_guard<std::mutex> lock(m_mutex);
             ++m_pin_counts[hash];
             return true;
         }
+        std::lock_guard<std::mutex> lock(m_mutex);
         if (m_entries.find(hash) == m_entries.end()) {
             if (m_store_hits.find(hash) == m_store_hits.end()) {
                 return false;
@@ -463,10 +490,12 @@ public:
      * @return false if @p hash has no entry, in which case @p block_data is left untouched.
      */
     bool read(std::size_t hash, std::vector<uint8_t>& block_data) const {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (const QueuedStore* queued = find_queued(hash)) {
-            block_data = queued->data;
-            return true;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (const QueuedStore* queued = find_queued(hash)) {
+                block_data = queued->data;
+                return true;
+            }
         }
         return m_store->read_block(hash, block_data);
     }
@@ -713,6 +742,7 @@ private:
                             Traits::kKind, " index and insertion order are out of sync");
             m_insertion_order.erase(it);
             m_entries.erase(oldest_hash);
+            ++m_reclaim_epoch;
             // Otherwise persist() could later find a stale hit and adopt-and-pin a block that was just dropped.
             m_store_hits.erase(oldest_hash);
             m_store->drop_block(oldest_hash);
@@ -778,6 +808,8 @@ private:
     // Blocks read ahead by prefetch() and not yet consumed by load_into().
     std::unordered_map<std::size_t, std::vector<uint8_t>> m_prefetched;
     Statistics m_statistics;
+    // Counts reclaimed entries, so probe() can tell that a block was dropped while it asked the store without a lock.
+    std::size_t m_reclaim_epoch = 0;
     bool m_reclamation_paused = false;
     bool m_stopping = false;
     mutable std::mutex m_mutex;
