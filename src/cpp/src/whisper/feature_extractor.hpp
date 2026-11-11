@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 #include "openvino/genai/visibility.hpp"
@@ -52,7 +53,11 @@ public:
     // pipelines that declare WhisperFeatureExtractor in their preprocessor config but do not
     // fix a chunk_length (e.g. Qwen3-Omni). n_samples is set to 0, disabling pre-padding so
     // the produced frame count tracks the raw signal length.
-    WhisperFeatureExtractor(size_t feature_size, size_t sampling_rate, size_t n_fft, size_t hop_length);
+    WhisperFeatureExtractor(size_t feature_size,
+                            size_t sampling_rate,
+                            size_t n_fft,
+                            size_t hop_length,
+                            std::optional<float> global_log_mel_max = std::nullopt);
 
     /**
      * @brief Create a flattened 2d log-mel spectrogram [feature_size, n_frames] from raw speech data
@@ -64,12 +69,15 @@ public:
      * @see [huggingface introduction to audio
      * data](https://huggingface.co/learn/audio-course/chapter1/audio_data#mel-spectrogram)
      */
-    WhisperFeatures extract(const std::vector<float>& raw_speech, bool pad_to_max_duration = true);
+    WhisperFeatures extract(const std::vector<float>& raw_speech,
+                            bool pad_to_max_duration = true,
+                            bool center = true);
 
 private:
     std::vector<float> sin_vals;
     std::vector<float> cos_vals;
     std::vector<float> mel_filter;
+    std::optional<float> global_log_mel_max;
 
     void init_mel_filter();
     void init_parameters(const std::filesystem::path& preprocessor_json_path);
