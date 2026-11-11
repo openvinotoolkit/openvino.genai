@@ -132,4 +132,12 @@ public:
  */
 static constexpr ov::Property<std::shared_ptr<ASRForcedAligner>> forced_aligner{"forced_aligner"};
 
+/**
+ * @brief Duration in seconds of the audio chunk processed by one model inference.
+ *
+ * Constructor-only property. Longer audio is split into chunks of this duration, and the results are merged.
+ * Supported only for SenseVoiceSmall. If not set, CPU and GPU do not split audio and NPU uses 30 seconds.
+ */
+static constexpr ov::Property<size_t> audio_chunk_duration{"audio_chunk_duration"};
+
 }  // namespace ov::genai

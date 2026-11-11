@@ -16,6 +16,7 @@
 #include "automatic_speech_recognition/models/sensevoice/npu/static_model.hpp"
 #include "automatic_speech_recognition/models/sensevoice/windowing.hpp"
 #include "openvino/core/except.hpp"
+#include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "utils.hpp"
 
@@ -159,9 +160,20 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
 
+    std::optional<size_t> chunk_seconds;
+    if (const auto value = utils::pop_option(properties_copy, audio_chunk_duration.name())) {
+        const int64_t seconds = value->as<int64_t>();
+        OPENVINO_ASSERT(seconds >= 1,
+                        audio_chunk_duration.name(),
+                        " must be at least 1 second, but got ",
+                        seconds,
+                        ".");
+        chunk_seconds = static_cast<size_t>(seconds);
+    }
+
     ov::Core& core = utils::singleton_core();
     const std::filesystem::path model_path = models_path / "openvino_model.xml";
-    ov::CompiledModel model = device == "NPU" ? compile_sensevoice_for_npu(model_path, properties_copy)
+    ov::CompiledModel model = device == "NPU" ? compile_sensevoice_for_npu(model_path, chunk_seconds, properties_copy)
                                               : core.compile_model(model_path, device, properties_copy);
     const ov::PartialShape input_shape = model.input("input_features").get_partial_shape();
     if (input_shape.is_static()) {
@@ -177,6 +189,17 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
         m_max_batch = 1;
         m_padded_frames = input_shape[1].get_length();
         m_max_window_samples = FunASRFeatureExtractor::max_samples_for_frames(m_padded_frames);
+    }
+    if (chunk_seconds) {
+        const size_t chunk_samples = *chunk_seconds * FunASRFeatureExtractor::sampling_rate;
+        OPENVINO_ASSERT(chunk_samples <= m_max_window_samples,
+                        audio_chunk_duration.name(),
+                        " is ",
+                        *chunk_seconds,
+                        " seconds, but the model input accepts at most ",
+                        m_max_window_samples / FunASRFeatureExtractor::sampling_rate,
+                        " seconds.");
+        m_max_window_samples = chunk_samples;
     }
     utils::print_compiled_model_properties(model, "sensevoice small model");
     m_request = model.create_infer_request();

@@ -36,7 +36,8 @@ private:
     SenseVoiceSmallConfig m_config;
     SenseVoiceSmallFeatureExtractor m_feature_extractor;
     ov::InferRequest m_request;
-    // Limits of a static shape model (unlimited for a dynamic one). Longer audio is split into windows.
+    // Limits of a static shape model (unlimited for a dynamic one); `audio_chunk_duration` can lower the window.
+    // Longer audio is split into windows.
     size_t m_max_batch = std::numeric_limits<size_t>::max();
     size_t m_padded_frames = 0;
     size_t m_max_window_samples = std::numeric_limits<size_t>::max();
