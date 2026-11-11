@@ -179,6 +179,10 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::save_state(uint64_t re
     // Each half is a plain ContinuousBatchingImpl under the hood, so the existing single-model
     // save_state() applies unchanged to both. The two sides can hold different histories (the draft trails
     // the main model), hence two files rather than one.
+    // Eagle3 updates the main KV cache in the background after step(); reading it before that finishes captures stale blocks.
+    if (m_sync_future.valid()) {
+        m_sync_future.get();
+    }
     m_main_pipeline->save_state(request_id, path + ".main");
     m_draft_pipeline->save_state(request_id, path + ".draft");
 }
