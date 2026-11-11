@@ -658,7 +658,7 @@ constexpr char OMNI_STREAMER_UNSUPPORTED_BACKEND[] =
 
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_omni_streamer(
-    cons    t std::vector<ov::Tensor>& input_ids,
+    const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
     std::shared_ptr<OmniStreamerBase> omni_streamer,
