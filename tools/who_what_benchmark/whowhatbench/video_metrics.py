@@ -22,7 +22,9 @@ import importlib
 import json
 import logging
 import os
-import urllib.request
+import shutil
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import cv2
 import numpy as np
@@ -47,11 +49,15 @@ def _import(module, package):
 
 
 def _fetch(url):
+    """Download a weight file into the cache once. Only http(s) URLs are accepted."""
+    if urlparse(url).scheme not in {"http", "https"}:
+        raise ValueError(f"Only http and https downloads are supported, got '{url}'")
     os.makedirs(CACHE_DIR, exist_ok=True)
     path = os.path.join(CACHE_DIR, os.path.basename(url))
     if not os.path.isfile(path):
         logger.info("Downloading %s", url)
-        urllib.request.urlretrieve(url, path + ".part")
+        with urlopen(url, timeout=60) as response, open(path + ".part", "wb") as out:  # nosec B310
+            shutil.copyfileobj(response, out)
         os.replace(path + ".part", path)
     return path
 

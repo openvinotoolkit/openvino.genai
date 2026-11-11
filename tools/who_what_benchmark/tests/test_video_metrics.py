@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from diffusers.utils import export_to_video
 from whowhatbench.text2video_evaluator import Text2VideoEvaluator
-from whowhatbench.video_metrics import ObjectPresence, VideoQuality, read_frames, temporal_flicker
+from whowhatbench.video_metrics import ObjectPresence, VideoQuality, _fetch, read_frames, temporal_flicker
 
 
 def _write_video(path, frames, shift=0):
@@ -59,6 +59,11 @@ def test_video_quality_reports_base_target_delta(two_videos, monkeypatch):
 def test_video_quality_rejects_unknown_metric():
     with pytest.raises(ValueError):
         VideoQuality(metrics=["sharpness"])
+
+
+def test_fetch_accepts_only_http_urls(tmp_path):
+    with pytest.raises(ValueError, match="http"):
+        _fetch(f"file://{tmp_path / 'weights.pth'}")
 
 
 def test_video_quality_checks_optional_packages_at_construction(monkeypatch):
