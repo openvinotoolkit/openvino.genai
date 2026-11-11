@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import time
 import datetime
+import json
 import numpy as np
 from pathlib import Path
 import hashlib
@@ -32,7 +33,9 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     use_genai = input_param["use_genai"]
     use_case = args["use_case"]
 
-    default_language = "English" if use_case.model_type in ["qwen3-asr", "fun-asr"] else "<|en|>"
+    default_language = {"qwen3-asr": "English", "fun-asr": "English", "sense-voice": "auto"}.get(
+        use_case.model_type, "en"
+    )
     speech_language = input_param["speech_param"].get("language", default_language)
     ret_timestamps = input_param["speech_param"].get("timestamp", True)
     max_gen_tokens = args["infer_count"]
@@ -79,6 +82,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             if wm is not None and getattr(wm, "decode_inference_durations", None) is not None
             else []
         )
+        if use_case.model_type == "sense-voice":
+            tm_infer_list = [encoder_inference_ms / 1000 for encoder_inference_ms in enc_ms]
         smp_ms = (
             [v / 1000 for v in perf_metrics.raw_metrics.sampling_durations]
             if getattr(perf_metrics, "raw_metrics", None) is not None
@@ -96,6 +101,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             "sampling_avg_ms": (sum(smp_ms) / len(smp_ms)) if smp_ms else -1,
             "detokenization_ms": perf_metrics.get_detokenization_duration().mean,
         }
+        num_generated_tokens = perf_metrics.get_num_generated_tokens()
         result_text = result_text.texts[0]
     else:
         asr_genai_metrics = None
@@ -123,8 +129,13 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             generation_time = end - start
 
         result_text = output["text"]
-        tm_list = asr_hook.get_time_list()
-        tm_infer_list = asr_hook.get_time_infer_list()
+        num_generated_tokens = output.get("num_generated_tokens")
+        if use_case.model_type == "sense-voice":
+            tm_list = [end - start]
+            tm_infer_list = [output["perf_metrics"]["infer_time"]]
+        else:
+            tm_list = asr_hook.get_time_list()
+            tm_infer_list = asr_hook.get_time_infer_list()
 
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
@@ -132,10 +143,13 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         log.debug('latency of all infers:')
         [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
 
-    tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else processor
-    out_data = tokenizer(result_text, return_tensors="pt")
-    out_tokens = out_data["input_ids"] if "input_ids" in out_data else out_data
-    out_token_size = out_tokens[0].numel()
+    if processor is None:
+        out_token_size = num_generated_tokens
+    else:
+        tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else processor
+        out_data = tokenizer(result_text, return_tensors="pt")
+        out_tokens = out_data["input_ids"] if "input_ids" in out_data else out_data
+        out_token_size = out_tokens[0].numel()
 
     result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if len(md5_list[num]) == 0:
@@ -153,6 +167,10 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         **perf_kwargs,
         **memory_metrics,
     )
+    if use_case.model_type == "sense-voice":
+        iter_data["throughput_token_count"] = out_token_size
+        if generation_time > 0:
+            iter_data["end_to_end_token_throughput"] = out_token_size / generation_time
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
         iter_num=num,
@@ -171,13 +189,14 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             log.warning(f"[{num}] Prompt[{speech_id}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=speech_id)
-            if num == 1:
-                # if the device is CPU, throw exception
-                if args['devices'].lower().startswith('cpu') is True:
+            if use_case.model_type != "sense-voice" or input_param["dither"] == 0:
+                if num == 1:
+                    # if the device is CPU, throw exception
+                    if args["devices"].lower().startswith("cpu") is True:
+                        assert result_md5_list == prev_md5
+                else:
+                    # throw exception
                     assert (result_md5_list == prev_md5)
-            else:
-                # throw exception
-                assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=speech_id)
 
@@ -234,8 +253,12 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         "processor": processor,
         "use_genai": use_genai,
     }
+    if args["use_case"].model_type == "sense-voice":
+        input_param["dither"] = json.loads((Path(model_path) / "config.json").read_text(encoding="utf-8")).get(
+            "dither", 1.0
+        )
 
-    if framework == "ov" and use_genai is False:
+    if framework == "ov" and use_genai is False and args["use_case"].model_type != "sense-voice":
         asr_hook.new_text_encoder(pipe)
         asr_hook.new_text_encoder_request(pipe)
         asr_hook.new_generate(pipe)
