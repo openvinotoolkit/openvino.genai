@@ -18,36 +18,6 @@ namespace genai {
 
 ov::Property<size_t> rng_seed{"rng_seed"};
 
-namespace {
-
-// A set-valued property arrives from Python as std::vector for a list and as std::string for a str.
-// ov::Any can't convert a std::vector to a std::set, and it converts a std::string by splitting it on whitespace,
-// so "Observation: done" would become two stop strings. Read both forms explicitly.
-template <typename T>
-void read_anymap_set_param(const ov::AnyMap& properties, const std::string& name, std::set<T>& param) {
-    auto it = properties.find(name);
-    if (it != properties.end()) {
-        if (it->second.is<std::vector<T>>()) {
-            const auto& values = it->second.as<std::vector<T>>();
-            param = std::set<T>(values.begin(), values.end());
-            return;
-        }
-        if constexpr (std::is_same_v<T, std::string>) {
-            if (it->second.is<std::string>()) {
-                // an empty string is "no stop strings", as ov::Any parsed it before
-                param.clear();
-                if (!it->second.as<std::string>().empty()) {
-                    param.insert(it->second.as<std::string>());
-                }
-                return;
-            }
-        }
-    }
-    utils::read_anymap_param(properties, name, param);
-}
-
-}  // namespace
-
 GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     using utils::read_json_param;
 
@@ -163,9 +133,9 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "max_length", max_length);
     read_anymap_param(properties, "ignore_eos", ignore_eos);
     read_anymap_param(properties, "min_new_tokens", min_new_tokens);
-    read_anymap_set_param(properties, "stop_strings", stop_strings);
+    read_anymap_param(properties, "stop_strings", stop_strings);
     read_anymap_param(properties, "include_stop_str_in_output", include_stop_str_in_output);
-    read_anymap_set_param(properties, "stop_token_ids", stop_token_ids);
+    read_anymap_param(properties, "stop_token_ids", stop_token_ids);
     if (eos_token_id != -1) {
         set_eos_token_id(eos_token_id);
     }
