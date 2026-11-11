@@ -21,8 +21,8 @@ This sample implements the **full** ABI surface and exports two providers:
   quality** (no persistence, no real I/O, O(n) key lookup, unbounded memory growth) - its only job is to show
   exactly what a vendor plugin needs to implement, and to prove the pattern works end-to-end with a real model.
 - `sample-persistent-file`: one file per block under `CacheOffloadConfig.path` (set it to a directory), written to a
-  temporary name, synced and renamed. Blocks survive the process, so a session snapshot saved by one process can be
-  restored by another (see `verify_session_snapshot.py --phase save/restore`). Still a reference: no eviction, no
+  temporary name, synced and renamed. Blocks survive the process, so blocks stored by one process (see
+  `store_completed_blocks`) can be reused by another (see `verify_chunk_store.py`). Still a reference: no eviction, no
   locking between processes, and a store reopened with a smaller `capacity_bytes` than the blocks it already holds
   is rejected by the host.
 

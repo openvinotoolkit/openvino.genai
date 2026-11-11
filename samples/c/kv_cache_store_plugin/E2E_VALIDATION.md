@@ -8,11 +8,10 @@ against the two scenarios this ABI is used for in OpenVINO GenAI:
 
 1. **Opportunistic KV cache offload** (`SchedulerConfig::use_cache_offload`) - blocks evicted during
    normal generation are written through your plugin and rediscovered later via prefix-cache hash.
-2. **Session snapshot save/restore** (`ContinuousBatchingPipeline::save_state()`/`restore_state()`) -
-   a running request's KV (and, for hybrid models, linear-attention) blocks are written to the same
-   offload store as in Scenario 1 and pinned there; the snapshot file only keeps the token history and
-   references to those blocks. The request can be resumed in a fresh pipeline without re-running
-   prefill, as long as your plugin still holds the blocks.
+2. **Reuse after a restart** (`CacheOffloadConfig::store_completed_blocks`) - every completed block is also
+   written through your plugin right after the forward pass that completed it, so a new pipeline or process that opens
+   the same persistent store finds the blocks of an earlier conversation as a prefix-cache hit and continues it
+   without re-running prefill. No extra API is involved: the new pipeline just gets the history with `add_request()`.
 
 Both scenarios below were run against the standalone sample plugin in this directory
 ([`sample_kv_cache_store_plugin.c`](sample_kv_cache_store_plugin.c)) with **Qwen3.5-9B** (a hybrid
@@ -165,13 +164,9 @@ finished block runs on the pipeline thread, so a long prefill pays for copying i
 (1.1 s and 1.7 s) happens on the writer thread. Blocks that do not fit into the writer's `buffer_slots` queue are
 skipped and only cost recomputation later.
 
-`store_completed_blocks` also works together with the other two scenarios (Qwen3.5-9B, GPU, the in-memory
-provider unless stated otherwise):
+`store_completed_blocks` also works together with opportunistic offload (Qwen3.5-9B, GPU, the in-memory provider):
 
-- Session snapshots: `verify_session_snapshot.py ... --chunk-store` passes in one process (restore TTFT 811 ms
-  against 4136 ms for a full re-prefill, 5.1x) and with `sample-persistent-file` in two separate processes
-  (`--phase save` then `--phase restore`); the restored continuation matches the baseline token for token.
-- Opportunistic offload (`llm_bench`, `num_kv_blocks` 220, `"store_completed_blocks": true` in `cache_offload_config`):
+- `llm_bench`, `num_kv_blocks` 220, `"store_completed_blocks": true` in `cache_offload_config`:
   P0/P1/P2 give the same output hashes as without the flag, and P2 (the P0 prompt again after P1 evicted it) takes
   780 ms against 3465 ms for P0 (194 blocks warmed from the store, 397 blocks stored as `published` plus 4 as
   `overwritten`).
@@ -179,8 +174,7 @@ provider unless stated otherwise):
 ### What the host expects from your plugin's stores
 
 The host opens **one store instance per group** and passes the group as the `OvKVCacheNamespace`
-(`kv` for KV blocks and `la` for linear-attention blocks; session snapshots use the same two stores,
-there is no separate snapshot namespace). The group string is an opaque byte string: when a plugin is
+(`kv` for KV blocks and `la` for linear-attention blocks). The group string is an opaque byte string: when a plugin is
 configured the host appends a digest of the model and cache layout (for example `kv:<32 hex digits>`),
 so that stores shared by different models never serve each other's blocks. Treat the namespace as a
 key, do not parse it. `OvKVCacheGroupInfo` (ABI 1.1) tells you each group's `block_bytes` and
@@ -200,8 +194,8 @@ same reason.
   does not interpret the rest. The sample plugin logs every extra property it receives when it opens a store.
 - A provider that advertises `OV_KVCACHE_CAP_SELF_EVICT` owns eviction. The host then does not drop blocks to free
   capacity and does not count blocks against `capacity_bytes`; it asks the plugin (`has_blocks`, reads) whenever
-  it needs to know whether a block is still there and treats a block that disappeared as a miss. A block of a
-  saved session snapshot may disappear too, in which case `restore_state()` reports that the block is missing.
+  it needs to know whether a block is still there and treats a block that disappeared as a miss, which only
+  costs recomputation.
   The sample's `sample-self-evict-memory` provider shows the contract: it keeps `capacity_bytes / block_bytes`
   blocks and evicts the oldest one when a write finds it full.
 - The host writes the blocks queued by the writer thread in one `write_blocks` call (at most `buffer_slots` per
@@ -211,120 +205,51 @@ Checked on Qwen3.5-9B / GPU with `sample-self-evict-memory` (and `"store_propert
 "policy": "lru"}`, both of which the plugin logged on open): with room for every block the `llm_bench` P2 run
 takes 925 ms against 3375 ms for P0 with identical output hashes; with a store of 250 blocks the plugin evicts
 the oldest blocks, which are the start of P0's prefix, so nothing is warmed for P2 (3069 ms), the output is
-still identical and the host reports no failed store. The session snapshot check passes with the same
-provider (restore 752 ms against 4567 ms). Which block a plugin evicts first decides how much of a prefix
+still identical and the host reports no failed store. Which block a plugin evicts first decides how much of a prefix
 survives, which is why the choice belongs to the plugin.
 
-## Scenario 2: Session snapshot save/restore
+## Scenario 2: Reuse after a restart
 
-Session snapshot shares Scenario 1's machinery: `save_state()` writes the request's blocks to the
-same offload store (the `kv` and `la` stores of your plugin, keyed by prefix hash) and pins them so
-opportunistic eviction cannot drop them; `restore_state()` re-submits the saved history as an
-ordinary prompt and the regular prefix restore reads the blocks back, recomputing only the last
-position. Consequences for your plugin and configuration:
+There is no save or restore call. With `cache_offload_config.store_completed_blocks` on, every completed KV block (and,
+for a hybrid model, every linear-attention checkpoint) reaches your plugin right after the forward pass that
+completed it. A pipeline created later against the same persistent stores finds those blocks like any other
+prefix-cache hit: `add_request()` with the history so far (the prompt plus the tokens generated earlier) reads them
+back through your plugin and recomputes only what is missing. Consequences for your plugin and configuration:
 
-- The pipeline must be created with `enable_prefix_caching` and `use_cache_offload`, with your plugin in
-  `SchedulerConfig.cache_offload_config`. `save_state()` on a pipeline without offload raises.
-- Snapshot blocks **count against** `capacity_bytes` / `linear_attention_capacity_bytes` and are never
-  evicted while the snapshot is pinned. Size the stores for the number of snapshots you keep: for
-  Qwen3.5-9B a linear-attention checkpoint is about 51 MB. If nothing can be freed, `save_state()` raises
-  with a hint to raise the capacity.
-- If the plugin is configured but fails to load, handshake or open, `save_state()` raises instead of
-  quietly using the temporary in-process store (a snapshot saved there would be lost when the pipeline
-  ends).
-- A restore in a **new** pipeline or process only works if your plugin still holds the blocks, i.e. it
-  persists them and the new pipeline opens the same stores. The snapshot file itself holds only the
-  history - about 8 bytes per token for token-id models, about 16 KB per token for embeddings-routed
-  models such as Qwen3.5 (hidden size 4096, f32) - and is rejected on a model, device or block-size mismatch.
-- Because the snapshot references blocks by content hash, two snapshots that share a prefix share the
-  blocks of that prefix in your store.
+- The pipeline must be created with `enable_prefix_caching`, `use_cache_offload` and `store_completed_blocks`, with
+  your plugin in `SchedulerConfig.cache_offload_config`. The new pipeline has to open the same stores: the same
+  plugin and properties, and the same model, device and cache layout, because the namespace carries a digest of
+  them and another model never sees these blocks.
+- The plugin must keep blocks across the process. A plugin that does not, such as the sample's `sample-in-memory`
+  provider, still passes a restart inside one process but loses everything when the process exits.
+- Only completed blocks are stored. The unfinished last block (fewer tokens than one block) is recomputed, and for
+  a hybrid model so is everything after the last linear-attention checkpoint, which is one checkpoint interval at
+  most (see Scenario 1 for its size).
+- Nothing guarantees a block is still there: the store may be full, a block may not have fit the writer's
+  `buffer_slots` queue, or the plugin may evict it. The host then recomputes that part and the output stays the same;
+  there is no error. Blocks still queued when a process is killed are lost, while a pipeline that ends normally
+  writes every queued block before it goes away.
+- Stored blocks count against `capacity_bytes` / `linear_attention_capacity_bytes` like any other offloaded block.
+  For Qwen3.5-9B a linear-attention checkpoint is about 51 MB, so size the linear-attention store for the number of
+  checkpoints you want to keep.
 
-Validating Scenario 1 does not guarantee Scenario 2 works (it also needs durable writes and pinned
-entries), so use [`verify_session_snapshot.py`](verify_session_snapshot.py) in this directory, which:
-
-1. Runs a request to completion, uninterrupted, as the baseline.
-2. Runs the same request again on a pipeline configured with your plugin, calls `save_state()` partway
-   through, destroys that pipeline instance, then constructs a **fresh** pipeline instance configured the
-   same way (simulating a process restart) and calls `restore_state()` to finish generation.
-3. Asserts the stitched token stream from step 2 matches step 1's baseline exactly.
-
-```sh
-cd samples/c/kv_cache_store_plugin
-python verify_session_snapshot.py -m <model_dir> -d GPU \
-    --plugin /path/to/your_plugin.dll --provider your-provider-name
-```
-
-**What a pass looks like** (actual output from this exact command against the sample plugin, Qwen3.5-9B on GPU):
-
-```
-PASS: the restored continuation matches the uninterrupted baseline token-for-token.
-```
-
-The script exits 0 on success and non-zero (printing both token sequences) on any mismatch, so it
-is safe to use directly in CI. `[ERROR] BlockManager leaked sequence block tables` /
-`BlockAllocator leaked blocks` lines on stderr are expected and harmless here - `save_state()` is
-only valid while a request is still RUNNING, so the save pipeline's request is deliberately never
-allowed to finish before that pipeline instance is destroyed; this is a destructor-time sanity log,
-not a failure (the script's own PASS/FAIL assertion, not these log lines, is the actual verdict).
-
-### Performance: TTFT with vs. without session restore
-
-Unless skipped with `--skip-perf`, the script also measures time-to-first-token (TTFT) for a much
-longer conversation (the sample sentence repeated 400 times) restored through your plugin, against
-a full re-prefill baseline - the correctness check above deliberately uses a short prompt to run
-fast, which is not representative of the real performance win (same prefix-length caveat as
-Scenario 1).
-
-**Real numbers from this exact script** (sample plugin). Both timings start before the request is
-submitted (baseline) or `restore_state()` is called (restore) and stop at the first token, so
-reading and checking the snapshot and recomputing the last position count against the restore:
-
-| Model | Device | TTFT without restore (full re-prefill) | TTFT with restore (via your plugin) | Speedup |
-|---|---|---|---|---|
-| Qwen3.5-9B | GPU | 4308.75 ms | 764.43 ms | **~5.6x** |
-| Qwen3-8B | CPU | 68403.16 ms | 6379.08 ms | **~10.7x** |
-
-The GPU row is the mean of two runs (without restore 4425.68 / 4191.82 ms, with restore 763.98 /
-764.88 ms, i.e. 5.79x / 5.48x); the CPU row is a single run. Run-to-run spread of the re-prefill
-baseline is noticeable (an earlier set of runs on the same GPU measured about 3.3 s), while the
-restore time is stable. One run prints:
-
-```
-PASS: the restored continuation matches the uninterrupted baseline token-for-token.
-PERF: TTFT without session restore (full re-prefill): 4425.68 ms
-PERF: TTFT with session restore (via your plugin):    763.98 ms
-PERF: Speedup: 5.79x
-```
-
-The speedup comes from skipping prefill, not from a prefix-cache hit on a new request: the snapshot
-records the exact history and the position of its linear-attention checkpoint, so the checkpoint
-interval caveat from Scenario 1 does not apply, and the correctness check uses a short prompt far below
-that interval and still resumes token-for-token.
+Validating Scenario 1 does not guarantee Scenario 2 works (it also needs durable writes that survive the process), so
+run [`verify_chunk_store.py`](verify_chunk_store.py) from the chunk store section above against your plugin: its
+`write` and `read` phases are separate processes against one store directory, and `read` must print the same text as
+`baseline` with a clearly lower TTFT. The numbers in that section (about 8.1x on CPU for Qwen3-8B, about 3.2x on GPU
+for Qwen3.5-9B) were measured this way.
 
 ## Known limitations of the sample plugin (do not assume your plugin needs to share these)
 
 The sample plugin in this directory is intentionally a minimal reference. Its default provider,
 `sample-in-memory`, has **no real persistence**: its data lives in process memory and is gone once the process
-exits, so `verify_session_snapshot.py`'s default "process restart" is simulated with a second
-`ContinuousBatchingPipeline` instance in the *same* process. That validates the ABI call sequence and data
-correctness, but not that your plugin survives a real process restart - that depends on your own storage backend.
+exits, so a restart through it can only be checked with a second `ContinuousBatchingPipeline` instance in the *same*
+process. That validates the ABI call sequence and data correctness, but not that your plugin survives a real process
+restart - that depends on your own storage backend.
 
 The second provider, `sample-persistent-file`, keeps every block as a file under `CacheOffloadConfig.path` and is
-what the real two-process check uses. Run the halves as separate OS processes:
-
-```sh
-python verify_session_snapshot.py -m <model_dir> -d CPU --plugin /path/to/sample_kv_cache_store_plugin.dll \
-    --provider sample-persistent-file --store-dir /tmp/kv_store --phase save --state-file /tmp/kv_state
-# the first process has exited here
-python verify_session_snapshot.py -m <model_dir> -d CPU --plugin /path/to/sample_kv_cache_store_plugin.dll \
-    --provider sample-persistent-file --store-dir /tmp/kv_store --phase restore --state-file /tmp/kv_state
-```
-
-The save half runs the uninterrupted baseline, saves the snapshot and writes the baseline tokens next to it; the
-restore half loads them in a new process and prints `PASS: the continuation restored in a separate process matches
-the baseline token-for-token.` This was run with Qwen3-8B on CPU and with the hybrid Qwen3.5-9B on GPU (the store
-then holds one `ns_*` directory per group, `kv` and `la`). With your own plugin, run the same two commands against
-your storage.
+what the real multi-process check uses, see the three `verify_chunk_store.py` phases above. The store then holds one
+`ns_*` directory per group, `kv` and `la`. With your own plugin, run the same commands against your storage.
 
 The host uses the optional capabilities your provider advertises:
 

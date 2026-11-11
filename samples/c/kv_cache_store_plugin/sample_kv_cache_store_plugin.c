@@ -8,7 +8,7 @@
 //     persistence, no real I/O, naive O(n) key lookup, unbounded memory growth) but enough to show exactly what
 //     a vendor plugin needs to implement and how the host drives it.
 //   - "sample-persistent-file": keeps every block in its own file under `CacheOffloadConfig::path`, so blocks
-//     survive the process. This is what a session snapshot restored in another process needs. It is still a
+//     survive the process. This is what reuse of the blocks in another process needs. It is still a
 //     reference (one file per block, no eviction, no locking across processes), not a production store.
 // A real plugin would replace the storage in store_read_blocks/store_write_blocks/store_drop_blocks with its own
 // I/O and would track its own capacity/eviction instead of growing forever.
@@ -972,7 +972,7 @@ static OvKVCacheStatus persistent_write_blocks(void* self,
                        fwrite(req->witness.data, 1, (size_t)req->witness.len, file) == req->witness.len) &&
                       fwrite(req->source, 1, (size_t)req->bytes, file) == req->bytes;
             if (written) {
-                /* The host reports a snapshot as saved once this has returned, so the bytes must be on disk. */
+                /* A reader in another process must find the bytes once this has returned, so they must be on disk. */
                 sync_file(file);
             }
             fclose(file);
