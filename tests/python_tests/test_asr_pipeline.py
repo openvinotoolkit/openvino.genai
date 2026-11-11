@@ -800,9 +800,31 @@ def test_sensevoice_audio_chunk_duration():
     batch = chunked_pipe.generate([samples[0], long_audio])
     assert batch.texts == [chunked_pipe.generate(samples[0]).texts[0], result.texts[0]]
 
+    # A stop request of the streamer skips the inference of the remaining chunks.
+    stopped = chunked_pipe.generate(long_audio, streamer=lambda _: True)
+    assert len(stopped.perf_metrics.asr_raw_metrics.encode_inference_durations) == 1
+
     for invalid_duration in (0, -1):
         with pytest.raises(RuntimeError, match="audio_chunk_duration"):
             ov_genai.ASRPipeline(path, "CPU", audio_chunk_duration=invalid_duration, **properties)
+
+
+@pytest.mark.sensevoice
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_sensevoice_npu_default_chunk_duration_is_30_seconds():
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    default_pipe = ov_genai.ASRPipeline(path, "NPU", **NPUW_CPU_PROPERTIES)
+    explicit_pipe = ov_genai.ASRPipeline(path, "NPU", audio_chunk_duration=30, **NPUW_CPU_PROPERTIES)
+
+    samples = get_audio_dataset(long_form=False)
+    # Longer than 30 seconds, but within the aligned capacity of the static input shape.
+    audio = np.pad(np.concatenate(samples[:10])[: 30 * 16000], (0, 3 * 16000 // 10))
+
+    default_result = default_pipe.generate(audio)
+    assert default_result.texts == explicit_pipe.generate(audio).texts
+    assert len(default_result.perf_metrics.asr_raw_metrics.encode_inference_durations) > 1
 
 
 @pytest.mark.sensevoice

@@ -191,7 +191,10 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
         m_max_batch = 1;
         OPENVINO_ASSERT(input_shape[1].get_length() > 0, "SenseVoiceSmall requires a positive frame count.");
         m_padded_frames = input_shape[1].get_length();
-        m_max_window_samples = FunASRFeatureExtractor::max_samples_for_frames(m_padded_frames);
+        const size_t capacity_seconds =
+            FunASRFeatureExtractor::max_samples_for_frames(m_padded_frames) / FunASRFeatureExtractor::sampling_rate;
+        OPENVINO_ASSERT(capacity_seconds >= 1, "SenseVoiceSmall requires a static input shape that fits 1 second.");
+        m_max_window_samples = capacity_seconds * FunASRFeatureExtractor::sampling_rate;
     }
     if (chunk_seconds) {
         const size_t chunk_samples = *chunk_seconds * FunASRFeatureExtractor::sampling_rate;
@@ -246,7 +249,7 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
     std::vector<std::vector<SenseVoiceTranscript>> audio_windows(batch_size);
 
     const size_t window_count = features.size();
-    const size_t group_size = std::min(window_count, m_max_batch);
+    const size_t group_size = std::min(window_count, streamer ? size_t{1} : m_max_batch);
     bool stopped = false;
     for (size_t group_begin = 0; group_begin < window_count; group_begin += group_size) {
         const size_t count = std::min(group_size, window_count - group_begin);

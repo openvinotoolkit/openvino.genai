@@ -61,8 +61,19 @@ std::vector<AudioWindow> split_audio_into_windows(const AudiosView& audios, size
         const size_t window_seconds = max_window_samples / sampling_rate;
         // A chunk can exceed its nominal duration by up to the boundary search window.
         const size_t search_seconds = std::min(CHUNK_BOUNDARY_SEARCH_SECONDS, window_seconds / 4);
-        for (AudioChunk& chunk :
-             split_audio_into_chunks({audio}, sampling_rate, window_seconds - search_seconds, search_seconds)) {
+        std::vector<AudioChunk> chunks =
+            split_audio_into_chunks({audio}, sampling_rate, window_seconds - search_seconds, search_seconds);
+        // Only the last chunk can be shorter than the splitter's minimum length and padded.
+        size_t consumed = 0;
+        for (size_t i = 0; i + 1 < chunks.size(); ++i) {
+            consumed += chunks[i].wav.size();
+        }
+        chunks.back().wav.resize(audio.size() - consumed);
+        // Feature extraction needs at least two samples.
+        if (chunks.back().wav.size() < 2) {
+            chunks.pop_back();
+        }
+        for (AudioChunk& chunk : chunks) {
             windows.push_back({audio_index, nullptr, std::move(chunk.wav)});
         }
     }

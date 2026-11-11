@@ -69,6 +69,27 @@ TEST(SenseVoiceWindowing, LongAudioIsSplitIntoOwnedWindowsWithinLimit) {
     EXPECT_EQ(windows.back().audio_index, 1u);
 }
 
+TEST(SenseVoiceWindowing, ShortTailKeepsItsRealLength) {
+    const std::vector<float> audio(kSamplingRate + kSamplingRate / 10, 0.0f);
+    const ov::genai::AudiosView audios{std::cref(audio)};
+
+    const std::vector<AudioWindow> windows = ov::genai::split_audio_into_windows(audios, kSamplingRate);
+
+    ASSERT_EQ(windows.size(), 2u);
+    EXPECT_EQ(windows[0].samples().size(), kSamplingRate);
+    EXPECT_EQ(windows[1].samples().size(), kSamplingRate / 10);
+}
+
+TEST(SenseVoiceWindowing, OneSampleTailIsDropped) {
+    const std::vector<float> audio(kSamplingRate + 1, 0.0f);
+    const ov::genai::AudiosView audios{std::cref(audio)};
+
+    const std::vector<AudioWindow> windows = ov::genai::split_audio_into_windows(audios, kSamplingRate);
+
+    ASSERT_EQ(windows.size(), 1u);
+    EXPECT_EQ(windows[0].samples().size(), kSamplingRate);
+}
+
 TEST(SenseVoiceMerge, JoinsTextsWithSpaceAndSkipsEmptyWindows) {
     const std::vector<SenseVoiceTranscript> windows = {
         make_transcript("hello", "en", "NEUTRAL", "Speech", 100),
