@@ -868,6 +868,7 @@ def test_sensevoice_npu_splits_audio_longer_than_30_seconds():
     assert len(result.texts) == 1
     assert len(result.languages) == 1
     assert len(result.metadata) == 1
+    assert len(result.perf_metrics.asr_raw_metrics.encode_inference_durations) > 1
 
     batch = npu_pipe.generate([short_audio, long_audio])
     assert batch.texts == [npu_pipe.generate(short_audio).texts[0], result.texts[0]]
@@ -876,6 +877,9 @@ def test_sensevoice_npu_splits_audio_longer_than_30_seconds():
     streamed = npu_pipe.generate(long_audio, streamer=lambda _: False)
     assert streamed.texts == result.texts
 
+    # A stop request of the streamer skips the remaining windows.
+    stopped = npu_pipe.generate(long_audio, streamer=lambda _: True)
+    assert len(stopped.perf_metrics.asr_raw_metrics.encode_inference_durations) == 1
 
 @pytest.mark.parametrize(
     "pipelines_fixture",

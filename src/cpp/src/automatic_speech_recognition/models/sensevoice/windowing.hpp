@@ -23,10 +23,24 @@ struct SenseVoiceTranscript {
 };
 
 /**
- * Splits each audio longer than `max_window_samples` into windows at low-energy positions.
- * Shorter audio is a single window. `orig_batch` of a window is the index of its audio.
+ * A window of audio. Audio that fits into one window is borrowed from the input and must outlive the window,
+ * a window of a longer audio owns its samples.
  */
-std::vector<AudioChunk> split_audio_into_windows(const AudiosView& audios, size_t max_window_samples);
+struct AudioWindow {
+    size_t audio_index = 0;
+    const std::vector<float>* borrowed = nullptr;
+    std::vector<float> owned;
+
+    const std::vector<float>& samples() const {
+        return borrowed ? *borrowed : owned;
+    }
+};
+
+/**
+ * Splits each audio longer than `max_window_samples` into windows at low-energy positions.
+ * Shorter audio is a single window. `audio_index` of a window is the index of its audio.
+ */
+std::vector<AudioWindow> split_audio_into_windows(const AudiosView& audios, size_t max_window_samples);
 
 /**
  * Merges transcripts of the windows of one audio. Texts are joined, language, emotion and event are chosen by the

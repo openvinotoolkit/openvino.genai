@@ -49,13 +49,13 @@ std::optional<std::string> weighted_vote(const Votes& votes, const std::vector<s
 
 namespace ov::genai {
 
-std::vector<AudioChunk> split_audio_into_windows(const AudiosView& audios, size_t max_window_samples) {
+std::vector<AudioWindow> split_audio_into_windows(const AudiosView& audios, size_t max_window_samples) {
     constexpr size_t sampling_rate = FunASRFeatureExtractor::sampling_rate;
-    std::vector<AudioChunk> windows;
+    std::vector<AudioWindow> windows;
     for (size_t audio_index = 0; audio_index < audios.size(); ++audio_index) {
         const std::vector<float>& audio = audios[audio_index];
         if (audio.size() <= max_window_samples) {
-            windows.push_back({audio_index, 0, audio, sampling_rate, 0.0f});
+            windows.push_back({audio_index, &audio, {}});
             continue;
         }
         const size_t window_seconds = max_window_samples / sampling_rate;
@@ -63,8 +63,7 @@ std::vector<AudioChunk> split_audio_into_windows(const AudiosView& audios, size_
         const size_t search_seconds = std::min(CHUNK_BOUNDARY_SEARCH_SECONDS, window_seconds / 4);
         for (AudioChunk& chunk :
              split_audio_into_chunks({audio}, sampling_rate, window_seconds - search_seconds, search_seconds)) {
-            chunk.orig_batch = audio_index;
-            windows.push_back(std::move(chunk));
+            windows.push_back({audio_index, nullptr, std::move(chunk.wav)});
         }
     }
     return windows;
