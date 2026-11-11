@@ -95,6 +95,14 @@ struct VideoGenerationConfig {
     /// Transformer block indices perturbed by Spatio-Temporal Guidance. Indices outside the model's
     /// block range are ignored, matching the reference implementation.
     std::optional<std::vector<int64_t>> spatio_temporal_guidance_blocks = std::nullopt;
+
+    /// Density of a block-sparse self-attention (VideoToVideoPipeline with FlashVSR): the number of attended key
+    /// blocks scales with it, relative to the model's reference resolution. Unset corresponds to the model default
+    /// (2.0 for FlashVSR, 1.5 is faster).
+    std::optional<float> sparse_attention_ratio = std::nullopt;
+    /// Matches the colors of the generated frames to the input frames (per frame and channel mean and standard
+    /// deviation). Unset corresponds to the model default (enabled for FlashVSR).
+    std::optional<bool> color_correction = std::nullopt;
 };
 
 /**
@@ -136,6 +144,10 @@ static constexpr ov::Property<float> audio_guidance_rescale{"audio_guidance_resc
 /// Transformer block indices perturbed by Spatio-Temporal Guidance.
 static constexpr ov::Property<std::vector<int64_t>> spatio_temporal_guidance_blocks{
     "spatio_temporal_guidance_blocks"};
+/// Density of a block-sparse self-attention, see 'VideoGenerationConfig::sparse_attention_ratio'.
+static constexpr ov::Property<float> sparse_attention_ratio{"sparse_attention_ratio"};
+/// Color correction of the generated frames, see 'VideoGenerationConfig::color_correction'.
+static constexpr ov::Property<bool> color_correction{"color_correction"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.

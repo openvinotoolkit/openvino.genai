@@ -107,13 +107,16 @@ def _export_openvino(parser: ArgumentParser, args, argv: list[str], export_argv:
         exporter_cls.validate_args(args)
     except ValueError as error:
         parser.error(str(error))
-    transformers_requirement = f"transformers=={exporter_cls.TRANSFORMERS_VERSION}"
-    if not is_satisfied(transformers_requirement):
+    requirements = list(exporter_cls.EXTRA_REQUIREMENTS)
+    if exporter_cls.TRANSFORMERS_VERSION is not None:
+        requirements.insert(0, f"transformers=={exporter_cls.TRANSFORMERS_VERSION}")
+    unsatisfied = [requirement for requirement in requirements if not is_satisfied(requirement)]
+    if unsatisfied:
         logger.info(
-            f"`{model_type}` is exported with {transformers_requirement}, "
+            f"`{model_type}` is exported with {', '.join(requirements)}, "
             f"transformers {installed_version('transformers')} is installed."
         )
-        return reexec_with([transformers_requirement], argv)
+        return reexec_with(requirements, argv)
 
     logger.info(
         f"Exporting `{model_type}` with the native genai-cli exporter (transformers {installed_version('transformers')})"

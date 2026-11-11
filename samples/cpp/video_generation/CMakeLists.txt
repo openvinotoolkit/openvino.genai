@@ -135,3 +135,28 @@ install(TARGETS lora_text2video
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+# create video2video (video super-resolution) sample executable
+add_executable(video2video video2video.cpp)
+
+ov_genai_link_opencv(video2video core imgproc videoio)
+target_link_libraries(video2video PRIVATE openvino::genai)
+
+if(UNIX AND NOT APPLE)
+    set_target_properties(video2video PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib"
+    )
+elseif(APPLE)
+    set_target_properties(video2video PROPERTIES
+        INSTALL_RPATH "@loader_path/../lib"
+    )
+endif()
+
+set_target_properties(video2video PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS video2video
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)

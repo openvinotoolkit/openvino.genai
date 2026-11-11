@@ -40,6 +40,8 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "audio_guidance_rescale", config.audio_guidance_rescale);
     read_anymap_param(properties, "spatio_temporal_guidance_blocks", config.spatio_temporal_guidance_blocks);
     read_anymap_param(properties, "num_videos_per_prompt", config.num_videos_per_prompt);
+    read_anymap_param(properties, "sparse_attention_ratio", config.sparse_attention_ratio);
+    read_anymap_param(properties, "color_correction", config.color_correction);
 
     read_anymap_param(properties, "negative_prompt", config.negative_prompt);
     read_anymap_param(properties, "guidance_scale", config.guidance_scale);
