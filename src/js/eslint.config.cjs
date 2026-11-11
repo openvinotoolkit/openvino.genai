@@ -52,6 +52,7 @@ module.exports = defineConfig([
             "dynamic_split_fuse",
             "pooling_type",
             "json_schema",
+            "max_whitespace_cnt",
             "structured_output_config",
             "structural_tags_config",
             "skip_special_tokens",

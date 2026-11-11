@@ -5032,6 +5032,8 @@ class StructuredOutputConfig:
     
         Structured output parameters:
         json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
+        max_whitespace_cnt: maximum consecutive whitespace characters between JSON tokens for json_schema.
+            Zero selects compact JSON. Omit the option to allow arbitrary whitespace.
         regex:          if set, the output will be constraint by specified regex.
         grammar:        if set, the output will be constraint by specified EBNF grammar.
         structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
@@ -5263,7 +5265,7 @@ class StructuredOutputConfig:
     def __init__(self) -> None:
         ...
     @typing.overload
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, *, max_whitespace_cnt: typing.SupportsInt | None = None, **kwargs) -> None:
         ...
     def __repr__(self) -> str:
         ...
@@ -5290,6 +5292,14 @@ class StructuredOutputConfig:
         """
     @json_schema.setter
     def json_schema(self, arg0: str | None) -> None:
+        ...
+    @property
+    def max_whitespace_cnt(self) -> int | None:
+        """
+        Maximum consecutive whitespace characters between tokens of json_schema
+        """
+    @max_whitespace_cnt.setter
+    def max_whitespace_cnt(self, arg0: typing.SupportsInt | None) -> None:
         ...
     @property
     def regex(self) -> str | None:

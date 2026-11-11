@@ -141,6 +141,8 @@ export declare namespace StructuredOutputConfig {
 export class StructuredOutputConfig {
   /** if set, the output will be a JSON string constraint by the specified json-schema. */
   json_schema?: string;
+  /** Maximum consecutive whitespace characters between JSON tokens. Zero selects compact JSON. */
+  max_whitespace_cnt?: number;
   /** if set, the output will be constraint by specified regex.*/
   regex?: string;
   /** if set, the output will be constraint by specified EBNF grammar. */
@@ -150,12 +152,14 @@ export class StructuredOutputConfig {
 
   constructor(params: {
     json_schema?: string;
+    max_whitespace_cnt?: number;
     regex?: string;
     grammar?: string;
     structural_tags_config?: StructuredOutputConfig.StructuralTag;
   }) {
     const { json_schema, regex, grammar, structural_tags_config } = params;
     this.json_schema = json_schema;
+    this.max_whitespace_cnt = params.max_whitespace_cnt;
     this.regex = regex;
     this.grammar = grammar;
     this.structural_tags_config = structural_tags_config;

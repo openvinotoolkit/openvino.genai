@@ -37,6 +37,8 @@ auto structured_output_config_docstring = R"(
 
     Structured output parameters:
     json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
+    max_whitespace_cnt: maximum consecutive whitespace characters between JSON tokens for json_schema.
+        Zero selects compact JSON. Omit the option to allow arbitrary whitespace.
     regex:          if set, the output will be constraint by specified regex.
     grammar:        if set, the output will be constraint by specified EBNF grammar.
     structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
@@ -369,10 +371,16 @@ void init_generation_config(py::module_& m) {
 
     structured_output_config
         .def(py::init<>())
-        .def(py::init([](py::kwargs kwargs) {
-            return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs));
-        }))
+        .def(py::init([](std::optional<int> max_whitespace_cnt, py::kwargs kwargs) {
+            auto properties = pyutils::kwargs_to_any_map(kwargs);
+            if (max_whitespace_cnt.has_value()) {
+                properties["max_whitespace_cnt"] = *max_whitespace_cnt;
+            }
+            return StructuredOutputConfig(properties);
+        }), py::kw_only(), py::arg("max_whitespace_cnt") = py::none())
         .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
+        .def_readwrite("max_whitespace_cnt", &StructuredOutputConfig::max_whitespace_cnt,
+                       "Maximum consecutive whitespace characters between tokens of json_schema")
         .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
         .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation")
         .def_property("structural_tags_config",
@@ -411,6 +419,7 @@ void init_generation_config(py::module_& m) {
         .def("__repr__",
             [](const StructuredOutputConfig &self) {
                 return "StructuredOutputConfig(json_schema=" + py::repr(py::cast(self.json_schema)).cast<std::string>() +
+                       ", max_whitespace_cnt=" + py::repr(py::cast(self.max_whitespace_cnt)).cast<std::string>() +
                        ", regex=" + py::repr(py::cast(self.regex)).cast<std::string>() +
                        ", grammar=" + py::repr(py::cast(self.grammar)).cast<std::string>() +
                        ", structural_tags_config=" + py::repr(py::cast(self.structural_tags_config)).cast<std::string>() +

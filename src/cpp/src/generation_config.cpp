@@ -262,6 +262,7 @@ void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
     using utils::read_anymap_param;
 
     read_anymap_param(properties, "json_schema", json_schema);
+    read_anymap_param(properties, "max_whitespace_cnt", max_whitespace_cnt);
     read_anymap_param(properties, "regex", regex);
     read_anymap_param(properties, "grammar", grammar);
     read_anymap_param(properties, "structural_tags_config", structural_tags_config);
@@ -434,6 +435,10 @@ void GenerationConfig::validate() const {
 }
 
 void StructuredOutputConfig::validate() const {
+    if (max_whitespace_cnt.has_value()) {
+        OPENVINO_ASSERT(json_schema.has_value(), "max_whitespace_cnt requires json_schema.");
+        OPENVINO_ASSERT(*max_whitespace_cnt >= 0, "max_whitespace_cnt must be non-negative.");
+    }
     auto& registry = StructuredOutputController::get_backend_registry();
     std::string backend_name = backend.has_value() ? *backend : StructuredOutputController::get_default_backend_name();
     std::string upper_name = backend_name;

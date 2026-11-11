@@ -167,6 +167,17 @@ if(ENABLE_XGRAMMAR)
     if(NOT xgrammar_POPULATED)
         FetchContent_Populate(xgrammar)
 
+        # v0.1.31 rejects zero and drops the whitespace bound in generic JSON containers.
+        # Check the reverse patch first because the populated source survives reconfiguration.
+        find_package(Git REQUIRED)
+        set(whitespace_patch "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/patches/xgrammar-schema-whitespace.patch")
+        execute_process(COMMAND "${GIT_EXECUTABLE}" apply --reverse --check "${whitespace_patch}"
+                        WORKING_DIRECTORY "${xgrammar_SOURCE_DIR}" RESULT_VARIABLE already_patched ERROR_QUIET)
+        if(NOT already_patched EQUAL 0)
+            execute_process(COMMAND "${GIT_EXECUTABLE}" apply "${whitespace_patch}"
+                            WORKING_DIRECTORY "${xgrammar_SOURCE_DIR}" COMMAND_ERROR_IS_FATAL ANY)
+        endif()
+
         # Modify the config.cmake file directly
         set(CONFIG_FILE "${xgrammar_SOURCE_DIR}/cmake/config.cmake")
         if(EXISTS "${CONFIG_FILE}")

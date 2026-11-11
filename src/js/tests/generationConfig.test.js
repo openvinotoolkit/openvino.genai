@@ -60,6 +60,25 @@ describe("GenerationConfig JS <-> C++ conversion", () => {
 
   afterEach(() => pipeline.setGenerationConfig(initialConfig));
 
+  it("preserves an explicit zero schema whitespace limit", () => {
+    pipeline.setGenerationConfig({
+      structured_output_config: { json_schema: "{}", max_whitespace_cnt: 0 },
+    });
+    assert.equal(pipeline.getGenerationConfig().structured_output_config.max_whitespace_cnt, 0);
+  });
+
+  it("rejects invalid schema whitespace limits", () => {
+    for (const limit of [-1, 0.5, 2 ** 32]) {
+      assert.throws(
+        () =>
+          pipeline.setGenerationConfig({
+            structured_output_config: { json_schema: "{}", max_whitespace_cnt: limit },
+          }),
+        /max_whitespace_cnt/,
+      );
+    }
+  });
+
   describe("stop_criteria (numeric enum)", () => {
     it("round-trips StopCriteria.EARLY (0)", () => {
       assertRoundTrip({ stop_criteria: StopCriteria.EARLY });
