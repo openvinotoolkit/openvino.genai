@@ -15,6 +15,9 @@ namespace {
 
 std::string NATIVE_TAG = "<image>./</image>";
 constexpr char VIDEO_GROUP_MARKER[] = "<ov_genai_minicpm_video_group>";
+// Match MiniCPM-V-4.5 preprocessing: six-frame groups and decisecond temporal IDs.
+constexpr size_t MAX_FRAMES_PER_GROUP = 6;
+constexpr float TEMPORAL_UNITS_PER_SECOND = 10.0f;
 
 struct VisionGroup {
     bool is_video;
@@ -443,7 +446,7 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
 
 } // namespace
 
-EncodedImage VisionEncoderMiniCPM::encode_features(const ov::Tensor& image,
+EncodedImage VisionEncoderMiniCPM::encode_features(const ov::Tensor& frame,
                                                    const ov::AnyMap& config_map,
                                                    ov::Tensor& slices,
                                                    ImageSize& slices_target_size) {
@@ -456,7 +459,7 @@ EncodedImage VisionEncoderMiniCPM::encode_features(const ov::Tensor& image,
     std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
     std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
 
-    auto [encoded_image, image_slice_result] = llava_image_embed_make_with_bytes_slice(ctx_clip, image, encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+    auto [encoded_image, image_slice_result] = llava_image_embed_make_with_bytes_slice(ctx_clip, frame, encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
     slices = std::move(image_slice_result.slices);
     slices_target_size = image_slice_result.target_size;
     return encoded_image;
@@ -495,9 +498,8 @@ EncodedVideo VisionEncoderMiniCPM::encode_frames(const std::vector<ov::Tensor>& 
         std::copy_n(frame.resized_source.data<float>(), frame.resized_source.get_size(),
                     encoded_video.video_features.data<float>() + frame_idx * frame.resized_source.get_size());
     }
-    constexpr size_t max_frames_per_group = 6;
     encoded_video.frame_num = frames.size();
-    encoded_video.num_video_tokens = ((frames.size() + max_frames_per_group - 1) / max_frames_per_group) * m_vlm_config.query_num;
+    encoded_video.num_video_tokens = ((frames.size() + MAX_FRAMES_PER_GROUP - 1) / MAX_FRAMES_PER_GROUP) * m_vlm_config.query_num;
     return encoded_video;
 }
 
@@ -773,9 +775,8 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
 ov::Tensor InputsEmbedderMiniCPM::resample_video_group(const EncodedVideo& video,
                                                       size_t group_index,
                                                       size_t pad_to_max) {
-    constexpr size_t max_frames_per_group = 6;
-    const size_t group_start = group_index * max_frames_per_group;
-    const size_t group_end = std::min(group_start + max_frames_per_group, video.frame_num);
+    const size_t group_start = group_index * MAX_FRAMES_PER_GROUP;
+    const size_t group_end = std::min(group_start + MAX_FRAMES_PER_GROUP, video.frame_num);
     const ov::Shape& feature_shape = video.video_features.get_shape();
     ov::Tensor group_frames(video.video_features,
                            {group_start, 0, 0},
@@ -785,7 +786,7 @@ ov::Tensor InputsEmbedderMiniCPM::resample_video_group(const EncodedVideo& video
         const VideoMetadata& metadata = video.metadata;
         const size_t source_index = metadata.frames_indices.empty() ? frame_index : metadata.frames_indices.at(frame_index);
         temporal_ids.push_back(metadata.fps > 0.0f
-                                   ? static_cast<size_t>(std::round(source_index / metadata.fps * 10.0f))
+                                   ? static_cast<size_t>(std::round(source_index / metadata.fps * TEMPORAL_UNITS_PER_SECOND))
                                    : source_index);
     }
     return std::static_pointer_cast<VisionEncoderMiniCPM>(m_vision_encoder)
@@ -802,7 +803,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     std::vector<VisionGroup> vision_groups = collect_vision_groups(unified_prompt, m_vlm_config);
-    // Needed for SDPA
+    // Match visual groups to the media sequence for the uncached prompt suffix.
     size_t current_video_groups = 0;
     for (const size_t video_id : videos_sequence) {
         const EncodedVideo& encoded_video = videos.at(video_id);
@@ -863,6 +864,9 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
                 pad_to_max = std::max(pad_to_max, size.height * size.width);
             }
             const ov::Tensor group_features = resample_video_group(encoded_video, video_group_idx, pad_to_max);
+            OPENVINO_ASSERT(group_features.get_size() == group_size,
+                            "Unexpected MiniCPM video group feature size: expected ", group_size,
+                            ", got ", group_features.get_size(), ".");
             std::copy_n(group_features.data<float>(),
                         group_size,
                         inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
@@ -887,9 +891,11 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
                 pad_to_max = std::max(pad_to_max,
                                       video.resized_source_size.height * video.resized_source_size.width);
             }
-            aligned_resampled_source = std::static_pointer_cast<VisionEncoderMiniCPM>(m_vision_encoder)
-                                           ->resample(encoded_image.resized_source, encoded_image.resized_source_size, pad_to_max);
-            resampled_source = &aligned_resampled_source;
+            if (pad_to_max != encoded_image.resized_source.get_shape().at(1)) {
+                aligned_resampled_source = std::static_pointer_cast<VisionEncoderMiniCPM>(m_vision_encoder)
+                                               ->resample(encoded_image.resized_source, encoded_image.resized_source_size, pad_to_max);
+                resampled_source = &aligned_resampled_source;
+            }
         }
         OPENVINO_ASSERT(resampled_source->get_size() == m_vlm_config.query_num * m_vlm_config.hidden_size,
                         "Unexpected MiniCPM image feature shape.");
@@ -1030,6 +1036,8 @@ VisionEncoderMiniCPM::VisionEncoderMiniCPM(
         const std::string& device,
         const ov::AnyMap properties) : VisionEncoder{model_dir, device, properties} {
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
+    OPENVINO_ASSERT(m_vlm_config.query_num > 0,
+                    "MiniCPM query_num must be positive, got ", m_vlm_config.query_num, ".");
     auto compiled_model = utils::singleton_core().compile_model(
         model_dir / "openvino_resampler_model.xml", device,
         utils::get_model_properties(properties, "resampler", device));
@@ -1050,6 +1058,8 @@ VisionEncoderMiniCPM::VisionEncoderMiniCPM(
     const auto& resampler_model = utils::get_model_weights_pair(models_map, "resampler").first;
     const auto& resampler_weights = utils::get_model_weights_pair(models_map, "resampler").second;
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+    OPENVINO_ASSERT(m_vlm_config.query_num > 0,
+                    "MiniCPM query_num must be positive, got ", m_vlm_config.query_num, ".");
     auto compiled_model = utils::singleton_core().compile_model(
         resampler_model, resampler_weights, device,
         utils::get_model_properties(device_config, "resampler", device));

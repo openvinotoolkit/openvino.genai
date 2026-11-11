@@ -24,7 +24,7 @@ class VisionEncoderMiniCPM : public VisionEncoder {
     // VLM config
     VLMConfig m_vlm_config;
 
-    EncodedImage encode_features(const ov::Tensor& image,
+    EncodedImage encode_features(const ov::Tensor& frame,
                                  const ov::AnyMap& config_map,
                                  ov::Tensor& slices,
                                  ImageSize& slices_target_size);

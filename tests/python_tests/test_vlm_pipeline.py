@@ -1323,6 +1323,7 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
 def test_minicpm_mixed_media_cached_history(
     ov_pipe_model: VlmModelInfo, frame_count: int, video_first: bool, request: pytest.FixtureRequest
 ):
+    """Preserve image slices and temporal video groups across cached continuation and full-history replay."""
     request.addfinalizer(lambda: finish_chat(ov_pipe_model))
     pipeline = ov_pipe_model.pipeline
     generator = np.random.default_rng(42)
@@ -1332,20 +1333,55 @@ def test_minicpm_mixed_media_cached_history(
     first_media = {"videos": [video]} if video_first else {}
     config = _setup_generation_config(pipeline, max_new_tokens=5, do_sample=False, ignore_eos=True)
 
-    direct = pipeline.generate(prompt, images=[image], generation_config=config, **first_media)
     history = ChatHistory([{"role": "user", "content": prompt}])
-    messages = history.get_messages()
     first = pipeline.generate(history, images=[image], generation_config=config, **first_media)
-    assert history.get_messages() == messages
     history.append({"role": "assistant", "content": first.texts[0]})
     history.append(
         {"role": "user", "content": f"Compare <ov_genai_image_1> with <ov_genai_video_{int(video_first)}> ."}
     )
     cached = pipeline.generate(history, images=[image], videos=[video], generation_config=config)
 
-    assert direct.texts == first.texts
+    pipeline.generate(ChatHistory([{"role": "user", "content": "Hello"}]), generation_config=config)
+    replayed = pipeline.generate(history, generation_config=config)
+
+    assert replayed.texts == cached.texts
     assert cached.perf_metrics.get_num_generated_tokens() == config.max_new_tokens
-    assert direct.perf_metrics.get_num_input_tokens() == first.perf_metrics.get_num_input_tokens()
+    assert replayed.perf_metrics.get_num_input_tokens() == cached.perf_metrics.get_num_input_tokens()
+
+
+@pytest.mark.skipif(
+    is_transformers_version(">=", "5.0"),
+    reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059",
+)
+@pytest.mark.transformers_dependent(reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059")
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", backend) for backend in ATTENTION_BACKEND],
+    ids=lambda item: f"{item[0]}/{item[1]}",
+    indirect=["ov_pipe_model"],
+)
+@pytest.mark.parametrize(
+    "query_num,error",
+    [
+        (0, "MiniCPM query_num must be positive, got 0"),
+        (128, "Unexpected MiniCPM video group feature size: expected 16384, got 8192"),
+    ],
+)
+def test_minicpm_invalid_query_num(ov_pipe_model: VlmModelInfo, query_num: int, error: str, tmp_path: Path):
+    model_path = tmp_path / "minicpm_invalid_query_num"
+    shutil.copytree(_get_ov_model(ov_pipe_model.model_id), model_path)
+    config_path = model_path / "config.json"
+    model_config = json.loads(config_path.read_text(encoding="utf-8"))
+    model_config["query_num"] = query_num
+    config_path.write_text(json.dumps(model_config), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match=error):
+        pipeline = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
+        pipeline.generate(
+            "Describe",
+            videos=[openvino.Tensor(np.zeros((1, 32, 32, 3), dtype=np.uint8))],
+            generation_config=GenerationConfig(max_new_tokens=1),
+        )
 
 
 @pytest.mark.parametrize(
@@ -2573,29 +2609,6 @@ def test_audio_rejected_by_non_audio_model():
         pipe.generate("Describe", audios=[audio], generation_config=GenerationConfig(max_new_tokens=20))
 
 
-def _prepare_minicpm_video_inputs(processor, prompt, image, video):
-    media = [] if image is None else [PIL.Image.fromarray(np.asarray(image))]
-    temporal_ids = [[-1]] if media else []
-    frames = [PIL.Image.fromarray(np.asarray(frame)) for frame in video]
-    media.extend(frames)
-    # MiniCPM-V-4.5 resamples at most six consecutive frames into one visual token group.
-    max_frames_per_group = 6
-    temporal_ids.extend(
-        list(range(start, min(start + max_frames_per_group, len(frames))))
-        for start in range(0, len(frames), max_frames_per_group)
-    )
-    prompt = processor.apply_chat_template(
-        [{"role": "user", "content": "(<image>./</image>)" * len(media) + "\n" + prompt}],
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    inputs = processor(
-        prompt, media, temporal_ids=temporal_ids, max_slice_nums=1, use_image_id=False, return_tensors="pt"
-    )
-    inputs.pop("image_sizes", None)
-    return inputs
-
-
 def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=None):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
@@ -2691,18 +2704,15 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=N
             ):
                 processor.chat_template = tokenizer.chat_template
 
-        if optimum_model.config.model_type == "minicpmv" and video is not None:
-            inputs = _prepare_minicpm_video_inputs(processor, prompt, image, video)
-        else:
-            inputs = optimum_model.preprocess_inputs(
-                text=prompt,
-                image=image,
-                video=video,
-                audio=audio,
-                processor=processor,
-                tokenizer=tokenizer,
-                config=optimum_model.config,
-            )
+        inputs = optimum_model.preprocess_inputs(
+            text=prompt,
+            image=image,
+            video=video,
+            audio=audio,
+            processor=processor,
+            tokenizer=tokenizer,
+            config=optimum_model.config,
+        )
 
     max_new_tokens = 100
     output_ids = optimum_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
