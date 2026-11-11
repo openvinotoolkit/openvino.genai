@@ -186,7 +186,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        model = convert_gguf_with_frontend(model_path, embeddings);
+        model = convert_gguf_with_frontend(model_path, embeddings, embeddings ? "mtp_target" : "");
     }
 
     if (enable_save_ov_model) {

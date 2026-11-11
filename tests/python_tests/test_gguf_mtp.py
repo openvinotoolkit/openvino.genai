@@ -264,6 +264,17 @@ def test_gguf_draft_model_path_detects_mtp(pipelines, mtp_gguf):
     assert actual == expected
 
 
+def test_gguf_mtp_accepts_separate_draft_for_plain_target(plain_gguf, mtp_gguf):
+    properties = dict(GGUF_READER="FRONTEND", **DEVICE_PROPERTIES)
+    plain = genai.LLMPipeline(plain_gguf, "CPU", scheduler_config=make_scheduler(), **properties)
+    mtp = genai.LLMPipeline(
+        plain_gguf, "CPU", scheduler_config=make_scheduler(), draft_model_path=mtp_gguf, **properties
+    )
+    expected, _ = generate_tokens(plain, "a b c")
+    actual, _ = generate_tokens(mtp, "a b c", num_assistant_tokens=2)
+    assert actual == expected
+
+
 def test_gguf_speculative_type_mtp_continuous_batching(pipelines, mtp_gguf):
     plain, _ = pipelines
     pipeline = genai.ContinuousBatchingPipeline(
