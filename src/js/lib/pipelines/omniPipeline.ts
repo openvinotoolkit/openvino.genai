@@ -65,9 +65,7 @@ export class OmniPipeline {
    * @param device - Inference device. A tokenizer is always compiled for CPU.
    * @param properties - Device and pipeline properties. Qwen3-Omni speech output uses the
    * continuous-batching backend, which is the default on CPU and GPU (NPU is not
-   * supported for speech output). LFM3-Omni speech output uses SDPA, which the pipeline
-   * selects unless ATTENTION_BACKEND is set. With PA, generate() supports text output only and rejects
-   * if return_audio is true.
+   * supported for speech output). LFM3-Omni speech output works on both the PA and SDPA backends.
    */
   constructor(modelPath: string, device: string, properties: OmniPipelineProperties) {
     this.modelPath = modelPath;

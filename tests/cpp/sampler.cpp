@@ -237,6 +237,36 @@ TEST(SamplerWorkerJoiningTest, preserves_successful_multi_request_results) {
     EXPECT_TRUE(second_group->get_generation_stream()->can_read());
 }
 
+TEST(SamplerForcedTokenTest, records_forced_token_instead_of_sampling) {
+    // Greedy decoding would pick token 1 from these logits.
+    SequenceGroup::Ptr group = make_scheduled_group(0);
+    const Sequence::Ptr sequence = group->get_sequences().front();
+    sequence->set_forced_next_token(0);
+    std::vector<SequenceGroup::Ptr> sequence_groups{group};
+    Sampler sampler;
+
+    sampler.sample(sequence_groups, make_logits(1), false);
+
+    EXPECT_EQ(sequence->get_generated_ids(), TokenIds({0}));
+    EXPECT_FALSE(sequence->take_forced_next_token().has_value());
+}
+
+TEST(SamplerForcedTokenTest, forced_token_still_counts_towards_max_new_tokens) {
+    GenerationConfig config = ov::genai::utils::get_greedy_config();
+    config.max_new_tokens = 1;
+    SequenceGroup::Ptr group = make_scheduled_group(0, config);
+    const Sequence::Ptr sequence = group->get_sequences().front();
+    sequence->set_forced_next_token(0);
+    std::vector<SequenceGroup::Ptr> sequence_groups{group};
+    Sampler sampler;
+
+    const SamplerOutput output = sampler.sample(sequence_groups, make_logits(1), false);
+
+    EXPECT_TRUE(sequence->has_finished());
+    EXPECT_EQ(sequence->get_finish_reason(), GenerationFinishReason::LENGTH);
+    EXPECT_EQ(output.m_dropped_sequences, std::vector<uint64_t>({sequence->get_id()}));
+}
+
 TEST(SamplerNotificationTest, defers_generated_output_until_explicit_notification) {
     SequenceGroup::Ptr sequence_group = make_scheduled_group(0);
     std::vector<SequenceGroup::Ptr> sequence_groups{sequence_group};

@@ -3341,7 +3341,7 @@ class OmniPipeline:
         For Qwen3-Omni, composes a VLM pipeline (text generation with hidden-state collection) with
         a Qwen3-Omni speech pipeline (Talker + CodePredictor + Code2Wav). LFM3-Omni has no separate
         talker: its language model emits text and speech frames in one stream, so speech is decoded
-        inside the VLM (SDPA backend) and get_talker() returns None. Each `generate` call takes two
+        inside the VLM, on the PA or SDPA backend, and get_talker() returns None. Each `generate` call takes two
         configs: a `GenerationConfig text_config` (thinker) and an `OmniTalkerSpeechConfig
         talker_speech_config` (talker + speech). Speech generation is gated per-call by
         `talker_speech_config.return_audio`.
@@ -3349,9 +3349,8 @@ class OmniPipeline:
         Two construction paths:
     
           - Path-based: OmniPipeline(models_path, device, **properties) loads VLM and speech
-            models from a single directory. For LFM3-Omni it selects ATTENTION_BACKEND=SDPA unless the
-            property is set, because speech output needs SDPA. With PA, generate() supports text output
-            only and raises if return_audio is True.
+            models from a single directory. For LFM3-Omni it loads only the VLM, which decodes the speech
+            itself.
     
           - DI: OmniPipeline(vlm_pipeline, talker) reuses an externally-loaded VLMPipeline
             and a TalkerBase subclass for independent device choices or custom backends.

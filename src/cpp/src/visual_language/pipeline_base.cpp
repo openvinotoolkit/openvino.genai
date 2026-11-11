@@ -40,7 +40,8 @@ void VLMPipeline::VLMBackend::extract_speech_properties(const ov::AnyMap& config
 
 void VLMPipeline::VLMBackend::check_speech_in_stream(const OmniTalkerSpeechConfig&) const {
     OPENVINO_THROW("Speech output through talker_speech_config needs a VLM that decodes speech in its language model "
-                   "stream: LFM3-Omni with ATTENTION_BACKEND=SDPA on CPU or GPU. Set return_audio=false for text only.");
+                   "stream: LFM3-Omni on CPU or GPU, without speculative decoding or prompt lookup. Set "
+                   "return_audio=false for text only.");
 }
 
 VLMDecodedResults VLMPipeline::VLMBackend::generate(const std::string& prompt, const ov::AnyMap& config_map) {

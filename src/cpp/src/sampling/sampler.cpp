@@ -1536,7 +1536,9 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
-                if (sampling_params.is_greedy_decoding()) {
+                if (const auto forced_token = running_sequence->take_forced_next_token()) {
+                    sampled_token = Token(0.0f, *forced_token);
+                } else if (sampling_params.is_greedy_decoding()) {
                     sampled_token = { _greedy_sample(logit_vector, sampling_params.logprobs) };
                 } else {
                     // is_multinomial()

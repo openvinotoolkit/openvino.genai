@@ -1127,10 +1127,9 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. An explicit PA request still gets PA.
-    // LFM3-Omni speech output is decoded in the stateful language model loop, which only SDPA provides.
+    // Force models to use SDPA backend by default until PA is supported.
     const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::QWEN4_EXP || vlm_config.model_type == VLMModelType::LFM3_OMNI;
+    return vlm_config.model_type == VLMModelType::QWEN4_EXP;
 }
 
 VLMPipeline::VLMPipeline(

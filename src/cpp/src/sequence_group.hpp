@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -64,6 +65,8 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
+    // Set by a model-specific step hook: the sampler records this token instead of sampling one.
+    std::optional<int64_t> m_forced_next_token;
     // When enabled, one intermediate hidden state is kept per token position
     // (prefill batches are sliced into per-token tensors before accumulation)
     static constexpr size_t kMaxAccumulatedHiddenStates = 512;
@@ -184,6 +187,14 @@ public:
 
     ov::Tensor get_hidden_state() const {
         return m_hidden_state;
+    }
+
+    void set_forced_next_token(int64_t token_id) {
+        m_forced_next_token = token_id;
+    }
+
+    std::optional<int64_t> take_forced_next_token() {
+        return std::exchange(m_forced_next_token, std::nullopt);
     }
 
     void set_tree_metadata(TreeMetaData metadata) {

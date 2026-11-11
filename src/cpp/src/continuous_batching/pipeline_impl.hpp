@@ -8,6 +8,7 @@
 #include "openvino/genai/lora_adapter.hpp"
 #include "continuous_batching/cache/cache_eviction.hpp"
 #include "continuous_batching/cache/hidden_state_cache.hpp"
+#include "continuous_batching/step_hook.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
@@ -55,6 +56,9 @@ protected:
     std::vector<ov::Tensor> m_current_step_rotation_deltas;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
+
+    // Model-specific step work (LFM3-Omni speech frames); null for other models.
+    std::shared_ptr<IStepHook> m_step_hook;
 
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -192,6 +196,10 @@ public:
     }
 
     void step() override;
+
+    /// @brief Installs model-specific step work. The hook reads the hidden states of every step, so their export
+    /// stays on.
+    void set_step_hook(std::shared_ptr<IStepHook> hook);
 
     /**
      * input_ids is a batch of input ids for generation, which can be either raw prompts or already encoded token ids,
