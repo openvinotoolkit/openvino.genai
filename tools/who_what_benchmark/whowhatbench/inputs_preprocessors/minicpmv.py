@@ -14,9 +14,16 @@ if TYPE_CHECKING:
     from transformers.image_utils import VideoInput
 
 
+# MiniCPM-V-4.5 resamples at most six consecutive frames into one visual token group.
+MAX_FRAMES_PER_GROUP = 6
+
+
 class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
     def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
         super().__init__(chat_mode)
+        self.media = []
+        self.temporal_ids = []
+        self.has_video = False
         if model is not None:
             self.def_image_token_id = getattr(model.config, "image_token_id", 128244)
         else:
@@ -40,6 +47,10 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
         if audio is not None:
             raise ValueError("Audio input is not supported")
 
+        if not self.chat_mode:
+            self.media = []
+            self.temporal_ids = []
+            self.has_video = False
         self.update_images(image)
         im_suffix = ""
         media = []
@@ -51,17 +62,27 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
             temporal_ids.extend([[-1] for _ in image])
 
         if video is not None:
-            video_frames = list(video)
-            if not video_frames:
+            videos = list(video)
+            if not videos:
                 raise ValueError("Video input must contain at least one frame.")
-            media.extend(
-                frame if isinstance(frame, PILImage.Image) else PILImage.fromarray(np.asarray(frame))
-                for frame in video_frames
-            )
-            temporal_ids.extend(
-                list(range(group_start, min(group_start + 6, len(video_frames))))
-                for group_start in range(0, len(video_frames), 6)
-            )
+            if isinstance(videos[0], PILImage.Image) or np.asarray(videos[0]).ndim == 3:
+                videos = [videos]
+            for frames in videos:
+                video_frames = list(frames)
+                if not video_frames:
+                    raise ValueError("Video input must contain at least one frame.")
+                media.extend(
+                    frame if isinstance(frame, PILImage.Image) else PILImage.fromarray(np.asarray(frame))
+                    for frame in video_frames
+                )
+                temporal_ids.extend(
+                    list(range(start, min(start + MAX_FRAMES_PER_GROUP, len(video_frames))))
+                    for start in range(0, len(video_frames), MAX_FRAMES_PER_GROUP)
+                )
+            self.has_video = True
+
+        self.media.extend(media)
+        self.temporal_ids.extend(temporal_ids)
 
         if media:
             im_suffix = "(<image>./</image>)" * len(media) + "\n"
@@ -87,16 +108,16 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
                 raise ValueError("Chat mode is not supported when there is no chat_template in processor or tokenizer.")
             else:
                 prompt = (
-                    f"<|im_start|>user\n(<image>./</image>)\n{text}<|im_end|>\n<|im_start|>assistant\n"
-                    if image is not None
+                    f"<|im_start|>user\n{im_suffix}{text}<|im_end|>\n<|im_start|>assistant\n"
+                    if media
                     else text
                 )
 
-        if video is not None:
+        if self.has_video:
             inputs = processor(
                 prompt,
-                media,
-                temporal_ids=temporal_ids,
+                self.media,
+                temporal_ids=self.temporal_ids,
                 max_slice_nums=1,
                 use_image_id=False,
                 return_tensors="pt",
@@ -137,12 +158,24 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
             inputs.pop("pixel_values", None)
             inputs.pop("tgt_sizes", None)
             inputs.pop("image_bound", None)
+            inputs.pop("temporal_ids", None)
             return inputs
 
+        keep_frame_idx = keep_image_idx
+        temporal_ids = inputs.get("temporal_ids")
+        if temporal_ids is not None:
+            group_offsets = np.cumsum([0] + [len(group) for group in temporal_ids[0]])
+            keep_frame_idx = [
+                frame_idx
+                for group_idx in keep_image_idx
+                for frame_idx in range(group_offsets[group_idx], group_offsets[group_idx + 1])
+            ]
+            inputs["temporal_ids"] = [[temporal_ids[0][group_idx] for group_idx in keep_image_idx]]
+
         inputs["image_bound"] = [torch.tensor(shifted_bounds, dtype=bounds.dtype)]
-        inputs["pixel_values"] = [[pixel_values[0][i] for i in keep_image_idx]]
+        inputs["pixel_values"] = [[pixel_values[0][frame_idx] for frame_idx in keep_frame_idx]]
         if tgt_sizes is not None:
-            inputs["tgt_sizes"] = [[tgt_sizes[0][i] for i in keep_image_idx]]
+            inputs["tgt_sizes"] = [[tgt_sizes[0][frame_idx] for frame_idx in keep_frame_idx]]
 
         return inputs
 
