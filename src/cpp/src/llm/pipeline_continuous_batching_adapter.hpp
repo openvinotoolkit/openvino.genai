@@ -275,12 +275,14 @@ public:
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
         std::vector<GenerationFinishReason> plain_finish_reasons;
+        std::vector<std::vector<std::vector<std::pair<int64_t, float>>>> plain_requested_token_logprobs;
         for (EncodedGenerationResult& res : generated) {
             utils::assert_request_was_scheduled(res.m_status, res.m_request_id);
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
             std::move(res.m_finish_reasons.begin(), res.m_finish_reasons.end(), std::back_inserter(plain_finish_reasons));
+            std::move(res.m_requested_token_logprobs.begin(), res.m_requested_token_logprobs.end(), std::back_inserter(plain_requested_token_logprobs));
         }
         
         PerfMetrics perf_metrics;
@@ -300,6 +302,7 @@ public:
         result.tokens = std::move(plain_tokens);
         result.scores = std::move(plain_scores);
         result.finish_reasons = std::move(plain_finish_reasons);
+        result.requested_token_logprobs = std::move(plain_requested_token_logprobs);
         result.perf_metrics = std::move(perf_metrics);
         result.extended_perf_metrics = generated[0].extended_perf_metrics;
         return result;
