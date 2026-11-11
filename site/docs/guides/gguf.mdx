@@ -74,7 +74,7 @@ print(pipe.generate(history, max_new_tokens=64))
 
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
 
-## Bonsai-2-27B with embedded MTP
+## Bonsai-2 with embedded MTP
 
 The GGUF frontend supports an embedded single-block Qwen3.5 MTP draft.
 As in llama.cpp, MTP is opt-in: set `speculative_type="mtp"` and GenAI builds the
@@ -94,28 +94,24 @@ set. `draft_model_path` also accepts a GGUF file with MTP layers, or an OpenVINO
 IR directory. Use `draft_model()` instead when the draft needs a different device
 or properties.
 
-The original Bonsai-2-27B PQ2_0 GGUF does **not** contain MTP weights.
-Use a checkpoint that explicitly includes `qwen35.nextn_predict_layers=1`
-and the NextN tensors. For example, the community checkpoint
-[`BoldingBuilds/Ternary-Bonsai-2-27B-Abliterated-v2-PQ2_0-MTP-GGUF`](https://huggingface.co/BoldingBuilds/Ternary-Bonsai-2-27B-Abliterated-v2-PQ2_0-MTP-GGUF)
-provides `Ternary-Bonsai-2-27B-Abliterated-v2-PQ2_0-MTP.gguf`.
-This is a modified community model, not the original official checkpoint.
-Check its provenance, license and model-card limitations before use.
+The PrismML publishes official single-file MTP checkpoints,
+`Ternary-Bonsai-2-4B-PQ2_0-MTP-Q8_0.gguf` and `Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf`.
+They contain the PQ2_0 target weights plus a Q8_0 NextN block
+(`qwen35.nextn_predict_layers=1`), so the same file serves as target and draft.
+Plain Bonsai-2 PQ2_0 GGUF files do **not** contain MTP weights.
 
 ```python
 import openvino_genai as genai
 
 pipe = genai.LLMPipeline(
-    "Ternary-Bonsai-2-27B-Abliterated-v2-PQ2_0-MTP.gguf", "CPU",
+    "Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf", "CPU",
     speculative_type="mtp",
-    INFERENCE_PRECISION_HINT="f32",
-    KV_CACHE_PRECISION="f16",
-    DYNAMIC_QUANTIZATION_GROUP_SIZE=0,
 )
-print(pipe.generate("What is the capital of France?", max_new_tokens=64, do_sample=False))
+print(pipe.generate("What is the capital of France?", max_new_tokens=64, do_sample=False,
+                    num_assistant_tokens=2))
 ```
 
-MTP uses paged attention, greedy decoding, one returned sequence and a fixed
+uses paged attention, greedy decoding, one returned sequence and a fixed
 positive `num_assistant_tokens`; an unset value means 3. Confidence-based drafting and tree search are
 not supported. Recurrent-state capacity must cover both live requests and MTP
 verification scratch. With a custom `scheduler_config`, set
