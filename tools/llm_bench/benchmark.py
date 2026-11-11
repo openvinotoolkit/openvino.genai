@@ -302,51 +302,6 @@ def get_argparser():
         help="Path to file with Continuous Batching Scheduler settings or dict",
     )
     parser.add_argument(
-        "--session_snapshot_save",
-        required=False,
-        default=None,
-        help="Path to write a ContinuousBatchingPipeline session snapshot to. While the benchmark generates, the "
-        "request is saved via save_state() once --session_snapshot_save_after_tokens tokens are generated and then "
-        "every --session_snapshot_every_tokens tokens if that is set; the file always holds the latest snapshot. "
-        "Saving is excluded from the reported generation time and its cost is logged per save. Forces "
-        "ContinuousBatchingPipeline and requires batch_size=1, num_beams=1, an --infer_count larger than "
-        "--session_snapshot_save_after_tokens and --cb_config with enable_prefix_caching and use_cache_offload "
-        "(the snapshot keeps its cache blocks in the cache offload store). Mutually exclusive with "
-        "--session_snapshot_restore.",
-    )
-    parser.add_argument(
-        "--session_snapshot_save_after_tokens",
-        default=5,
-        type=greater_than_zero,
-        help="Number of generated tokens after which --session_snapshot_save takes its first snapshot.",
-    )
-    parser.add_argument(
-        "--session_snapshot_every_tokens",
-        required=False,
-        default=None,
-        type=greater_than_zero,
-        help="With --session_snapshot_save: take another snapshot every this many generated tokens after the "
-        "previous one (periodic saving). Without it only one snapshot is taken.",
-    )
-    parser.add_argument(
-        "--session_snapshot_save_only",
-        action="store_true",
-        help="With --session_snapshot_save: stop after the first snapshot instead of generating to the end, "
-        "and report no benchmark numbers. Use it to produce a snapshot for --session_snapshot_restore.",
-    )
-    parser.add_argument(
-        "--session_snapshot_restore",
-        required=False,
-        default=None,
-        help="Path to a ContinuousBatchingPipeline session snapshot (written by --session_snapshot_save) to "
-        "restore via restore_state() instead of tokenizing/prefilling the prompt from scratch. The prompt "
-        "text/file is ignored; the request's token history comes entirely from the snapshot. Forces "
-        "ContinuousBatchingPipeline and requires batch_size=1, num_beams=1 and the same --cb_config offload "
-        "settings as --session_snapshot_save; in a new process the store must be a persistent store plugin "
-        "(cache_offload_config.store_library_path) that still holds the blocks. Mutually exclusive with "
-        "--session_snapshot_save.",
-    )
-    parser.add_argument(
         "--draft_model",
         required=False,
         default=None,
@@ -655,25 +610,6 @@ def main():
         exit(1)
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
-        exit(1)
-    if args.session_snapshot_save is not None and args.session_snapshot_restore is not None:
-        log.error("--session_snapshot_save and --session_snapshot_restore are mutually exclusive.")
-        exit(1)
-    if (args.session_snapshot_save is not None or args.session_snapshot_restore is not None) and (
-        args.batch_size != 1 or args.num_beams != 1
-    ):
-        log.error("--session_snapshot_save/--session_snapshot_restore require batch_size=1 and num_beams=1.")
-        exit(1)
-    if args.session_snapshot_save is None and (args.session_snapshot_every_tokens is not None or args.session_snapshot_save_only):
-        log.error("--session_snapshot_every_tokens/--session_snapshot_save_only need --session_snapshot_save.")
-        exit(1)
-    if args.session_snapshot_save is not None and args.session_snapshot_save_only and args.session_snapshot_every_tokens is not None:
-        log.error("--session_snapshot_save_only takes a single snapshot and cannot be combined with --session_snapshot_every_tokens.")
-        exit(1)
-    if (args.session_snapshot_save is not None and args.infer_count is not None
-            and args.infer_count <= args.session_snapshot_save_after_tokens):
-        log.error("--infer_count must be larger than --session_snapshot_save_after_tokens, otherwise the request "
-                  "finishes before it can be saved.")
         exit(1)
     model_path, framework, model_args = analyze_args(args)
     # Set the device for running OpenVINO backend for torch.compile()

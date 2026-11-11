@@ -240,14 +240,10 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
 
 
 def cb_pipeline_required(args):
-    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and (
-        (args.get("cb_config") is not None and
-         (args["cb_config"].get("cache_eviction_config") is not None or
-          args["cb_config"].get("sparse_attention_config") is not None or
-          args["cb_config"].get("use_cache_offload", False))) or
-        args.get("session_snapshot_save") is not None or
-        args.get("session_snapshot_restore") is not None
-    )
+    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and args.get("cb_config") is not None and\
+        (args["cb_config"].get("cache_eviction_config") is not None or
+         args["cb_config"].get("sparse_attention_config") is not None or
+         args["cb_config"].get("use_cache_offload", False))
 
 
 def setup_draft_model_for_sd(args, device, ov_config):
@@ -310,13 +306,6 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
     start = time.perf_counter()
     if cb_pipeline_required(kwargs):
         ov_config.pop("ATTENTION_BACKEND", None)
-        if kwargs.get("session_snapshot_save") is not None or kwargs.get("session_snapshot_restore") is not None:
-            # The snapshot keeps its cache blocks in the prefix-caching offload store.
-            if not (cb_config or {}).get("use_cache_offload", False) or not (cb_config or {}).get("enable_prefix_caching", True):
-                raise RuntimeError(
-                    "--session_snapshot_save/--session_snapshot_restore need --cb_config with "
-                    "enable_prefix_caching and use_cache_offload (plus cache_offload_config)"
-                )
         log.info("Pipeline will be initialized with ContinuousBatchingPipeline")
         llm_pipe = openvino_genai.ContinuousBatchingPipeline(model_path, device=device.upper(), properties=ov_config, **config)
     else:

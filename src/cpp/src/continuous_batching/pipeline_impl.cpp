@@ -20,7 +20,6 @@
 #include "continuous_batching/cache/model_identity.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
-#include "continuous_batching/session_snapshot.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
@@ -418,159 +417,6 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::save_state(uint64_t request_id, const std::string& path) {
-    OPENVINO_ASSERT(!m_scheduler->get_config().use_cache_eviction,
-                    "Session snapshot save/restore is not supported together with use_cache_eviction");
-
-    SequenceGroup::Ptr sequence_group;
-    {
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        for (auto& candidate : m_requests) {
-            if (candidate->get_request_id() == request_id) {
-                sequence_group = candidate;
-                break;
-            }
-        }
-        if (!sequence_group) {
-            for (auto& candidate : m_awaiting_requests) {
-                if (candidate->get_request_id() == request_id) {
-                    sequence_group = candidate;
-                    break;
-                }
-            }
-        }
-    }
-    OPENVINO_ASSERT(sequence_group, "No active request with id ", request_id, " to save a session snapshot for");
-
-    auto running_sequences = sequence_group->get_running_sequences();
-    OPENVINO_ASSERT(running_sequences.size() == 1,
-                    "Session snapshot only supports a single (non-beam-search, non-forked) sequence per request, "
-                    "got ", running_sequences.size());
-    const auto& sequence = running_sequences[0];
-
-    SessionSnapshot::save(m_scheduler->get_cache_orchestrator(), sequence_group, sequence, path);
-}
-
-GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::restore_state(
-        uint64_t request_id,
-        const std::string& path,
-        const ov::genai::GenerationConfig& sampling_params) {
-    OPENVINO_ASSERT(!m_scheduler->get_config().use_cache_eviction,
-                    "Session snapshot save/restore is not supported together with use_cache_eviction");
-
-    auto loaded = SessionSnapshot::load(m_scheduler->get_cache_orchestrator(), path);
-    OPENVINO_ASSERT(loaded.is_embeddings == (m_model_input_type == ModelInputType::EMBEDDINGS),
-                    "Session snapshot/model mismatch: the snapshot was captured for a ",
-                    loaded.is_embeddings ? "embeddings-routed" : "plain token-id", " model, but the currently "
-                    "loaded model is ", m_model_input_type == ModelInputType::EMBEDDINGS ? "embeddings-routed" : "plain token-id");
-
-    auto sampling_params_copy = sampling_params;
-    if (sampling_params_copy.stop_token_ids.empty())
-        sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
-    if (sampling_params_copy.eos_token_id == -1)
-        sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
-    sampling_params_copy.validate();
-
-    // The blocks stay in the offload store; the history is submitted as an ordinary prompt and the
-    // regular prefix restore brings them back.
-    auto& orchestrator = m_scheduler->get_cache_orchestrator();
-    auto* kv_offload = orchestrator.get_kv_offload_cache();
-    OPENVINO_ASSERT(kv_offload != nullptr, "Restoring a session snapshot requires KV cache offload to be enabled");
-    // One probe over the whole entry chain, from block 0 in order, instead of a lookup per block.
-    std::vector<size_t> kv_chain;
-    kv_chain.reserve(loaded.kv_entries.size());
-    for (const auto& entry : loaded.kv_entries) {
-        kv_chain.push_back(entry.hash);
-    }
-    const std::vector<bool> kv_present = kv_offload->probe(kv_chain);
-    for (size_t i = 0; i < loaded.kv_entries.size(); ++i) {
-        OPENVINO_ASSERT(kv_present[i],
-                        "Session snapshot block ending at token ", loaded.kv_entries[i].content_len,
-                        " is missing from the prefix-caching offload store, so the snapshot cannot be restored");
-    }
-    if (loaded.la_entry) {
-        auto* la_offload = orchestrator.get_la_offload_cache();
-        OPENVINO_ASSERT(la_offload != nullptr,
-                        "Restoring a session snapshot of a hybrid model requires linear-attention cache offload");
-    }
-    const size_t num_positions = loaded.is_embeddings ? loaded.input_embeds.get_shape()[1] : loaded.token_ids.size();
-    OPENVINO_ASSERT(sampling_params_copy.max_length > num_positions,
-                    "'max_length' must be greater than the number of restored session positions");
-
-    auto restored_group =
-        loaded.is_embeddings
-            ? std::make_shared<SequenceGroup>(request_id,
-                                              loaded.input_embeds,
-                                              sampling_params_copy,
-                                              std::nullopt,  // lm_extra_inputs: text-only history
-                                              loaded.position_ids,
-                                              loaded.rope_delta,
-                                              std::nullopt)  // prompt_ids: for detokenization/echo only
-            : std::make_shared<SequenceGroup>(request_id, loaded.token_ids, sampling_params_copy);
-
-    if (loaded.la_entry) {
-        // The checkpoint is probed together with its whole chain, from block 0 in order, like the KV blocks.
-        const auto restored_sequence = restored_group->get_not_finished_sequences().front();
-        const size_t la_interval = orchestrator.get_block_size(CacheType::LINEAR_ATTENTION_CACHE);
-        std::vector<size_t> la_chain;
-        for (size_t len = la_interval; len < loaded.la_entry->content_len; len += la_interval) {
-            la_chain.push_back(restored_sequence->get_hash(len, la_interval));
-        }
-        la_chain.push_back(loaded.la_entry->hash);
-        OPENVINO_ASSERT(orchestrator.get_la_offload_cache()->probe(la_chain).back(),
-                        "Session snapshot linear-attention checkpoint is missing from the prefix-caching offload "
-                        "store, so the snapshot cannot be restored");
-    }
-
-    // The snapshot owns these entries from now on: keep opportunistic eviction away from them. They may have
-    // been written by an earlier pipeline, in which case this also makes this instance track them.
-    for (const auto& entry : loaded.kv_entries) {
-        kv_offload->pin(entry.hash);
-    }
-    if (loaded.la_entry) {
-        orchestrator.get_la_offload_cache()->pin(loaded.la_entry->hash);
-    }
-    try {
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        _throw_if_failed();
-        if (m_scheduler->is_cache_budget_dynamic()) {
-            // Grow the pools the way the scheduler does for a normally arriving request: the warm-up below needs
-            // free blocks, and a pipeline that has not scheduled anything yet has hardly any.
-            orchestrator.ensure_sequence_token_capacity({{num_positions, 1}});
-            orchestrator.ensure_sequence_capacity(restored_group);
-            // Restoring bypasses the scheduler's own cache initialization, so schedule() would not grow the pools
-            // for the next generated token.
-            m_scheduler->enable_dynamic_memory_allocation_after_restore();
-        }
-        initialize_prefix_cache(restored_group);
-        // The restore must be complete: all but the last token have their cache. A snapshot of a lagging
-        // speculative draft only guarantees its whole blocks.
-        const size_t computed_len = loaded.kv_entries.empty() ? 0 : loaded.kv_entries.back().content_len;
-        const size_t block_tokens = orchestrator.get_block_size(CacheType::KV_CACHE);
-        const size_t expected_processed =
-            computed_len + 1 == num_positions ? computed_len : computed_len / block_tokens * block_tokens;
-        if (restored_group->get_num_processed_tokens() < expected_processed) {
-            const auto restored_seq_id = restored_group->get_running_sequences()[0]->get_id();
-            if (m_scheduler->has_block_table(restored_seq_id)) {
-                m_scheduler->free_sequence(restored_seq_id);
-            }
-            OPENVINO_THROW("Session snapshot restore recovered only ", restored_group->get_num_processed_tokens(),
-                           " of ", expected_processed, " cached positions");
-        }
-        restored_group->set_num_prefix_cache_hit_tokens(restored_group->get_num_processed_tokens());
-        m_awaiting_requests.push_back(restored_group);
-    } catch (...) {
-        for (const auto& entry : loaded.kv_entries) {
-            kv_offload->unpin(entry.hash);
-        }
-        if (loaded.la_entry) {
-            orchestrator.get_la_offload_cache()->unpin(loaded.la_entry->hash);
-        }
-        throw;
-    }
-    return std::make_shared<GenerationHandleImpl>(restored_group->get_generation_stream(), sampling_params_copy);
-}
-
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {
     if (!m_scheduler->has_linear_attention_cache()) {
         return;
@@ -810,12 +656,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
         _publish_linear_attention_pool_metric();
-
-        GENAI_INFO("[KV_TRACE] step scheduled_groups=%zu scheduled_tokens=%zu cache_usage=%.2f cache_bytes=%zu",
-               scheduler_output.m_scheduled_sequence_groups_ids.size(),
-               scheduler_output.m_total_num_scheduled_tokens,
-               scheduler_output.m_cache_usage,
-               scheduler_output.m_cache_size_in_bytes);
 
         const auto& sched_config = m_scheduler->get_config();
         if (sched_config.use_cache_eviction) {

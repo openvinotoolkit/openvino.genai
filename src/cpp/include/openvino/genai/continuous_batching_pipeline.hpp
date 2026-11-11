@@ -302,33 +302,6 @@ public:
 
     bool has_non_finished_requests();
 
-    /**
-     * @brief Captures a single, non-beam-search request's state to `path`, so it can be resumed later via
-     * restore_state() without re-running prefill. Requires exactly one running sequence for the request,
-     * `use_cache_eviction` disabled, and a pipeline created with `SchedulerConfig::enable_prefix_caching` and
-     * `SchedulerConfig::use_cache_offload`.
-     *
-     * `path` holds only the token history (or, for embeddings-routed models, the input embeddings) and references to
-     * the request's cache blocks. The blocks themselves are written to the prefix-caching offload store
-     * (`SchedulerConfig::cache_offload_config`) and stay there, protected from eviction, so they count against its
-     * capacity (`capacity_bytes`, and `linear_attention_capacity_bytes` for hybrid models). With the default file
-     * store they live only as long as the pipeline; a restore in a new pipeline or process needs a persistent store
-     * plugin configured identically in `cache_offload_config`. If a plugin is configured but cannot be loaded, the
-     * save is refused rather than falling back to the temporary store.
-     */
-    void save_state(uint64_t request_id, const std::string& path);
-
-    /**
-     * @brief Restores a request saved by save_state() from `path` and adds it to the running queue, ready to
-     * continue generation with `sampling_params` on the next step()/generate() call. The cached positions are read
-     * back from the offload store, so only the last position is recomputed; if the store no longer holds them the
-     * call throws.
-     * @param request_id must be unique for every add_request()/restore_state() call.
-     */
-    GenerationHandle restore_state(uint64_t request_id,
-                                  const std::string& path,
-                                  const ov::genai::GenerationConfig& sampling_params);
-
     /// Higher level interface, which can process multiple prompts in continuous batching manner
     std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});

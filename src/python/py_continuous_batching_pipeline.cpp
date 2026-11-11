@@ -658,40 +658,6 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
-        .def(
-            "save_state",
-            &ContinuousBatchingPipeline::save_state,
-            py::arg("request_id"),
-            py::arg("path"),
-            R"(Captures a single, non-beam-search request's state to `path`, so it can be resumed later via
-restore_state() without re-running prefill. Requires exactly one running sequence for the request,
-`use_cache_eviction` disabled, and a pipeline created with SchedulerConfig.enable_prefix_caching and
-SchedulerConfig.use_cache_offload.
-
-`path` holds only the token history (or the input embeddings) and references to the request's cache blocks.
-The blocks are written to the prefix-caching offload store (SchedulerConfig.cache_offload_config) and stay
-there, protected from eviction, so they count against its capacity. With the default file store they live
-only as long as the pipeline; restoring in a new pipeline or process needs a persistent store plugin
-configured identically in cache_offload_config.)"
-        )
-        .def(
-            "restore_state",
-            [](ContinuousBatchingPipeline& pipe,
-               uint64_t request_id,
-               const std::string& path,
-               const ov::genai::GenerationConfig& generation_config
-            ) -> std::shared_ptr<GenerationHandleImpl> {
-                return pipe.restore_state(request_id, path, generation_config);
-            },
-            py::arg("request_id"),
-            py::arg("path"),
-            py::arg("generation_config"),
-            R"(Restores a request saved by save_state() from `path` and adds it to the running queue,
-ready to continue generation with `generation_config` on the next step()/generate() call. The cached
-positions are read back from the offload store, so only the last position is recomputed; if the store no
-longer holds them the call raises.)"
-        )
-
         .def("start_chat", [](ContinuousBatchingPipeline& pipe, const std::string& system_message) {
             PyErr_WarnEx(PyExc_DeprecationWarning,
                          "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
