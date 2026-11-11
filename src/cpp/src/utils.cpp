@@ -109,6 +109,7 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
     rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
+    rename_key(config, "WHISPER_DECOMPOSE_SDPA", "NPUW_WHISPER_DECOMPOSE_SDPA");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
@@ -1310,6 +1311,11 @@ ov::genai::GenerationConfig get_multinomial_config() {
 std::string patch_chat_template_multiline_strings(const std::string& chat_template) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
     return std::regex_replace(chat_template, multiline_string_concatenation, "");
+}
+
+std::string patch_chat_template_undefined_tests(const std::string& chat_template) {
+    const std::regex var_is_undefined{R"((\b[\w\.]+)\s+is\s+undefined)"};
+    return std::regex_replace(chat_template, var_is_undefined, "not $1 is defined");
 }
 
 }  // namespace utils

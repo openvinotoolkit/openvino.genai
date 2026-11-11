@@ -27,6 +27,7 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/subtract.hpp"
 #include "openvino/op/unsqueeze.hpp"
+#include "utils.hpp"
 
 #ifdef _WIN32
 #    define NOMINMAX
@@ -1126,12 +1127,17 @@ ov::AnyMap take_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model)
 void erase_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model) {}
 #endif
 
+std::function<std::string(const std::string&)> gguf_chat_template_patcher(
+    const std::map<std::string, GGUFMetaData>& tokenizer_config) {
+    // Qwen3.5 templates test "enable_thinking is undefined"; reuse the Qwen3.5 VLM patch.
+    if (const auto* pre = get_if_exist<std::string>(tokenizer_config, "pre"); pre && *pre == "qwen35") {
+        return utils::patch_chat_template_undefined_tests;
+    }
+    return {};
+}
+
 std::string patch_gguf_chat_template(const std::string& chat_template) {
     std::string patched_chat_template = chat_template;
-    const std::string bonsai_condition = "enable_thinking is undefined";
-    if (const auto position = patched_chat_template.find(bonsai_condition); position != std::string::npos) {
-        patched_chat_template.replace(position, bonsai_condition.size(), "enable_thinking is not defined");
-    }
     // Define the exact pattern to find in original chat_template
     // Using C++ raw string literals (R"(...)") to correctly represent the literal content,
     const std::string qwen2_5_substring_to_find = R"({{\"name\": <function-name>, \"arguments\": <args-json-object>}})";
