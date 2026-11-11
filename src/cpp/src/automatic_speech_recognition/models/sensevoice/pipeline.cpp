@@ -165,9 +165,14 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
                                               : core.compile_model(model_path, device, properties_copy);
     const ov::PartialShape input_shape = model.input("input_features").get_partial_shape();
     if (input_shape.is_static()) {
-        m_max_batch = input_shape[0].get_length();
+        OPENVINO_ASSERT(input_shape[0].get_length() == 1,
+                        "SenseVoiceSmall does not support a static input shape with batch size greater than 1, but the "
+                        "model has batch size ",
+                        input_shape[0].get_length(),
+                        ".");
+        m_max_batch = 1;
         m_padded_frames = input_shape[1].get_length();
-        m_max_window_samples = FunASRFeatureExtractor::max_samples(m_padded_frames);
+        m_max_window_samples = FunASRFeatureExtractor::max_samples_for_frames(m_padded_frames);
     }
     utils::print_compiled_model_properties(model, "sensevoice small model");
     m_request = model.create_infer_request();

@@ -32,18 +32,18 @@ public:
     static constexpr size_t lfr_window = 7;
     static constexpr size_t lfr_stride = 6;
 
-    // Number of filter-bank frames extract() computes for `samples` samples.
+    /** Number of filter-bank frames for `samples` samples. Audio shorter than a frame yields one shortened frame. */
     static constexpr size_t fbank_frames(size_t samples) {
         return samples < frame_length ? 1 : 1 + (samples - frame_length) / frame_shift;
     }
 
-    // Number of low-frame-rate frames extract() returns for `fbank_frame_count` filter-bank frames.
-    static constexpr size_t lfr_frames(size_t fbank_frame_count) {
-        return (fbank_frame_count + lfr_stride - 1) / lfr_stride;
+    /** Number of frames in the features extract() returns for `samples` samples. Requires samples >= 2. */
+    static constexpr size_t output_frames(size_t samples) {
+        return (fbank_frames(samples) + lfr_stride - 1) / lfr_stride;
     }
 
-    // Largest number of samples for which extract() returns at most `frames` low-frame-rate frames.
-    static constexpr size_t max_samples(size_t frames) {
+    /** Largest number of samples for which output_frames() does not exceed `frames`. Requires frames >= 1. */
+    static constexpr size_t max_samples_for_frames(size_t frames) {
         return (frames * lfr_stride - 1) * frame_shift + frame_length + frame_shift - 1;
     }
 
