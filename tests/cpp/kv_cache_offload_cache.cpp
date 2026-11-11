@@ -78,6 +78,13 @@ SequenceGroup::Ptr make_group(const std::vector<int64_t>& tokens, uint64_t reque
                                            utils::get_greedy_config());
 }
 
+/// Stores the contents of a physical block under `hash`, the way the block manager does when the block is overwritten.
+template <typename OffloadCacheT>
+void store_block(OffloadCacheT& cache, size_t hash, size_t block_index) {
+    cache.on_blocks_overwritten(hash, make_block_set(static_cast<int>(block_index)));
+    cache.flush();
+}
+
 }  // namespace
 
 TEST(TestKVCacheOffloadCache, StoresBlockContentsOnOverwrite) {
@@ -506,270 +513,24 @@ TEST(TestKVCacheOffloadCache, HandlesCopyOnWriteOfSharedBlock) {
     block_manager.free_sequence(second->get_running_sequences().at(0)->get_id());
 }
 
-TEST(TestKVCacheOffloadCache, PersistStoresNewHashSynchronously) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    const auto expected = fixture.fill_block(1, /*seed=*/7);
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/42, /*block_index=*/1));
-
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(42, restored));
-    EXPECT_EQ(restored, expected);
-}
-
-TEST(TestKVCacheOffloadCache, PersistOfKnownHashKeepsTheStoredCopy) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    const auto expected = fixture.fill_block(0, /*seed=*/3);
-    offload_cache->on_blocks_overwritten(/*hash=*/5, make_block_set(0));
-    offload_cache->flush();
-    fixture.fill_block(1, /*seed=*/200);
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/5, /*block_index=*/1));
-
-    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(5, restored));
-    EXPECT_EQ(restored, expected);
-}
-
-TEST(TestKVCacheOffloadCache, PersistWaitsForAQueuedStoreOfTheSameHash) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    const auto expected = fixture.fill_block(0, /*seed=*/9);
-    offload_cache->on_blocks_overwritten(/*hash=*/7, make_block_set(0));
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/7, /*block_index=*/0));
-
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(7, restored));
-    EXPECT_EQ(restored, expected);
-}
-
-TEST(TestKVCacheOffloadCache, PersistReclaimsTheOldestUnpinnedEntryWhenFull) {
+TEST(TestKVCacheOffloadCache, ConcurrentOverwritesNeverExceedTheStoreCapacity) {
     CacheFixture fixture;
     auto offload_cache = make_offload_cache(fixture, 2);
     fixture.fill_block(0, /*seed=*/1);
     fixture.fill_block(1, /*seed=*/2);
-    offload_cache->on_blocks_overwritten(/*hash=*/1, make_block_set(0));
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-    ASSERT_TRUE(offload_cache->pin(1));
-    const auto newest = fixture.fill_block(2, /*seed=*/50);
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/3, /*block_index=*/2));
-
-    EXPECT_TRUE(offload_cache->contains(1));
-    EXPECT_FALSE(offload_cache->contains(2));
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(3, restored));
-    EXPECT_EQ(restored, newest);
-    EXPECT_EQ(offload_cache->get_statistics().num_replaced, 1);
-}
-
-TEST(TestKVCacheOffloadCache, PersistFailsWithoutSideEffectsWhenEveryEntryIsPinned) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 1);
-    fixture.fill_block(0, /*seed=*/1);
-    fixture.fill_block(1, /*seed=*/2);
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
-
-    EXPECT_FALSE(offload_cache->persist(/*hash=*/2, /*block_index=*/1));
-
-    EXPECT_TRUE(offload_cache->contains(1));
-    EXPECT_FALSE(offload_cache->contains(2));
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-}
-
-TEST(TestKVCacheOffloadCache, PinnedEntrySurvivesOverwriteReclamationUntilUnpinned) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 1);
-    fixture.fill_block(0, /*seed=*/1);
-    fixture.fill_block(1, /*seed=*/2);
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
-
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-    EXPECT_TRUE(offload_cache->contains(1));
-    EXPECT_FALSE(offload_cache->contains(2));
-    EXPECT_EQ(offload_cache->get_statistics().num_failed, 1);
-
-    offload_cache->unpin(1);
-    offload_cache->on_blocks_overwritten(/*hash=*/3, make_block_set(1));
-    offload_cache->flush();
-    EXPECT_FALSE(offload_cache->contains(1));
-    EXPECT_TRUE(offload_cache->contains(3));
-}
-
-TEST(TestKVCacheOffloadCache, PinsAreReferenceCounted) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 1);
-    fixture.fill_block(0, /*seed=*/1);
-    fixture.fill_block(1, /*seed=*/2);
-
-    EXPECT_FALSE(offload_cache->pin(/*hash=*/999));
-    EXPECT_NO_THROW(offload_cache->unpin(/*hash=*/999));
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
-    offload_cache->unpin(1);
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-    EXPECT_TRUE(offload_cache->contains(1));
-
-    offload_cache->unpin(1);
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-    EXPECT_FALSE(offload_cache->contains(1));
-    EXPECT_TRUE(offload_cache->contains(2));
-}
-
-TEST(TestKVCacheOffloadCache, PersistWithQueuedStoresInFlightDoesNotDeadlockOrLoseEntries) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 4);
-    for (size_t i = 0; i < 3; ++i) {
-        fixture.fill_block(i, /*seed=*/static_cast<uint8_t>(10 * (i + 1)));
-        offload_cache->on_blocks_overwritten(/*hash=*/100 + i, make_block_set(static_cast<int>(i)));
-    }
-    const auto last = fixture.fill_block(3, /*seed=*/99);
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/200, /*block_index=*/3));
-
-    for (size_t i = 0; i < 3; ++i) {
-        EXPECT_TRUE(offload_cache->contains(100 + i));
-    }
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(200, restored));
-    EXPECT_EQ(restored, last);
-    EXPECT_EQ(offload_cache->get_num_entries(), 4);
-}
-
-TEST(TestKVCacheOffloadCache, ConcurrentOverwritesNeverEvictAPinnedEntry) {
-    CacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    fixture.fill_block(0, /*seed=*/1);
-    fixture.fill_block(1, /*seed=*/2);
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1000, /*block_index=*/0));
 
     std::thread overwriter([&] {
         for (size_t i = 0; i < 200; ++i) {
             offload_cache->on_blocks_overwritten(/*hash=*/i, make_block_set(1));
         }
     });
-    for (size_t i = 0; i < 50; ++i) {
-        offload_cache->persist(/*hash=*/2000 + i, /*block_index=*/1);
-        offload_cache->unpin(2000 + i);
+    for (size_t i = 0; i < 200; ++i) {
+        offload_cache->on_blocks_overwritten(/*hash=*/1000 + i, make_block_set(0));
     }
     overwriter.join();
     offload_cache->flush();
 
-    EXPECT_TRUE(offload_cache->contains(1000));
     EXPECT_LE(offload_cache->get_num_entries(), 2);
-}
-
-namespace {
-
-/// Forwards to a real store and counts flush() calls.
-class FlushCountingStore : public IKVCacheStore {
-public:
-    FlushCountingStore(std::unique_ptr<IKVCacheStore> inner, size_t& flush_count)
-        : m_inner(std::move(inner)),
-          m_flush_count(flush_count) {}
-
-    bool has_block(size_t hash) const override {
-        return m_inner->has_block(hash);
-    }
-    bool write_block(size_t hash, const std::vector<uint8_t>& data) override {
-        return m_inner->write_block(hash, data);
-    }
-    bool read_block(size_t hash, std::vector<uint8_t>& data) const override {
-        return m_inner->read_block(hash, data);
-    }
-    void drop_block(size_t hash) override {
-        m_inner->drop_block(hash);
-    }
-    size_t get_block_size() const override {
-        return m_inner->get_block_size();
-    }
-    size_t get_capacity_blocks() const override {
-        return m_inner->get_capacity_blocks();
-    }
-    size_t get_num_free_blocks() const override {
-        return m_inner->get_num_free_blocks();
-    }
-    void flush() override {
-        ++m_flush_count;
-        m_inner->flush();
-    }
-
-private:
-    std::unique_ptr<IKVCacheStore> m_inner;
-    size_t& m_flush_count;
-};
-
-/// Persists the blocks a snapshot of `num_tokens` tokens would reference (the last token has no KV), then
-/// warms a fresh block manager for the same history the way a restore does.
-void expect_snapshot_tail_is_restored(size_t num_tokens) {
-    constexpr size_t block_size = 4;
-    const size_t computed_len = num_tokens - 1;
-    const size_t num_blocks = (computed_len + block_size - 1) / block_size;
-    CacheFixture fixture(num_blocks);
-    auto offload_cache = make_offload_cache(fixture, num_blocks);
-    BlockManager block_manager(num_blocks, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
-
-    std::vector<int64_t> tokens(num_tokens);
-    for (size_t i = 0; i < tokens.size(); ++i) {
-        tokens[i] = static_cast<int64_t>(i);
-    }
-    auto consumer = make_group(tokens, /*request_id=*/20);
-    const auto sequence = consumer->get_running_sequences().at(0);
-    for (size_t block = 0; block < num_blocks; ++block) {
-        const size_t content_len = std::min((block + 1) * block_size, computed_len);
-        fixture.fill_block(block, static_cast<uint8_t>(block + 1));
-        ASSERT_TRUE(offload_cache->persist(sequence->get_hash(content_len, block_size), block));
-    }
-
-    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), num_blocks);
-    EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
-    EXPECT_EQ(consumer->get_num_processed_tokens(), computed_len);
-
-    block_manager.free_sequence(sequence->get_id());
-}
-
-}  // namespace
-
-TEST(TestKVCacheOffloadCache, FlushDurableWaitsForQueuedStoresThenFlushesTheStore) {
-    CacheFixture fixture;
-    size_t flush_count = 0;
-    auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
-                                                           make_offload_config(fixture, 2),
-                                                           "CPU");
-    auto store = std::make_unique<FlushCountingStore>(std::make_unique<FileKVCacheStore>(std::move(backend)), flush_count);
-    KVCacheOffloadCache offload_cache(*fixture.cache_manager, std::move(store), /*max_queued_stores=*/8);
-    fixture.fill_block(0, /*seed=*/5);
-    offload_cache.on_blocks_overwritten(/*hash=*/1, make_block_set(0));
-
-    offload_cache.flush_durable();
-
-    EXPECT_TRUE(offload_cache.contains(1));
-    EXPECT_EQ(offload_cache.get_num_entries(), 1);
-    EXPECT_EQ(flush_count, 1);
-}
-
-TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresASnapshotTailThatIsNotBlockAligned) {
-    expect_snapshot_tail_is_restored(/*num_tokens=*/10);
-}
-
-TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresASnapshotTailWhenThePromptEndsOnABlockBoundary) {
-    expect_snapshot_tail_is_restored(/*num_tokens=*/8);
-}
-
-TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresASnapshotWhoseLastComputedPositionEndsABlock) {
-    expect_snapshot_tail_is_restored(/*num_tokens=*/9);
 }
 
 namespace {
@@ -823,13 +584,14 @@ std::unique_ptr<KVCacheOffloadCache> make_offload_cache_on(CacheFixture& fixture
 
 }  // namespace
 
-TEST(TestKVCacheOffloadCache, AnotherInstanceServesAndPinsEntriesItNeverWrote) {
+TEST(TestKVCacheOffloadCache, AnotherInstanceServesEntriesItNeverWrote) {
     CacheFixture fixture;
     auto store = make_shared_file_store(fixture, 1);
     const auto expected = fixture.fill_block(0, /*seed=*/17);
     {
         auto first = make_offload_cache_on(fixture, store);
-        ASSERT_TRUE(first->persist(/*hash=*/42, /*block_index=*/0));
+        first->on_blocks_overwritten(/*hash=*/42, make_block_set(0));
+        first->flush();
     }
 
     auto second = make_offload_cache_on(fixture, store);
@@ -845,31 +607,6 @@ TEST(TestKVCacheOffloadCache, AnotherInstanceServesAndPinsEntriesItNeverWrote) {
     fixture.fill_block(1, /*seed=*/0);
     ASSERT_TRUE(second->load_into(/*hash=*/42, /*block_index=*/1));
     EXPECT_EQ(fixture.cache_manager->read_block(1), expected);
-
-    ASSERT_TRUE(second->pin(42));
-    EXPECT_EQ(second->get_num_entries(), 1);
-    // The only slot holds the adopted, pinned entry, so pressure for it cannot reclaim it.
-    second->on_blocks_overwritten(/*hash=*/43, make_block_set(1));
-    second->flush();
-    EXPECT_TRUE(second->contains(42));
-    EXPECT_FALSE(second->contains(43));
-}
-
-TEST(TestKVCacheOffloadCache, PersistOfAnEntryOnlyTheStoreHoldsDoesNotRewriteIt) {
-    CacheFixture fixture;
-    auto store = make_shared_file_store(fixture, 1);
-    const auto expected = fixture.fill_block(0, /*seed=*/9);
-    ASSERT_TRUE(make_offload_cache_on(fixture, store)->persist(/*hash=*/7, /*block_index=*/0));
-    fixture.fill_block(1, /*seed=*/200);
-
-    auto second = make_offload_cache_on(fixture, store);
-    second->probe({7});
-    ASSERT_TRUE(second->persist(/*hash=*/7, /*block_index=*/1));
-
-    EXPECT_EQ(second->get_statistics().num_stored, 0);
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(second->read(7, restored));
-    EXPECT_EQ(restored, expected);
 }
 
 TEST(TestKVCacheOffloadCache, ReportsWhetherItsStoreIsAPlugin) {
@@ -960,9 +697,9 @@ TEST(TestKVCacheOffloadCache, PluginStoreWriteIsPrecededByAProbeOfItsChainFromBl
     offload_cache->on_prefix_link(/*hash=*/22, /*parent_hash=*/11, /*has_parent=*/true);
     offload_cache->on_prefix_link(/*hash=*/33, /*parent_hash=*/22, /*has_parent=*/true);
     offload_cache->on_blocks_overwritten(/*hash=*/33, make_block_set(0));
-    offload_cache->flush_durable();
+    offload_cache->flush();
 
-    const std::vector<std::string> expected{"has_blocks 11 22 33", "write_block 33", "flush"};
+    const std::vector<std::string> expected{"has_blocks 11 22 33", "write_block 33"};
     EXPECT_EQ(events, expected);
 }
 
@@ -974,9 +711,9 @@ TEST(TestKVCacheOffloadCache, FileStoreIsNotProbedBeforeWrites) {
 
     offload_cache->on_prefix_link(/*hash=*/11, /*parent_hash=*/0, /*has_parent=*/false);
     offload_cache->on_blocks_overwritten(/*hash=*/11, make_block_set(0));
-    offload_cache->flush_durable();
+    offload_cache->flush();
 
-    const std::vector<std::string> expected{"write_block 11", "flush"};
+    const std::vector<std::string> expected{"write_block 11"};
     EXPECT_EQ(events, expected);
 }
 
@@ -985,7 +722,7 @@ TEST(TestKVCacheOffloadCache, ProbeReportsEveryBlockOfTheChainInOrderWithOneStor
     std::vector<std::string> events;
     auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/true, events);
     fixture.fill_block(0, /*seed=*/3);
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/22, /*block_index=*/0));
+    store_block(*offload_cache, /*hash=*/22, /*block_index=*/0);
     events.clear();
 
     EXPECT_EQ(offload_cache->probe({11, 22, 33}), (std::vector<bool>{false, true, false}));
@@ -1128,22 +865,6 @@ TEST(TestKVCacheOffloadCache, SelfEvictingStoreIsNotWrittenTwiceForTheSameBlock)
     EXPECT_EQ(offload.cache->get_statistics().num_already_present, 1u);
 }
 
-TEST(TestKVCacheOffloadCache, SelfEvictingStorePersistsAndPinsThroughTheStore) {
-    CacheFixture fixture;
-    SelfEvictingCache offload(fixture, /*max_blocks=*/2);
-    const auto expected = fixture.fill_block(0, /*seed=*/21);
-
-    ASSERT_TRUE(offload.cache->persist(/*hash=*/70, /*block_index=*/0));
-    ASSERT_TRUE(offload.cache->persist(/*hash=*/70, /*block_index=*/0));
-    EXPECT_EQ(offload.store->num_writes(), 1u);
-    EXPECT_TRUE(offload.cache->pin(70));
-    EXPECT_FALSE(offload.cache->pin(71));
-
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload.cache->read(70, restored));
-    EXPECT_EQ(restored, expected);
-}
-
 TEST(TestKVCacheOffloadCache, WarmPrefixCacheStillFindsBlocksThatReachTheSourceAfterTheProbe) {
     constexpr size_t block_size = 4;
     constexpr size_t num_blocks = 3;
@@ -1168,7 +889,7 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheStillFindsBlocksThatReachTheSourceA
     const auto sequence = consumer->get_running_sequences().at(0);
     for (size_t block = 0; block < num_blocks; ++block) {
         fixture.fill_block(block, static_cast<uint8_t>(block + 1));
-        ASSERT_TRUE(offload_cache->persist(sequence->get_hash((block + 1) * block_size, block_size), block));
+        store_block(*offload_cache, sequence->get_hash((block + 1) * block_size, block_size), block);
     }
 
     EXPECT_EQ(block_manager.warm_prefix_cache(consumer, source), num_blocks);
@@ -1192,7 +913,7 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheProbesTheWholeChainOnceBeforeReadin
     for (size_t block = 0; block < num_blocks; ++block) {
         const size_t hash = sequence->get_hash((block + 1) * block_size, block_size);
         fixture.fill_block(block, static_cast<uint8_t>(block + 1));
-        ASSERT_TRUE(offload_cache->persist(hash, block));
+        store_block(*offload_cache, hash, block);
         expected_probe += " " + std::to_string(hash);
     }
     events.clear();
@@ -1227,7 +948,7 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheFallsBackToReadingBlocksOneByOneWhe
     const auto sequence = consumer->get_running_sequences().at(0);
     for (size_t block = 0; block < num_blocks; ++block) {
         fixture.fill_block(block, static_cast<uint8_t>(block + 1));
-        ASSERT_TRUE(offload_cache.persist(sequence->get_hash((block + 1) * block_size, block_size), block));
+        store_block(offload_cache, sequence->get_hash((block + 1) * block_size, block_size), block);
     }
 
     EXPECT_EQ(block_manager.warm_prefix_cache(consumer, offload_cache), num_blocks);

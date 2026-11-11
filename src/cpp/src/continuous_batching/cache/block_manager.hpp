@@ -2851,10 +2851,6 @@ public:
         for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
             chain_lengths.push_back(content_len);
         }
-        if (prompt_len > 1 && std::find(chain_lengths.begin(), chain_lengths.end(), prompt_len - 1) == chain_lengths.end()) {
-            chain_lengths.push_back(prompt_len - 1);
-            std::sort(chain_lengths.begin(), chain_lengths.end());
-        }
         std::vector<size_t> chain_hashes;
         chain_hashes.reserve(chain_lengths.size());
         for (const size_t content_len : chain_lengths) {
@@ -2882,9 +2878,6 @@ public:
                 to_load.push_back(hash);
             }
         };
-        if (m_restore_latest_prefix_block_only && prompt_len > 1) {
-            note_to_load(sequence->get_hash(prompt_len - 1, m_block_size));
-        }
         for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
             const auto hash = sequence->get_hash(content_len, m_block_size);
             if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) == 0) {
@@ -2929,25 +2922,9 @@ public:
             return true;
         };
 
-        // A latest-only manager restores from a single checkpoint, so a snapshot's checkpoint at the last
-        // computed position is usable without the earlier ones that the chain walk below needs.
-        if (m_restore_latest_prefix_block_only && prompt_len > 1) {
-            extend_chain(prompt_len - 1);
-        }
-
-        size_t covered_len = 0;
         for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
             if (!extend_chain(content_len)) {
                 break;
-            }
-            covered_len = content_len;
-        }
-
-        // A restored session ends on its last computed position (prompt_len - 1), which is usually not block aligned.
-        if (!m_restore_latest_prefix_block_only && prompt_len > 1) {
-            const size_t tail_len = prompt_len - 1;
-            if (tail_len % m_block_size != 0 && covered_len == tail_len / m_block_size * m_block_size) {
-                extend_chain(tail_len);
             }
         }
 

@@ -183,7 +183,7 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     options.group_count = 1;
     options.witness_bytes_max = sizeof(ContentHash);
     options.log = &plugin_log;
-    // The ABI opens one store instance per namespace; the group (kv / la / snapshot path) is the namespace.
+    // The ABI opens one store instance per namespace; the group (kv / la, plus the model digest) is the namespace.
     const OvKVCacheNamespace ns{reinterpret_cast<const uint8_t*>(group.data()), static_cast<uint64_t>(group.size())};
 
     OvKVCacheStoreOpenResult result{};

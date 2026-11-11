@@ -23,7 +23,7 @@ namespace ov::genai {
  * default rather than throwing - offload is best effort, never a hard dependency on a plugin.
  *
  * @param group Namespaces this store's keys from any other store opened against the same plugin
- * (e.g. "kv" vs "la", or a session-snapshot-specific group) - plugins route purely on
+ * (e.g. "kv" vs "la") - plugins route purely on
  * `OvKVCacheBlockKey`, so distinct callers sharing one plugin/directory MUST use distinct groups
  * to avoid key collisions between unrelated cache types.
  *

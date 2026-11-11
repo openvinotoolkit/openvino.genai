@@ -60,7 +60,7 @@ struct BlockOffloadTierTraits;
  * moment and reach the store on a background thread, so the allocation path never waits for it. A
  * queued block is served straight from its staging copy, which makes the hand-off invisible to
  * callers. Entries are keyed by the prefix-cache block hash; once the store is full the oldest
- * unpinned entry is replaced, unless the store evicts by its own policy (IKVCacheStore::evicts_itself).
+ * entry is replaced, unless the store evicts by its own policy (IKVCacheStore::evicts_itself).
  *
  * Offload is best effort: a failed store is reported through the statistics and never propagates to
  * the caller, since losing a cache entry only costs recomputation.
@@ -92,7 +92,7 @@ public:
     /**
      * @brief Keeps existing entries from being replaced for as long as it exists.
      *
-     * Warming a prefix chain evicts memory blocks in order to host that very chain, so persisting them
+     * Warming a prefix chain evicts memory blocks in order to host that very chain, so storing them
      * must not be allowed to reclaim a slot the chain still has to read back.
      */
     class ScopedReclamationPause {
@@ -182,8 +182,8 @@ public:
                 return true;
             }
             if (!m_self_evicting) {
-                // The store may hold entries this instance never wrote, e.g. a snapshot taken by an earlier
-                // pipeline; probe() finds them.
+                // The store may hold entries this instance never wrote, e.g. blocks of an earlier pipeline on a
+                // persistent store; probe() finds them.
                 return m_entries.find(hash) != m_entries.end() || m_store_hits.find(hash) != m_store_hits.end();
             }
         }
@@ -194,7 +194,7 @@ public:
     /**
      * @brief Asks the store about a whole prefix chain in one call, from block 0 in order, and remembers the answer.
      *
-     * This is the only way the store is asked whether it holds a block: contains(), pin() and persist() rely on
+     * This is the only way the store is asked whether it holds a block: contains() and load_into() rely on
      * what the latest probes found. Probe a chain before writing blocks of it so the store learns their place.
      */
     std::vector<bool> probe(const std::vector<std::size_t>& chain) override {
@@ -215,7 +215,7 @@ public:
         }
         std::lock_guard<std::mutex> lock(m_mutex);
         // An entry reclaimed during the unlocked store call may still be reported present; remembering that hit
-        // would let persist() adopt and pin a block that is gone, so such an answer is not trusted.
+        // would make contains() claim a block that is gone, so such an answer is not trusted.
         const bool store_answer_current = reclaim_epoch == m_reclaim_epoch;
         for (std::size_t i = 0; i < chain.size(); ++i) {
             bool stored = false;
@@ -376,115 +376,6 @@ public:
         m_drained_cv.wait(lock, [this] { return m_queued_stores.empty(); });
     }
 
-    /// Like flush(), then makes everything written so far durable in the store (IKVCacheStore::flush). Throws on failure.
-    void flush_durable() {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_drained_cv.wait(lock, [this] { return m_queued_stores.empty(); });
-        m_store->flush();
-    }
-
-    /**
-     * @brief Synchronously stores the block at @p block_index under @p hash and pins the entry.
-     *
-     * Unlike the opportunistic path this is reliable: it waits for in-flight stores, reuses an existing
-     * entry for the same hash, and reclaims the oldest unpinned entry if the store is full. Every
-     * successful call adds one pin that the caller must release with unpin().
-     *
-     * @return false if no slot can be freed because every entry is pinned or the store rejects the write.
-     * @throws ov::Exception if reading the block or writing to the store fails; nothing is published then.
-     */
-    bool persist(std::size_t hash, std::size_t block_index) {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        // Past this wait the writer thread has nothing queued and this call never queues anything itself,
-        // so it alone touches the store below: releasing the lock around that I/O cannot race it.
-        m_drained_cv.wait(lock, [this] { return m_queued_stores.empty(); });
-
-        if (m_self_evicting) {
-            lock.unlock();
-            const bool already_there = m_store->has_block(hash);
-            bool stored = true;
-            if (!already_there) {
-                const auto data = m_cache_manager.read_block(block_index);
-                stored = m_store->write_block(hash, data);
-            }
-            lock.lock();
-            if (!stored) {
-                return false;
-            }
-            if (!already_there) {
-                ++m_statistics.num_stored;
-            }
-            ++m_pin_counts[hash];
-            return true;
-        }
-
-        if (m_entries.find(hash) != m_entries.end()) {
-            ++m_pin_counts[hash];
-            return true;
-        }
-        if (m_store_hits.find(hash) != m_store_hits.end()) {
-            // Content-addressed: the latest probe found these bytes in the store, e.g. from an earlier pipeline.
-            adopt_locked(hash);
-            ++m_pin_counts[hash];
-            return true;
-        }
-
-        lock.unlock();
-        const bool out_of_space = m_store->get_num_free_blocks() == 0;
-        lock.lock();
-        bool reclaimed = false;
-        if (out_of_space) {
-            reclaimed = reclaim_oldest_entry();
-            if (!reclaimed) {
-                return false;
-            }
-        }
-
-        lock.unlock();
-        const auto data = m_cache_manager.read_block(block_index);
-        const bool stored = m_store->write_block(hash, data);
-        lock.lock();
-        if (!stored) {
-            return false;
-        }
-        publish(hash, reclaimed);
-        ++m_pin_counts[hash];
-        return true;
-    }
-
-    /// @return false if @p hash has no published entry to pin.
-    bool pin(std::size_t hash) {
-        if (m_self_evicting) {
-            if (!m_store->has_block(hash)) {
-                return false;
-            }
-            std::lock_guard<std::mutex> lock(m_mutex);
-            ++m_pin_counts[hash];
-            return true;
-        }
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_entries.find(hash) == m_entries.end()) {
-            if (m_store_hits.find(hash) == m_store_hits.end()) {
-                return false;
-            }
-            adopt_locked(hash);
-        }
-        ++m_pin_counts[hash];
-        return true;
-    }
-
-    /// Releases one pin; unpinning an entry that is not pinned does nothing.
-    void unpin(std::size_t hash) {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        const auto it = m_pin_counts.find(hash);
-        if (it == m_pin_counts.end()) {
-            return;
-        }
-        if (--it->second == 0) {
-            m_pin_counts.erase(it);
-        }
-    }
-
     /**
      * @brief Reads the stored contents for @p hash.
      * @return false if @p hash has no entry, in which case @p block_data is left untouched.
@@ -525,10 +416,6 @@ public:
     }
 
 private:
-    struct Entry {
-        std::list<std::size_t>::iterator order_it;
-    };
-
     /// A block whose contents are already copied out but not yet on disk.
     struct QueuedStore {
         std::size_t hash = 0;
@@ -731,24 +618,19 @@ private:
     }
 
     /// @return Whether an existing entry was dropped to free up room for a new one.
-    /// Pinned entries are never dropped.
     bool reclaim_oldest_entry() {
-        for (auto it = m_insertion_order.begin(); it != m_insertion_order.end(); ++it) {
-            const std::size_t oldest_hash = *it;
-            if (m_pin_counts.find(oldest_hash) != m_pin_counts.end()) {
-                continue;
-            }
-            OPENVINO_ASSERT(m_entries.find(oldest_hash) != m_entries.end(),
-                            Traits::kKind, " index and insertion order are out of sync");
-            m_insertion_order.erase(it);
-            m_entries.erase(oldest_hash);
-            ++m_reclaim_epoch;
-            // Otherwise persist() could later find a stale hit and adopt-and-pin a block that was just dropped.
-            m_store_hits.erase(oldest_hash);
-            m_store->drop_block(oldest_hash);
-            return true;
+        if (m_insertion_order.empty()) {
+            return false;
         }
-        return false;
+        const std::size_t oldest_hash = m_insertion_order.front();
+        OPENVINO_ASSERT(m_entries.find(oldest_hash) != m_entries.end(),
+                        Traits::kKind, " index and insertion order are out of sync");
+        m_insertion_order.pop_front();
+        m_entries.erase(oldest_hash);
+        ++m_reclaim_epoch;
+        m_store_hits.erase(oldest_hash);
+        m_store->drop_block(oldest_hash);
+        return true;
     }
 
     const QueuedStore* find_queued(std::size_t hash) const {
@@ -767,7 +649,7 @@ private:
             return;
         }
         m_insertion_order.push_back(hash);
-        m_entries[hash] = Entry{std::prev(m_insertion_order.end())};
+        m_entries.insert(hash);
         ++m_statistics.num_stored;
         if (reclaimed) {
             ++m_statistics.num_replaced;
@@ -779,16 +661,9 @@ private:
                    reclaimed ? "true" : "false");
     }
 
-    /// Starts tracking an entry that is already in the store, e.g. one written by an earlier pipeline.
-    void adopt_locked(std::size_t hash) {
-        m_insertion_order.push_back(hash);
-        m_entries[hash] = Entry{std::prev(m_insertion_order.end())};
-    }
-
     CacheManagerT& m_cache_manager;
     std::unique_ptr<IKVCacheStore> m_store;
-    std::unordered_map<std::size_t, Entry> m_entries;
-    std::unordered_map<std::size_t, std::size_t> m_pin_counts;
+    std::unordered_set<std::size_t> m_entries;
     // Hashes the latest probes found in the store; the store itself is never asked about a single block.
     std::unordered_set<std::size_t> m_store_hits;
     // Chain positions of published blocks, kept only for a plugin store, which wants the chain before a write.

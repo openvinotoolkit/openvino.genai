@@ -197,193 +197,6 @@ TEST(TestLinearAttentionOffloadCache, BlockManagerWarmsPrefixBlockFromOffloadCac
     block_manager.free_sequence(consumer->get_running_sequences().at(0)->get_id());
 }
 
-TEST(TestLinearAttentionOffloadCache, PersistStoresNewHashSynchronously) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    const auto expected = fixture.fill_block(1, /*seed=*/7);
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/42, /*block_index=*/1));
-
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(42, restored));
-    EXPECT_EQ(restored, expected);
-}
-
-TEST(TestLinearAttentionOffloadCache, PersistOfKnownHashKeepsTheStoredCopy) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    const auto expected = fixture.fill_block(0, /*seed=*/3);
-    offload_cache->on_blocks_overwritten(/*hash=*/5, make_block_set(0));
-    offload_cache->flush();
-    fixture.fill_block(1, /*seed=*/200);
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/5, /*block_index=*/1));
-
-    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(5, restored));
-    EXPECT_EQ(restored, expected);
-}
-
-TEST(TestLinearAttentionOffloadCache, PersistWaitsForAQueuedStoreOfTheSameHash) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    const auto expected = fixture.fill_block(0, /*seed=*/9);
-    offload_cache->on_blocks_overwritten(/*hash=*/7, make_block_set(0));
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/7, /*block_index=*/0));
-
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(7, restored));
-    EXPECT_EQ(restored, expected);
-}
-
-TEST(TestLinearAttentionOffloadCache, PersistReclaimsTheOldestUnpinnedEntryWhenFull) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 2);
-    fixture.fill_block(0, /*seed=*/1);
-    fixture.fill_block(1, /*seed=*/2);
-    offload_cache->on_blocks_overwritten(/*hash=*/1, make_block_set(0));
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-    ASSERT_TRUE(offload_cache->pin(1));
-    const auto newest = fixture.fill_block(2, /*seed=*/50);
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/3, /*block_index=*/2));
-
-    EXPECT_TRUE(offload_cache->contains(1));
-    EXPECT_FALSE(offload_cache->contains(2));
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(3, restored));
-    EXPECT_EQ(restored, newest);
-    EXPECT_EQ(offload_cache->get_statistics().num_replaced, 1);
-}
-
-TEST(TestLinearAttentionOffloadCache, PersistFailsWithoutSideEffectsWhenEveryEntryIsPinned) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 1);
-    fixture.fill_block(0, /*seed=*/1);
-    fixture.fill_block(1, /*seed=*/2);
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
-
-    EXPECT_FALSE(offload_cache->persist(/*hash=*/2, /*block_index=*/1));
-
-    EXPECT_TRUE(offload_cache->contains(1));
-    EXPECT_FALSE(offload_cache->contains(2));
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
-}
-
-TEST(TestLinearAttentionOffloadCache, PinnedEntrySurvivesOverwriteReclamationUntilUnpinned) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 1);
-    fixture.fill_block(0, /*seed=*/1);
-    fixture.fill_block(1, /*seed=*/2);
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
-
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-    EXPECT_TRUE(offload_cache->contains(1));
-    EXPECT_FALSE(offload_cache->contains(2));
-    EXPECT_EQ(offload_cache->get_statistics().num_failed, 1);
-
-    offload_cache->unpin(1);
-    offload_cache->on_blocks_overwritten(/*hash=*/3, make_block_set(1));
-    offload_cache->flush();
-    EXPECT_FALSE(offload_cache->contains(1));
-    EXPECT_TRUE(offload_cache->contains(3));
-}
-
-TEST(TestLinearAttentionOffloadCache, PinsAreReferenceCounted) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 1);
-    fixture.fill_block(0, /*seed=*/1);
-    fixture.fill_block(1, /*seed=*/2);
-
-    EXPECT_FALSE(offload_cache->pin(/*hash=*/999));
-    EXPECT_NO_THROW(offload_cache->unpin(/*hash=*/999));
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1, /*block_index=*/0));
-    offload_cache->unpin(1);
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-    EXPECT_TRUE(offload_cache->contains(1));
-
-    offload_cache->unpin(1);
-    offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
-    offload_cache->flush();
-    EXPECT_FALSE(offload_cache->contains(1));
-    EXPECT_TRUE(offload_cache->contains(2));
-}
-
-TEST(TestLinearAttentionOffloadCache, PersistWithQueuedStoresInFlightDoesNotDeadlockOrLoseEntries) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 4);
-    for (size_t i = 0; i < 3; ++i) {
-        fixture.fill_block(i, /*seed=*/static_cast<uint8_t>(10 * (i + 1)));
-        offload_cache->on_blocks_overwritten(/*hash=*/100 + i, make_block_set(static_cast<int>(i)));
-    }
-    const auto last = fixture.fill_block(3, /*seed=*/99);
-
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/200, /*block_index=*/3));
-
-    for (size_t i = 0; i < 3; ++i) {
-        EXPECT_TRUE(offload_cache->contains(100 + i));
-    }
-    std::vector<uint8_t> restored;
-    ASSERT_TRUE(offload_cache->read(200, restored));
-    EXPECT_EQ(restored, last);
-    EXPECT_EQ(offload_cache->get_num_entries(), 4);
-}
-
-namespace {
-
-/// A snapshot keeps one checkpoint, at the last computed position (num_tokens - 1), in the store. A latest-only
-/// block manager must restore from it even though none of the earlier checkpoints exist.
-void expect_snapshot_checkpoint_is_restored(size_t num_tokens) {
-    constexpr size_t cache_interval = 4;
-    LaCacheFixture fixture(/*num_blocks=*/2);
-    auto offload_cache = make_offload_cache(fixture, 2);
-    BlockManager block_manager(/*num_blocks=*/2,
-                               /*enable_prefix_caching=*/true,
-                               cache_interval,
-                               /*num_layers=*/1,
-                               /*fixed_blocks_per_sequence=*/0,
-                               /*restore_latest_prefix_block_only=*/true);
-
-    std::vector<int64_t> tokens(num_tokens);
-    for (size_t i = 0; i < tokens.size(); ++i) {
-        tokens[i] = static_cast<int64_t>(i);
-    }
-    auto consumer = make_group(tokens, /*request_id=*/30);
-    const auto sequence = consumer->get_running_sequences().at(0);
-    const auto expected = fixture.fill_block(0, /*seed=*/41);
-    ASSERT_TRUE(offload_cache->persist(sequence->get_hash(num_tokens - 1, cache_interval), /*block_index=*/0));
-
-    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), 1);
-    EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
-    EXPECT_EQ(consumer->get_num_processed_tokens(), num_tokens - 1);
-
-    block_manager.free_sequence(sequence->get_id());
-}
-
-}  // namespace
-
-TEST(TestLinearAttentionOffloadCache, WarmRestoresASnapshotCheckpointThatIsNotIntervalAligned) {
-    expect_snapshot_checkpoint_is_restored(/*num_tokens=*/10);
-}
-
-TEST(TestLinearAttentionOffloadCache, WarmRestoresASnapshotCheckpointOnAnIntervalBoundary) {
-    expect_snapshot_checkpoint_is_restored(/*num_tokens=*/9);
-}
-
-TEST(TestLinearAttentionOffloadCache, WarmRestoresASnapshotCheckpointWhenThePromptEndsOnAnIntervalBoundary) {
-    expect_snapshot_checkpoint_is_restored(/*num_tokens=*/8);
-}
-
 namespace {
 
 /// Lets several offload caches see one store, the way pipelines do through a persistent plugin.
@@ -436,13 +249,14 @@ std::unique_ptr<LinearAttentionOffloadCache> make_offload_cache_on(LaCacheFixtur
 
 }  // namespace
 
-TEST(TestLinearAttentionOffloadCache, AnotherInstanceServesAndPinsEntriesItNeverWrote) {
+TEST(TestLinearAttentionOffloadCache, AnotherInstanceServesEntriesItNeverWrote) {
     LaCacheFixture fixture;
     auto store = make_shared_file_store(fixture, 1);
     const auto expected = fixture.fill_block(0, /*seed=*/17);
     {
         auto first = make_offload_cache_on(fixture, store);
-        ASSERT_TRUE(first->persist(/*hash=*/42, /*block_index=*/0));
+        first->on_blocks_overwritten(/*hash=*/42, make_block_set(0));
+        first->flush();
     }
 
     auto second = make_offload_cache_on(fixture, store);
@@ -458,14 +272,6 @@ TEST(TestLinearAttentionOffloadCache, AnotherInstanceServesAndPinsEntriesItNever
     fixture.fill_block(1, /*seed=*/0);
     ASSERT_TRUE(second->load_into(/*hash=*/42, /*block_index=*/1));
     EXPECT_EQ(fixture.cache_manager->read_block(1), expected);
-
-    ASSERT_TRUE(second->pin(42));
-    EXPECT_EQ(second->get_num_entries(), 1);
-    // The only slot holds the adopted, pinned entry, so pressure for it cannot reclaim it.
-    second->on_blocks_overwritten(/*hash=*/43, make_block_set(1));
-    second->flush();
-    EXPECT_TRUE(second->contains(42));
-    EXPECT_FALSE(second->contains(43));
 }
 
 TEST(TestLinearAttentionOffloadCache, ReportsWhetherItsStoreIsAPlugin) {
@@ -474,25 +280,22 @@ TEST(TestLinearAttentionOffloadCache, ReportsWhetherItsStoreIsAPlugin) {
     EXPECT_FALSE(offload_cache->is_plugin_backed());
 }
 
-TEST(TestLinearAttentionOffloadCache, ConcurrentOverwritesNeverEvictAPinnedEntry) {
+TEST(TestLinearAttentionOffloadCache, ConcurrentOverwritesNeverExceedTheStoreCapacity) {
     LaCacheFixture fixture;
     auto offload_cache = make_offload_cache(fixture, 2);
     fixture.fill_block(0, /*seed=*/1);
     fixture.fill_block(1, /*seed=*/2);
-    ASSERT_TRUE(offload_cache->persist(/*hash=*/1000, /*block_index=*/0));
 
     std::thread overwriter([&] {
         for (size_t i = 0; i < 200; ++i) {
             offload_cache->on_blocks_overwritten(/*hash=*/i, make_block_set(1));
         }
     });
-    for (size_t i = 0; i < 50; ++i) {
-        offload_cache->persist(/*hash=*/2000 + i, /*block_index=*/1);
-        offload_cache->unpin(2000 + i);
+    for (size_t i = 0; i < 200; ++i) {
+        offload_cache->on_blocks_overwritten(/*hash=*/1000 + i, make_block_set(0));
     }
     overwriter.join();
     offload_cache->flush();
 
-    EXPECT_TRUE(offload_cache->contains(1000));
     EXPECT_LE(offload_cache->get_num_entries(), 2);
 }

@@ -198,7 +198,7 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
 }
 
 // The persistent provider keeps a block in a file under CacheOffloadConfig::path, which is what lets another process
-// read it back; the cross-process round trip itself is checked by verify_session_snapshot.py --phase save/restore.
+// read it back; the cross-process round trip itself is checked by verify_chunk_store.py (write/read phases).
 TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
     const std::optional<std::string> library_path = find_sample_plugin_library();
     if (!library_path.has_value()) {

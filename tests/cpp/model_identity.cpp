@@ -95,7 +95,7 @@ struct OrchestratorFixture {
     }
 
     KVCacheDiskLayout kv_layout() {
-        return static_cast<KVCacheManager&>(orchestrator->get_cache_manager(CacheType::KV_CACHE)).get_block_layout();
+        return static_cast<const KVCacheManager&>(orchestrator->get_cache_manager(CacheType::KV_CACHE)).get_block_layout();
     }
 };
 

@@ -247,7 +247,6 @@ public:
                         "KV cache offload requires a model with KV cache inputs");
 
         auto& kv_manager = static_cast<KVCacheManager&>(*cache_mgr_it->second);
-        m_offload_plugin_requested = offload_config.allow_untrusted_store_plugin && !offload_config.store_library_path.empty();
         const size_t kv_block_tokens = m_block_managers.at(CacheType::KV_CACHE)->get_block_size();
         auto store = open_kv_cache_store(kv_manager.get_block_layout(),
                                          offload_config,
@@ -264,16 +263,6 @@ public:
                                                                    offload_config.buffer_slots);
         m_block_managers.at(CacheType::KV_CACHE)->set_overwritten_block_observer(m_kv_offload_cache.get());
         m_kv_offload_cache->set_store_completed_blocks(offload_config.store_completed_blocks);
-    }
-
-    /// @return The KV disk offload cache, or nullptr when offload is disabled.
-    KVCacheOffloadCache* get_kv_offload_cache() const {
-        return m_kv_offload_cache.get();
-    }
-
-    /// Whether the configuration asked for a third-party store plugin, which the stores may not honour if it failed to load.
-    bool offload_plugin_requested() const {
-        return m_offload_plugin_requested;
     }
 
     /**
@@ -331,11 +320,6 @@ public:
                                                                            offload_config.buffer_slots);
         m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->set_overwritten_block_observer(m_la_offload_cache.get());
         m_la_offload_cache->set_store_completed_blocks(offload_config.store_completed_blocks);
-    }
-
-    /// @return The linear attention disk offload cache, or nullptr when offload is disabled.
-    LinearAttentionOffloadCache* get_la_offload_cache() const {
-        return m_la_offload_cache.get();
     }
 
     /**
@@ -957,10 +941,6 @@ public:
         return *m_cache_managers.at(type);
     }
 
-    ICacheManager& get_cache_manager(CacheType type) {
-        return *m_cache_managers.at(type);
-    }
-
     BlockManager& get_block_manager(CacheType type) {
         return *m_block_managers.at(type);
     }
@@ -1340,7 +1320,6 @@ private:
     std::unique_ptr<KVCacheOffloadCache> m_kv_offload_cache;
     std::unique_ptr<LinearAttentionOffloadCache> m_la_offload_cache;
     std::string m_model_identity;
-    bool m_offload_plugin_requested = false;
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
 
