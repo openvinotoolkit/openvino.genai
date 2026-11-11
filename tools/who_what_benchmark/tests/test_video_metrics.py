@@ -6,6 +6,7 @@ import pytest
 from diffusers.utils import export_to_video
 from whowhatbench.text2video_evaluator import Text2VideoEvaluator
 from whowhatbench.video_metrics import ObjectPresence, VideoQuality, _fetch, read_frames, temporal_flicker
+from whowhatbench.whowhat_metrics import VideoSimilarity
 
 
 def _write_video(path, frames, shift=0):
@@ -31,6 +32,32 @@ def test_read_frames_and_flicker(two_videos):
     still = np.repeat(frames[:1], 3, axis=0)
     assert temporal_flicker(still) == pytest.approx(1.0)
     assert 0.0 < temporal_flicker(frames) < 1.0
+
+
+def test_video_similarity_averages_every_distance(two_videos, monkeypatch):
+    similarity = VideoSimilarity.__new__(VideoSimilarity)  # no ViViT/LPIPS download: the scorers are stubbed
+    similarity.embeds_model_frame_num = 4
+    scores = iter([(0.9, 0.8, 0.1, 0.2), (0.7, 0.6, 0.3, 0.4)])  # cosine, SSIM, LPIPS, tLPIPS per video
+    current = {}
+
+    def embedding(gold, prediction):
+        current["scores"] = next(scores)
+        return current["scores"][0]
+
+    monkeypatch.setattr(similarity, "load_video_frames", lambda path, num_frames: path)
+    monkeypatch.setattr(similarity, "get_embedding", embedding)
+    monkeypatch.setattr(similarity, "get_ssim", lambda gold, prediction: [current["scores"][1]])
+    monkeypatch.setattr(similarity, "get_lpips", lambda gold, prediction: current["scores"][2])
+    monkeypatch.setattr(similarity, "get_temporal_lpips", lambda gold, prediction: current["scores"][3])
+    data = pd.DataFrame({"videos": list(two_videos)})
+
+    averages, per_video = similarity.evaluate(data, data)
+
+    keys = {"similarity", VideoSimilarity.SSIM_KEY, VideoSimilarity.LPIPS_KEY, VideoSimilarity.TLPIPS_KEY}
+    assert set(averages) == set(per_video) == keys
+    assert averages["similarity"] == pytest.approx(0.8)
+    assert averages[VideoSimilarity.LPIPS_KEY] == pytest.approx(0.2)
+    assert per_video[VideoSimilarity.TLPIPS_KEY] == [0.2, 0.4]
 
 
 def test_video_quality_reports_base_target_delta(two_videos, monkeypatch):
