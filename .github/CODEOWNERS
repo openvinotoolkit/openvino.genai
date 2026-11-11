@@ -59,3 +59,8 @@
 
 # GenAI Tools
 /tools/ @sbalandi @avasenin-14
+
+# genai-cli
+/src/python/openvino_genai/_cli/ @rkazants
+/tests/python_tests/test_genai_cli.py @rkazants
+/tests/python_tests/utils/export.py @rkazants
