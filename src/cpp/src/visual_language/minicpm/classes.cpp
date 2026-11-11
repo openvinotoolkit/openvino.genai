@@ -469,8 +469,8 @@ EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::Any
     ov::Tensor slices;
     ImageSize slices_target_size;
     EncodedImage encoded_image = encode_features(image, config_map, slices, slices_target_size);
-    encoded_image.resampled_image = resample_encoded_image(encoded_image, slices, slices_target_size);
     if (slices) {
+        encoded_image.resampled_image = resample_encoded_image(encoded_image, slices, slices_target_size);
         encoded_image.slices_shape = slices.get_shape();
     }
     return encoded_image;
@@ -885,17 +885,17 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(
         const EncodedImage& encoded_image = images.at(images_sequence[image_sequence_idx++]);
         ov::Tensor aligned_resampled_source;
         const ov::Tensor* resampled_source = &encoded_image.resampled_image.resampled_source;
-        if (!videos.empty() && !group.has_slices) {
+        if (!*resampled_source) {
             size_t pad_to_max = encoded_image.resized_source_size.height * encoded_image.resized_source_size.width;
-            for (const EncodedVideo& video : videos) {
-                pad_to_max = std::max(pad_to_max,
-                                      video.resized_source_size.height * video.resized_source_size.width);
+            if (!group.has_slices) {
+                for (const EncodedVideo& video : videos) {
+                    pad_to_max = std::max(pad_to_max,
+                                          video.resized_source_size.height * video.resized_source_size.width);
+                }
             }
-            if (pad_to_max != encoded_image.resized_source.get_shape().at(1)) {
-                aligned_resampled_source = std::static_pointer_cast<VisionEncoderMiniCPM>(m_vision_encoder)
-                                               ->resample(encoded_image.resized_source, encoded_image.resized_source_size, pad_to_max);
-                resampled_source = &aligned_resampled_source;
-            }
+            aligned_resampled_source = std::static_pointer_cast<VisionEncoderMiniCPM>(m_vision_encoder)
+                                           ->resample(encoded_image.resized_source, encoded_image.resized_source_size, pad_to_max);
+            resampled_source = &aligned_resampled_source;
         }
         OPENVINO_ASSERT(resampled_source->get_size() == m_vlm_config.query_num * m_vlm_config.hidden_size,
                         "Unexpected MiniCPM image feature shape.");
