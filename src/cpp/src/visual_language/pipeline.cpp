@@ -137,6 +137,10 @@ private:
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
+        if (m_generation_config.adapters) {
+            // Forward the adapters to InputsEmbedder sub-models before the language model prefix is set below.
+            properties_copy[utils::FORWARDED_ADAPTERS_PROPERTY] = *m_generation_config.adapters;
+        }
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         // In case user provided properties per-device
@@ -149,22 +153,31 @@ private:
         //     MODEL_PROPERTIES: { "language_model": {...}, "vision_embeddings": {...} }
         // }
         auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
+        // Adapters addressed to the language model role, resolved the same way continuous batching does.
+        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
+        lm_properties.erase(AdaptersProperty::name());
 
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
         );
 
+        const auto embedder_device = m_is_npu ? "AUTO" : device;
+        if (m_is_npu) {
+            npu_auto_default_properties(device_properties);
+        }
+        if (!device_properties.empty()) {
+            properties_copy[ov::device::properties.name()] = device_properties;
+        }
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
+
         if (m_generation_config.adapters) {
-            m_generation_config.adapters->set_tensor_name_prefix(
-                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
-            );
+            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, m_inputs_embedder->get_lora_tensor_prefix());
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
         ov::CompiledModel compiled_language_model;
-        auto embedder_device = device;
         if (m_is_npu) {
-            embedder_device = "AUTO";
             utils::KVDesc kv_desc;
             update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
@@ -172,7 +185,6 @@ private:
                 lm_properties,
                 kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
-            npu_auto_default_properties(device_properties);
         } else {
             // Slice-before-matmul rewrites LM logits to be produced only for the last token.
             // After this transformation, the non-NPU path returns logits with seq_len == 1,
@@ -190,14 +202,6 @@ private:
             // Subsequent unchanged applies on this request can then skip state uploads.
             m_adapter_controller->apply(m_language);
         }
-
-        // Reinsert device_properties so InputsEmbedder sub-models can resolve
-        // per-role and per-device overrides via utils::get_model_properties(...).
-        if (!device_properties.empty()) {
-            properties_copy[ov::device::properties.name()] = device_properties;
-        }
-
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
 
         finalize_initialization(language_model, kv_pos);
     }
@@ -218,6 +222,14 @@ private:
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
+        if (m_generation_config.adapters) {
+            // Forward the adapters to InputsEmbedder sub-models before the language model prefix is set below.
+            properties_copy[utils::FORWARDED_ADAPTERS_PROPERTY] = *m_generation_config.adapters;
+        }
+
+        auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
+        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
+        lm_properties.erase(AdaptersProperty::name());
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
@@ -227,9 +239,8 @@ private:
         const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         if (m_generation_config.adapters) {
-            m_generation_config.adapters->set_tensor_name_prefix(
-                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
-            );
+            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, m_inputs_embedder->get_lora_tensor_prefix());
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
@@ -237,7 +248,6 @@ private:
         // After this transformation, default path returns logits with seq_len == 1,
         // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
         utils::apply_slice_before_matmul_transformation(language_model);
-        const auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
         m_language = utils::singleton_core().compile_model(
             language_model, device, lm_properties).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
@@ -374,6 +384,7 @@ public:
 
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
+        m_inputs_embedder->set_adapters(generation_config.adapters);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         
@@ -623,6 +634,7 @@ public:
 
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
+        m_inputs_embedder->set_adapters(generation_config.adapters);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_embeddings_registry, *m_inputs_embedder);

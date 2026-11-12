@@ -72,7 +72,8 @@ pip install diffusers==0.41.0 transformers==5.15.1
 
 :::tip LoRA Support
 VLM pipeline supports LoRA adapters applied to the language-model (LLM) part.
-LoRA adapters targeting the vision encoder or other multimodal components are not supported.
+Qwen-VL models also support vision LoRA adapters targeting the `vision_embeddings_merger` submodel.
+LoRA adapters targeting other multimodal components are not supported.
 :::
 
 <VLMModelsTable />
