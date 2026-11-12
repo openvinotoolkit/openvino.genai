@@ -157,6 +157,7 @@ if is_transformers_version("<", "5.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
     # qwen3_vl fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     VIDEO_MODEL_IDS = [
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         VIDEOCHAT_FLASH_QWEN_MODEL_ID,
@@ -191,7 +192,6 @@ if is_transformers_version("<", "5.0"):
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
-        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-internvl2",
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
@@ -254,6 +254,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 
 VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
+    "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
@@ -1324,6 +1325,41 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
         )
 
 
+@pytest.mark.skipif(
+    is_transformers_version(">=", "5.0"),
+    reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059",
+)
+@pytest.mark.transformers_dependent(reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059")
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", backend) for backend in ATTENTION_BACKEND],
+    ids=lambda item: f"{item[0]}/{item[1]}",
+    indirect=["ov_pipe_model"],
+)
+@pytest.mark.parametrize(
+    "query_num,error",
+    [
+        (0, "MiniCPM query_num must be positive, got 0"),
+        (128, "Unexpected MiniCPM video group feature size: expected 16384, got 8192"),
+    ],
+)
+def test_minicpm_invalid_query_num(ov_pipe_model: VlmModelInfo, query_num: int, error: str, tmp_path: Path):
+    model_path = tmp_path / "minicpm_invalid_query_num"
+    shutil.copytree(_get_ov_model(ov_pipe_model.model_id), model_path)
+    config_path = model_path / "config.json"
+    model_config = json.loads(config_path.read_text(encoding="utf-8"))
+    model_config["query_num"] = query_num
+    config_path.write_text(json.dumps(model_config), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match=error):
+        pipeline = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
+        pipeline.generate(
+            "Describe",
+            videos=[openvino.Tensor(np.zeros((1, 32, 32, 3), dtype=np.uint8))],
+            generation_config=GenerationConfig(max_new_tokens=1),
+        )
+
+
 @pytest.mark.parametrize(
     "ov_pipe_model",
     [
@@ -2080,6 +2116,7 @@ if is_transformers_version("<", "5.0"):
     # minicpmv architectures are deprecating support for transformers >= v5 by optimum-intel
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", "PA"),
     ]
 else:
     MODELS_TO_TAG += [
