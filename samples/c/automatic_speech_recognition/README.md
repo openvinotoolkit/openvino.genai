@@ -64,6 +64,3 @@ null terminator. Segment and word getters take a transcription index followed
 by a timestamp index. Returned configurations, results, metrics, and timestamp
 handles are owned by the caller and must be released with their matching free
 functions. Timestamp handles remain valid after freeing the result or pipeline.
-
-Developer regression-test instructions are in
-[tests/cpp/README_ASR_C_API.md](../../../tests/cpp/README_ASR_C_API.md).
