@@ -20,10 +20,12 @@ from openvino_genai import (
     VLMPipeline,
 )
 
-from conftest import (
+from test_vlm_pipeline import (
     ATTENTION_BACKEND,
     PROMPTS,
     _get_ov_model,
+    cat_image,
+    cat_tensor,
 )
 
 pytestmark = pytest.mark.vlm
