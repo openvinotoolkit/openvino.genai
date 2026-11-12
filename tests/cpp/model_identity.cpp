@@ -13,12 +13,83 @@
 #include "continuous_batching/cache/model_identity.hpp"
 #include "helper.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/loop.hpp"
+#include "openvino/op/op.hpp"
 #include "openvino/op/subtract.hpp"
 #include "openvino/openvino.hpp"
 
 using namespace ov::genai;
 
 namespace {
+
+/// A value type with an attribute adapter that the model identity has no way to hash.
+struct OpaqueValue {
+    int value = 0;
+};
+
+}  // namespace
+
+namespace ov {
+template <>
+class AttributeAdapter<OpaqueValue> : public DirectValueAccessor<OpaqueValue> {
+public:
+    explicit AttributeAdapter(OpaqueValue& value) : DirectValueAccessor<OpaqueValue>(value) {}
+    OPENVINO_RTTI("AttributeAdapter<OpaqueValue>");
+};
+}  // namespace ov
+
+namespace {
+
+class OpaqueAttributeOp : public ov::op::Op {
+public:
+    OPENVINO_OP("OpaqueAttributeOp", "genai_test");
+    OpaqueAttributeOp() = default;
+    explicit OpaqueAttributeOp(const ov::Output<ov::Node>& input) : ov::op::Op({input}) {
+        constructor_validate_and_infer_types();
+    }
+    void validate_and_infer_types() override {
+        set_output_type(0, get_input_element_type(0), get_input_partial_shape(0));
+    }
+    std::shared_ptr<ov::Node> clone_with_new_inputs(const ov::OutputVector& new_args) const override {
+        return std::make_shared<OpaqueAttributeOp>(new_args.at(0));
+    }
+    bool visit_attributes(ov::AttributeVisitor& visitor) override {
+        visitor.on_attribute("opaque", m_opaque);
+        return true;
+    }
+
+private:
+    OpaqueValue m_opaque;
+};
+
+/// A Loop that adds (or subtracts) a constant to its carried value three times; the outer graph is the same either way.
+std::shared_ptr<ov::Model> make_loop_model(bool subtract, float body_constant = 1.f) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1, 4});
+    auto trip_count = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {3});
+    auto execution_condition = ov::op::v0::Constant::create(ov::element::boolean, ov::Shape{}, {true});
+
+    auto body_parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1, 4});
+    auto step = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1, 4}, std::vector<float>(4, body_constant));
+    std::shared_ptr<ov::Node> body_value;
+    if (subtract) {
+        body_value = std::make_shared<ov::op::v1::Subtract>(body_parameter, step);
+    } else {
+        body_value = std::make_shared<ov::op::v1::Add>(body_parameter, step);
+    }
+    auto body_result = std::make_shared<ov::op::v0::Result>(body_value);
+    auto condition_result = std::make_shared<ov::op::v0::Result>(
+        ov::op::v0::Constant::create(ov::element::boolean, ov::Shape{}, {true}));
+    auto body = std::make_shared<ov::Model>(ov::ResultVector{body_result, condition_result},
+                                            ov::ParameterVector{body_parameter});
+
+    auto loop = std::make_shared<ov::op::v5::Loop>(trip_count, execution_condition);
+    loop->set_function(body);
+    loop->set_special_body_ports({-1, 1});
+    loop->set_merged_input(body_parameter, input, body_result);
+    const auto output = loop->get_iter_value(body_result, -1);
+    auto result = std::make_shared<ov::op::v0::Result>(output);
+    return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input});
+}
 
 std::shared_ptr<ov::Model> make_model(const std::vector<float>& weights, const ov::Shape& shape) {
     auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, shape);
@@ -72,6 +143,30 @@ TEST(TestModelIdentity, SameBytesInADifferentShapeGiveADifferentDigest) {
 TEST(TestModelIdentity, SameConstantsWithADifferentOperatorGiveADifferentDigest) {
     EXPECT_NE(compute_model_identity(make_model({1.f, 2.f, 3.f, 4.f}, {2, 2})),
               compute_model_identity(make_model_with_subtract({1.f, 2.f, 3.f, 4.f}, {2, 2})));
+}
+
+TEST(TestModelIdentity, SameLoopGivesTheSameDigest) {
+    EXPECT_EQ(compute_model_identity(make_loop_model(/*subtract=*/false)),
+              compute_model_identity(make_loop_model(/*subtract=*/false)));
+}
+
+TEST(TestModelIdentity, LoopsWithTheSameOuterGraphButDifferentBodiesGiveDifferentDigests) {
+    EXPECT_NE(compute_model_identity(make_loop_model(/*subtract=*/false)),
+              compute_model_identity(make_loop_model(/*subtract=*/true)));
+}
+
+TEST(TestModelIdentity, LoopsWithADifferentConstantInTheBodyGiveDifferentDigests) {
+    EXPECT_NE(compute_model_identity(make_loop_model(/*subtract=*/false, /*body_constant=*/1.f)),
+              compute_model_identity(make_loop_model(/*subtract=*/false, /*body_constant=*/2.f)));
+}
+
+TEST(TestModelIdentity, RejectsAnAttributeItCannotHash) {
+    auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{2});
+    auto opaque = std::make_shared<OpaqueAttributeOp>(parameter);
+    auto result = std::make_shared<ov::op::v0::Result>(opaque);
+    auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
+
+    EXPECT_THROW(compute_model_identity(model), ov::Exception);
 }
 
 namespace {
