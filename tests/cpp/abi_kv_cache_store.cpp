@@ -4,8 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "continuous_batching/cache/abi_file_store_provider.hpp"
@@ -425,4 +427,42 @@ TEST(TestAbiFileStoreProvider, FileStoreDoesNotEvictByItself) {
     const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
     EXPECT_EQ(provider->capabilities & OV_KVCACHE_CAP_SELF_EVICT, 0u);
     EXPECT_FALSE(open_store(/*num_blocks=*/2)->evicts_itself());
+}
+
+TEST(TestAbiFileStoreProvider, ConcurrentWritesReadsAndDropsNeverExposeAHalfPublishedBlock) {
+    constexpr size_t num_keys = 8;
+    constexpr size_t rounds = 300;
+    auto store = open_store(/*num_blocks=*/num_keys);
+    std::atomic<size_t> failures{0};
+
+    std::thread writer([&] {
+        for (size_t round = 0; round < rounds; ++round) {
+            for (size_t key = 0; key < num_keys; ++key) {
+                try {
+                    store->write_block(key, make_block(static_cast<uint8_t>(key)));
+                    store->drop_block((key + 3) % num_keys);
+                } catch (const std::exception&) {
+                    ++failures;
+                }
+            }
+        }
+    });
+    std::thread reader([&] {
+        for (size_t round = 0; round < rounds; ++round) {
+            for (size_t key = 0; key < num_keys; ++key) {
+                try {
+                    std::vector<uint8_t> data;
+                    if (store->read_block(key, data) && data != make_block(static_cast<uint8_t>(key))) {
+                        ++failures;
+                    }
+                } catch (const std::exception&) {
+                    ++failures;
+                }
+            }
+        }
+    });
+    writer.join();
+    reader.join();
+
+    EXPECT_EQ(failures.load(), 0u);
 }

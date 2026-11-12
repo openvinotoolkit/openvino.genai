@@ -37,6 +37,9 @@ struct AbiFileStoreInstance {
 
     std::unique_ptr<FileKVCacheStore> store;
     size_t block_size;
+    /// Serializes whole store operations, so a key's id, payload and witness are published and removed together.
+    /// Taken before `witness_mutex`.
+    std::mutex op_mutex;
     /// Guards `key_ids`, `next_id` and `witnesses`.
     mutable std::mutex witness_mutex;
     /// Full 128-bit ABI key -> the id FileKVCacheStore addresses the block by. Keys that differ only
@@ -80,6 +83,7 @@ void destroy_store(void* self) {
 OvKVCacheStatus store_has_blocks(void* self, const OvKVCacheBlockKey* keys, uint8_t* out_present, size_t count) {
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
     try {
+        std::lock_guard<std::mutex> operation_lock(instance->op_mutex);
         for (size_t i = 0; i < count; ++i) {
             const auto id = find_id(*instance, keys[i]);
             out_present[i] = id.has_value() && instance->store->has_block(*id) ? 1 : 0;
@@ -95,6 +99,7 @@ OvKVCacheStatus store_read_blocks(void* self,
                                   OvKVCacheStoreReadResult* out,
                                   size_t count) {
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
+    std::lock_guard<std::mutex> operation_lock(instance->op_mutex);
     bool any_failed = false;
     for (size_t i = 0; i < count; ++i) {
         const OvKVCacheStoreReadRequest& req = reqs[i];
@@ -152,6 +157,7 @@ OvKVCacheStatus store_write_blocks(void* self,
                                    OvKVCacheStoreWriteResult* out,
                                    size_t count) {
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
+    std::lock_guard<std::mutex> operation_lock(instance->op_mutex);
     bool any_failed = false;
     for (size_t i = 0; i < count; ++i) {
         const OvKVCacheStoreWriteRequest& req = reqs[i];
@@ -203,6 +209,7 @@ OvKVCacheStatus store_write_blocks(void* self,
 OvKVCacheStatus store_drop_blocks(void* self, const OvKVCacheBlockKey* keys, size_t count) {
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
     try {
+        std::lock_guard<std::mutex> operation_lock(instance->op_mutex);
         std::lock_guard<std::mutex> lock(instance->witness_mutex);
         for (size_t i = 0; i < count; ++i) {
             const auto it = instance->key_ids.find(full_key(keys[i]));
