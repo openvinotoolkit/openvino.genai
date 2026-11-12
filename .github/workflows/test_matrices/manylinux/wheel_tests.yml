@@ -193,6 +193,13 @@
   components:
     - tokenizers
 
+- name: genai-cli tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_genai_cli.py
+  timeout: 15
+  components:
+    - genai_cli
+
 - name: API tests
   cmd: |-
     # lfm2 conversion fails in CI: CVS-195736
