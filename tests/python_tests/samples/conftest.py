@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from utils.network import retry_request
+from utils.export import export_command
 from utils.constants import (
     get_ov_cache_dir,
     get_ov_cache_downloaded_models_dir,
@@ -96,6 +97,11 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-phi3-vision": {
         "name": "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
+    },
+    "tiny-random-molmo2": {
+        # Exported by genai-cli (optimum_cli_convert dispatches natively converted models to it).
+        "name": "optimum-intel-internal-testing/tiny-random-molmo2",
+        "convert_args": ["--trust-remote-code"],
     },
     "InternVL2-1B": {
         "name": "OpenGVLab/InternVL2-1B",
@@ -336,7 +342,7 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
 
 
 def optimum_cli_convert(model, model_path):
-    """Convert the model using optimum-cli."""
+    """Convert the model using optimum-cli, or genai-cli when it converts the model natively."""
     sub_env = os.environ.copy()
     model_name = model["name"]
     model_args = model["convert_args"]
@@ -345,13 +351,7 @@ def optimum_cli_convert(model, model_path):
     manager = AtomicDownloadManager(dest_path)
     
     def convert_to_temp(temp_path: Path) -> None:
-        command = [
-            "optimum-cli", "export", "openvino",
-            "--model", model_name, 
-            str(temp_path)
-        ]
-        if model_args:
-            command.extend(model_args)
+        command = export_command(model_name, temp_path, model_args or [])
         logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(
             lambda: subprocess.run(
@@ -368,7 +368,7 @@ def optimum_cli_convert(model, model_path):
     try:
         manager.execute(convert_to_temp)
     except subprocess.CalledProcessError as error:
-        logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+        logger.error(f"{error.cmd[0]} returned {error.returncode}. Output:\n{error.output}")
         raise
 
 
