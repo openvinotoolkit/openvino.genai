@@ -171,7 +171,12 @@ def optimum_qwen3_tts_base_model(tiny_qwen3_tts_base_ov_path: Path):
 
 @pytest.fixture
 def genai_qwen3_tts_base_pipe(tiny_qwen3_tts_base_ov_path: Path):
-    return ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_base_ov_path), "CPU")
+    # Match Optimum's stateful SDPA path for waveform-parity tests.
+    return ov_genai.Text2SpeechPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        "CPU",
+        ATTENTION_BACKEND="SDPA",
+    )
 
 
 @pytest.fixture(scope="module")
@@ -192,7 +197,11 @@ def optimum_qwen3_tts_customvoice_model(tiny_qwen3_tts_customvoice_ov_path: Path
 
 @pytest.fixture
 def genai_qwen3_tts_customvoice_pipe(tiny_qwen3_tts_customvoice_ov_path: Path):
-    return ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_customvoice_ov_path), "CPU")
+    return ov_genai.Text2SpeechPipeline(
+        str(tiny_qwen3_tts_customvoice_ov_path),
+        "CPU",
+        ATTENTION_BACKEND="SDPA",
+    )
 
 
 @pytest.fixture(scope="module")
@@ -213,7 +222,11 @@ def optimum_qwen3_tts_voicedesign_model(tiny_qwen3_tts_voicedesign_ov_path: Path
 
 @pytest.fixture
 def genai_qwen3_tts_voicedesign_pipe(tiny_qwen3_tts_voicedesign_ov_path: Path):
-    return ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_voicedesign_ov_path), "CPU")
+    return ov_genai.Text2SpeechPipeline(
+        str(tiny_qwen3_tts_voicedesign_ov_path),
+        "CPU",
+        ATTENTION_BACKEND="SDPA",
+    )
 
 
 def _run_optimum_base_generate(
@@ -838,6 +851,385 @@ class TestQwen3TTSPipelineBase:
 
         assert first.output_sample_rate == second.output_sample_rate
         _assert_waveform_equal(first_speech, second_speech, "x-vector artifact reuse")
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize("non_streaming_mode", [True, False], ids=["non-streaming", "streaming"])
+@pytest.mark.parametrize("use_reference_text", [False, True], ids=["x-vector", "icl"])
+def test_qwen3_tts_base_continuous_batching_ref_audio(
+    tiny_qwen3_tts_base_ov_path: Path,
+    non_streaming_mode: bool,
+    use_reference_text: bool,
+):
+    reference_audio = _make_ref_audio()
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    properties = {
+        "language": language,
+        "ref_audio": ov.Tensor(reference_audio),
+        "do_sample": False,
+        "subtalker_dosample": False,
+        "max_new_tokens": 8,
+        "non_streaming_mode": non_streaming_mode,
+    }
+    if use_reference_text:
+        properties["ref_text"] = LANGUAGE_TEST_TEXTS[language]["reference_text"]
+
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        ov_genai.SchedulerConfig(),
+        "CPU",
+    )
+    handle = cb_pipe.add_request(1, prompt, **properties)
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+
+    output = handle.read_all()
+    assert output.speaker_embedding, "CB ref-audio generation did not return speaker_embedding"
+    assert output.output_sample_rate == SAMPLE_RATE
+    if use_reference_text:
+        assert output.ref_codec_ids, "CB ICL generation did not return ref_codec_ids"
+    waveform = np.asarray(output.waveform.data, dtype=np.float32).reshape(-1)
+    assert waveform.size > 0
+    assert np.isfinite(waveform).all()
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize(
+    "model_fixture,variant_properties",
+    [
+        pytest.param(
+            "tiny_qwen3_tts_customvoice_ov_path",
+            {"speaker": LANGUAGE_TEST_TEXTS["English"]["customvoice_speaker"]},
+            id="customvoice",
+        ),
+        pytest.param(
+            "tiny_qwen3_tts_voicedesign_ov_path",
+            {"instruct": LANGUAGE_TEST_TEXTS["English"]["instruct"]},
+            id="voice-design",
+        ),
+    ],
+)
+def test_qwen3_tts_non_base_continuous_batching_concurrent_requests(
+    request: pytest.FixtureRequest,
+    model_fixture: str,
+    variant_properties: dict,
+):
+    model_path = request.getfixturevalue(model_fixture)
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    prompts = [prompt, prompt + " Again."]
+    generation_properties = {
+        "language": language,
+        "do_sample": False,
+        "subtalker_dosample": False,
+        "max_new_tokens": 8,
+        **variant_properties,
+    }
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(model_path),
+        ov_genai.SchedulerConfig(),
+        "CPU",
+    )
+    handles = [
+        cb_pipe.add_request(request_id, text, **generation_properties)
+        for request_id, text in enumerate(prompts, start=1)
+    ]
+
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+
+    for handle in handles:
+        output = handle.read_all()
+        assert output.output_sample_rate == SAMPLE_RATE
+        waveform = np.asarray(output.waveform.data, dtype=np.float32).reshape(-1)
+        assert waveform.size > 0
+        assert np.isfinite(waveform).all()
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize(
+    "model_fixture,variant_properties,use_ref_audio",
+    [
+        pytest.param("tiny_qwen3_tts_base_ov_path", {}, True, id="base"),
+        pytest.param(
+            "tiny_qwen3_tts_customvoice_ov_path",
+            {"speaker": LANGUAGE_TEST_TEXTS["English"]["customvoice_speaker"]},
+            False,
+            id="customvoice",
+        ),
+        pytest.param(
+            "tiny_qwen3_tts_voicedesign_ov_path",
+            {"instruct": LANGUAGE_TEST_TEXTS["English"]["instruct"]},
+            False,
+            id="voice-design",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "stagger_second_request",
+    [pytest.param(False, id="simultaneous"), pytest.param(True, id="staggered")],
+)
+def test_qwen3_tts_continuous_batching_predictor_batch_matches_serial(
+    request: pytest.FixtureRequest,
+    model_fixture: str,
+    variant_properties: dict,
+    use_ref_audio: bool,
+    stagger_second_request: bool,
+):
+    model_path = request.getfixturevalue(model_fixture)
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    prompts = [prompt, prompt + " Again."]
+    properties = {
+        "language": language,
+        "do_sample": False,
+        "subtalker_dosample": False,
+        "min_new_tokens": 8,
+        "max_new_tokens": 8,
+        "non_streaming_mode": True,
+        **variant_properties,
+    }
+    if use_ref_audio:
+        properties["ref_audio"] = ov.Tensor(_make_ref_audio())
+
+    # When comparing serial (1 request at a time) with batched results, it's
+    # important to set KV_CACHE_PRECISION to f32. Otherwise, it seems like there
+    # can be some numerical drift from plugin running in batch > 1 mode that can cause
+    # slight differences in output.
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(model_path),
+        ov_genai.SchedulerConfig(),
+        "CPU",
+        KV_CACHE_PRECISION="f32",
+    )
+
+    if stagger_second_request:
+        concurrent_handles = [cb_pipe.add_request(1, prompts[0], **properties)]
+        for _ in range(2):
+            cb_pipe.step()
+        concurrent_handles.append(cb_pipe.add_request(2, prompts[1], **properties))
+    else:
+        concurrent_handles = [
+            cb_pipe.add_request(request_id, prompt, **properties)
+            for request_id, prompt in enumerate(prompts, start=1)
+        ]
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    concurrent_outputs = [handle.read_all() for handle in concurrent_handles]
+
+    for handle, output in zip(concurrent_handles, concurrent_outputs):
+        metrics = handle.get_perf_metrics()
+        assert metrics.num_generated_samples == output.waveform.get_size()
+        assert metrics.generate_duration.mean > 0
+        assert metrics.throughput.mean > 0
+
+    for request_id, prompt, concurrent_output in zip(range(3, 5), prompts, concurrent_outputs):
+        serial_handle = cb_pipe.add_request(request_id, prompt, **properties)
+        while cb_pipe.has_non_finished_requests():
+            cb_pipe.step()
+        serial_output = serial_handle.read_all()
+        _assert_waveform_equal(
+            np.asarray(concurrent_output.waveform.data, dtype=np.float32).reshape(-1),
+            np.asarray(serial_output.waveform.data, dtype=np.float32).reshape(-1),
+            f"concurrent versus serial CB request {request_id - 2}",
+        )
+
+
+@pytest.mark.speech_generation
+@pytest.mark.parametrize(
+    "terminal_action,expected_status",
+    [
+        pytest.param("stop", ov_genai.GenerationStatus.STOP, id="stop"),
+        pytest.param("cancel", ov_genai.GenerationStatus.CANCEL, id="cancel"),
+    ],
+)
+def test_qwen3_tts_continuous_batching_handle_stop_and_cancel(
+    tiny_qwen3_tts_base_ov_path: Path,
+    terminal_action: str,
+    expected_status,
+):
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        ov_genai.SchedulerConfig(),
+        "CPU",
+    )
+    handle = cb_pipe.add_request(
+        1,
+        LANGUAGE_TEST_TEXTS["English"]["prompt"],
+        language="English",
+        ref_audio=ov.Tensor(_make_ref_audio()),
+        min_new_tokens=64,
+        max_new_tokens=64,
+        do_sample=False,
+    )
+
+    cb_pipe.step()
+    getattr(handle, terminal_action)()
+
+    assert handle.get_status() == expected_status
+    assert handle.is_stopped() == (terminal_action == "stop")
+    assert handle.is_cancelled() == (terminal_action == "cancel")
+    assert not handle.can_read()
+    with pytest.raises(RuntimeError, match="SpeechGenerationHandle cannot be used after it is stopped / cancelled"):
+        handle.read_all()
+
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_sync_cb_recovers_after_partial_request_submission(
+    tiny_qwen3_tts_base_ov_path: Path,
+):
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    properties = {
+        "language": language,
+        "ref_audio": ov.Tensor(_make_ref_audio()),
+        "ref_text": LANGUAGE_TEST_TEXTS[language]["reference_text"],
+        "do_sample": False,
+        "subtalker_dosample": False,
+        "max_new_tokens": 8,
+        "non_streaming_mode": True,
+    }
+    pipe = ov_genai.Text2SpeechPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        "CPU",
+    )
+
+    with pytest.raises(RuntimeError, match="target text tokenized too short"):
+        pipe.generate([prompt, ""], **properties)
+
+    result = pipe.generate(prompt, **properties)
+    assert result.speeches[0].get_size() > 0
+    assert np.isfinite(np.asarray(result.speeches[0].data)).all()
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_base_continuous_batching_reuses_icl_artifacts(
+    tiny_qwen3_tts_base_ov_path: Path,
+):
+    language = "English"
+    prompt = LANGUAGE_TEST_TEXTS[language]["prompt"]
+    ref_text = LANGUAGE_TEST_TEXTS[language]["reference_text"]
+    generation_kwargs = _generation_kwargs(non_streaming_mode=True)
+    generation_kwargs.update({"do_sample": False, "max_new_tokens": 8})
+
+    sync_pipe = ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_base_ov_path), "CPU")
+    artifacts = sync_pipe.generate(
+        prompt,
+        language=language,
+        ref_audio=ov.Tensor(_make_ref_audio()),
+        ref_text=ref_text,
+        **generation_kwargs,
+    )
+    assert artifacts.speaker_embedding
+    assert artifacts.ref_codec_ids
+
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        ov_genai.SchedulerConfig(),
+        "CPU",
+    )
+    handle = cb_pipe.add_request(
+        1,
+        prompt,
+        speaker_embedding=artifacts.speaker_embedding,
+        language=language,
+        ref_text=ref_text,
+        ref_codec_ids=artifacts.ref_codec_ids,
+        **generation_kwargs,
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+
+    output = handle.read_all()
+    assert output.speaker_embedding
+    assert output.ref_codec_ids
+    np.testing.assert_array_equal(
+        np.asarray(output.speaker_embedding.data),
+        np.asarray(artifacts.speaker_embedding.data),
+    )
+    np.testing.assert_array_equal(
+        np.asarray(output.ref_codec_ids.data),
+        np.asarray(artifacts.ref_codec_ids.data),
+    )
+    waveform = np.asarray(output.waveform.data, dtype=np.float32).reshape(-1)
+    assert waveform.size > 0
+    assert np.isfinite(waveform).all()
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_continuous_batching_max_new_tokens_one_returns_empty_audio(
+    tiny_qwen3_tts_base_ov_path: Path,
+):
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        ov_genai.SchedulerConfig(),
+        "CPU",
+    )
+    handle = cb_pipe.add_request(
+        1,
+        LANGUAGE_TEST_TEXTS["English"]["prompt"],
+        ref_audio=ov.Tensor(_make_ref_audio()),
+        max_new_tokens=1,
+        do_sample=False,
+    )
+
+    assert not cb_pipe.has_non_finished_requests()
+    output = handle.read_all()
+    assert output.waveform.get_size() == 0
+    assert output.output_sample_rate == SAMPLE_RATE
+    assert output.finish_reason == ov_genai.GenerationFinishReason.LENGTH
+    metrics = handle.get_perf_metrics()
+    assert metrics.generate_duration.mean > 0
+    assert metrics.throughput.mean == 0
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_continuous_batching_equal_min_and_max_new_tokens(
+    tiny_qwen3_tts_base_ov_path: Path,
+):
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        ov_genai.SchedulerConfig(),
+        "CPU",
+    )
+    handle = cb_pipe.add_request(
+        1,
+        LANGUAGE_TEST_TEXTS["English"]["prompt"],
+        ref_audio=ov.Tensor(_make_ref_audio()),
+        min_new_tokens=8,
+        max_new_tokens=8,
+        do_sample=False,
+    )
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+
+    output = handle.read_all()
+    assert output.waveform.get_size() > 0
+    assert output.finish_reason == ov_genai.GenerationFinishReason.LENGTH
+
+
+@pytest.mark.speech_generation
+def test_qwen3_tts_continuous_batching_rejects_beam_search_with_one_return_sequence(
+    tiny_qwen3_tts_base_ov_path: Path,
+):
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        ov_genai.SchedulerConfig(),
+        "CPU",
+    )
+    with pytest.raises(RuntimeError, match="num_beams must be 1"):
+        cb_pipe.add_request(
+            1,
+            LANGUAGE_TEST_TEXTS["English"]["prompt"],
+            ref_audio=ov.Tensor(_make_ref_audio()),
+            num_beams=2,
+            num_return_sequences=1,
+            do_sample=False,
+        )
 
 
 @pytest.mark.speech_generation
