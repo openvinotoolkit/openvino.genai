@@ -667,7 +667,7 @@ protected:
 
 // Builds LoRA subgraph that consists of several matrix and element-wise multiplications with optional data type
 // conversions and reshapes to build a consistent graph.
-NodePtr tensors_multiplication(NodePtr input,
+NodePtr tensors_multiplication(ov::Output<ov::Node> input,
                                const NodeVector multipliers,
                                ov::Output<ov::Node> target,
                                bool transpose_weights,
@@ -683,14 +683,14 @@ NodePtr tensors_multiplication(NodePtr input,
         if (normalized->get_output_element_type(0) != target_type) {
             normalized = std::make_shared<v0::Convert>(normalized, target_type);
             if (std::dynamic_pointer_cast<v0::Constant>(normalized)) {
-                input->get_rt_info()["decompression"];
+                input.get_node()->get_rt_info()["decompression"];
             }
         }
         if (normalized->get_output_partial_shape(0).rank().get_length() > 2) {
             // FIXME: Any other shape patterns possible?
             normalized = squeeze_2d(normalized);
         }
-        if (input) {
+        if (input.get_node()) {
             if (i == alpha_pos) {  // Multiply for alpha
                 // TODO: Apply alpha multiplication separately
                 input = std::make_shared<v1::Multiply>(input, normalized);
@@ -712,13 +712,13 @@ NodePtr tensors_multiplication(NodePtr input,
         // TODO: Stash transposition constant to reuse
         auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
         input = std::make_shared<v1::Transpose>(input, transposition);
-    } else if (input->get_output_partial_shape(0).rank().get_length() != target_rank) {
+    } else if (input.get_partial_shape().rank().get_length() != target_rank) {
         input = unsqueeze(input, target_rank);
     }
 
     input = std::make_shared<v1::Add>(target, input);
 
-    return input;
+    return input.get_node_shared_ptr();
 }
 
 // Taking a node detects an optional weight decompression pattern Constant -> Convert.
@@ -930,7 +930,7 @@ public:
             }
 
             auto result = std::make_shared<v0::Result>(
-                tensors_multiplication(nullptr,
+                tensors_multiplication({},
                                        NodeVector{parameters.begin() + 1, parameters.end()},
                                        target,
                                        false,
@@ -1001,7 +1001,7 @@ public:
 
         NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
 
-        replacement = tensors_multiplication(activations.get_node_shared_ptr(),
+        replacement = tensors_multiplication(activations,
                                              lora_variables,
                                              target,
                                              true,
