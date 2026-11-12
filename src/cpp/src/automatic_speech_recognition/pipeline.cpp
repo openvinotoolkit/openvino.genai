@@ -80,6 +80,9 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
 
     OPENVINO_ASSERT(!properties.count(ov::genai::forced_aligner.name()) || model_type == ASRModelType::qwen3_asr,
                     "'forced_aligner' is only supported for Qwen3-ASR models.");
+    OPENVINO_ASSERT(
+        !properties.count(ov::genai::audio_chunk_duration.name()) || model_type == ASRModelType::sense_voice,
+        "'audio_chunk_duration' is only supported for SenseVoiceSmall models.");
 
     // Split export: audio encoder, text embeddings and language model.
     if (model_type == ASRModelType::qwen3_asr && is_qwen3_asr_split_export(models_path)) {
