@@ -8,11 +8,11 @@ hf_transfer==0.1.9
 tqdm==4.70.1
 gguf==0.19.0
 # genai-cli provides the transformers version a natively exported model needs (e.g. molmo2) with uv
-uv==0.13.5
+uv==0.13.7
 
 # rag requirements
 langchain_community==0.4.2
-langchain-core==1.7.4
+langchain-core==1.7.6
 
 # requirements for specific models
 # - Qwen/Qwen-7B
@@ -22,7 +22,7 @@ einops==0.8.2
 torchvision==0.26.0
 pillow==13.0.0
 # - openbmb/MiniCPM-V-2
-timm==1.0.30
+timm==1.0.31
 # - openai/whisper-base
 librosa==0.11.0
 soundfile==0.14.0
@@ -35,11 +35,11 @@ peft==0.21.2
 # - openbmb/MiniCPM-o-2_6
 vocos==0.1.0
 torchaudio==2.11.0
-vector-quantize-pytorch==1.32.1
+vector-quantize-pytorch==1.32.2
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
 av==18.1.0; python_version < "3.12"
 av==19.0.2; python_version >= "3.12"
-imageio==2.37.4
+imageio==2.38.1
 decord==0.6.0; platform_system != "Darwin"
 opencv-python==5.0.0.93
 # - kokoro TTS

@@ -98,7 +98,8 @@ int main(int argc, char* argv[]) {
 
     CHECK_STATUS(ov_genai_whisper_pipeline_get_generation_config(pipeline, &config));
     CHECK_STATUS(ov_genai_whisper_generation_config_set_task(config, "transcribe"));
-    CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, true));
+    // Uncomment to also print segment-level timestamps.
+    // CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, true));
     CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));
 
     CHECK_STATUS(ov_genai_whisper_decoded_results_get_string(results, NULL, &output_size));
