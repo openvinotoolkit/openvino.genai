@@ -8,7 +8,7 @@ hf_transfer==0.1.9
 tqdm==4.70.1
 gguf==0.19.0
 # genai-cli provides the transformers version a natively exported model needs (e.g. molmo2) with uv
-uv==0.13.5
+uv==0.13.7
 
 # rag requirements
 langchain_community==0.4.2
@@ -39,7 +39,7 @@ vector-quantize-pytorch==1.32.2
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
 av==18.1.0; python_version < "3.12"
 av==19.0.2; python_version >= "3.12"
-imageio==2.37.4
+imageio==2.38.1
 decord==0.6.0; platform_system != "Darwin"
 opencv-python==5.0.0.93
 # - kokoro TTS

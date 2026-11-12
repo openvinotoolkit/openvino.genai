@@ -1474,10 +1474,190 @@ process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& token
     return result;
 }
 
+SampledBlock Sampler::_start_block(const SequenceGroup::Ptr& sequence_group, size_t first_row) {
+    const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+    OPENVINO_ASSERT(sampling_params.is_greedy_decoding(), "The DFlash draft supports greedy decoding only.");
+    std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1);
+    Sequence::Ptr sequence = running_sequences.front();
+
+    SampledBlock block;
+    block.first_row = first_row;
+    // A window that stopped before its first candidate row gathers nothing.
+    block.num_rows = sequence_group->get_output_seq_len();
+    if (block.num_rows == 0) {
+        return block;
+    }
+    // Every token after the seed is a placeholder, including those past the rows the scheduler ran.
+    const size_t num_unforwarded_rows =
+        sequence_group->get_prompt_len() + sequence->get_generated_len() - sequence_group->get_context_len();
+    sequence->remove_last_tokens(num_unforwarded_rows + block.num_rows + m_block_sampling_start_offset - 1);
+
+    const size_t generated_len = sequence->get_generated_len();
+    block.anchor_token =
+        generated_len > 0 ? sequence->get_generated_ids().back() : sequence_group->get_prompt_ids().back();
+    const size_t max_new_tokens = sequence_group->get_max_new_tokens();
+    // The target generates one more token after the last candidate it validates.
+    block.num_candidates =
+        max_new_tokens - 1 > generated_len ? std::min(block.num_rows, max_new_tokens - 1 - generated_len) : 0;
+    return block;
+}
+
+int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
+                                     const ov::genai::GenerationConfig& sampling_params,
+                                     Logits& logits,
+                                     RequestSamplerContext& context) {
+    LogitProcessor& logit_processor = context.logit_processor;
+    logit_processor.update_generated_len(sequence->get_generated_len());
+    logit_processor.apply(logits);
+    const Token token = _greedy_sample(logits, sampling_params.logprobs);
+    register_new_token(token, sequence, logit_processor, true, false);
+    return token.m_index;
+}
+
+void Sampler::_append_block_token(const Sequence::Ptr& sequence,
+                                  const BlockToken& token,
+                                  RequestSamplerContext& context) {
+    register_new_token(Token(token.log_prob, token.token), sequence, context.logit_processor, true, false);
+}
+
+SequenceGroupSamplingInfo Sampler::_sample_block_from_sequence_group(const SequenceGroup::Ptr& sequence_group,
+                                                                     const ov::Tensor& sequence_group_logits,
+                                                                     RequestSamplerContext& context) {
+    SequenceGroupSamplingInfo sg_sampling_info;
+    const SampledBlock block = _start_block(sequence_group, 0);
+    const Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
+    for (size_t candidate = 0; candidate < block.num_candidates; ++candidate) {
+        Logits logits = _get_logit_vector(sequence_group_logits, 0, block.num_rows - 1 - candidate);
+        _sample_block_token(sequence, sequence_group->get_sampling_parameters(), logits, context);
+    }
+    sg_sampling_info.sampler_output.num_generated_tokens = block.num_candidates;
+    return sg_sampling_info;
+}
+
+std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                                               const std::vector<size_t>& first_rows,
+                                                               const ov::Tensor& logits) {
+    std::vector<SequenceGroupSamplingInfo> sampling_infos(sequence_groups.size());
+    // the blocks with candidates to draw, and the request each belongs to
+    std::vector<SampledBlock> blocks;
+    std::vector<size_t> block_requests;
+    for (size_t idx = 0; idx < sequence_groups.size(); ++idx) {
+        const SampledBlock block = _start_block(sequence_groups[idx], first_rows[idx]);
+        if (block.num_candidates > 0) {
+            blocks.push_back(block);
+            block_requests.push_back(idx);
+        }
+    }
+    if (blocks.empty()) {
+        return sampling_infos;
+    }
+    m_block_row_source->prepare(blocks, logits);
+
+    std::vector<Sequence::Ptr> sequences;
+    std::vector<RequestSamplerContext*> contexts;
+    for (const size_t idx : block_requests) {
+        sequences.push_back(sequence_groups[idx]->get_running_sequences().front());
+        contexts.push_back(&m_request_contexts.at(sequence_groups[idx]->get_request_id()));
+    }
+    const auto params = [&](size_t block) -> const ov::genai::GenerationConfig& {
+        return sequence_groups[block_requests[block]]->get_sampling_parameters();
+    };
+    const size_t vocab_size = logits.get_shape().back();
+    // The tasks reference the state above, so all of them finish before an exception leaves.
+    const auto wait_all = [](auto& futures) {
+        for (auto& future : futures) {
+            future.wait();
+        }
+    };
+    std::vector<size_t> num_drawn(blocks.size(), 0);
+    if (!m_block_row_source->is_position_major()) {
+        std::vector<std::future<size_t>> futures;
+        for (size_t block = 0; block < blocks.size(); ++block) {
+            futures.push_back(m_thread_pool.submit([&, block]() -> size_t {
+                if (auto tokens = m_block_row_source->draw(block, params(block))) {
+                    for (const auto& token : *tokens) {
+                        _append_block_token(sequences[block], token, *contexts[block]);
+                    }
+                    return tokens->size();
+                }
+                std::vector<float> row(vocab_size);
+                int64_t previous_token = blocks[block].anchor_token;
+                size_t position = 0;
+                for (; position < blocks[block].num_candidates; ++position) {
+                    if (!m_block_row_source->fill_row(block, position, previous_token, row.data())) {
+                        break;
+                    }
+                    Logits logits{row.data(), vocab_size};
+                    previous_token = _sample_block_token(sequences[block], params(block), logits, *contexts[block]);
+                }
+                return position;
+            }));
+        }
+        wait_all(futures);
+        for (size_t block = 0; block < blocks.size(); ++block) {
+            num_drawn[block] = futures[block].get();
+        }
+    } else {
+        std::vector<int64_t> previous_tokens(blocks.size());
+        // allocated on the first fill_row() of a block; draw_token() needs no row
+        std::vector<std::vector<float>> rows(blocks.size());
+        std::vector<size_t> walking(blocks.size());
+        for (size_t block = 0; block < blocks.size(); ++block) {
+            previous_tokens[block] = blocks[block].anchor_token;
+            walking[block] = block;
+        }
+        for (size_t position = 0; !walking.empty(); ++position) {
+            std::vector<int64_t> walking_tokens;
+            for (const size_t block : walking) {
+                walking_tokens.push_back(previous_tokens[block]);
+            }
+            m_block_row_source->step(position, walking, walking_tokens);
+            std::vector<std::future<bool>> futures;
+            for (const size_t block : walking) {
+                futures.push_back(m_thread_pool.submit([&, block, position]() -> bool {
+                    if (auto token = m_block_row_source->draw_token(block, position, params(block))) {
+                        _append_block_token(sequences[block], *token, *contexts[block]);
+                        previous_tokens[block] = token->token;
+                        return true;
+                    }
+                    rows[block].resize(vocab_size);
+                    if (!m_block_row_source->fill_row(block, position, previous_tokens[block], rows[block].data())) {
+                        return false;
+                    }
+                    Logits logits{rows[block].data(), vocab_size};
+                    previous_tokens[block] =
+                        _sample_block_token(sequences[block], params(block), logits, *contexts[block]);
+                    return true;
+                }));
+            }
+            wait_all(futures);
+            std::vector<size_t> still_walking;
+            for (size_t step = 0; step < walking.size(); ++step) {
+                const size_t block = walking[step];
+                if (futures[step].get()) {
+                    ++num_drawn[block];
+                    if (position + 1 < blocks[block].num_candidates) {
+                        still_walking.push_back(block);
+                    }
+                }
+            }
+            walking = std::move(still_walking);
+        }
+    }
+    for (size_t block = 0; block < blocks.size(); ++block) {
+        sampling_infos[block_requests[block]].sampler_output.num_generated_tokens = num_drawn[block];
+    }
+    return sampling_infos;
+}
+
 SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits, 
                                                               RequestSamplerContext& ctx,
                                                               bool is_validation_mode_enabled,
                                                               bool notify_handle) {
+    if (m_block_sampling) {
+        return _sample_block_from_sequence_group(sequence_group, sequence_group_logits, ctx);
+    }
     SequenceGroupSamplingInfo sg_sampling_info;
     // Assistant pipeline info is relevant for speculative and prompt lookup decoding
     AssistingPipelineInfo& assisting_pipeline_info = sg_sampling_info.get_assisting_pipeline_info();
@@ -1752,6 +1932,9 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             }
         }
     } sampling_futures_waiter{sg_sampling_future_map};
+    // the requests whose blocks a row source gives the rows of, with the first logits row of each
+    std::vector<SequenceGroup::Ptr> block_sequence_groups;
+    std::vector<size_t> block_first_rows;
 
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
@@ -1789,7 +1972,10 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         }
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, output_seq_len, vocab_size}, (void *)sequence_group_logits_data);
-        if (sequence_group->requires_sampling()) {
+        if (sequence_group->requires_sampling() && m_block_sampling && m_block_row_source) {
+            block_sequence_groups.push_back(sequence_group);
+            block_first_rows.push_back(currently_processed_tokens);
+        } else if (sequence_group->requires_sampling()) {
             // Call sample_from_sequence_group asynchronously
             auto [future_it, inserted] = sg_sampling_future_map.emplace(
                 request_id,
@@ -1807,6 +1993,14 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         }
         // accumulate a number of processed tokens
         currently_processed_tokens += output_seq_len * num_running_sequences;
+    }
+    if (!block_sequence_groups.empty()) {
+        auto block_sampling_infos = _sample_blocks(block_sequence_groups, block_first_rows, logits);
+        for (size_t idx = 0; idx < block_sequence_groups.size(); ++idx) {
+            std::promise<SequenceGroupSamplingInfo> sampled;
+            sampled.set_value(std::move(block_sampling_infos[idx]));
+            sg_sampling_future_map.emplace(block_sequence_groups[idx]->get_request_id(), sampled.get_future());
+        }
     }
 
     // Update sequence groups internal states after sampling is done
@@ -1876,6 +2070,10 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
+    // Building a LogitProcessor scans the whole prompt, so a request that already has one keeps it.
+    if (m_request_contexts.count(request_id)) {
+        return;
+    }
     std::shared_ptr<StructuredOutputController> structured_output_controller = nullptr;
     if (m_tokenizer.m_pimpl != nullptr) {
         structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller();

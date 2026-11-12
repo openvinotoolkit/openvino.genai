@@ -74,7 +74,11 @@ Tags let you place media anywhere, including between spans of text:
 8. MiniCPM-V-4.7: `<video>./</video>\n`
 9. LFM3-VL: `<|vision_start|><|video|><|vision_end|>`
 10. LFM3-Omni: `<|vision_start|><|video|><|vision_end|>`
-11. Molmo2: `<|video|>`
+11. MiniCPM-V-4_5: `<image>./</image>\n`
+12. Molmo2: `<|video|>`
+
+MiniCPM-V-4_5 uses the same native tag for images and videos. Use indexed universal
+tags (`<ov_genai_image_i>` and `<ov_genai_video_i>`) to distinguish media in mixed input.
 
 #### Audio Tags
 
@@ -304,7 +308,8 @@ Without a speech streamer, both fields have no effect and the whole audio is ret
 ### Working with LoRA Adapters
 
 For Vision Language Models (VLMs), LoRA adapters can customize the generated text by applying adapters to the language-model (LLM) part.
-LoRA adapters that target the vision encoder or other multimodal components are not supported.
+Qwen-VL models also support vision LoRA adapters targeting the `vision_embeddings_merger` submodel, using the same `adapters` configuration.
+LoRA adapters targeting other multimodal components are not supported.
 
 Refer to the [LoRA Adapters](/docs/guides/lora-adapters) guide for more details on working with LoRA adapters.
 
