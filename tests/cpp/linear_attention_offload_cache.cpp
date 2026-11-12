@@ -211,6 +211,8 @@ TEST(TestLinearAttentionOffloadCache, WarmsNewestCheckpointAcrossMissingEarlierO
     // The checkpoint at token 8 is missing, as when a pass crossed it without keeping its state.
     fixture.fill_block(0, /*seed=*/5);
     offload_cache->on_blocks_overwritten(sequence->get_hash(4, cache_interval), make_block_set(0));
+    // A store that arrives while another one is in flight is dropped, so wait for each one.
+    offload_cache->flush();
     fixture.fill_block(1, /*seed=*/9);
     offload_cache->on_blocks_overwritten(sequence->get_hash(12, cache_interval), make_block_set(1));
     offload_cache->flush();
