@@ -775,6 +775,14 @@ def test_sensevoice_batch_streamer(sample_from_dataset, pipelines_fixture, strea
         genai_pipe.generate([sample_from_dataset, sample_from_dataset], streamer=streamer)
 
 
+@pytest.mark.parametrize("model_type", ["whisper", "qwen3_asr", "fun_asr"])
+def test_audio_chunk_duration_rejected_for_non_sensevoice(tmp_path, model_type):
+    # The dispatcher rejects the property before constructing a backend.
+    (tmp_path / "config.json").write_text(json.dumps({"model_type": model_type}))
+    with pytest.raises(RuntimeError, match="only supported for SenseVoiceSmall"):
+        ov_genai.ASRPipeline(tmp_path, "CPU", audio_chunk_duration=10)
+
+
 @pytest.mark.sensevoice
 def test_sensevoice_audio_chunk_duration():
     model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
