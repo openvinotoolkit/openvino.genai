@@ -2828,7 +2828,9 @@ public:
      *
      * Restored blocks are left unowned, so a subsequent prefix restore claims them the same way it claims
      * blocks that never left memory. Stops at the first prompt block the source cannot supply, because a
-     * restore chain has to be contiguous to be usable.
+     * restore chain has to be contiguous to be usable. A manager that restores only the latest prefix block
+     * (linear attention) brings back just the newest block the source can supply, since each of its blocks holds
+     * the complete state at its position and does not depend on the earlier ones.
      *
      * @return The number of blocks brought back into memory.
      */
@@ -2865,6 +2867,18 @@ public:
             }
         }
 
+        std::vector<size_t> walk_lengths = chain_lengths;
+        if (m_restore_latest_prefix_block_only) {
+            walk_lengths.clear();
+            for (auto it = chain_lengths.rbegin(); it != chain_lengths.rend(); ++it) {
+                const auto hash = sequence->get_hash(*it, m_block_size);
+                if (m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) || available.count(hash) != 0) {
+                    walk_lengths.push_back(*it);
+                    break;
+                }
+            }
+        }
+
         size_t num_restored = 0;
         // Hold every chain block until the walk is over. A warmed block keeps the timestamp it was created
         // with, so releasing it immediately would make it the very next block the allocator overwrites.
@@ -2878,7 +2892,7 @@ public:
                 to_load.push_back(hash);
             }
         };
-        for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
+        for (const size_t content_len : walk_lengths) {
             const auto hash = sequence->get_hash(content_len, m_block_size);
             if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) == 0) {
                 break;
@@ -2922,7 +2936,7 @@ public:
             return true;
         };
 
-        for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
+        for (const size_t content_len : walk_lengths) {
             if (!extend_chain(content_len)) {
                 break;
             }
