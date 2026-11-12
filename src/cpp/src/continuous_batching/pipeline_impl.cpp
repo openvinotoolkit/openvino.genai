@@ -130,16 +130,15 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config,
-    bool is_validation_mode_enabled)
-    : ContinuousBatchingImpl(model,
-                             tokenizer,
-                             scheduler_config,
-                             device,
-                             properties,
-                             generation_config,
-                             is_validation_mode_enabled) {
+    bool is_validation_mode_enabled) {
+    m_tokenizer = tokenizer;
+    m_generation_config = generation_config;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
     m_inputs_embedder = inputs_embedder;
-    
+
+    prepare_model_for_paged_attention(model, scheduler_config);
+    initialize_pipeline(model, scheduler_config, device, properties);
+
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
@@ -188,8 +187,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
-        m_adapter_controller =
-            AdapterController(model, *m_generation_config.adapters, device);  // TODO: Make the prefix name configurable
+        set_foreign_tensor_name_prefix(*m_generation_config.adapters,
+                                      m_inputs_embedder ? m_inputs_embedder->get_lora_tensor_prefix() : std::nullopt);
+        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();

@@ -583,6 +583,14 @@ EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
 }
 
+void InputsEmbedder::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_impl->set_adapters(adapters);
+}
+
+std::optional<std::string> InputsEmbedder::get_lora_tensor_prefix() const {
+    return m_impl->get_lora_tensor_prefix();
+}
+
 ov::genai::utils::CacheState& InputsEmbedder::get_cache_state() {
     return m_impl->get_cache_state();
 }
