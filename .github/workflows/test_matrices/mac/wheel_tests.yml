@@ -73,6 +73,13 @@
   components:
     - tokenizers
 
+- name: genai-cli tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_genai_cli.py
+  timeout: 15
+  components:
+    - genai_cli
+
 # Only supported on X64 or ARM with SVE support
 # - name: API tests
 #   cmd: tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py
