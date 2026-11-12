@@ -48,6 +48,14 @@ def gen_iterate_data(
     return iter_data
 
 
+def get_end_to_end_token_throughput(iter_data_list):
+    measured = [data for data in iter_data_list if data["iteration"] != 0 and "end_to_end_token_throughput" in data]
+    total_time = sum(data["generation_time"] for data in measured)
+    if total_time > 0:
+        return sum(data["throughput_token_count"] for data in measured) / total_time
+    return None
+
+
 def embed_iterate_data(
     iter_idx="",
     in_size="",
