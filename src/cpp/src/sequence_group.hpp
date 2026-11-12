@@ -470,6 +470,9 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     
     ov::Tensor m_per_layer_inputs;
 
+    ov::Tensor m_ngram_embeddings;
+    ov::Tensor m_ngram_history;
+
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     size_t m_num_evicted_tokens = 0;
@@ -580,6 +583,16 @@ public:
                             tensor.data<const int64_t>(),
                             tensor.data<const int64_t>() + tensor.get_size()
                         );
+                    } else if (input_name == "ngram_embeddings") {
+                        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32, "ngram_embeddings must have element type f32");
+                        const auto& shape = tensor.get_shape();
+                        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1 && shape[1] == prompt_len,
+                            "ngram_embeddings must have shape [1, tokens, num_ple_layers, ple_embed_dim], got ", shape);
+                        m_ngram_embeddings = ov::Tensor(tensor.get_element_type(), shape);
+                        tensor.copy_to(m_ngram_embeddings);
+                    } else if (input_name == "ngram_history") {
+                        m_ngram_history = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
+                        tensor.copy_to(m_ngram_history);
                     } else {
                         OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }
@@ -897,6 +910,16 @@ public:
     const ov::Tensor& get_per_layer_inputs() const {
         OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         return m_per_layer_inputs;
+    }
+
+    const ov::Tensor& get_ngram_embeddings() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_ngram_embeddings;
+    }
+
+    const ov::Tensor& get_ngram_history() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_ngram_history;
     }
 
     size_t get_hidden_size() const {

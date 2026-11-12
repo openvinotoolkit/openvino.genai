@@ -22,6 +22,7 @@
 #include "visual_language/vision_token_pruning_processor.hpp"
 
 namespace ov::genai {
+
 struct VLMPerfMetrics;
 
 const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
@@ -86,7 +87,7 @@ public:
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
     
     // returns ngram embeddings callback, or nullptr if not available
-    std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
     get_ngram_embeddings_callback();
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
@@ -117,6 +118,11 @@ public:
 
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel::Ptr get_embedding_model() const;
+
+    // sets LoRA adapters to apply to the vision sub-models during the next generation
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
+
+    std::optional<std::string> get_lora_tensor_prefix() const;
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
@@ -214,6 +220,9 @@ private:
         virtual ~IInputsEmbedder() = default;
 
     public:
+        // Architectures that support LoRA for the vision part override this to pick up the per-generation config.
+        virtual void set_adapters(const std::optional<AdapterConfig>& adapters) {}
+        virtual std::optional<std::string> get_lora_tensor_prefix() const { return std::nullopt; }
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt,
@@ -233,7 +242,7 @@ private:
             return nullptr;
         }
 
-        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+        virtual std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
         get_ngram_embeddings_callback() {
             return nullptr;
         }
