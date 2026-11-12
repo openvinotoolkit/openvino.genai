@@ -43,6 +43,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"minicpmv4_7", VLMModelType::MINICPMV4_7},
         {"mistral3", VLMModelType::MISTRAL3},
         {"lfm3_vl", VLMModelType::LFM3_VL},
+        {"molmo2", VLMModelType::MOLMO2},
     };
 
     auto it = model_types_map.find(value);
@@ -104,6 +105,21 @@ VLMConfig::VLMConfig(const nlohmann::json& parsed) {
     // gemma4
     read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
     read_json_param(parsed, "audio_token_id", audio_token_id);
+
+    // molmo2 (allenai/MolmoWeb-4B): image special token ids are stored at the top level of config.json
+    if (model_type == VLMModelType::MOLMO2) {
+        read_json_param(parsed, "text_config.hidden_size", hidden_size);
+        // The ViT patch size; InputsEmbedderMolmo2::encode_images passes it to the image preprocessing.
+        read_json_param(parsed, "vit_config.image_patch_size", vision_config_patch_size);
+        read_json_param(parsed, "image_patch_id", molmo2_image_patch_id);
+        read_json_param(parsed, "image_col_id", molmo2_image_col_id);
+        read_json_param(parsed, "image_start_token_id", molmo2_image_start_token_id);
+        read_json_param(parsed, "image_end_token_id", molmo2_image_end_token_id);
+        read_json_param(parsed, "low_res_image_start_token_id", molmo2_low_res_image_start_token_id);
+        read_json_param(parsed, "image_low_res_id", molmo2_image_low_res_id);
+        read_json_param(parsed, "frame_start_token_id", molmo2_frame_start_token_id);
+        read_json_param(parsed, "frame_end_token_id", molmo2_frame_end_token_id);
+    }
 
     // For gemma3 `text_config.use_bidirectional_attention` can be absent or boolean
     if (parsed.contains("text_config") && parsed.at("text_config").contains("use_bidirectional_attention") &&

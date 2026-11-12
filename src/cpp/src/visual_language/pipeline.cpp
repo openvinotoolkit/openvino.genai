@@ -143,7 +143,10 @@ private:
 
         // NPU does not support history, so use full chat history on each chat iteration.
         // Linear attention forces full KV cache reset, need to provide all image/video embeddings.
-        m_use_full_chat_history = m_is_npu || cache_state.has_linear();
+        // The Molmo2 chat template places the media of all turns in front of the conversation, so a new image or video
+        // goes before the text of earlier turns and the KV cache cannot be reused past the first image.
+        m_use_full_chat_history =
+            m_is_npu || cache_state.has_linear() || m_vlm_config.model_type == VLMModelType::MOLMO2;
     }
 
     void initialize_from_model_and_dir(

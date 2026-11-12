@@ -500,6 +500,7 @@ private:
     friend class InputsEmbedderMiniCPMv4_7;
     friend class InputsEmbedderMistral3;
     friend class InputsEmbedderLFM3VL;
+    friend class InputsEmbedderMolmo2;
 };
 
 /// @brief Universal-tag pattern for a modality. A switch, not a ternary on IMAGE: a ternary would

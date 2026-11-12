@@ -12,7 +12,7 @@
 #include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
-#include "openvino/frontend/gguf/extension/genai.hpp"
+#include "openvino/frontend/gguf/adapt_to_genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
 
 #include "gguf_utils/building_blocks.hpp"
@@ -143,11 +143,12 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
-                                                      const ov::genai::ExtensionList& extensions) {
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path,
+                                                        const ov::genai::ExtensionList& extensions,
+                                                        const ov::frontend::gguf::GenAIAdaptOptions& options) {
     ov::frontend::gguf::FrontEnd frontend;
-    ov::genai::register_gguf_extensions(frontend, extensions, ov::frontend::gguf::GenAIExtension::InputMode::IDS_TO_LOGITS);
-    return frontend.convert(frontend.load(model_path));
+    ov::genai::register_gguf_extensions(frontend, extensions);
+    return ov::frontend::gguf::adapt_to_genai(frontend.convert(frontend.load(model_path)), options);
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
@@ -179,7 +180,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        model = convert_gguf_with_frontend(model_path, extensions);
+        model = convert_gguf_with_frontend(model_path, extensions).at("language");
     }
 
     if (enable_save_ov_model) {

@@ -132,6 +132,7 @@ std::pair<std::string, Any> draft_model(
     const std::filesystem::path openvino_model_name = is_mtp ? "openvino_mtp_model.xml" : "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
     utils::dflash::apply_dflash_rt_info(model, plugin_config);
+    utils::dflash::read_markov_head(models_path, plugin_config);
     if (is_mtp) {
         plugin_config["mtp_mode"] = true;
     }

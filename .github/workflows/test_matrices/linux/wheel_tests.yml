@@ -191,6 +191,13 @@
   components:
     - tokenizers
 
+- name: genai-cli tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_genai_cli.py
+  timeout: 15
+  components:
+    - genai_cli
+
 - name: API tests
   cmd: |-
     # lfm2 conversion fails in CI: CVS-195736
@@ -290,6 +297,28 @@
     python -m pip install transformers==5.2.0
     python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@ffc8870cae17baccf8d45e2e0891e2eb99a9ede3"
     python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: DFlash and DSpark speculative decoding tests
+  cmd: |-
+    # The DFlash and DSpark drafts need the export from optimum-intel main, which exports Qwen3.5 only with
+    # transformers>=5.15. The MiniCPM-V 4.7 pairs need transformers 5.18 and run in their own job.
+    python -m pip install transformers==5.15.1
+    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f09a56ace88149cd341233ddfa2bc018bff7c079"
+    python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "(dflash or deepspec or dspark) and not minicpmv47"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: DSpark speculative decoding tests (MiniCPM-V 4.7)
+  cmd: |-
+    # The MiniCPM-V 4.7 target needs transformers 5.18. The DSpark draft export needs optimum-intel f09a56ac, which
+    # declares transformers<5.16, so it is installed without dependencies.
+    python -m pip install "transformers==5.18.*"
+    python -m pip install -U --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f09a56ace88149cd341233ddfa2bc018bff7c079"
+    python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "minicpmv47"
   timeout: 90
   components:
     - speculative_decoding
