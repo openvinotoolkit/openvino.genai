@@ -9,11 +9,8 @@
 #include "openvino/opsets/opset15.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
-#include "visual_language/gemma4/audio_encoder.hpp"
-#include "visual_language/gemma4/audio_feature_extractor.hpp"
 #include "gguf_utils/gguf_multimodal.hpp"
 #include "gguf_utils/gguf_clip_adapter.hpp"
-#include "gguf_utils/gguf_frontend_extensions.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "sampling/sampler.hpp"
 #include "visual_language/clip.hpp"
@@ -450,43 +447,6 @@ TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
     }
 }
 
-TEST(GGUFMultimodal, AudioAdapterReusesGemma4Encoders) {
-    using namespace ov::opset15;
-    using namespace ov::genai;
-    for (bool unified : {false, true}) {
-        auto native = std::make_shared<Parameter>(ov::element::f32,
-            unified ? ov::PartialShape{1, 1, -1, 640} : ov::PartialShape{1, 1, 128, -1});
-        native->output(0).set_names({unified ? "waveform_frames" : "features"});
-        ov::Output<ov::Node> embedding = std::make_shared<Squeeze>(native,
-            Constant::create(ov::element::i64, {1}, {1}));
-        if (!unified)
-            embedding = std::make_shared<Transpose>(embedding,
-                Constant::create(ov::element::i64, {3}, {0, 2, 1}));
-        embedding.set_names({"audio_features"});
-        auto model = std::make_shared<ov::Model>(ov::OutputVector{embedding}, ov::ParameterVector{native});
-        adapt_gguf_audio_encoder(model, unified);
-        auto encoder = AudioEncoderGemma4::create(model,
-            unified ? VLMModelType::GEMMA4_UNIFIED : VLMModelType::GEMMA4, "CPU", {});
-        for (size_t samples : {1000, 1281}) {
-            ov::Tensor waveform(ov::element::f32, {samples});
-            std::fill_n(waveform.data<float>(), samples, .25f);
-            auto actual = encoder->encode(waveform);
-            if (unified) {
-                ASSERT_EQ(actual.get_shape(), (ov::Shape{1, (samples + 639) / 640, 640}));
-                EXPECT_FLOAT_EQ(actual.data<const float>()[0], .25f);
-                EXPECT_FLOAT_EQ(actual.data<const float>()[actual.get_size() - 1], 0.f);
-            } else {
-                auto expected = Gemma4AudioFeatureExtractor().extract(waveform);
-                const auto valid = std::count(expected.input_features_mask.data<const bool>(),
-                    expected.input_features_mask.data<const bool>() + expected.input_features_mask.get_size(), true);
-                ASSERT_EQ(actual.get_shape(), (ov::Shape{1, size_t(valid), 128}));
-                for (size_t i = 0; i < actual.get_size(); ++i)
-                    EXPECT_FLOAT_EQ(actual.data<const float>()[i], expected.input_features.data<const float>()[i]);
-            }
-        }
-    }
-}
-
 TEST(GGUFMultimodal, ExtremeAspectRatiosRespectPixelBudget) {
     EXPECT_THROW(bounded_image_size(48, 96000, 48, 0, 1120 * 48 * 48), ov::Exception);
     EXPECT_THROW(bounded_image_size(42, 188160, 42, 0, 1120 * 42 * 42), ov::Exception);
@@ -527,18 +487,6 @@ TEST(GGUFMultimodal, Gemma4HonorsImagePadding) {
     const auto stretched = stretched_encoder.encode(image, {}).resized_source;
     EXPECT_EQ(padded.get_shape(), stretched.get_shape());
     EXPECT_FALSE(std::equal(padded.data<float>(), padded.data<float>() + padded.get_size(), stretched.data<float>()));
-}
-
-TEST(GGUFMultimodal, PipelineControlsGenAIExtensionMode) {
-    using namespace ov::genai;
-    using Extension = ov::frontend::gguf::GenAIExtension;
-    for (const auto mode : {Extension::InputMode::IDS_TO_LOGITS, Extension::InputMode::EMBEDS_TO_LOGITS}) {
-        ov::frontend::gguf::FrontEnd frontend;
-        auto supplied = std::make_shared<Extension>(Extension::InputMode::IDS_TO_LOGITS);
-        const auto selected = register_gguf_extensions(frontend, {supplied}, mode);
-        EXPECT_NE(selected, supplied);
-        EXPECT_NE(selected, nullptr);
-    }
 }
 
 TEST(GGUFMultimodal, ClipRequiresCompatibleLanguageInputs) {

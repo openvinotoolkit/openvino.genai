@@ -202,8 +202,9 @@ can also pass created extension objects using `ov::genai::extensions(...)`; Pyth
 pass extension objects exposed by their OpenVINO bindings, using the item types listed above.
 
 A custom `ov::OpExtension` alone does not translate a GGML operation; provide a corresponding
-conversion extension when the GGUF graph needs that translation. GenAI supplies its own
-`GenAIExtension` for the pipeline's language-model interface. Extensions do not add GenAI
+conversion extension when the GGUF graph needs that translation. After conversion, GenAI obtains
+its language and encoder models from the frontend's `adapt_to_genai`, so a supplied
+`GenAIExtension` is ignored. Extensions do not add GenAI
 preprocessing, tokenizer support, or new supported language/projector pairs: the model must still
 meet the [GGUF pipeline requirements](./gguf.mdx).
 

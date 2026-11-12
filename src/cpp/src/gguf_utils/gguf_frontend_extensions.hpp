@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <optional>
-
 #include "gguf_tokenizer.hpp"
 #include "openvino/frontend/gguf/extension/genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
@@ -12,11 +10,9 @@
 
 namespace ov::genai {
 
-inline std::shared_ptr<ov::frontend::gguf::GenAIExtension> register_gguf_extensions(
-    ov::frontend::gguf::FrontEnd& frontend,
-    const ExtensionList& extensions,
-    std::optional<ov::frontend::gguf::GenAIExtension::InputMode> genai_mode = std::nullopt) {
-    std::shared_ptr<ov::frontend::gguf::GenAIExtension> genai_extension;
+// GenAI adapts converted models with ov::frontend::gguf::adapt_to_genai, so a user GenAIExtension is
+// skipped rather than adapting the model during conversion.
+inline void register_gguf_extensions(ov::frontend::gguf::FrontEnd& frontend, const ExtensionList& extensions) {
     const auto add_extension = [&](const std::shared_ptr<ov::Extension>& object) {
         if (!std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(object))
             frontend.add_extension(object);
@@ -38,12 +34,6 @@ inline std::shared_ptr<ov::frontend::gguf::GenAIExtension> register_gguf_extensi
             add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
         }
     }
-
-    if (genai_mode) {
-        genai_extension = std::make_shared<ov::frontend::gguf::GenAIExtension>(*genai_mode);
-        frontend.add_extension(genai_extension);
-    }
-    return genai_extension;
 }
 
 }  // namespace ov::genai

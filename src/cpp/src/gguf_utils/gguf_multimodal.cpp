@@ -9,14 +9,11 @@
 
 #include "gguf_clip_adapter.hpp"
 #include "gguf_frontend_extensions.hpp"
+#include "gguf_modeling.hpp"
 #include "gguf_tokenizer.hpp"
 #include "gguf_utils.hpp"
-#include "openvino/core/graph_util.hpp"
-#include "openvino/frontend/gguf/adapt_mmproj_to_genai.hpp"
-#include "openvino/frontend/gguf/extension/genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
 #include "openvino/genai/gguf.hpp"
-#include "openvino/opsets/opset15.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -25,12 +22,17 @@ using nlohmann::json;
 
 class MmprojMetadata {
 public:
-    explicit MmprojMetadata(const std::shared_ptr<ov::Model>& mmproj) : m_mmproj(mmproj) {}
+    explicit MmprojMetadata(const std::shared_ptr<ov::Model>& mmproj) {
+        OPENVINO_ASSERT(mmproj->has_rt_info("gguf_mmproj"), "mmproj_path must point to a GGUF mmproj file");
+        m_metadata = mmproj->get_rt_info<ov::AnyMap>("gguf_mmproj");
+    }
     bool has(const std::string& key) const {
-        return m_mmproj->has_rt_info({"gguf_mmproj", key});
+        return m_metadata.count(key) != 0;
     }
     std::string text(const std::string& key) const {
-        return m_mmproj->get_rt_info<std::string>({"gguf_mmproj", key});
+        const auto it = m_metadata.find(key);
+        OPENVINO_ASSERT(it != m_metadata.end(), "GGUF mmproj metadata has no ", key);
+        return it->second.as<std::string>();
     }
     size_t integer(const std::string& key) const {
         return std::stoull(text(key));
@@ -47,7 +49,7 @@ public:
     }
 
 private:
-    std::shared_ptr<ov::Model> m_mmproj;
+    ov::AnyMap m_metadata;
 };
 
 struct Configs {
@@ -205,43 +207,6 @@ void validate_gguf_multimodal_dimensions(const std::shared_ptr<ov::Model>& langu
     }
 }
 
-void adapt_gguf_audio_encoder(const std::shared_ptr<ov::Model>& model, bool unified) {
-    using namespace ov::opset15;
-    const auto axes = [](std::initializer_list<int64_t> values) {
-        return Constant::create(ov::element::i64, {values.size()}, values);
-    };
-    const auto original = model->get_parameters().at(0);
-    const auto features =
-        std::make_shared<Parameter>(ov::element::f32,
-                                    unified ? ov::PartialShape{1, -1, 640} : ov::PartialShape{1, -1, 128});
-    features->output(0).set_names({"input_features"});
-    ov::Output<ov::Node> input = features;
-    if (!unified) {
-        const auto mask = std::make_shared<Parameter>(ov::element::boolean, ov::PartialShape{1, -1});
-        mask->output(0).set_names({"input_features_mask"});
-        const auto length =
-            std::make_shared<ReduceSum>(std::make_shared<Convert>(mask, ov::element::i64), axes({1}), false);
-        input = std::make_shared<Slice>(input, axes({0}), length, axes({1}), axes({1}));
-        input = std::make_shared<Transpose>(input, axes({0, 2, 1}));
-        model->add_parameters({mask});
-    }
-    ov::replace_node(original, std::make_shared<Unsqueeze>(input, axes({1})));
-    model->remove_parameter(original);
-    model->add_parameters({features});
-    auto output = model->get_results().at(0)->input_value(0);
-    output.set_names({"last_hidden_state"});
-    model->output().set_names({"last_hidden_state"});
-    if (!unified) {
-        const auto shape = std::make_shared<ShapeOf>(output);
-        const auto dimensions = std::make_shared<Gather>(shape, axes({0, 1}), axes({0}));
-        const auto mask = std::make_shared<Broadcast>(Constant::create(ov::element::boolean, {}, {true}), dimensions);
-        mask->output(0).set_names({"attention_mask"});
-        model->add_results({std::make_shared<Result>(mask)});
-        model->output(1).set_names({"attention_mask"});
-    }
-    model->validate_nodes_and_infer_types();
-}
-
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                                           const std::string& device,
                                           ov::AnyMap& properties) {
@@ -262,7 +227,6 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
 
     namespace gguf = ov::frontend::gguf;
     GGUFMultimodalModels result;
-    gguf::FrontEnd frontend;
     const auto extensions = utils::extract_extensions(properties);
     for (const auto& extension : extensions) {
         std::visit(
@@ -271,8 +235,10 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
             },
             extension);
     }
-    auto genai = register_gguf_extensions(frontend, extensions, gguf::GenAIExtension::InputMode::EMBEDS_TO_LOGITS);
-    result.language = frontend.convert(frontend.load(language.string()));
+    auto language_models = convert_gguf_with_frontend(language.string(),
+                                                      extensions,
+                                                      {gguf::pass::AdaptToGenAI::InputMode::EMBEDS_TO_LOGITS});
+    result.language = language_models.at("language");
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     auto tokenizer_metadata = take_gguf_tokenizer_metadata(result.language);
     result.stop_token_ids = gguf_stop_token_ids(tokenizer_metadata);
@@ -280,6 +246,8 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     register_gguf_extensions(projector_frontend, extensions);
     auto combined = projector_frontend.convert(projector_frontend.load(mmproj));
     const MmprojMetadata meta(combined);
+    auto encoders = gguf::adapt_to_genai(combined);
+    combined.reset();
     const auto architecture = result.language->get_rt_info<std::string>("gguf_architecture");
     const auto projector = meta.text("vision.projector");
     int64_t image_padding_id = -1;
@@ -337,28 +305,19 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                     projector);
 
     auto& vlm = result.vlm;
-    using Adapter = gguf::pass::AdaptMmprojToGenAI;
-    Adapter vision_adapter(Adapter::Modality::VISION, Adapter::Layout::VISION_ENCODERS);
-    if (clip) {
-        vlm.models["vision_embeddings"] = adapt_gguf_clip_encoder(combined);
-    } else {
-        auto vision = combined->clone();
-        vision_adapter.run_on_model(vision);
-        vlm.models = vision_adapter.get_vision_models();
+    for (auto& [name, model] : encoders) {
+        if (name.rfind("vision_embeddings", 0) == 0)
+            vlm.models[name] = std::move(model);
     }
     if (gemma4 && meta.has("audio.projector")) {
-        auto audio = combined->clone();
-        Adapter(Adapter::Modality::AUDIO).run_on_model(audio);
-        const bool unified_audio = meta.text("audio.projector") == "gemma4ua";
-        OPENVINO_ASSERT(unified_audio || (meta.text("audio.projector") == "gemma4a" &&
-                                          meta.integer("clip.audio.num_mel_bins") == 128),
+        OPENVINO_ASSERT(meta.text("audio.projector") == "gemma4ua" || (meta.text("audio.projector") == "gemma4a" &&
+                                                                       meta.integer("clip.audio.num_mel_bins") == 128),
                         "Unsupported GGUF Gemma4 audio configuration");
-        adapt_gguf_audio_encoder(audio, unified_audio);
-        vlm.models["audio_embeddings"] = audio;
+        vlm.models["audio_embeddings"] = encoders.at("audio_embeddings");
     }
-    vlm.models["text_embeddings"] = genai->get_embedding_model();
-    if (const auto& per_layer = genai->get_per_layer_embedding_model())
-        vlm.models["text_embeddings_per_layer"] = per_layer;
+    vlm.models["text_embeddings"] = language_models.at("text_embeddings");
+    if (const auto it = language_models.find("text_embeddings_per_layer"); it != language_models.end())
+        vlm.models["text_embeddings_per_layer"] = it->second;
 
     validate_gguf_multimodal_dimensions(result.language, vlm);
     const auto configs = gguf_configs(architecture, projector, meta, result);

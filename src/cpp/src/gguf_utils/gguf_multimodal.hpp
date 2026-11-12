@@ -29,8 +29,6 @@ struct GGUFMultimodalModels {
     }
 };
 
-void adapt_gguf_audio_encoder(const std::shared_ptr<ov::Model>& model, bool unified);
-
 void validate_gguf_multimodal_dimensions(const std::shared_ptr<ov::Model>& language, const VLMModels& models);
 
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
