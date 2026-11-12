@@ -1005,7 +1005,7 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image,
             }
         }
         std::fill_n(mask_data + i * pad_to_max, patch_len, 0.0f);
-        std::fill_n(mask_data + i * pad_to_max + patch_len, pad_to_max - patch_len, 1.0f);
+        std::fill_n(mask_data + i * pad_to_max + patch_len, pad_to_max - patch_len, -std::numeric_limits<float>::infinity());
     }
     ov::Tensor padded_image(encoded_image.get_element_type(), {bs, pad_to_max, encoded_image.get_shape().at(2)});
     std::memset(padded_image.data(), 0, padded_image.get_byte_size());
