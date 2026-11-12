@@ -23,6 +23,8 @@ class VisionEncoderMiniCPM : public VisionEncoder {
     ov::Tensor m_pos_embed_cache;
     // VLM config
     VLMConfig m_vlm_config;
+    // key_padding_mask value for padded resampler positions.
+    float m_padding_mask_value;
 
     EncodedImage encode_features(const ov::Tensor& frame,
                                  const ov::AnyMap& config_map,

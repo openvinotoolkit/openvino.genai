@@ -4,14 +4,27 @@
 
 #include "visual_language/minicpm/classes.hpp"
 
+#include <fstream>
+
 #include "visual_language/clip.hpp"
 #include "visual_language/vision_encoder.hpp"
 
+#include "json_utils.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
 
 namespace {
+
+// MiniCPM-V-4.5+ adds key_padding_mask to attention scores, older versions are aligned with a 0/1 mask.
+float get_resampler_padding_mask_value(const std::filesystem::path& config_dir) {
+    float version = 0.0f;
+    std::ifstream stream(config_dir / "config.json");
+    if (stream.is_open()) {
+        utils::read_json_param(nlohmann::json::parse(stream), "version", version);
+    }
+    return version >= 4.5f ? -std::numeric_limits<float>::infinity() : 1.0f;
+}
 
 std::string NATIVE_TAG = "<image>./</image>";
 constexpr char VIDEO_GROUP_MARKER[] = "<ov_genai_minicpm_video_group>";
@@ -703,6 +716,8 @@ NormalizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prom
                                                          const std::vector<EncodedImage>& images,
                                                          const std::vector<EncodedVideo>& videos) const {
     if (videos.empty()) {
+        const auto video_sequence = universal_to_native(prompt, [](std::ostream&, size_t) {}, ModalityType::VIDEO).second;
+        verify_ids(video_sequence, base_video_id, videos.size());
         return normalize_prompt(prompt, base_image_id, images);
     }
 
@@ -740,7 +755,7 @@ NormalizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prom
     auto [normalized_prompt, image_sequence] = normalize(
         unified_prompt,
         NATIVE_TAG,
-        NATIVE_TAG + '\n',
+        NATIVE_TAG,
         base_image_id,
         images.size()
     );
@@ -1005,15 +1020,17 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image,
             }
         }
         std::fill_n(mask_data + i * pad_to_max, patch_len, 0.0f);
-        std::fill_n(mask_data + i * pad_to_max + patch_len, pad_to_max - patch_len, -std::numeric_limits<float>::infinity());
+        std::fill_n(mask_data + i * pad_to_max + patch_len, pad_to_max - patch_len, m_padding_mask_value);
     }
     ov::Tensor padded_image(encoded_image.get_element_type(), {bs, pad_to_max, encoded_image.get_shape().at(2)});
     std::memset(padded_image.data(), 0, padded_image.get_byte_size());
     const size_t feature_size = encoded_image.get_shape().at(2);
+    const size_t source_length = encoded_image.get_shape().at(1);
+    const size_t copy_length = std::min(source_length, pad_to_max);
     for (size_t batch_idx = 0; batch_idx < bs; ++batch_idx) {
         std::memcpy(padded_image.data<float>() + batch_idx * pad_to_max * feature_size,
-                    encoded_image.data<float>() + batch_idx * patch_len * feature_size,
-                    patch_len * feature_size * sizeof(float));
+                    encoded_image.data<float>() + batch_idx * source_length * feature_size,
+                    copy_length * feature_size * sizeof(float));
     }
     padded_image.set_shape({output_batch, output_length, feature_size});
     key_padding_mask.set_shape({output_batch, output_length});
@@ -1034,7 +1051,9 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image,
 VisionEncoderMiniCPM::VisionEncoderMiniCPM(
         const std::filesystem::path& model_dir,
         const std::string& device,
-        const ov::AnyMap properties) : VisionEncoder{model_dir, device, properties} {
+        const ov::AnyMap properties)
+    : VisionEncoder{model_dir, device, properties},
+      m_padding_mask_value{get_resampler_padding_mask_value(model_dir)} {
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
     OPENVINO_ASSERT(m_vlm_config.query_num > 0,
                     "MiniCPM query_num must be positive, got ", m_vlm_config.query_num, ".");
@@ -1054,7 +1073,9 @@ VisionEncoderMiniCPM::VisionEncoderMiniCPM(
         const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
-        const ov::AnyMap device_config) : VisionEncoder{models_map, config_dir_path, device, device_config} {
+        const ov::AnyMap device_config)
+    : VisionEncoder{models_map, config_dir_path, device, device_config},
+      m_padding_mask_value{get_resampler_padding_mask_value(config_dir_path)} {
     const auto& resampler_model = utils::get_model_weights_pair(models_map, "resampler").first;
     const auto& resampler_weights = utils::get_model_weights_pair(models_map, "resampler").second;
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
