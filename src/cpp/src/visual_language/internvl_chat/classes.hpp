@@ -21,6 +21,11 @@ public:
 
 class InputsEmbedderInternVLChat : public InputsEmbedder::IInputsEmbedder {
 public:
+    InputsEmbedderInternVLChat(const VLMModels& models,
+                               const Tokenizer& tokenizer,
+                               const std::string& device,
+                               const ov::AnyMap& properties);
+
     InputsEmbedderInternVLChat(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,

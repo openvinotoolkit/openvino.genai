@@ -225,15 +225,24 @@ EncodedImage VisionEncoderGemma4::encode_with_config(const ov::Tensor& image, co
     // 2. Compute aspect-ratio-preserving target size
     const size_t max_unmerged_patches =
         config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
-    const auto [target_height, target_width] = get_aspect_ratio_preserving_size(static_cast<size_t>(input_image.ny),
-                                                                                static_cast<size_t>(input_image.nx),
-                                                                                config.patch_size,
-                                                                                max_unmerged_patches,
-                                                                                config.pooling_kernel_size);
+    const auto [target_height, target_width] =
+        config.preserve_native_resolution ? bounded_image_size(input_image.ny,
+                                                               input_image.nx,
+                                                               config.patch_size * config.pooling_kernel_size,
+                                                               config.min_pixels,
+                                                               config.max_pixels)
+                                          : get_aspect_ratio_preserving_size(static_cast<size_t>(input_image.ny),
+                                                                             static_cast<size_t>(input_image.nx),
+                                                                             config.patch_size,
+                                                                             max_unmerged_patches,
+                                                                             config.pooling_kernel_size);
 
     // 3. Bicubic resize
     clip_image_u8 resized_image;
-    bicubic_resize(input_image, resized_image, static_cast<int>(target_width), static_cast<int>(target_height));
+    if (config.pad_to_target)
+        resized_image = resize_and_pad_image(input_image, {int(target_width), int(target_height)});
+    else
+        bicubic_resize(input_image, resized_image, static_cast<int>(target_width), static_cast<int>(target_height));
 
     // 4. Rescale to [0,1] and convert to CHW float
     // With mean=[0,0,0] and std=[1,1,1], clip_image_preprocess produces pixel/255.0
@@ -241,6 +250,10 @@ EncodedImage VisionEncoderGemma4::encode_with_config(const ov::Tensor& image, co
     std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
     std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
     clip_image_f32 float_image = clip_image_preprocess(ctx, resized_image);
+
+    OPENVINO_ASSERT(target_height / config.patch_size <=
+                        max_unmerged_patches / (target_width / config.patch_size),
+                    "Gemma4 image exceeds the vision patch capacity");
 
     // 5. Extract patches in the format expected by the exported vision embeddings model.
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
@@ -325,6 +338,26 @@ EncodedVideo VisionEncoderGemma4::encode_frames(const std::vector<ov::Tensor>& f
     result.num_video_tokens = total_tokens;
     result.frame_num = frames.size();
     return result;
+}
+
+InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMModels& models,
+                                           const Tokenizer& tokenizer,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties) {
+    patch_chat_template();
+    if (const auto audio = models.find("audio_embeddings"))
+        m_audio_encoder = AudioEncoderGemma4::create(audio, models.config.model_type, device, properties);
+    if (has_per_layer_embeddings()) {
+        auto compiled = utils::singleton_core().compile_model(
+            models.at("text_embeddings_per_layer"),
+            device,
+            utils::get_model_properties(properties, "text_embeddings_per_layer", device));
+        utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
+        m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled] { return compiled.create_infer_request(); });
+    }
 }
 
 InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,

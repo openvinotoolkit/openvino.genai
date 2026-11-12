@@ -18,6 +18,7 @@ class VisionEncoderQwen2VL : public VisionEncoder {
 public:
     explicit VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
     explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap properties);
+    VisionEncoderQwen2VL(const VLMModels& models, const std::string& device, const ov::AnyMap& properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
@@ -60,6 +61,11 @@ private:
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
 public:
+    InputsEmbedderQwen2VL(const VLMModels& models,
+                          const Tokenizer& tokenizer,
+                          const std::string& device,
+                          const ov::AnyMap& properties);
+
     InputsEmbedderQwen2VL(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
@@ -174,6 +180,8 @@ protected:
     );
 
     void encode_vision_placeholder_tokens();
+
+    void compile_merger(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& properties);
 
     void cvt_to_3_chn_image(ov::Tensor& image);
 

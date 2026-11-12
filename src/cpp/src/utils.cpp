@@ -494,11 +494,12 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
     }
 }
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir, const ov::AnyMap& properties) {
+    auto gguf_props = gguf_utils::extract_gguf_properties(properties);
+    const auto extensions = extract_extensions(gguf_props.rest);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
-        return gguf_utils::read_gguf_model(model_dir, gguf_props);
+        return gguf_utils::read_gguf_model(model_dir, gguf_props, extensions);
     } else {
         std::filesystem::path model_path = model_dir;
 
