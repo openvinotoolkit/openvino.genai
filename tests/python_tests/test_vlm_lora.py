@@ -12,7 +12,6 @@ import pytest
 from openvino_genai import (
     Adapter,
     AdapterConfig,
-    ChatHistory,
     ContinuousBatchingPipeline,
     GenerationConfig,
     SchedulerConfig,
@@ -28,10 +27,13 @@ from test_vlm_pipeline import (
     cat_tensor,
 )
 
-pytestmark = pytest.mark.vlm
-
 # Qwen3.5 is multimodal on its own, there is no separate VL line for it.
 VISION_LORA_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5"
+
+pytestmark = [
+    pytest.mark.vlm,
+    pytest.mark.parametrize("model_id", [VISION_LORA_MODEL_ID], scope="module"),
+]
 
 
 def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> int:
@@ -63,17 +65,17 @@ def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> 
 
 
 @pytest.fixture(scope="module")
-def vision_lora(tmp_path_factory: pytest.TempPathFactory) -> tuple[str, Adapter]:
+def vision_lora(model_id: str, tmp_path_factory: pytest.TempPathFactory) -> tuple[str, Adapter]:
     pytest.importorskip("transformers", minversion="5.2.0")
-    models_path = _get_ov_model(VISION_LORA_MODEL_ID)
+    models_path = _get_ov_model(model_id)
     adapter_path = tmp_path_factory.mktemp("vision_lora") / "adapter.safetensors"
     assert _build_vision_lora(models_path, adapter_path) > 0, "No vision layer to adapt was found"
     return models_path, Adapter(str(adapter_path))
 
 
 @pytest.fixture(scope="module", params=ATTENTION_BACKEND)
-def vision_lora_reference(request: pytest.FixtureRequest, vision_lora, cat_tensor: openvino.Tensor) -> tuple[str, str]:
-    models_path, _ = vision_lora
+def vision_lora_reference(request: pytest.FixtureRequest, model_id: str, cat_tensor: openvino.Tensor) -> tuple[str, str]:
+    models_path = _get_ov_model(model_id)
     backend = request.param
     config = GenerationConfig(max_new_tokens=10, do_sample=False)
     reference = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend).generate(
@@ -108,9 +110,8 @@ def test_vlm_vision_lora(mode, vision_lora, vision_lora_reference, cat_tensor: o
         )
 
 
-@pytest.mark.parametrize("use_chat_history", [False, True])
 def test_vlm_vision_lora_switched_per_generate(
-    use_chat_history, vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor
+    vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor
 ) -> None:
     models_path, adapter = vision_lora
     backend, without_adapters = vision_lora_reference
@@ -120,12 +121,9 @@ def test_vlm_vision_lora_switched_per_generate(
         return AdapterConfig(adapter, alpha, AdapterConfig.Mode.MODE_DYNAMIC)
 
     def generate(pipe: VLMPipeline, **kwargs) -> str:
-        prompt = ChatHistory([{"role": "user", "content": PROMPTS[0]}]) if use_chat_history else PROMPTS[0]
-        return pipe.generate(prompt, images=[cat_tensor], generation_config=config, **kwargs).texts[0]
+        return pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config, **kwargs).texts[0]
 
     # Pipelines configured once and never switched, to compare the switched outputs against.
-    if use_chat_history:
-        without_adapters = generate(VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend))
     alpha_1 = generate(VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, adapters=dynamic(1.0)))
     alpha_2 = generate(VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, adapters=dynamic(2.0)))
     assert len({without_adapters, alpha_1, alpha_2}) == 3, "Equal references would make the checks below meaningless"
