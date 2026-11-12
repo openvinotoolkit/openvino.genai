@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <vector>
 #include <string>
 #include <memory>
@@ -65,10 +66,12 @@ public:
     // Tensor produced by infer is stored in the request and used further in the pipeline, so we can't free it right after infer call
     std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& get_request_queue();
     ov::Tensor infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor=false);
+    bool is_remote_context_compatible(const ov::CompiledModel& other_compiled_model) const;
 private:
     void merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const;
 
     std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>> m_embeddings_requests_queue;
+    std::optional<ov::RemoteContext> m_remote_context;
 };
 
 } // namespace genai

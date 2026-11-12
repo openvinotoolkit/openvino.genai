@@ -26,8 +26,9 @@ size_t get_unified_feature_size(const std::shared_ptr<ov::Model>& model) {
 std::unique_ptr<CircularBufferQueue<ov::InferRequest>> compile_audio_model(const std::shared_ptr<ov::Model>& model,
                                                                            const std::string& device,
                                                                            const ov::AnyMap& properties) {
-    const auto model_properties = utils::get_model_properties(properties, "audio_embeddings", device);
-    auto compiled = utils::singleton_core().compile_model(model, device, model_properties);
+    const auto [audio_device, model_properties] =
+        utils::get_model_device_and_properties(properties, "audio_embeddings", device);
+    auto compiled = utils::singleton_core().compile_model(model, audio_device, model_properties);
 
     return std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),

@@ -418,13 +418,87 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 } // namespace
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+const std::string DEVICE_MAPPING_PROPERTY = "device_mapping";
+
+namespace {
+
+bool is_device_mapping_key(const std::string& key) {
+    return key == DEVICE_MAPPING_PROPERTY || key == "DEVICE_MAPPING";
+}
+
+bool is_model_role_device_key(const std::string& key) {
+    return key == "device" || key == "DEVICE";
+}
+
+std::optional<std::string> find_device_in_mapping_any(const ov::Any& mapping_any, const std::string& model_role) {
+    if (mapping_any.is<std::map<std::string, std::string>>()) {
+        const auto& map_val = mapping_any.as<std::map<std::string, std::string>>();
+        auto it = map_val.find(model_role);
+        if (it != map_val.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+    const auto& any_map = mapping_any.as<ov::AnyMap>();
+    auto it = any_map.find(model_role);
+    if (it != any_map.end()) {
+        return it->second.as<std::string>();
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
+std::string get_model_device(const ov::AnyMap& properties, const std::string& model_role, const std::string& default_device) {
+    // 1. Highest priority: MODEL_PROPERTIES[model_role]["device"] or ["DEVICE"]
+    auto mp_it = properties.find(PER_MODEL_PROPERTIES);
+    if (mp_it != properties.end()) {
+        const auto& model_map = mp_it->second.as<ov::AnyMap>();
+        auto role_it = model_map.find(model_role);
+        if (role_it != model_map.end()) {
+            const auto& role_props = role_it->second.as<ov::AnyMap>();
+            for (const auto& [key, val] : role_props) {
+                if (is_model_role_device_key(key)) {
+                    return val.as<std::string>();
+                }
+            }
+        }
+    }
+
+    // 2. Second priority: device_mapping / DEVICE_MAPPING
+    for (const auto& [key, val] : properties) {
+        if (is_device_mapping_key(key)) {
+            if (auto mapped_device = find_device_in_mapping_any(val, model_role)) {
+                return *mapped_device;
+            }
+        }
+    }
+
+    // 3. Role-specific default: offload per-layer text embeddings (PLE) to CPU (with mmap)
+    // when the pipeline runs on GPU, avoiding multi-GB GPU memory allocation for lookup tables.
+    if (model_role == "text_embeddings_per_layer" && default_device.find("GPU") != std::string::npos) {
+        return "CPU";
+    }
+
+    return default_device;
+}
+
+std::pair<std::string, ov::AnyMap> get_model_device_and_properties(
+    const ov::AnyMap& properties,
+    const std::string& model_role,
+    const std::string& default_device
+) {
+    std::string resolved_device = get_model_device(properties, model_role, default_device);
+    ov::AnyMap resolved_properties = get_model_properties(properties, model_role, resolved_device);
+    return {std::move(resolved_device), std::move(resolved_properties)};
+}
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
-        // Ignore MODEL_PROPERTIES as they are used only within this function
-        // to construct final properties map for a given model.
-        if (property.first == PER_MODEL_PROPERTIES) {
+        // Ignore MODEL_PROPERTIES and device_mapping as they are GenAI meta keys
+        // used only to resolve target device and per-role properties.
+        if (property.first == PER_MODEL_PROPERTIES || is_device_mapping_key(property.first)) {
             continue;
         }
         // When a concrete device is known, DEVICE_PROPERTIES[device] is
@@ -461,6 +535,9 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
         return result;
     }
     for (const auto& property : role_it->second.as<ov::AnyMap>()) {
+        if (is_model_role_device_key(property.first)) {
+            continue;
+        }
         result.insert_or_assign(property.first, property.second);
     }
     return result;
@@ -975,6 +1052,7 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
 void validate_vlm_model_properties(const ov::AnyMap& properties) {
     static const std::vector<std::string> known_roles{
         "vision_embeddings",
+        "vision_embeddings_tiles",
         "text_embeddings",
         "text_embeddings_per_layer",
         "resampler",
@@ -983,23 +1061,49 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "vision_projection",
         "multi_modal_projector",
         "audio_encoder",
+        "audio_embeddings",
         "language_model",
         "ngram_embeddings",
     };
+    auto format_known_roles = []() {
+        std::string s;
+        for (const auto& r : known_roles) {
+            s += (s.empty() ? "" : ", ");
+            s += r;
+        }
+        return s;
+    };
     const auto it = properties.find(PER_MODEL_PROPERTIES);
-    if (it == properties.end()) {
-        return;
+    if (it != properties.end()) {
+        const auto& per_role = it->second.as<ov::AnyMap>();
+        for (const auto& [role, _] : per_role) {
+            OPENVINO_ASSERT(
+                std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
+                "Unknown sub-model role '", role, "' in MODEL_PROPERTIES. Known roles: ",
+                format_known_roles());
+        }
     }
-    const auto& per_role = it->second.as<ov::AnyMap>();
-    for (const auto& [role, _] : per_role) {
-        OPENVINO_ASSERT(
-            std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
-            "Unknown sub-model role '", role, "' in MODEL_PROPERTIES. Known roles: ",
-            []() {
-                std::string s;
-                for (const auto& r : known_roles) { s += (s.empty() ? "" : ", "); s += r; }
-                return s;
-            }());
+    for (const auto& [key, val] : properties) {
+        if (!is_device_mapping_key(key)) {
+            continue;
+        }
+        if (val.is<std::map<std::string, std::string>>()) {
+            const auto& mapping = val.as<std::map<std::string, std::string>>();
+            for (const auto& [role, _] : mapping) {
+                OPENVINO_ASSERT(
+                    std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
+                    "Unknown sub-model role '", role, "' in ", key, ". Known roles: ",
+                    format_known_roles());
+            }
+        } else {
+            const auto& mapping = val.as<ov::AnyMap>();
+            for (const auto& [role, _] : mapping) {
+                OPENVINO_ASSERT(
+                    std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
+                    "Unknown sub-model role '", role, "' in ", key, ". Known roles: ",
+                    format_known_roles());
+            }
+        }
     }
 }
 

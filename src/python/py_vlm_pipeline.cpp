@@ -603,7 +603,16 @@ An input image without explicit slicing metadata counts as one slice.)")
             VLMPipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-            kwargs: Device properties
+            kwargs: Device properties, including optional sub-model placement and compile overrides:
+                - device_mapping (dict[str, str]): Maps sub-model role names (such as
+                  'text_embeddings_per_layer', 'text_embeddings', 'vision_embeddings',
+                  'audio_embeddings', 'resampler', 'multi_modal_projector',
+                  'vision_embeddings_merger', or 'language_model') to target OpenVINO devices.
+                  When device is 'GPU', 'text_embeddings_per_layer' defaults to 'CPU' (host mmap)
+                  unless overridden via device_mapping or MODEL_PROPERTIES.
+                - MODEL_PROPERTIES (dict[str, dict[str, Any]]): Per-role OpenVINO compile properties
+                  and optional 'device' / 'DEVICE' override. Device precedence is:
+                  MODEL_PROPERTIES[role]['device'] > device_mapping[role] > role default > device.
         )")
 
         .def(py::init([](
@@ -630,8 +639,9 @@ An input image without explicit slicing metadata counts as one slice.)")
             tokenizer (Tokenizer): Genai Tokenizers.
             config_dir_path (os.PathLike): Path to folder with model configs.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-            generation_config (GenerationConfig | None): Device properties.
-            kwargs: Device properties
+            generation_config (GenerationConfig | None): Generation configuration.
+            kwargs: Device properties, including optional sub-model placement and compile overrides
+                (device_mapping and MODEL_PROPERTIES).
         )")
 
         .def("start_chat", [](ov::genai::VLMPipeline& pipe, const std::string& system_message) {

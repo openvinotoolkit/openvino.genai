@@ -45,13 +45,18 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
                                  const std::string& device,
                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
-    const auto text_embeddings_props = utils::get_model_properties(properties, "text_embeddings", device);
+    const auto [text_embeddings_device, text_embeddings_props] =
+        utils::get_model_device_and_properties(properties, "text_embeddings", device);
     std::shared_ptr<ov::Model> m_model = core.read_model(model_dir / "openvino_text_embeddings_model.xml", {}, text_embeddings_props);
     // apply embedding postprocessing step by merging them into the model
     merge_postprocess(m_model, scale_emb);
 
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, text_embeddings_props);
+    ov::CompiledModel compiled_model = core.compile_model(m_model, text_embeddings_device, text_embeddings_props);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
+    try {
+        m_remote_context = compiled_model.get_context();
+    } catch (const ov::Exception&) {
+    }
     m_embeddings_requests_queue = init(compiled_model);
 }
 
@@ -61,17 +66,36 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
                                  const std::string& device,
                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
+    const auto [text_embeddings_device, text_embeddings_props] =
+        utils::get_model_device_and_properties(properties, "text_embeddings", device);
     std::shared_ptr<ov::Model> m_model = core.read_model(model, weights);
     // apply embedding postprocessing step by merging them into the model
     merge_postprocess(m_model, scale_emb);
 
     ov::CompiledModel compiled_model = core.compile_model(
-        m_model, device, utils::get_model_properties(properties, "text_embeddings", device));
+        m_model, text_embeddings_device, text_embeddings_props);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
+    try {
+        m_remote_context = compiled_model.get_context();
+    } catch (const ov::Exception&) {
+    }
     m_embeddings_requests_queue = init(compiled_model);
 }
 
 std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& EmbeddingsModel::get_request_queue() {
     return this->m_embeddings_requests_queue;
+}
+
+bool EmbeddingsModel::is_remote_context_compatible(const ov::CompiledModel& other_compiled_model) const {
+    if (!m_remote_context.has_value()) {
+        return false;
+    }
+    try {
+        const auto other_context = other_compiled_model.get_context();
+        return m_remote_context->get_device_name() == other_context.get_device_name();
+    } catch (const ov::Exception&) {
+        return false;
+    }
 }
 
 ov::Tensor EmbeddingsModel::infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor) {

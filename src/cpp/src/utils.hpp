@@ -171,11 +171,38 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
 /// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
 extern const std::string PER_MODEL_PROPERTIES;
 
+/// @brief Key used in the main properties map to specify target devices per sub-model role.
+/// Value shape: std::map<std::string, std::string> or ov::AnyMap keyed by model role.
+extern const std::string DEVICE_MAPPING_PROPERTY;
+
+/// @brief Resolve target device for @p model_role by checking (priority high to low):
+///        1. PER_MODEL_PROPERTIES[model_role]["device"] or ["DEVICE"]
+///        2. DEVICE_MAPPING_PROPERTY[model_role] ("device_mapping" or "DEVICE_MAPPING")
+///        3. Role-specific default override (for "text_embeddings_per_layer", defaults to "CPU"
+///           when @p default_device is a GPU device so PLE weights use host mmap instead of GPU memory)
+///        4. @p default_device
+/// @param properties The main properties map. Not modified.
+/// @param model_role Sub-model role (e.g. "text_embeddings_per_layer").
+/// @param default_device Fallback device for the pipeline.
+/// @return Resolved target device string.
+std::string get_model_device(const ov::AnyMap& properties, const std::string& model_role, const std::string& default_device);
+
+/// @brief Resolve both target device and merged compile properties for @p model_role.
+/// @param properties The main properties map. Not modified.
+/// @param model_role Sub-model role (e.g. "vision_embeddings").
+/// @param default_device Fallback device for the pipeline.
+/// @return Pair of (resolved_device, merged_properties).
+std::pair<std::string, ov::AnyMap> get_model_device_and_properties(
+    const ov::AnyMap& properties,
+    const std::string& model_role,
+    const std::string& default_device
+);
+
 /// @brief Resolve properties for @p model_role by merging three layers (priority low to high):
-///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
-///           and DEVICE_PROPERTIES if device is specified)
+///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES,
+///           DEVICE_MAPPING_PROPERTY, and DEVICE_PROPERTIES if device is specified)
 ///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)
-///        3. PER_MODEL_PROPERTIES[model_role]
+///        3. PER_MODEL_PROPERTIES[model_role] (excluding "device"/"DEVICE" meta keys)
 ///        MODEL_PROPERTIES wins over DEVICE_PROPERTIES wins
 ///        over globals.
 /// @param properties The main properties map. Not modified.

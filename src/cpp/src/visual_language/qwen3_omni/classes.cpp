@@ -256,8 +256,10 @@ void VisionEncoderQwen3Omni::initialize_patch_preprocessing(const std::string& d
     // Preserve the requested device and surface compilation errors instead of silently changing paths.
     auto model = m_preproc_mode == PatchPreprocMode::OV ? build_patch_preprocess_model()
                                                         : build_patch_rearrange_model();
+    const auto [vision_device, vision_properties] =
+        utils::get_model_device_and_properties(properties, "vision_embeddings", device);
     auto compiled = utils::singleton_core().compile_model(
-        model, device, utils::get_model_properties(properties, "vision_embeddings", device));
+        model, vision_device, vision_properties);
     m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),
         [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
@@ -478,8 +480,10 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
         // Sets rt_info "model_type_hint"="QWenVL" so the GPU SDPAToVLSDPA pass can replace the dense
         // "attention_mask" parameter with a packed "cu_seq_lens" input (eliminates N*N score I/O).
         utils::request_vl_sdpa_transformations(model);
+        const auto [vision_device, vision_properties] =
+            utils::get_model_device_and_properties(device_config, "vision_embeddings", device);
         auto compiled = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings", device));
+            model, vision_device, vision_properties);
         m_with_cu_seqlens_input = utils::has_vl_sdpa_input(compiled, "cu_seq_lens");
         ov::genai::utils::print_compiled_model_properties(compiled,
             m_with_cu_seqlens_input ? "Omni vision embeddings model with VLSDPA optimization ENABLED"
@@ -516,8 +520,10 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
         // Sets rt_info "model_type_hint"="QWenVL" so the GPU SDPAToVLSDPA pass can replace the dense
         // "attention_mask" parameter with a packed "cu_seq_lens" input (eliminates N*N score I/O).
         utils::request_vl_sdpa_transformations(model);
+        const auto [vision_device, vision_properties] =
+            utils::get_model_device_and_properties(device_config, "vision_embeddings", device);
         auto compiled = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings", device));
+            model, vision_device, vision_properties);
         m_with_cu_seqlens_input = utils::has_vl_sdpa_input(compiled, "cu_seq_lens");
         ov::genai::utils::print_compiled_model_properties(compiled,
             m_with_cu_seqlens_input ? "Omni vision embeddings model with VLSDPA optimization ENABLED"

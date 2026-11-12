@@ -67,10 +67,12 @@ void InputsEmbedderQwen4_Exp::init_ngram_embeddings_model(
         "Qwen4Exp ngram_history input shape must match text_config.ngram_size - 1.");
     m_ngram_context_length = static_cast<size_t>(ngram_history_input_pshape[1].get_length());
 
+    const auto [ngram_device, ngram_properties] =
+        utils::get_model_device_and_properties(device_config, "ngram_embeddings", device);
     auto compiled_model = utils::singleton_core().compile_model(
         model,
-        device,
-        utils::get_model_properties(device_config, "ngram_embeddings", device)
+        ngram_device,
+        ngram_properties
     );
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM ngram embeddings model");

@@ -261,6 +261,47 @@ LoRA adapters that target the vision encoder or other multimodal components are 
 
 Refer to the [LoRA Adapters](/docs/guides/lora-adapters) guide for more details on working with LoRA adapters.
 
+### Configuring Sub-Model Devices and Properties
+
+`VLMPipeline` consists of multiple sub-models identified by role names (`language_model`, `text_embeddings`, `text_embeddings_per_layer`, `vision_embeddings`, `audio_embeddings`, `resampler`, `multi_modal_projector`, and `vision_embeddings_merger`).
+
+When running `VLMPipeline` on `GPU`, `text_embeddings_per_layer` (Per-Layer Embeddings, such as in Gemma 4 E4B) is automatically placed on `CPU` by default so the embedding lookup table is memory-mapped (`mmap`) in host memory rather than occupying GPU memory.
+
+You can override the target device for any sub-model role via `device_mapping` or pass per-role OpenVINO compilation properties via `MODEL_PROPERTIES`:
+
+- **Device placement precedence (highest to lowest):** `MODEL_PROPERTIES[role]["device"]` > `device_mapping[role]` > role default (`"CPU"` for `text_embeddings_per_layer` on `GPU`) > pipeline `device`.
+- **Compile property precedence (lowest to highest):** top-level properties -> `DEVICE_PROPERTIES[resolved_device]` -> `MODEL_PROPERTIES[role]`.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        # Offload both Per-Layer Embeddings and Global Text Embeddings to CPU (with mmap)
+        pipe = ov_genai.VLMPipeline(
+            model_path,
+            "GPU",
+            device_mapping={
+                "text_embeddings_per_layer": "CPU",
+                "text_embeddings": "CPU",
+            },
+        )
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::VLMPipeline pipe(
+            model_path,
+            "GPU",
+            ov::genai::device_mapping({
+                {"text_embeddings_per_layer", "CPU"},
+                {"text_embeddings", "CPU"}
+            })
+        );
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
 ### Performance Metrics
 
 `VLMPipeline` returns `VLMDecodedResults` with a `perf_metrics` field of type `VLMPerfMetrics`, which extends the standard [`PerfMetrics`](/docs/guides/performance-metrics).

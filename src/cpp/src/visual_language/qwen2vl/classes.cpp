@@ -646,8 +646,10 @@ std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ire
         model = patch_preprocess_into_model(model, image_mean, image_scale);
     }
 
+    const auto [vision_device, vision_properties] =
+        utils::get_model_device_and_properties(config, "vision_embeddings", device);
     auto compiled_model = utils::singleton_core().compile_model(
-        model, device, utils::get_model_properties(config, "vision_embeddings", device));
+        model, vision_device, vision_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     return std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -949,8 +951,10 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         auto model = utils::singleton_core().read_model(merger_path);
         utils::request_vl_sdpa_transformations(model);
 
+        const auto [merger_device, merger_properties] =
+            utils::get_model_device_and_properties(device_config, "vision_embeddings_merger", device);
         auto compiled_model = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
+            model, merger_device, merger_properties);
 
         m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
         ov::genai::utils::print_compiled_model_properties(compiled_model,
@@ -983,8 +987,10 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
         utils::request_vl_sdpa_transformations(model);
 
+        const auto [merger_device, merger_properties] =
+            utils::get_model_device_and_properties(device_config, "vision_embeddings_merger", device);
         auto compiled_model = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
+            model, merger_device, merger_properties);
 
         m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
         ov::genai::utils::print_compiled_model_properties(compiled_model,
