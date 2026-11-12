@@ -92,22 +92,23 @@ public:
         }
         config.validate();
         m_generation_config = std::move(config);
+    }
 
-        virtual std::unique_ptr<ASRStreamImplBase> create_stream(
-            const std::optional<ASRGenerationConfig>& generation_config) {
-            OPENVINO_THROW("Streaming input is not supported by the selected ASR model.");
-        }
+    virtual std::unique_ptr<ASRStreamImplBase> create_stream(
+        const std::optional<ASRGenerationConfig>& generation_config) {
+        OPENVINO_THROW("Streaming input is not supported by the selected ASR model.");
+    }
 
-        virtual ~ASRPipelineImplBase() = default;
+    virtual ~ASRPipelineImplBase() = default;
 
-    protected:
-        static const std::vector<float>& validate_single_audio_and_get(const AudiosView& audios) {
-            OPENVINO_ASSERT(audios.size() == 1,
-                            "This ASR model supports only one audio per generate, but received ",
-                            audios.size(),
-                            ".");
-            return audios.front();
-        }
-    };
+protected:
+    static const std::vector<float>& validate_single_audio_and_get(const AudiosView& audios) {
+        OPENVINO_ASSERT(audios.size() == 1,
+                        "This ASR model supports only one audio per generate, but received ",
+                        audios.size(),
+                        ".");
+        return audios.front();
+    }
+};
 
 }  // namespace ov::genai
