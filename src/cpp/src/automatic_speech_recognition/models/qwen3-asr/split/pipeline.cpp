@@ -95,8 +95,9 @@ Qwen3ASRContinuousBatchingAdapter::Qwen3ASRContinuousBatchingAdapter(const std::
 std::vector<std::string> Qwen3ASRContinuousBatchingAdapter::infer(const std::vector<AudioChunk>& chunks,
                                                                   const ASRGenerationConfig& config,
                                                                   ASRPerfMetrics& perf_metrics,
-                                                                  const std::shared_ptr<StreamerBase>& streamer) {
-    const std::string prompt = build_text_prompt(config);
+                                                                  const std::shared_ptr<StreamerBase>& streamer,
+                                                                  const std::string& streaming_prefix) {
+    const std::string prompt = build_text_prompt(config, streaming_prefix);
 
     std::vector<std::vector<ov::Tensor>> audios;
     audios.reserve(chunks.size());
@@ -136,8 +137,9 @@ Qwen3ASRVLMPipelineAdapter::Qwen3ASRVLMPipelineAdapter(const std::filesystem::pa
 std::vector<std::string> Qwen3ASRVLMPipelineAdapter::infer(const std::vector<AudioChunk>& chunks,
                                                            const ASRGenerationConfig& config,
                                                            ASRPerfMetrics& perf_metrics,
-                                                           const std::shared_ptr<StreamerBase>& streamer) {
-    const std::string prompt = build_text_prompt(config);
+                                                           const std::shared_ptr<StreamerBase>& streamer,
+                                                           const std::string& streaming_prefix) {
+    const std::string prompt = build_text_prompt(config, streaming_prefix);
     const GenerationConfig chunk_config = create_chunk_generation_config(config);
     // Qwen3ASRPipelineBase::generate() allows a streamer only for a single chunk.
     const StreamerVariant chunk_streamer =

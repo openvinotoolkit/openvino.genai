@@ -28,6 +28,10 @@ public:
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 
+    std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
+        const ASRStreamingConfig& streaming_config,
+        const ASRGenerationConfig& generation_config) override;
+
 protected:
     Qwen3ASRPipelineBase(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     Qwen3ASRPipelineBase(const std::filesystem::path& models_path,
@@ -41,9 +45,11 @@ protected:
     virtual std::vector<std::string> infer(const std::vector<AudioChunk>& chunks,
                                            const ASRGenerationConfig& config,
                                            ASRPerfMetrics& perf_metrics,
-                                           const std::shared_ptr<StreamerBase>& streamer) = 0;
+                                           const std::shared_ptr<StreamerBase>& streamer,
+                                           const std::string& streaming_prefix = "") = 0;
 
-    std::string build_text_prompt(const ASRGenerationConfig& config) const;
+    std::string build_text_prompt(const ASRGenerationConfig& config,
+                                 const std::string& streaming_prefix = "") const;
 
     /**
      * @brief Wrap a user streamer to suppress the language autodetection prefix of a single chunk.
@@ -76,6 +82,13 @@ private:
     ASRGenerationConfig resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const;
 
     void validate_generation_config(const ASRGenerationConfig& config) const;
+
+    std::string infer_streaming_chunk(const std::vector<float>& audio_accum,
+                                     const std::string& streaming_prefix,
+                                     const ASRGenerationConfig& config,
+                                     ASRPerfMetrics& perf_metrics);
+
+    friend class Qwen3ASRStreamingSessionImpl;
 };
 
 }  // namespace ov::genai

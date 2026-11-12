@@ -68,6 +68,7 @@ void ASRGenerationConfig::update_generation_config(const ov::AnyMap& config_map)
     read_anymap_param(config_map, "alignment_heads", alignment_heads);
     read_anymap_param(config_map, "initial_prompt", initial_prompt);
     read_anymap_param(config_map, "hotwords", hotwords);
+    read_anymap_param(config_map, "prefix", prefix);
     read_anymap_param(config_map, "context", context);
     read_anymap_param(config_map, "use_itn", use_itn);
 

@@ -302,6 +302,8 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("alignment_heads", &WhisperGenerationConfig::alignment_heads)
         .def_readwrite("initial_prompt", &WhisperGenerationConfig::initial_prompt)
         .def_readwrite("hotwords", &WhisperGenerationConfig::hotwords)
+        .def_readwrite("prefix", &WhisperGenerationConfig::prefix,
+                       "Text forced after the decoder header; generated text contains only its continuation.")
         .def("update_generation_config", [](ov::genai::WhisperGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });

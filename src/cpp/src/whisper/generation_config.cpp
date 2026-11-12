@@ -65,6 +65,7 @@ void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_
     read_anymap_param(config_map, "return_timestamps", return_timestamps);
     read_anymap_param(config_map, "initial_prompt", initial_prompt);
     read_anymap_param(config_map, "hotwords", hotwords);
+    read_anymap_param(config_map, "prefix", prefix);
     read_anymap_param(config_map, "word_timestamps", word_timestamps);
     read_anymap_param(config_map, "alignment_heads", alignment_heads);
 

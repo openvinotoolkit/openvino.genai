@@ -27,7 +27,8 @@ private:
     std::vector<std::string> infer(const std::vector<AudioChunk>& chunks,
                                    const ASRGenerationConfig& config,
                                    ASRPerfMetrics& perf_metrics,
-                                   const std::shared_ptr<StreamerBase>& streamer) override;
+                                   const std::shared_ptr<StreamerBase>& streamer,
+                                   const std::string& streaming_prefix = "") override;
 
     std::string extend_audio_tokens(const std::string& prompt, size_t audio_length) const;
 };

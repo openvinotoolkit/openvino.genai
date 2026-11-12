@@ -40,12 +40,13 @@ std::string Qwen3EncoderDecoderASR::extend_audio_tokens(const std::string& promp
 std::vector<std::string> Qwen3EncoderDecoderASR::infer(const std::vector<AudioChunk>& chunks,
                                                        const ASRGenerationConfig& config,
                                                        ASRPerfMetrics& perf_metrics,
-                                                       const std::shared_ptr<StreamerBase>& streamer) {
+                                                       const std::shared_ptr<StreamerBase>& streamer,
+                                                       const std::string& streaming_prefix) {
     m_decoder->set_seed(config.rng_seed);
 
     // inference batch_size. Can be different to input batch size due to chunking
     const size_t batch_size = chunks.size();
-    const std::string prompt = build_text_prompt(config);
+    const std::string prompt = build_text_prompt(config, streaming_prefix);
 
     std::vector<WhisperFeatures> features;
     features.reserve(batch_size);

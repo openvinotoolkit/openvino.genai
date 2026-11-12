@@ -80,6 +80,13 @@ public:
      */
     std::optional<std::string> hotwords = std::nullopt;
 
+    /*
+     * Text belonging to the current audio forced as the beginning of the decoder output.
+     * Appended after the SOT header tokens; reproduced verbatim before free generation.
+     * Intended for streaming prefix reuse (Whisper only).
+     */
+    std::optional<std::string> prefix = std::nullopt;
+
     // Qwen3-ASR parameters
 
     std::optional<std::string> context = std::nullopt;
@@ -122,6 +129,7 @@ static constexpr ov::Property<bool> word_timestamps{"word_timestamps"};
 static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_heads{"alignment_heads"};
 static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
 static constexpr ov::Property<std::string> hotwords{"hotwords"};
+static constexpr ov::Property<std::string> prefix{"prefix"};
 static constexpr ov::Property<std::string> context{"context"};
 static constexpr ov::Property<bool> use_itn{"use_itn"};
 

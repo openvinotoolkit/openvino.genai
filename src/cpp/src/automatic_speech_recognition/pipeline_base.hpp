@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
+#include "streaming_session_impl_base.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -97,6 +98,12 @@ public:
     virtual std::unique_ptr<ASRStreamImplBase> create_stream(
         const std::optional<ASRGenerationConfig>& generation_config) {
         OPENVINO_THROW("Streaming input is not supported by the selected ASR model.");
+    }
+
+    virtual std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
+        const ASRStreamingConfig& streaming_config,
+        const ASRGenerationConfig& generation_config) {
+        OPENVINO_THROW("Streaming is not supported for this ASR model type");
     }
 
     virtual ~ASRPipelineImplBase() = default;

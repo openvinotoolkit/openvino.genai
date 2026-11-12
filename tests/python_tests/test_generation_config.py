@@ -312,3 +312,12 @@ def test_asr_use_itn_read_from_json(tmp_path, use_itn):
     config = ASRGenerationConfig(config_path)
 
     assert config.use_itn == use_itn
+
+
+@pytest.mark.parametrize("config_cls", [WhisperGenerationConfig, ASRGenerationConfig])
+def test_streaming_prefix_config_kwargs(config_cls):
+    config = config_cls(prefix="How are")
+    assert config.prefix == "How are"
+
+    config.update_generation_config(prefix="How are you")
+    assert config.prefix == "How are you"

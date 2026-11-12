@@ -8,6 +8,7 @@
 #include <iterator>
 
 #include "automatic_speech_recognition/models/qwen3-asr/streamer.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/streaming_session.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "utils.hpp"
 
@@ -106,7 +107,8 @@ ASRDecodedResults Qwen3ASRPipelineBase::generate(const AudiosView& audios,
     return results;
 }
 
-std::string Qwen3ASRPipelineBase::build_text_prompt(const ASRGenerationConfig& config) const {
+std::string Qwen3ASRPipelineBase::build_text_prompt(const ASRGenerationConfig& config,
+                                                  const std::string& streaming_prefix) const {
     const std::string context = config.context.value_or("");
 
     // Hardcoded chat template to avoid tool-call warnings.
@@ -119,7 +121,22 @@ std::string Qwen3ASRPipelineBase::build_text_prompt(const ASRGenerationConfig& c
         prompt += "language " + config.language.value() + "<asr_text>";
     }
 
-    return prompt;
+    return prompt + streaming_prefix;
+}
+
+std::unique_ptr<ASRStreamingSession::Impl> Qwen3ASRPipelineBase::create_streaming_session_impl(
+    const ASRStreamingConfig& streaming_config,
+    const ASRGenerationConfig& generation_config) {
+    return std::make_unique<Qwen3ASRStreamingSessionImpl>(
+        this, streaming_config, resolve_generation_config(generation_config));
+}
+
+std::string Qwen3ASRPipelineBase::infer_streaming_chunk(const std::vector<float>& audio_accum,
+                                                       const std::string& streaming_prefix,
+                                                       const ASRGenerationConfig& config,
+                                                       ASRPerfMetrics& perf_metrics) {
+    const std::vector<AudioChunk> chunks{{0, 0, audio_accum, m_feature_extractor.sampling_rate, 0.0f}};
+    return infer(chunks, config, perf_metrics, nullptr, streaming_prefix).at(0);
 }
 
 std::shared_ptr<StreamerBase> Qwen3ASRPipelineBase::create_chunk_streamer(const std::shared_ptr<StreamerBase>& streamer,
