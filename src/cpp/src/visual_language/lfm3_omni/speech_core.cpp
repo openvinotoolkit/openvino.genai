@@ -459,7 +459,12 @@ std::vector<std::vector<int64_t>> LFM3SpeechState::codebook_history() const {
 
 int64_t LFM3SpeechState::sample_text(std::vector<float>& logits) {
     const std::vector<int64_t> history(m_text_history.begin(), m_text_history.end());
-    return m_text_sampling.sample(logits, history, m_config.placeholder_token_ids, m_text_rng);
+    const int64_t token = m_text_sampling.sample(logits, history, m_config.placeholder_token_ids, m_text_rng);
+    if (m_text_config.do_sample) {
+        // A sampled token leaves logits holding the probabilities it was drawn from.
+        m_result.text_log_prob += std::log(logits.at(token));
+    }
+    return token;
 }
 
 void LFM3SpeechState::accept_text(int64_t token, StreamingStatus stream_status) {

@@ -5,6 +5,7 @@
 
 #include <utility>
 
+#include "omni/speech_streamer_utils.hpp"
 #include "openvino/core/except.hpp"
 
 namespace ov::genai {
@@ -68,6 +69,30 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate_speech_in_stream(
     return omni_result;
 }
 
+void OmniPipeline::OmniPipelineImpl::validate_request(const GenerationConfig& text_config,
+                                                      const OmniTalkerSpeechConfig& talker_speech_config,
+                                                      const std::vector<ov::Tensor>& videos,
+                                                      const std::vector<VideoMetadata>& videos_metadata,
+                                                      const OmniSpeechStreamerVariant& speech_streamer) const {
+    try {
+        validate_omni_talker_speech_config(talker_speech_config);
+        enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
+        OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                        "OmniPipeline: videos_metadata size (", videos_metadata.size(),
+                        ") must match videos size (", videos.size(), ") or be empty");
+        // Checked before the VLM runs, so a request the talker rejects does not stream its text answer first.
+        if (talker_speech_config.return_audio && m_talker) {
+            reject_in_stream_speech_fields(talker_speech_config);
+        }
+    } catch (...) {
+        // OmniSpeechStreamerBase promises end() also for a call that fails before any speech is decoded.
+        if (talker_speech_config.return_audio && is_speech_streamer_active(speech_streamer)) {
+            end_speech_streamer(speech_streamer);
+        }
+        throw;
+    }
+}
+
 void OmniPipeline::OmniPipelineImpl::assert_omni_capable() const {
     OPENVINO_ASSERT(
         m_vlm->is_audio_output_enabled(),
@@ -89,12 +114,7 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
                                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
-    validate_omni_talker_speech_config(talker_speech_config);
-    enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
-
-    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                    "OmniPipeline: videos_metadata size (", videos_metadata.size(),
-                    ") must match videos size (", videos.size(), ") or be empty");
+    validate_request(text_config, talker_speech_config, videos, videos_metadata, speech_streamer);
 
     if (talker_speech_config.return_audio && !m_talker) {
         return generate_speech_in_stream(
@@ -132,12 +152,7 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
                                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
-    validate_omni_talker_speech_config(talker_speech_config);
-    enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
-
-    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                    "OmniPipeline: videos_metadata size (", videos_metadata.size(),
-                    ") must match videos size (", videos.size(), ") or be empty");
+    validate_request(text_config, talker_speech_config, videos, videos_metadata, speech_streamer);
 
     if (talker_speech_config.return_audio && !m_talker) {
         return generate_speech_in_stream(

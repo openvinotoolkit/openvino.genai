@@ -993,11 +993,22 @@ class TestOmniPipelineRealModel:
     def test_rejects_in_stream_speech_fields(
         self, omni_pipe: ov_genai.OmniPipeline, field: str, value: object, message: str
     ) -> None:
-        """Fields of the LFM3-Omni in-stream speech decoder have no meaning for a separate talker."""
+        """Fields of the LFM3-Omni in-stream speech decoder have no meaning for a separate talker.
+
+        The request is rejected before the VLM runs, so no text is streamed."""
         config = _talker_speech_config(return_audio=True)
         setattr(config, field, value)
+        streamed: list[str] = []
+
+        def streamer(subword: str) -> ov_genai.StreamingStatus:
+            streamed.append(subword)
+            return ov_genai.StreamingStatus.RUNNING
+
         with pytest.raises(RuntimeError, match=message):
-            omni_pipe.generate("Describe this.", text_config=_text_config(2), talker_speech_config=config)
+            omni_pipe.generate(
+                "Describe this.", text_config=_text_config(2), talker_speech_config=config, streamer=streamer
+            )
+        assert streamed == []
 
     @pytest.mark.parametrize(
         "field, value", [("output_mode", ov_genai.SpeechOutputMode.SPEECH_ONLY), ("cp_repetition_penalty", 1.2)]
