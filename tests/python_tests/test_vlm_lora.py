@@ -74,7 +74,9 @@ def vision_lora(model_id: str, tmp_path_factory: pytest.TempPathFactory) -> tupl
 
 
 @pytest.fixture(scope="module", params=ATTENTION_BACKEND)
-def vision_lora_reference(request: pytest.FixtureRequest, model_id: str, cat_tensor: openvino.Tensor) -> tuple[str, str]:
+def vision_lora_reference(
+    request: pytest.FixtureRequest, model_id: str, cat_tensor: openvino.Tensor
+) -> tuple[str, str]:
     models_path = _get_ov_model(model_id)
     backend = request.param
     config = GenerationConfig(max_new_tokens=10, do_sample=False)
@@ -110,9 +112,7 @@ def test_vlm_vision_lora(mode, vision_lora, vision_lora_reference, cat_tensor: o
         )
 
 
-def test_vlm_vision_lora_switched_per_generate(
-    vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor
-) -> None:
+def test_vlm_vision_lora_switched_per_generate(vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor) -> None:
     models_path, adapter = vision_lora
     backend, without_adapters = vision_lora_reference
     config = GenerationConfig(max_new_tokens=10, do_sample=False)
