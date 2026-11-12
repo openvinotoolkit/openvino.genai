@@ -28,14 +28,14 @@ def matrix_file_id(path: Path) -> str:
 
 
 def known_component_tokens() -> set[str]:
-    """Component names declared in components.yml (keys and revalidate lists), lower-cased."""
+    """Component names declared in components.yml (keys and revalidate lists)."""
     data = load_yaml(COMPONENTS_YML)
     tokens: set[str] = set()
     for key, value in data.items():
-        tokens.add(key.lower())
+        tokens.add(key)
         revalidate = value.get("revalidate")
         if isinstance(revalidate, list):
-            tokens.update(token.lower() for token in revalidate)
+            tokens.update(revalidate)
     return tokens
 
 
@@ -134,4 +134,4 @@ def test_matrix_components_are_declared_in_components_yml(path):
     known = known_component_tokens()
     for entry in load_yaml(path):
         for component in entry["components"]:
-            assert component.lower() in known, f"Unknown component '{component}' in {matrix_file_id(path)}"
+            assert component in known, f"Unknown component '{component}' in {matrix_file_id(path)}"

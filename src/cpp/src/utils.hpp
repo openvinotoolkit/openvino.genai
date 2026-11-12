@@ -4,6 +4,7 @@
 #pragma once
 #include <type_traits>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #include <tuple>
@@ -85,6 +86,9 @@ template <typename T> struct OmitOptional<std::optional<T>> { using value = T; }
 template <typename T> constexpr bool is_optional = false;
 template <typename T> constexpr bool is_optional<std::optional<T>> = true;
 
+template <typename T> constexpr bool is_set = false;
+template <typename T> constexpr bool is_set<std::set<T>> = true;
+
 template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
     auto it = config_map.find(name);
@@ -95,6 +99,26 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
             else {
                 OPENVINO_THROW("Got empty ov::Any for parameter name: " + name);
             }
+        }
+        else if constexpr (is_set<T>) {
+            // A set-valued property arrives from Python as std::vector for a list and as std::string for a str.
+            // ov::Any can't convert a std::vector to a std::set, and it converts a std::string by splitting it on
+            // whitespace, so "Observation: done" would become two stop strings. Read both forms explicitly.
+            using Value = typename T::value_type;
+            if (it->second.is<std::vector<Value>>()) {
+                const auto& values = it->second.as<std::vector<Value>>();
+                param = T(values.begin(), values.end());
+                return;
+            }
+            if constexpr (std::is_same_v<Value, std::string>) {
+                if (it->second.is<std::string>()) {
+                    // an empty string is an empty set, as ov::Any parsed it before
+                    const auto& value = it->second.as<std::string>();
+                    param = value.empty() ? T{} : T{value};
+                    return;
+                }
+            }
+            param = it->second.as<T>();
         }
         else {
             param = it->second.as<typename OmitOptional<T>::value>();
@@ -474,6 +498,11 @@ ov::genai::GenerationConfig get_multinomial_config();
  * @brief Removes implicit concatenation of adjacent multiline string literals from a chat template.
  */
 std::string patch_chat_template_multiline_strings(const std::string& chat_template);
+
+/**
+ * @brief Rewrites "var is undefined" tests, which minja does not support, to the equivalent "not var is defined".
+ */
+std::string patch_chat_template_undefined_tests(const std::string& chat_template);
 
 }  // namespace utils
 }  // namespace genai
