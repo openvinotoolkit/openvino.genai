@@ -278,6 +278,101 @@ struct PerLayerInputsContext {
 };
 
 /**
+ * @brief Per-forward-call context for ngram embedding inputs (e.g. Qwen4Exp).
+ */
+struct NgramEmbeddingsContext {
+    size_t num_layers = 0;
+    size_t embed_dim = 0;
+    size_t per_token_size = 0; // num_layers * embed_dim
+
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)> ngram_embeds_callback;
+
+    size_t filled_tokens_offset = 0;
+    bool has_ngram_embeddings = false;
+
+    void init(
+        const ov::Tensor& prompt_ngram_embeddings,
+        const std::function<ov::Tensor(const ov::Tensor&, const ov::Tensor&)>& ngram_embeddings_callback
+    ) {
+        if (!prompt_ngram_embeddings) {
+            return;
+        }
+
+        OPENVINO_ASSERT(ngram_embeddings_callback,
+            "ngram_embeddings_callback is not set while ngram_embeddings are provided");
+        OPENVINO_ASSERT(prompt_ngram_embeddings.get_element_type() == ov::element::f32,
+            "ngram_embeddings must have element type f32, got ", prompt_ngram_embeddings.get_element_type());
+
+        const auto& prompt_ngram_embeddings_shape = prompt_ngram_embeddings.get_shape();
+        OPENVINO_ASSERT(prompt_ngram_embeddings_shape.size() == 4 && prompt_ngram_embeddings_shape[0] == 1,
+            "ngram_embeddings must have shape [1, tokens, num_layers, embed_dim], got ", prompt_ngram_embeddings_shape);
+
+        num_layers = prompt_ngram_embeddings_shape[2];
+        embed_dim = prompt_ngram_embeddings_shape[3];
+        per_token_size = num_layers * embed_dim;
+        ngram_embeds_callback = ngram_embeddings_callback;
+        has_ngram_embeddings = true;
+    }
+
+    void fill_ngram_embeddings(
+        ov::Tensor& ngram_embeddings,
+        const SequenceGroup::CPtr& sequence_group,
+        Sequence::CPtr sequence
+    ) {
+        const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+        const size_t prompt_len = sequence_group->get_prompt_len();
+        // A scheduled window may end the prompt and continue with generated tokens (e.g. recompute after preemption)
+        const size_t num_scheduled_prompt_tokens =
+            num_processed_tokens < prompt_len ? std::min(num_scheduled_tokens, prompt_len - num_processed_tokens) : 0;
+        const size_t num_generated_tokens = num_scheduled_tokens - num_scheduled_prompt_tokens;
+
+        float* dst = ngram_embeddings.data<float>() + filled_tokens_offset * per_token_size;
+
+        if (num_scheduled_prompt_tokens > 0) {
+            const ov::Tensor& prompt_ngram_embeddings = sequence_group->get_ngram_embeddings();
+            OPENVINO_ASSERT(prompt_ngram_embeddings, "ngram_embeddings not stored for sequence group in prompt phase");
+            OPENVINO_ASSERT(prompt_ngram_embeddings.get_size() == prompt_len * per_token_size,
+                "stored ngram_embeddings have ", prompt_ngram_embeddings.get_size(), " elements, expected ",
+                prompt_len * per_token_size);
+            std::copy_n(prompt_ngram_embeddings.data<const float>() + num_processed_tokens * per_token_size,
+                        num_scheduled_prompt_tokens * per_token_size,
+                        dst);
+        }
+
+        if (num_generated_tokens > 0) {
+            const auto& generated_ids = sequence->get_generated_ids();
+            const size_t generated_offset_from_prompt = num_processed_tokens + num_scheduled_prompt_tokens - prompt_len;
+
+            ov::Tensor input_ids(ov::element::i64, {1, num_generated_tokens});
+            std::copy_n(generated_ids.begin() + generated_offset_from_prompt, num_generated_tokens, input_ids.data<int64_t>());
+
+            const ov::Tensor& prompt_ngram_history = sequence_group->get_ngram_history();
+            OPENVINO_ASSERT(prompt_ngram_history, "ngram_history not stored for sequence group");
+            ov::Tensor ngram_history(ov::element::i64, {1, prompt_ngram_history.get_size()});
+            fill_ngram_history(
+                prompt_ngram_history,
+                generated_ids,
+                generated_offset_from_prompt,
+                ngram_history.data<int64_t>()
+            );
+
+            const ov::Tensor new_ngram_embeddings = ngram_embeds_callback(input_ids, ngram_history);
+            OPENVINO_ASSERT(new_ngram_embeddings.get_element_type() == ov::element::f32,
+                "ngram_embeddings_callback must return a tensor with element type f32");
+            OPENVINO_ASSERT(new_ngram_embeddings.get_size() == num_generated_tokens * per_token_size,
+                "ngram_embeddings_callback returned ", new_ngram_embeddings.get_size(), " elements, expected ",
+                num_generated_tokens * per_token_size);
+            std::copy_n(new_ngram_embeddings.data<const float>(),
+                        num_generated_tokens * per_token_size,
+                        dst + num_scheduled_prompt_tokens * per_token_size);
+        }
+
+        filled_tokens_offset += num_scheduled_tokens;
+    }
+};
+
+/**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
  */
@@ -334,6 +429,7 @@ class ModelRunner {
     ov::Tensor m_cached_deepstack_visual_embeds;
     ov::Tensor m_cached_visual_pos_masks;
     ov::Tensor m_cached_per_layer_inputs;
+    ov::Tensor m_cached_ngram_embeddings;
 public:
     /**
      * Constructs the ModelRunner.
@@ -495,6 +591,7 @@ public:
 
         DeepstackContext deepstack_context;
         PerLayerInputsContext per_layer_inputs_context;
+        NgramEmbeddingsContext ngram_embeddings_context;
 
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
@@ -507,6 +604,10 @@ public:
             per_layer_inputs_context.init(
                 sequence_groups[first_sequence_groups_id]->get_per_layer_inputs(),
                 m_inputs_embedder->get_per_layer_embeddings_callback()
+            );
+            ngram_embeddings_context.init(
+                sequence_groups[first_sequence_groups_id]->get_ngram_embeddings(),
+                m_inputs_embedder->get_ngram_embeddings_callback()
             );
         }
 
@@ -572,6 +673,8 @@ public:
 
         ov::Tensor per_layer_inputs;
 
+        ov::Tensor ngram_embeddings;
+
         ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
@@ -613,6 +716,13 @@ public:
                 // PA model expects [total_num_tokens, 1, num_hidden_layers, hidden_size] input shape
                 per_layer_inputs = _get_or_resize_tensor(m_cached_per_layer_inputs, "per_layer_inputs",
                     {total_num_tokens, 1, per_layer_inputs_context.num_hidden_layers, per_layer_inputs_context.hidden_size},
+                    ov::element::f32);
+            }
+
+            if (ngram_embeddings_context.has_ngram_embeddings) {
+                // PA model expects [total_num_tokens, 1, num_layers, embed_dim] input shape
+                ngram_embeddings = _get_or_resize_tensor(m_cached_ngram_embeddings, "ngram_embeddings",
+                    {total_num_tokens, 1, ngram_embeddings_context.num_layers, ngram_embeddings_context.embed_dim},
                     ov::element::f32);
             }
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -698,6 +808,10 @@ public:
 
                     if (per_layer_inputs_context.has_per_layer_inputs) {
                         per_layer_inputs_context.fill_per_layer_inputs(per_layer_inputs, sequence_group, sequence);
+                    }
+
+                    if (ngram_embeddings_context.has_ngram_embeddings) {
+                        ngram_embeddings_context.fill_ngram_embeddings(ngram_embeddings, sequence_group, sequence);
                     }
                 }
 
@@ -929,6 +1043,10 @@ public:
 
             if (per_layer_inputs_context.has_per_layer_inputs && !m_cached_per_layer_inputs) {
                 m_request.set_tensor("per_layer_inputs", per_layer_inputs);
+            }
+
+            if (ngram_embeddings_context.has_ngram_embeddings && !m_cached_ngram_embeddings) {
+                m_request.set_tensor("ngram_embeddings", ngram_embeddings);
             }
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {

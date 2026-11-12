@@ -83,7 +83,7 @@ public:
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
     
     // returns ngram embeddings callback, or nullptr if not available
-    std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
     get_ngram_embeddings_callback();
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
@@ -236,7 +236,7 @@ private:
             return nullptr;
         }
 
-        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+        virtual std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
         get_ngram_embeddings_callback() {
             return nullptr;
         }
