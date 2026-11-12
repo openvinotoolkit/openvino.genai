@@ -72,8 +72,10 @@ private:
     std::size_t m_slot_size = 0;
     std::size_t m_num_slots = 0;
     std::vector<std::size_t> m_free_slots;
-    // Serializes slot bookkeeping and the seek/read/write pairs used on platforms without positional I/O.
+    // Guards slot bookkeeping only, so a capacity query never waits for a disk transfer.
     mutable std::mutex m_mutex;
+    // Serializes the seek/read/write pairs used on platforms without positional I/O.
+    mutable std::mutex m_io_mutex;
 };
 
 }  // namespace ov::genai

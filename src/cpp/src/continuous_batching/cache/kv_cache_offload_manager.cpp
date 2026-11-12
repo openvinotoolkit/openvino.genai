@@ -205,7 +205,7 @@ void KVCacheOffloadManager::write_slot(size_t slot_id, const std::vector<uint8_t
                     ", expected ",
                     m_slot_size);
 
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_io_mutex);
     GENAI_INFO("[KV_TRACE] KVCacheOffloadManager write_slot slot=%zu offset=%zu bytes=%zu",
                slot_id,
                m_layout.get_slot_offset(slot_id),
@@ -217,7 +217,7 @@ void KVCacheOffloadManager::read_slot(size_t slot_id, std::vector<uint8_t>& bloc
     OPENVINO_ASSERT(slot_id < m_num_slots, "Invalid KV cache offload slot ", slot_id);
     block_data.resize(m_slot_size);
 
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_io_mutex);
     GENAI_INFO("[KV_TRACE] KVCacheOffloadManager read_slot slot=%zu offset=%zu bytes=%zu",
                slot_id,
                m_layout.get_slot_offset(slot_id),
