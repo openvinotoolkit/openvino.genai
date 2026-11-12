@@ -63,28 +63,39 @@ std::vector<EncodedGenerationResult> generate_common(
     }
 
     std::vector<GenerationHandle> main_generations;
-    for (size_t rid = 0; rid < input_ids.size(); ++rid) {
-        GenerationConfig main_cfg = sampling_params[rid];
-        ov::Tensor main_in;
-        strategy.prepare_request(rid, input_ids[rid], main_cfg, main_in);
+    try {
+        for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+            GenerationConfig main_cfg = sampling_params[rid];
+            ov::Tensor main_in;
+            strategy.prepare_request(rid, input_ids[rid], main_cfg, main_in);
 
-        const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
+            const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
 
-        if (position_ids.has_value() && self->m_inputs_embedder) {
-            const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
-            self->m_inputs_embedder->set_position_ids(position_ids_tensor);
-            // TODO: The rope_delta here has to be recomputed, if rope_delta is not provided then a stale value is used
-            if (rope_delta.has_value()) {
-                self->m_inputs_embedder->set_rope_delta(*rope_delta);
+            if (position_ids.has_value() && self->m_inputs_embedder) {
+                const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
+                self->m_inputs_embedder->set_position_ids(position_ids_tensor);
+                // TODO: The rope_delta here has to be recomputed, if rope_delta is not provided then a stale value is used
+                if (rope_delta.has_value()) {
+                    self->m_inputs_embedder->set_rope_delta(*rope_delta);
+                }
             }
-        }
 
-        main_generations.push_back(self->add_request(
-            rid,
-            main_in,
-            main_cfg,
-            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
-            lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
+            main_generations.push_back(self->add_request(
+                rid,
+                main_in,
+                main_cfg,
+                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
+                lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
+        }
+    } catch (...) {
+        // The queues were empty on entry, so every awaiting request belongs to this call. add_request() queues the
+        // draft request before the main one, so the draft pipeline can hold one request more than the main one.
+        self->draft_pipeline()->pull_awaiting_requests();
+        self->main_pipeline()->pull_awaiting_requests();
+        self->drop_requests();
+        std::lock_guard<std::mutex> lock{self->m_draft_generations_mutex};
+        self->m_draft_generations.clear();
+        throw;
     }
 
     auto all_requests = self->get_awaiting_requests();
