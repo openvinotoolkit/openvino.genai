@@ -12,8 +12,10 @@
 #include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
-#include "openvino/frontend/gguf/extension/genai.hpp"
+#include "openvino/frontend/extension/decoder_transformation.hpp"
+#include "openvino/frontend/gguf/adapt_to_genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
+#include "openvino/frontend/gguf/make_stateful.hpp"
 
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
@@ -143,9 +145,16 @@ std::shared_ptr<ov::Model> create_language_model(
 } // namespace
 
 std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path) {
-    ov::frontend::gguf::FrontEnd frontend;
-    frontend.add_extension(std::make_shared<ov::frontend::gguf::GenAIExtension>());
-    return frontend.convert(frontend.load(model_path));
+    namespace gguf = ov::frontend::gguf;
+    gguf::FrontEnd frontend;
+    // Stateful caches must replace the KV-cache writes during conversion, before stateless lowering.
+    frontend.add_extension(
+        std::make_shared<ov::frontend::DecoderTransformationExtension>(gguf::pass::GGUFMakeStateful()));
+    auto model = frontend.convert(frontend.load(model_path));
+    OPENVINO_ASSERT(gguf::pass::AdaptToGenAI().run_on_model(model),
+                    "GGUF frontend model has no inputs adaptable to the GenAI interface: ",
+                    model_path);
+    return model;
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,

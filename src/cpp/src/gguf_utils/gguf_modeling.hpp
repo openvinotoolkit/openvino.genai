@@ -9,8 +9,8 @@
 
 /// \brief Load and convert a .gguf file with the OpenVINO GGUF frontend.
 ///
-/// GenAIExtension prepares stateful caches and GenAI IO inside the frontend conversion.
-/// Registration is scoped to this frontend instance.
+/// The frontend creates stateful caches during conversion; GenAI then adapts the model IO with
+/// AdaptToGenAI.
 std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path);
 
 /// \brief Convert a .gguf file into an ov::Model.
