@@ -411,6 +411,41 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
     }
 }
 
+InputsEmbedder::InputsEmbedder(const std::shared_ptr<ov::Model>& text_embeddings,
+                               const Tokenizer& tokenizer,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    class TextInputsEmbedder : public IInputsEmbedder {
+    public:
+        TextInputsEmbedder(const Tokenizer& tokenizer, EmbeddingsModel::Ptr embedding)
+            : IInputsEmbedder(VLMConfig{}, tokenizer, std::move(embedding)) {}
+
+        ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                     const std::vector<EncodedImage>& images,
+                                     VLMPerfMetrics& metrics,
+                                     bool,
+                                     const std::vector<size_t>&) override {
+            OPENVINO_ASSERT(images.empty(), "Text-only MTP does not accept images.");
+            auto ids = get_encoded_input_ids(prompt, metrics);
+            CircularBufferQueueElementGuard<EmbeddingsRequest> guard(m_embedding->get_request_queue().get());
+            auto embeddings = get_text_embedding(guard.get(), ids, metrics);
+            ov::Tensor copy(embeddings.get_element_type(), embeddings.get_shape());
+            embeddings.copy_to(copy);
+            return copy;
+        }
+
+        NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                          size_t,
+                                          const std::vector<EncodedImage>& images) const override {
+            OPENVINO_ASSERT(images.empty(), "Text-only MTP does not accept images.");
+            return {prompt, {}, {}, {}};
+        }
+    };
+    m_impl =
+        std::make_shared<TextInputsEmbedder>(tokenizer,
+                                             std::make_shared<EmbeddingsModel>(text_embeddings, device, properties));
+}
+
 InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                const Tokenizer& tokenizer,
                                const std::filesystem::path& config_dir_path,

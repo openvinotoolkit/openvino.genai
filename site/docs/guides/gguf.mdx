@@ -73,3 +73,45 @@ print(pipe.generate(history, max_new_tokens=64))
 ```
 
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
+
+## Multi-token prediction (MTP)
+
+Some GGUF checkpoints store NextN draft blocks after the target layers
+(`<arch>.nextn_predict_layers`). As in llama.cpp, MTP is opt-in: set `speculative_type="mtp"`
+and GenAI converts the file once into the target and its draft, then runs its MTP speculative
+decoder. Weights read by both models, such as the token embeddings, are unpacked once and
+share host memory. The draft is compiled with the target device and properties.
+
+| llama.cpp | OpenVINO GenAI |
+| --- | --- |
+| `-m model.gguf --spec-type draft-mtp` | `LLMPipeline("model.gguf", "CPU", speculative_type="mtp")` |
+| `-md draft.gguf` | `LLMPipeline(..., draft_model_path="draft.gguf")` |
+| `--spec-draft-n-max N` (default 3) | `generate(..., num_assistant_tokens=N)` (default 3 for MTP) |
+
+`speculative_type="mtp"` selects `GGUF_READER="FRONTEND"` when the reader is not set.
+`draft_model_path` also accepts another GGUF file with MTP layers, or an OpenVINO IR directory.
+Use `draft_model()` instead when the draft needs a different device or properties.
+
+The GGUF frontend currently builds drafts for `qwen35` checkpoints with one NextN block that
+shares the target token embeddings, such as PrismML's
+`Ternary-Bonsai-2-4B-PQ2_0-MTP-Q8_0.gguf` and `Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf`.
+GGUF files without NextN weights cannot be used for MTP.
+
+```python
+import openvino_genai as genai
+
+pipe = genai.LLMPipeline(
+    "Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf", "CPU",
+    speculative_type="mtp",
+)
+print(pipe.generate("What is the capital of France?", max_new_tokens=64, do_sample=False,
+                    num_assistant_tokens=2))
+```
+
+GGUF MTP uses paged attention, greedy decoding, one returned sequence and a fixed positive
+`num_assistant_tokens`; an unset value means 3. Confidence-based drafting and tree search are
+not supported. Recurrent-state capacity must cover both live requests and MTP verification
+scratch. With a custom `scheduler_config`, set `num_linear_attention_blocks` to at least the
+number of live requests plus `num_assistant_tokens + 1`. The legacy reader and
+`ENABLE_SAVE_OV_MODEL` are not supported with MTP and raise an error. MTP acceptance and speed
+depend on the checkpoint, prompt and hardware; enabling it does not guarantee a speedup.

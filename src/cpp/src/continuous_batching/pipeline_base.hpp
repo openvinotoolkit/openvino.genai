@@ -215,9 +215,8 @@ public:
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer
-    );
-
+        const StreamerVariant& streamer,
+        std::vector<EncodedGenerationResult>* encoded_results_out = nullptr);
 
     /**
      * Performs monolitic generation based on ChatHistory objects
@@ -259,8 +258,8 @@ public:
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer
-    );
+        const StreamerVariant& streamer,
+        std::vector<EncodedGenerationResult>* encoded_results_out = nullptr);
 
     /**
      * Starts chat with a given system prompt

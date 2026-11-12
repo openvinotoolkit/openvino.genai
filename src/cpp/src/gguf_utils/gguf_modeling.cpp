@@ -142,15 +142,28 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path) {
+std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
+                                                      bool embeddings,
+                                                      const std::string& component,
+                                                      std::shared_ptr<ov::Model>* mtp_draft) {
     ov::frontend::gguf::FrontEnd frontend;
-    frontend.add_extension(std::make_shared<ov::frontend::gguf::GenAIExtension>());
-    return frontend.convert(frontend.load(model_path));
+    using Extension = ov::frontend::gguf::GenAIExtension;
+    auto extension = std::make_shared<Extension>(
+        embeddings ? Extension::InputMode::EMBEDS_TO_LOGITS_TEXT : Extension::InputMode::IDS_TO_LOGITS,
+        component);
+    frontend.add_extension(extension);
+    auto model = frontend.convert(frontend.load(model_path));
+    if (embeddings)
+        model->get_rt_info()["gguf_text_embeddings"] = extension->get_embedding_model();
+    if (mtp_draft)
+        *mtp_draft = extension->get_mtp_draft_model();
+    return model;
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
-                                            bool use_legacy_reader) {
+                                            bool use_legacy_reader,
+                                            bool embeddings) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     std::shared_ptr<ov::Model> model;
@@ -176,7 +189,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        model = convert_gguf_with_frontend(model_path);
+        model = convert_gguf_with_frontend(model_path, embeddings, embeddings ? "mtp" : "");
     }
 
     if (enable_save_ov_model) {

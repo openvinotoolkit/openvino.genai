@@ -43,6 +43,11 @@ struct NormalizedPrompt {
 
 class InputsEmbedder {
 public:
+    InputsEmbedder(const std::shared_ptr<ov::Model>& text_embeddings,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   const ov::AnyMap& properties);
+
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const Tokenizer& tokenizer,
                    const std::string& device,

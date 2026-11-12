@@ -122,10 +122,36 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
+ModelDesc gguf_mtp_draft_model(const std::filesystem::path& models_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties,
+                               const gguf_utils::GGUFModelHolder& target) {
+    OPENVINO_ASSERT(gguf_utils::has_gguf_mtp_layers(models_path),
+                    "A GGUF draft model must contain MTP layers (<arch>.nextn_predict_layers > 0): ",
+                    models_path.string());
+    auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
+    const auto gguf_properties = gguf_utils::extract_gguf_properties(plugin_config);
+    auto models = gguf_utils::read_gguf_mtp_models(models_path, gguf_properties);
+    // A kept target still needs its tokenizer metadata for the main pipeline.
+    auto tokenizer = GGUFTokenizer(GGUFTokenizerParameters(target ? gguf_tokenizer_metadata_from_model(models.target)
+                                                                  : take_gguf_tokenizer_metadata(models.target)),
+                                   properties);
+    if (target)
+        *target = models.target;
+    plugin_config = gguf_properties.rest;
+    plugin_config["mtp_mode"] = true;
+    auto generation_config = utils::from_config_json_if_exists(models_path);
+    return ModelDesc(models.draft, tokenizer, device, plugin_config, scheduler_config, generation_config);
+}
+
 std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& properties) {
+    if (is_gguf_model(models_path))
+        return {utils::DRAFT_MODEL_ARG_NAME,
+                Any::make<ModelDesc>(gguf_mtp_draft_model(models_path, device, properties, nullptr))};
+
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     const bool is_mtp = std::filesystem::exists(models_path / "openvino_mtp_model.xml");
@@ -250,9 +276,10 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& user_properties) :
+    const ov::AnyMap& input_properties) :
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
+    const auto user_properties = resolve_draft_model_request(models_path, device, input_properties);
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
@@ -294,9 +321,10 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& user_properties) :
+    const ov::AnyMap& input_properties) :
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
+    const auto user_properties = resolve_draft_model_request(models_path, device, input_properties);
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
