@@ -205,5 +205,11 @@ ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig&
     return out;
 }
 
+void reject_in_stream_speech_fields(const OmniTalkerSpeechConfig& config) {
+    OPENVINO_ASSERT(config.output_mode == SpeechOutputMode::INTERLEAVED,
+                    "Talker: output_mode applies to models that emit text and speech in one stream (LFM3-Omni)");
+    OPENVINO_ASSERT(!config.cp_repetition_penalty, "Talker: cp_repetition_penalty applies to LFM3-Omni only");
+}
+
 }  // namespace genai
 }  // namespace ov

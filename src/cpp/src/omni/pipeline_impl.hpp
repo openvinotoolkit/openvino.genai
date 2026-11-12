@@ -75,6 +75,13 @@ private:
     /// @brief Reject non-Omni-capable models early, before any inference work.
     void assert_omni_capable() const;
 
+    /// @brief Validate a generate() request before any inference; a rejected request ends the speech streamer.
+    void validate_request(const GenerationConfig& text_config,
+                          const OmniTalkerSpeechConfig& talker_speech_config,
+                          const std::vector<ov::Tensor>& videos,
+                          const std::vector<VideoMetadata>& videos_metadata,
+                          const OmniSpeechStreamerVariant& speech_streamer) const;
+
     /// @brief Speech decoded by the VLM: talker_speech_config goes through its AnyMap generate(), and the
     /// waveform comes back in VLMDecodedResults::speech_result.
     OmniDecodedResults generate_speech_in_stream(const std::function<VLMDecodedResults(const ov::AnyMap&)>& generate,

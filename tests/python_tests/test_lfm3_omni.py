@@ -591,10 +591,17 @@ class EndCounter(ov_genai.OmniSpeechStreamerBase):
     [
         ({}, None, None),
         ({"speaker": "Ethan"}, None, "no speaker selection"),
+        ({"cp_repetition_penalty": 0.0}, None, "cp_repetition_penalty must be > 0"),
         ({}, "failing", "streamer failure"),
         ({}, "failing_end", "speech streamer end failure"),
     ],
-    ids=["finished", "rejected_config", "failing_text_streamer", "failing_speech_streamer_end"],
+    ids=[
+        "finished",
+        "rejected_config",
+        "invalid_shared_field",
+        "failing_text_streamer",
+        "failing_speech_streamer_end",
+    ],
 )
 def test_speech_streamer_end_is_called_once(
     omni_pipe: ov_genai.OmniPipeline, fields: dict, streamer: str | None, error: str | None

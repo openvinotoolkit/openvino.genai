@@ -36,6 +36,10 @@ bool is_omni_talker_speech_config_key(const std::string& key);
 /// @throws ov::Exception if config is invalid.
 void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config);
 
+/// @brief Reject fields of the in-stream speech decoder (LFM3-Omni) for a model with a separate talker.
+/// @throws ov::Exception if output_mode or cp_repetition_penalty is set.
+void reject_in_stream_speech_fields(const OmniTalkerSpeechConfig& config);
+
 /// @brief Resolve a talker property-bag into a typed config plus optional streamer.
 /// Starts from `base` (the caller's default), overlays recognized `properties`, and rejects
 /// unknown keys so typos surface immediately instead of being silently dropped.
