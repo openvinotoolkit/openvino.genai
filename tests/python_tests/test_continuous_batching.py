@@ -16,6 +16,7 @@ from optimum.intel.utils.import_utils import is_transformers_version
 import openvino as ov
 import openvino.properties.hint as hints
 from openvino_genai import (
+    CacheOffloadConfig,
     ContinuousBatchingPipeline,
     LLMPipeline,
     GenerationConfig,
@@ -187,6 +188,123 @@ def test_generation_handle_echo_only_publishes_output_and_finished_status(
     assert handle.get_status() == GenerationStatus.FINISHED
     assert len(outputs) == 1
     assert outputs[0].generated_ids
+
+
+def test_cache_offload_config_defaults():
+    config = CacheOffloadConfig()
+
+    assert config.path == ""
+    assert config.capacity_bytes == 0
+    assert config.linear_attention_capacity_bytes == 0
+    assert config.buffer_slots == 2
+    assert config.use_page_cache is True
+    assert config.store_library_path == ""
+    assert config.store_provider_name == ""
+    assert config.allow_untrusted_store_plugin is False
+    assert config.store_properties == {}
+    assert config.store_completed_blocks is False
+
+    scheduler_config = SchedulerConfig()
+    assert scheduler_config.use_cache_offload is False
+    assert scheduler_config.cache_offload_config.capacity_bytes == 0
+
+
+def test_cache_offload_config_keyword_construction_and_assignment(tmp_path: Path):
+    config = CacheOffloadConfig(
+        path=str(tmp_path),
+        capacity_bytes=1 << 20,
+        buffer_slots=4,
+        linear_attention_capacity_bytes=2 << 20,
+        store_completed_blocks=True,
+        store_properties={"tier": "ssd"},
+    )
+
+    assert config.path == str(tmp_path)
+    assert config.capacity_bytes == 1 << 20
+    assert config.buffer_slots == 4
+    assert config.linear_attention_capacity_bytes == 2 << 20
+    assert config.store_completed_blocks is True
+    assert config.store_properties == {"tier": "ssd"}
+
+    config.capacity_bytes = 4 << 20
+    config.allow_untrusted_store_plugin = True
+    config.store_library_path = "plugin.dll"
+    scheduler_config = SchedulerConfig()
+    scheduler_config.use_cache_offload = True
+    scheduler_config.cache_offload_config = config
+
+    assert scheduler_config.use_cache_offload is True
+    assert scheduler_config.cache_offload_config.capacity_bytes == 4 << 20
+    assert scheduler_config.cache_offload_config.allow_untrusted_store_plugin is True
+    assert scheduler_config.cache_offload_config.store_library_path == "plugin.dll"
+    assert "capacity_bytes: 4194304" in config.to_string()
+
+
+@pytest.mark.parametrize(
+    "scheduler_params",
+    [
+        pytest.param({"enable_prefix_caching": False, "capacity_bytes": 1 << 20}, id="without_prefix_caching"),
+        pytest.param({"enable_prefix_caching": True, "capacity_bytes": 0}, id="without_capacity"),
+    ],
+)
+def test_cache_offload_rejects_invalid_scheduler_config(
+    model_facebook_opt_125m: OVConvertedModelSchema, scheduler_params: dict
+):
+    scheduler_config = SchedulerConfig()
+    scheduler_config.enable_prefix_caching = scheduler_params["enable_prefix_caching"]
+    scheduler_config.use_cache_offload = True
+    scheduler_config.cache_offload_config = CacheOffloadConfig(capacity_bytes=scheduler_params["capacity_bytes"])
+
+    with pytest.raises(RuntimeError):
+        ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, scheduler_config, "CPU")
+
+
+def test_cache_offload_restores_an_evicted_prefix_with_the_same_output(
+    model_facebook_opt_125m: OVConvertedModelSchema, tmp_path: Path
+):
+    def make_scheduler_config(use_offload: bool) -> SchedulerConfig:
+        scheduler_config = SchedulerConfig()
+        scheduler_config.enable_prefix_caching = True
+        scheduler_config.dynamic_split_fuse = False
+        scheduler_config.max_num_batched_tokens = 512
+        scheduler_config.max_num_seqs = 1
+        # Small enough that the filler request below displaces the first prompt from the device cache.
+        scheduler_config.num_kv_blocks = 8
+        if use_offload:
+            scheduler_config.use_cache_offload = True
+            scheduler_config.cache_offload_config = CacheOffloadConfig(
+                path=str(tmp_path), capacity_bytes=256 << 20, buffer_slots=16
+            )
+        return scheduler_config
+
+    prompt = "The quick brown fox jumps over the lazy dog. " * 12
+    filler = "Completely unrelated tokens to evict the cached prefix. " * 18
+    generation_config = GenerationConfig(max_new_tokens=8, do_sample=False, ignore_eos=True)
+
+    def run(pipe: ContinuousBatchingPipeline, request_id: int, text: str):
+        handle = pipe.add_request(request_id, text, generation_config)
+        while pipe.has_non_finished_requests():
+            pipe.step()
+        return handle.read_all()[0].generated_ids, handle.get_perf_metrics().get_num_prefix_cache_hit_tokens()
+
+    reference_pipe = ContinuousBatchingPipeline(
+        model_facebook_opt_125m.models_path, make_scheduler_config(use_offload=False), "CPU"
+    )
+    reference_ids, _ = run(reference_pipe, 0, prompt)
+    del reference_pipe
+
+    pipe = ContinuousBatchingPipeline(
+        model_facebook_opt_125m.models_path, make_scheduler_config(use_offload=True), "CPU"
+    )
+    first_ids, first_hit_tokens = run(pipe, 1, prompt)
+    run(pipe, 2, filler)
+    repeated_ids, repeated_hit_tokens = run(pipe, 3, prompt)
+
+    assert first_hit_tokens == 0
+    assert first_ids == reference_ids
+    assert repeated_ids == reference_ids
+    assert repeated_hit_tokens > 0
+
 
 @pytest.mark.transformers_dependent(
     reason="Cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
