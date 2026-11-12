@@ -49,6 +49,8 @@ struct LFM3SpeechRequest {
 struct LFM3SpeechResult {
     /// @brief Generated text tokens, without the <|audio_out|> slot of each speech frame.
     std::vector<int64_t> text_tokens;
+    /// @brief Sum of the log-probabilities of the sampled text tokens; 0 for greedy text decode, as in the text pipelines.
+    float text_log_prob = 0.0f;
     /// @brief Every token added to the context after the prompt: the appended mode marker, if any, then each generated
     /// slot, with <|audio_out|> standing for each speech frame.
     std::vector<int64_t> slot_tokens;

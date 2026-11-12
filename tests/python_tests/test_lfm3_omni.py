@@ -556,6 +556,19 @@ def test_top_k_zero_disables_top_k(omni_pipe: ov_genai.OmniPipeline) -> None:
     assert text_tokens(top_k=0) == text_tokens()
 
 
+@pytest.mark.parametrize("do_sample", [False, True])
+def test_speech_score_follows_text_sampling(omni_pipe: ov_genai.OmniPipeline, do_sample: bool) -> None:
+    # As in the text pipelines: a sampled answer scores the sum of its token log-probabilities, a greedy one 0.
+    config = _text_config(8)
+    config.do_sample = do_sample
+    config.rng_seed = 7
+    result = omni_pipe.generate(PROMPT, text_config=config, talker_speech_config=_speech_config(2))
+    if do_sample:
+        assert result.scores[0] < 0.0
+    else:
+        assert result.scores[0] == 0.0
+
+
 def test_rejects_echo(omni_pipe: ov_genai.OmniPipeline) -> None:
     config = _text_config(4)
     config.echo = True

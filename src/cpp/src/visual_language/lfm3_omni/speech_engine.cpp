@@ -563,6 +563,10 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
             const std::vector<int64_t> history(text_history.begin(), text_history.end());
             const int64_t token =
                 sample(step.logits, text_sampling, history, m_config.placeholder_token_ids, m_text_rng);
+            if (text_config.do_sample) {
+                // A sampled token leaves step.logits holding the probabilities it was drawn from.
+                result.text_log_prob += std::log(step.logits.at(token));
+            }
             text_history.push_back(token);
             if (text_history.size() > m_config.text_repetition_window) {
                 text_history.pop_front();

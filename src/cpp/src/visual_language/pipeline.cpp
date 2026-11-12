@@ -1132,7 +1132,7 @@ private:
         }
         utils::GenerationFinishInfo finish_info;
         finish_info.results.tokens = {speech.text_tokens};
-        finish_info.results.scores = {0.0f};
+        finish_info.results.scores = {speech.text_log_prob};
         finish_info.results.finish_reasons = {speech.finish_reason};
         finish_info.results.perf_metrics.raw_metrics = speech.raw_perf_metrics;
         finish_info.streaming_finish_status = speech.status;
