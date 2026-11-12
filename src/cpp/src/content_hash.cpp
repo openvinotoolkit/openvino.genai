@@ -3,8 +3,6 @@
 
 #include "content_hash.hpp"
 
-#include <cstring>
-
 namespace ov::genai {
 
 namespace {
@@ -15,6 +13,14 @@ namespace {
 // and standard library versions - the property a persisted content hash needs.
 inline uint64_t rotl64(uint64_t x, int8_t r) {
     return (x << r) | (x >> (64 - r));
+}
+
+inline uint64_t load_le64(const uint8_t* bytes) {
+    uint64_t value = 0;
+    for (int i = 7; i >= 0; --i) {
+        value = (value << 8) | bytes[i];
+    }
+    return value;
 }
 
 inline uint64_t fmix64(uint64_t k) {
@@ -38,9 +44,8 @@ void murmur_hash3_x64_128(const void* key, size_t len, uint64_t seed, uint64_t o
 
     const uint8_t* blocks = data;
     for (size_t i = 0; i < num_blocks; ++i) {
-        uint64_t k1, k2;
-        std::memcpy(&k1, blocks + i * 16, sizeof(k1));
-        std::memcpy(&k2, blocks + i * 16 + 8, sizeof(k2));
+        uint64_t k1 = load_le64(blocks + i * 16);
+        uint64_t k2 = load_le64(blocks + i * 16 + 8);
 
         k1 *= c1;
         k1 = rotl64(k1, 31);

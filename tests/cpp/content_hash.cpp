@@ -34,6 +34,14 @@ TEST(ContentHashTest, DifferentSeedProducesDifferentDigest) {
               compute_content_hash(data.data(), data.size(), /*seed=*/1));
 }
 
+TEST(ContentHashTest, MatchesThePublishedMurmurHash3X64DigestOfAMultiBlockInput) {
+    // Reference MurmurHash3_x64_128 (seed 0) of a 43 byte input, so the digest does not depend on the host byte order.
+    const std::string data = "The quick brown fox jumps over the lazy dog";
+    const auto digest = compute_content_hash(data.data(), data.size());
+    EXPECT_EQ(digest.lo, 0xe34bbc7bbc071b6cULL);
+    EXPECT_EQ(digest.hi, 0x7a433ca9c49a9347ULL);
+}
+
 TEST(ContentHashTest, DigestIsStableAcrossAllByteLengths) {
     // Exercise every tail-handling branch of the block/tail split (0..31 bytes).
     std::string data;
