@@ -67,6 +67,78 @@ timestamps: [0.00, 2.00] text:  How are you doing today?
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.
 
+# Voxtral Realtime streaming
+
+Voxtral Realtime uses `ASRPipeline.create_stream()` to transcribe audio incrementally. The streaming model export is
+provided by [optimum-intel PR #2075](https://github.com/huggingface/optimum-intel/pull/2075); use an Optimum Intel
+version containing that support.
+
+Install the export and runtime dependencies:
+
+```sh
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../deployment-requirements.txt
+pip install --upgrade git+https://github.com/kbalka/optimum-intel.git@voxtral_streaming_asr
+```
+
+Export the model to OpenVINO:
+
+```sh
+optimum-cli export openvino --trust-remote-code --model mistralai/Voxtral-Mini-4B-Realtime-2602 voxtral-realtime-2602
+```
+
+Run the streaming example with a mono or multichannel audio file. Audio is resampled to mono 16 kHz before streaming:
+
+```sh
+python voxtral_streaming.py voxtral-realtime-2602 audio.wav
+```
+
+The script submits 100 ms audio frames from a producer thread while inference runs and prints transcript deltas as they
+arrive. It also reports the generated-token count, interval tokens per second, and average tokens per second after each
+transcript update, so changes in throughput are visible during generation. The optional third argument selects the
+inference device; it defaults to `CPU`.
+
+Each update also shows the combined retained audio and text KV-cache size in MiB, measured from the cache tensors
+after sliding-window cropping. This is not total process or peak inference memory: convolution caches, inference
+request buffers, model weights and temporary allocations are excluded.
+Each update and the final summary also show audio and text KV windows as `retained/max (percent%)`,
+in cache positions after cropping, for example `audio window: 750/750 (100.0%)` and
+`text window: 256/256 (100.0%)`. Maxima come from the loaded model configuration, not hardcoded defaults.
+These are audio-aligned cache positions, not word counts. Window occupancy is available without `--profile`.
+
+Cache updates reuse stream-owned tensor buffers once their capacity is sufficient. When a sliding window evicts
+positions, retained keys are rephased in parallel across batch/head slices and retained values are copied in
+contiguous head-sized blocks. Window sizes and RoPE-relative positions are unchanged; cache maintenance still
+touches the retained window on each eviction, so bounded cache memory does not imply constant-cost decoding.
+
+The next line breaks down interval milliseconds per generated step into `audio infer`, `text infer`, `audio KV`,
+and `text KV`. Inference timings cover the respective `infer()` calls. KV timings cover retained tensor allocation,
+copying, sliding-window cropping and key rephasing. They exclude convolution cache copies, feature extraction,
+tensor setup, sampling and callback/output overhead, so their sum is not the full step latency. The first interval
+includes prefill; the final summary reports whole-stream averages, including steps after the last transcript update.
+
+Add `--profile` to enable OpenVINO operation profiling inside both inference requests:
+
+```sh
+python voxtral_streaming.py voxtral-realtime-2602 audio.wav --profile
+```
+
+Each update lists the eight most expensive operation groups for audio and text inference using the latest plugin
+counters in milliseconds, grouped by node type and execution type. CPU counters are running averages across node
+executions, not interval times. They must not be accumulated, differenced or divided by generated-token counts.
+The final summary shows the final plugin snapshot, not an independently measured whole-stream average. This can
+distinguish attention, concatenation, reorder and matrix multiplication when the device plugin reports them
+separately. Fused kernels cannot be split into their original operations by these counters. Plugin real-time
+counters can overlap and omit runtime overhead, so their sum need not equal `infer()` wall time.
+Profiling and counter collection add overhead; profiling is disabled by default.
+
+The three most expensive executed Broadcast nodes per component are also listed with their full node names,
+execution types, compiled-graph input/output partial shapes and consumer names. `?` denotes a dynamic dimension,
+not a measured tensor size. Plugin nodes without an exact compiled-graph name match are marked with
+`graph shapes unavailable`. For example, `[1]` to `[?,8,4,?,128]` describes scalar expansion to the shape used for
+four-way expansion of KV heads before attention; consumer names locate the associated attention layer. This identifies the
+graph operation, but does not measure its instantaneous runtime shape or isolate all downstream costs.
+
 # ASR pipeline usage
 
 ```python

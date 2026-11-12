@@ -91,6 +91,7 @@ from .py_openvino_genai import (
     ASRForcedAligner,
     ASRGenerationConfig,
     ASRPerfMetrics,
+    ASRStream,
     ASRPipeline,
     ASRRawPerfMetrics,
     WhisperGenerationConfig,

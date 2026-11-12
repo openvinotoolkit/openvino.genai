@@ -215,3 +215,129 @@ You can also create your custom streamer for more sophisticated processing:
 :::info
 For fully implemented iterable `CustomStreamer` refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/multinomial_causal_lm.py) sample.
 :::
+
+## Monitoring token generation in streaming ASR
+
+`ASRStream.get_num_generated_tokens()` returns the number of generated tokens so far and is safe to call from the
+transcript callback. Sampling the count with a monotonic timer lets applications display throughput while audio is
+being transcribed:
+
+For Voxtral, `ASRStream.get_kv_cache_size()` reports the combined retained audio and text KV-cache tensor bytes
+after the latest completed inference chunk, including sliding-window cropping. It starts at zero and is safe to
+query during generation. The count excludes convolution caches, inference request buffers, model weights and
+temporary allocations; it is not process memory or peak inference memory. Unsupported ASR models raise an exception.
+
+`ASRStream.get_kv_cache_window_sizes()` returns `audio` and `text` entries, each containing
+`(retained_positions, maximum_positions)` in Python or a `std::pair` in C++. Retained sizes start at zero and
+are sampled from KV tensor sequence lengths after the latest completed chunk and cropping. Maxima come from
+the loaded model configuration. The snapshot is safe to query during generation, without enabling operation
+profiling; unsupported models raise an exception. These positions are not transcript word counts.
+The Voxtral sample displays both windows as `retained/max (percent%)` alongside KV memory usage.
+
+For Voxtral, `ASRStream.get_stage_durations()` returns a thread-safe snapshot of cumulative milliseconds with keys
+`audio_inference`, `text_inference`, `audio_kv_cache` and `text_kv_cache`. Inference timings cover `infer()` calls.
+KV timings cover retained tensor allocation, copying, cropping and rephasing. Feature extraction, convolution cache
+copies, tensor setup, sampling and callbacks are excluded. Values start at zero and remain available after generation.
+For interval milliseconds per generated step, subtract the previous snapshot and divide by the number of new
+generated tokens. The first interval includes prefill. These stages do not account for the entire wall-clock time.
+Unsupported models raise an exception.
+
+When constructing a Voxtral pipeline with `PERF_COUNT=True` (Python) or `ov::enable_profiling(true)` (C++),
+`get_stage_durations()` also includes `audio_op/<node_type>/<exec_type>` and `text_op/<node_type>/<exec_type>`
+keys. Each groups the latest plugin real-time counters in milliseconds. CPU counters are running averages across
+node executions, not per-call or cumulative durations; do not accumulate, difference or divide them by token counts.
+`audio_node/<description>` and `text_node/<description>` expose individual executed Broadcast counters with full
+node names, execution types, compiled-graph input/output partial shapes (`?` denotes dynamic) and consumer names. These are graph
+shapes, not runtime tensor measurements. Unmatched plugin node names are marked explicitly. The sample shows the
+three most expensive Broadcast nodes per component. Fused operations remain fused;
+counter sums may overlap or omit overhead and need not equal inference wall time. Profiling adds overhead and
+is disabled by default. The Voxtral streaming sample's `--profile` flag displays the top eight groups per component.
+
+<LanguageTabs>
+<TabItemPython>
+
+```python
+import time
+import openvino_genai as ov_genai
+
+def make_callback(stream, started_at):
+    last_time = started_at
+    last_tokens = 0
+    last_stages = stream.get_stage_durations()
+
+    def on_text(delta):
+        nonlocal last_time, last_tokens, last_stages
+        now = time.perf_counter()
+        tokens = stream.get_num_generated_tokens()
+        interval = now - last_time
+        elapsed = now - started_at
+        interval_rate = (tokens - last_tokens) / interval if interval > 0 else 0.0
+        average_rate = tokens / elapsed if elapsed > 0 else 0.0
+        print(delta, end="", flush=True)
+        cache_mib = stream.get_kv_cache_size() / (1024 ** 2)
+        for component, (used, maximum) in stream.get_kv_cache_window_sizes().items():
+            print(f"{component} window: {used}/{maximum} ({100 * used / maximum:.1f}%)")
+        print(
+            f"\n{tokens} tokens | {interval_rate:.1f} tok/s interval | "
+            f"{average_rate:.1f} tok/s avg | KV cache: {cache_mib:.1f} MiB",
+            flush=True,
+        )
+        stages = stream.get_stage_durations()
+        new_tokens = tokens - last_tokens
+        if new_tokens > 0:
+            print("interval ms/step: " + " | ".join(
+                f"{stage}={(duration - last_stages[stage]) / new_tokens:.2f}"
+                for stage, duration in stages.items() if stage in {
+                    "audio_inference", "text_inference", "audio_kv_cache", "text_kv_cache"
+                }
+            ), flush=True)
+        last_stages = stages
+        last_time, last_tokens = now, tokens
+        return ov_genai.StreamingStatus.RUNNING
+
+    return on_text
+
+started_at = time.perf_counter()
+text_callback = make_callback(stream, started_at)
+stream.generate(text_callback)
+```
+
+</TabItemPython>
+<TabItemCpp>
+
+```cpp
+const auto started_at = std::chrono::steady_clock::now();
+auto last_time = started_at;
+size_t last_tokens = 0;
+auto last_stages = stream.get_stage_durations();
+const auto result = stream.generate([&](std::string delta) {
+    const auto now = std::chrono::steady_clock::now();
+    const size_t tokens = stream.get_num_generated_tokens();
+    const double interval = std::chrono::duration<double>(now - last_time).count();
+    const double elapsed = std::chrono::duration<double>(now - started_at).count();
+    const double interval_rate = interval > 0.0 ? (tokens - last_tokens) / interval : 0.0;
+    const double average_rate = elapsed > 0.0 ? tokens / elapsed : 0.0;
+    const double cache_mib = stream.get_kv_cache_size() / (1024.0 * 1024.0);
+    for (const auto& [component, window] : stream.get_kv_cache_window_sizes())
+        std::cout << component << " window: " << window.first << "/" << window.second
+                  << " (" << 100.0 * window.first / window.second << "%)" << std::endl;
+    std::cout << delta << "\n" << tokens << " tokens | " << interval_rate
+              << " tok/s interval | " << average_rate << " tok/s avg | KV cache: "
+              << cache_mib << " MiB" << std::endl;
+    const auto stages = stream.get_stage_durations();
+    if (tokens > last_tokens) {
+        std::cout << "interval ms/step:";
+        for (const std::string stage : {"audio_inference", "text_inference", "audio_kv_cache", "text_kv_cache"})
+            std::cout << " | " << stage << "=" << (stages.at(stage) - last_stages.at(stage)) / (tokens - last_tokens);
+        std::cout << std::endl;
+    }
+    last_stages = stages;
+    last_time = now;
+    last_tokens = tokens;
+    return ov::genai::StreamingStatus::RUNNING;
+});
+std::cout << result.texts.front() << std::endl;
+```
+
+</TabItemCpp>
+</LanguageTabs>

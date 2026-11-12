@@ -311,6 +311,61 @@ class ASRPerfMetrics(PerfMetrics):
     @property
     def asr_raw_metrics(self) -> ASRRawPerfMetrics:
         ...
+
+class ASRStream:
+    """
+    
+        Streaming audio transcription session.
+    
+        generate() runs inference once for the whole stream and consumes audio frames submitted by push_audio()
+        until end_audio() is called. Another thread may call push_audio() and end_audio() while generate() runs.
+        Frames are processed in the order push_audio() calls complete.
+    """
+    def end_audio(self) -> None:
+        """
+        Signal the end of audio input. May be called once.
+        """
+    def get_num_generated_tokens(self) -> int:
+        """
+        Return the number of generated tokens so far. Safe to call while generate() is running.
+        """
+    def get_kv_cache_size(self) -> int:
+        """
+        Return retained audio and text KV tensor bytes after the latest completed inference chunk.
+        Excludes convolution caches, inference request buffers and temporary allocations.
+        Safe to call while generate() is running. Raises if the model does not support KV-cache size monitoring.
+        """
+    def get_kv_cache_window_sizes(self) -> dict[str, tuple[int, int]]:
+        """
+        Return audio and text KV windows as {component: (retained_positions, maximum_positions)}.
+        Retained sizes start at zero and reflect tensor sequence lengths after the latest completed
+        inference chunk and cropping. Safe to call during generation.
+        Raises if window monitoring is unsupported by the model.
+        """
+    def get_stage_durations(self) -> dict[str, float]:
+        """
+        Return cumulative milliseconds for audio_inference, text_inference, audio_kv_cache and text_kv_cache.
+        With PERF_COUNT enabled, additional audio_op/<node_type>/<exec_type> and text_op/<node_type>/<exec_type>
+        keys group latest plugin real-time counters in milliseconds. CPU counters are running averages,
+        not cumulative or per-call times; do not accumulate or difference them.
+        audio_node/<description> and text_node/<description> report executed Broadcast counters with node names,
+        execution types, compiled-graph partial shapes (? denotes dynamic) and consumer names,
+        not measured runtime tensor shapes.
+        Unmatched plugin nodes are marked explicitly. Plugin counters may overlap or omit runtime overhead;
+        do not add them to wall-clock stage durations.
+        Inference covers infer() calls; KV timings cover allocation, copying, cropping and rephasing.
+        Excludes feature extraction, convolution cache copies, tensor setup, sampling and callbacks.
+        Safe to call while generate() is running. Raises if stage timing is unsupported by the model.
+        """
+    def generate(self, text_callback: collections.abc.Callable[[str], int | None] | None = None) -> ASRDecodedResults:
+        """
+        Run inference once over all audio pushed to the stream and return the complete transcription. Blocks until end_audio() is called and the queue is drained, or text_callback returns StreamingStatus.STOP or StreamingStatus.CANCEL. text_callback receives transcript deltas.
+        """
+    def push_audio(self, audio_frame: collections.abc.Sequence[typing.SupportsFloat]) -> None:
+        """
+        Enqueue normalized mono 16 kHz audio samples for generate() without running inference. Blocks while the bounded input queue is full. Raises after end_audio() or once generate() has stopped.
+        """
+
 class ASRPipeline:
     """
     Automatic speech recognition pipeline
@@ -452,6 +507,9 @@ class ASRPipeline:
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
         """
+    def create_stream(self, generation_config: ASRGenerationConfig | None = None) -> ASRStream:
+        """Create a stateful input stream for ASR models that support incremental audio."""
+        ...
     def get_generation_config(self) -> ASRGenerationConfig:
         ...
     def get_tokenizer(self) -> Tokenizer:

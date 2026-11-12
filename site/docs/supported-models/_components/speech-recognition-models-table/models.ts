@@ -29,6 +29,15 @@ export const SPEECH_RECOGNITION_MODELS: SpeechRecognitionModelType[] = [
     ],
   },
   {
+    architecture: 'VoxtralRealtimeForConditionalGeneration',
+    models: [
+      {
+        name: 'Voxtral Realtime',
+        links: ['https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602'],
+      },
+    ],
+  },
+  {
     architecture: 'SenseVoiceSmall',
     models: [
       {
