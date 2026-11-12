@@ -201,6 +201,13 @@
   components:
     - tokenizers
 
+- name: genai-cli tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_genai_cli.py
+  timeout: 15
+  components:
+    - genai_cli
+
 - name: API tests
   cmd: |-
     # lfm2 conversion fails in CI: CVS-195736
@@ -231,13 +238,13 @@
   components:
     - WWB
 
-- name: WWB ASR tests (FunASR, Qwen3-ASR)
+- name: WWB ASR tests (FunASR, Qwen3-ASR, whisper)
   cmd: |-
     python -m pip install transformers==4.57.6 "whowhatbench[funasr]"
     python -m pip install nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
     # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
     python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
-    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr or qwen3_asr"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr or qwen3_asr or whisper"
   timeout: 120
   components:
     - WWB
