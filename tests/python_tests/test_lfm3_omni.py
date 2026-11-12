@@ -212,13 +212,14 @@ class TokenCollector(ov_genai.StreamerBase):
         self.tokens: list[int] = []
         self.status = status
         self.after = after
+        self.ends = 0
 
     def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
         self.tokens.extend(token if isinstance(token, list) else [token])
         return self.status if len(self.tokens) >= self.after else ov_genai.StreamingStatus.RUNNING
 
     def end(self) -> None:
-        pass
+        self.ends += 1
 
 
 def _text_config(max_new_tokens: int) -> ov_genai.GenerationConfig:
@@ -582,12 +583,12 @@ def test_top_k_zero_disables_top_k(omni_pipe: ov_genai.OmniPipeline) -> None:
 
 
 @pytest.mark.parametrize("do_sample", [False, True])
-def test_speech_score_follows_text_sampling(omni_pipe: ov_genai.OmniPipeline, do_sample: bool) -> None:
+def test_speech_score_follows_text_sampling(speech_pipe: ov_genai.OmniPipeline, do_sample: bool) -> None:
     # As in the text pipelines: a sampled answer scores the sum of its token log-probabilities, a greedy one 0.
     config = _text_config(8)
     config.do_sample = do_sample
     config.rng_seed = 7
-    result = omni_pipe.generate(PROMPT, text_config=config, talker_speech_config=_speech_config(2))
+    result = speech_pipe.generate(PROMPT, text_config=config, talker_speech_config=_speech_config(2))
     if do_sample:
         assert result.scores[0] < 0.0
     else:
@@ -751,6 +752,66 @@ def test_tool_call_stop_ends_the_turn(speech_pipe: ov_genai.OmniPipeline) -> Non
     assert len(collector.tokens) == 1
     assert result.finish_reasons == [ov_genai.GenerationFinishReason.TOOL_CALL]
     assert result.speech_result.waveforms == []
+
+
+@pytest.mark.parametrize(
+    "status, reason",
+    [
+        (ov_genai.StreamingStatus.STOP, ov_genai.GenerationFinishReason.STOP),
+        (ov_genai.StreamingStatus.TOOL_CALL_STOP, ov_genai.GenerationFinishReason.TOOL_CALL),
+    ],
+)
+def test_streamer_stop_on_last_allowed_token_keeps_its_reason(
+    speech_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, reason: ov_genai.GenerationFinishReason
+) -> None:
+    # max_new_tokens ends the request on the same token, but the streamer's reason is reported.
+    result = speech_pipe.generate(
+        PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=TokenCollector(status)
+    )
+    assert result.finish_reasons == [reason]
+
+
+class FailingSpeechStreamer(ov_genai.OmniSpeechStreamerBase):
+    def write(self, chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+        raise ValueError("speech chunk failure")
+
+    def end(self) -> None:
+        pass
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_speech_streamer_failure_ends_text_streamer(omni_pa_pipe: ov_genai.OmniPipeline) -> None:
+    # As in ContinuousBatchingImpl::generate(), a failed call still ends the text streamer on PA.
+    collector = TokenCollector()
+    with pytest.raises(Exception, match="speech chunk failure"):
+        omni_pa_pipe.generate(
+            PROMPT,
+            text_config=_text_config(1000),
+            talker_speech_config=_speech_config(8, audio_chunk_frames=1),
+            streamer=collector,
+            speech_streamer=FailingSpeechStreamer(),
+        )
+    assert collector.tokens
+    assert collector.ends == 1
+
+
+def test_default_stop_token_ids_end_speech_generation(speech_pipe: ov_genai.OmniPipeline) -> None:
+    first = TokenCollector(ov_genai.StreamingStatus.STOP)
+    speech_pipe.generate(PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=first)
+    vlm = speech_pipe.get_vlm()
+    defaults = vlm.get_generation_config()
+    config = vlm.get_generation_config()
+    config.stop_token_ids = set(defaults.stop_token_ids) | {first.tokens[0]}
+    vlm.set_generation_config(config)
+    collector = TokenCollector()
+    try:
+        # A request without stop ids or EOS takes both from the pipeline defaults.
+        speech_pipe.generate(
+            PROMPT, text_config=_text_config(1000), talker_speech_config=_speech_config(8), streamer=collector
+        )
+    finally:
+        vlm.set_generation_config(defaults)
+    assert collector.tokens == first.tokens
 
 
 def test_speech_submodel_properties_are_accepted(lfm3_omni_model_path: Path, frame_samples: int) -> None:

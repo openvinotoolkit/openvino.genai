@@ -51,6 +51,7 @@ void LFM3SpeechStepHook::expect_request(const LFM3SpeechRequest& request,
     m_pending_request = PendingRequest{request, &speech_streamer, std::move(text_streamer)};
     m_result.reset();
     m_streamer_error = nullptr;
+    m_text_streamer_failed = false;
 }
 
 void LFM3SpeechStepHook::rethrow_streamer_error() {
@@ -159,6 +160,7 @@ void LFM3SpeechStepHook::before_sampling(const std::vector<SequenceGroup::Ptr>& 
                     status = m_text_streamer->write(token);
                 } catch (...) {
                     m_streamer_error = std::current_exception();
+                    m_text_streamer_failed = true;
                     status = StreamingStatus::CANCEL;
                 }
             }
@@ -219,9 +221,16 @@ std::vector<IStepHook::GeneratedEmbedding> LFM3SpeechStepHook::after_sampling(
         if (m_result->status == GenerationStatus::CANCEL) {
             group->get_generation_stream()->cancel();
         } else if (m_result->status == GenerationStatus::STOP) {
-            group->get_generation_stream()->stop(m_result->finish_reason == GenerationFinishReason::TOOL_CALL
-                                                     ? GenerationFinishReason::TOOL_CALL
-                                                     : GenerationFinishReason::STOP);
+            const GenerationFinishReason reason = m_result->finish_reason == GenerationFinishReason::TOOL_CALL
+                                                      ? GenerationFinishReason::TOOL_CALL
+                                                      : GenerationFinishReason::STOP;
+            group->get_generation_stream()->stop(reason);
+            if (sampler_finished) {
+                // A stop on the last allowed token: results read the sequence reason first, so LENGTH must not stay.
+                for (const Sequence::Ptr& sequence : group->get_sequences()) {
+                    sequence->set_finish_reason(reason);
+                }
+            }
         } else if (!sampler_finished) {
             for (const Sequence::Ptr& sequence : group->get_running_sequences()) {
                 sequence->set_status(SequenceStatus::FINISHED);

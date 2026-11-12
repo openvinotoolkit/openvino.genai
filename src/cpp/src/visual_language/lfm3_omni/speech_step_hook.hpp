@@ -39,6 +39,11 @@ public:
     /// usable.
     void rethrow_streamer_error();
 
+    /// @brief True if the text streamer threw in the last request, so the caller must not call it again.
+    bool text_streamer_failed() const {
+        return m_text_streamer_failed;
+    }
+
     /// @brief Forgets an announced request that was never added, e.g. after a failure before add_request().
     void forget_expected_request() {
         m_pending_request.reset();
@@ -80,6 +85,7 @@ private:
     std::vector<PendingFrame> m_pending_frames;
     std::optional<LFM3SpeechResult> m_result;
     std::exception_ptr m_streamer_error;
+    bool m_text_streamer_failed = false;
 
     /// @brief Flushes the codec for the request of it, keeps the result and forgets the state. An exception of the
     /// speech streamer cancels the request and is kept for rethrow_streamer_error().

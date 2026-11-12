@@ -237,11 +237,12 @@ private:
                                            const Generate& run) {
         GenerationConfig text_config = generation_config;
         const GenerationConfig defaults = m_impl.get_config();
-        if (text_config.eos_token_id == -1) {
-            text_config.set_eos_token_id(defaults.eos_token_id);
-        }
+        // Same order as ContinuousBatchingImpl::add_request(): set_eos_token_id() adds EOS to the stop ids.
         if (text_config.stop_token_ids.empty()) {
             text_config.stop_token_ids = defaults.stop_token_ids;
+        }
+        if (text_config.eos_token_id == -1) {
+            text_config.set_eos_token_id(defaults.eos_token_id);
         }
         // The pipeline only sees the greedy copy below, so the caller's settings are checked here, as on SDPA.
         text_config.validate();
@@ -266,8 +267,21 @@ private:
                         "LFM3-Omni speech output needs an eos_token_id other than <|text_end|>");
 
         // The hook writes the text streamer itself, so the pipeline streams nothing.
-        const VLMDecodedResults decoded_results = run(pipeline_config, std::monostate{});
-        m_speech_hook->rethrow_streamer_error();
+        VLMDecodedResults decoded_results;
+        try {
+            decoded_results = run(pipeline_config, std::monostate{});
+            m_speech_hook->rethrow_streamer_error();
+        } catch (...) {
+            // As in ContinuousBatchingImpl::generate(): a healthy text streamer is ended on failure too, and an end()
+            // failure is dropped so the original error reaches the caller.
+            if (text_streamer && !m_speech_hook->text_streamer_failed()) {
+                try {
+                    text_streamer->end();
+                } catch (...) {
+                }
+            }
+            throw;
+        }
         if (text_streamer) {
             text_streamer->end();
         }
@@ -279,6 +293,8 @@ private:
         }
         const auto stop_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded = finalize_decoded_results(decoded_results, start_time, stop_time);
+        // The pipeline decoded a greedy copy, so the score comes from the text sampling of the hook.
+        decoded.scores = {speech.text_log_prob};
         // Speech and text come from one decode loop, so the speech time is the whole call.
         decoded.speech_result.perf_metrics.generation_time_ms =
             PerfMetrics::get_microsec(stop_time - start_time) / 1000.0f;
