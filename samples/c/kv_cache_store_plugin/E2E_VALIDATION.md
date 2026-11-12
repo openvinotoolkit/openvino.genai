@@ -189,9 +189,16 @@ same reason.
 #### Plugin settings and plugin-side eviction
 
 - `CacheOffloadConfig.store_properties` (a string-to-string map; `"store_properties": {...}` in the `llm_bench`
-  cache offload JSON) reaches the plugin in `OvKVCacheStoreOpenOptions.properties`, after the two entries
-  the host always adds (`block_size_bytes`, `device`; the host ignores attempts to override those). The host
+  cache offload JSON) reaches the plugin in `OvKVCacheStoreOpenOptions.properties`, after the entries the host
+  always adds: `block_size_bytes`, `device`, `dram_cache_capacity_gb` and `reuse_ssd_cache`, plus `debug_log_path`
+  when `CacheOffloadConfig.debug_log_path` is set. The host ignores attempts to override those. The host
   does not interpret the rest. The sample plugin logs every extra property it receives when it opens a store.
+- `CacheOffloadConfig.kv_cache_dir` reaches the plugin as `OvKVCacheStoreOpenOptions.directory`, and
+  `capacity_bytes` (or `ssd_cache_capacity_gb` converted to bytes; set only one of them) as
+  `OvKVCacheStoreOpenOptions.capacity_bytes`. `dram_cache_capacity_gb` is a decimal string, `0` meaning no DRAM budget.
+- `reuse_ssd_cache` is `true` by default. With `false` the plugin has to purge what it holds for the opened namespace
+  (one per model and cache kind) before serving requests; `sample-persistent-file` deletes that namespace's block
+  files, so a restart finds nothing.
 - A provider that advertises `OV_KVCACHE_CAP_SELF_EVICT` owns eviction. The host then does not drop blocks to free
   capacity and does not count blocks against `capacity_bytes`; it asks the plugin (`has_blocks`, reads) whenever
   it needs to know whether a block is still there and treats a block that disappeared as a miss, which only
@@ -221,7 +228,8 @@ back through your plugin and recomputes only what is missing. Consequences for y
   plugin and properties, and the same model, device and cache layout, because the namespace carries a digest of
   them and another model never sees these blocks.
 - The plugin must keep blocks across the process. A plugin that does not, such as the sample's `sample-in-memory`
-  provider, still passes a restart inside one process but loses everything when the process exits.
+  provider, still passes a restart inside one process but loses everything when the process exits. The new pipeline
+  must keep `reuse_ssd_cache` at its default `true`; with `false` the plugin purges the stores on open.
 - Only completed blocks are stored. The unfinished last block (fewer tokens than one block) is recomputed, and for
   a hybrid model so is everything after the last linear-attention checkpoint, which is one checkpoint interval at
   most (see Scenario 1 for its size).
@@ -247,7 +255,7 @@ exits, so a restart through it can only be checked with a second `ContinuousBatc
 process. That validates the ABI call sequence and data correctness, but not that your plugin survives a real process
 restart - that depends on your own storage backend.
 
-The second provider, `sample-persistent-file`, keeps every block as a file under `CacheOffloadConfig.path` and is
+The second provider, `sample-persistent-file`, keeps every block as a file under `CacheOffloadConfig.kv_cache_dir` and is
 what the real multi-process check uses, see the three `verify_chunk_store.py` phases above. The store then holds one
 `ns_*` directory per group, `kv` and `la`. With your own plugin, run the same commands against your storage.
 

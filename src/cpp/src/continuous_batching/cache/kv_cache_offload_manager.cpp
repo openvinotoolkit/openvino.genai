@@ -109,13 +109,13 @@ KVCacheOffloadManager::KVCacheOffloadManager(const KVCacheDiskLayout& layout,
                     " bytes");
 
     std::filesystem::path directory;
-    if (config.path.empty()) {
+    if (config.kv_cache_dir.empty()) {
         directory = std::filesystem::temp_directory_path();
     } else {
-        directory = std::filesystem::path(config.path);
+        directory = std::filesystem::path(config.kv_cache_dir);
         OPENVINO_ASSERT(std::filesystem::is_directory(directory),
-                        "KV cache offload path '",
-                        config.path,
+                        "KV cache offload kv_cache_dir '",
+                        config.kv_cache_dir,
                         "' is not an existing directory");
     }
 

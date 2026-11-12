@@ -360,7 +360,7 @@ OvKVCacheStatus provider_open(void* /*self*/,
 
     try {
         CacheOffloadConfig config;
-        config.path = opts->directory != nullptr ? opts->directory : "";
+        config.kv_cache_dir = opts->directory != nullptr ? opts->directory : "";
         config.capacity_bytes = opts->capacity_bytes;
         const KVCacheDiskLayout layout({*block_size_bytes}, {0});
         auto backend = std::make_unique<KVCacheOffloadManager>(layout, config, device);

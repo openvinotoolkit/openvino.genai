@@ -120,8 +120,13 @@ struct SchedulerConfig {
                 "SchedulerConfig use_cache_offload requires enable_prefix_caching to be enabled");
         OPENVINO_ASSERT(!use_cache_offload || !use_cache_eviction,
                 "SchedulerConfig use_cache_offload is not supported together with use_cache_eviction");
-        OPENVINO_ASSERT(!use_cache_offload || cache_offload_config.capacity_bytes > 0,
-                "SchedulerConfig cache_offload_config.capacity_bytes must be greater than 0 when use_cache_offload is enabled");
+        OPENVINO_ASSERT(cache_offload_config.ssd_cache_capacity_gb >= 0 && cache_offload_config.dram_cache_capacity_gb >= 0,
+                "SchedulerConfig cache_offload_config ssd_cache_capacity_gb and dram_cache_capacity_gb must not be negative");
+        OPENVINO_ASSERT(cache_offload_config.ssd_cache_capacity_gb == 0 || cache_offload_config.capacity_bytes == 0,
+                "SchedulerConfig cache_offload_config must set either capacity_bytes or ssd_cache_capacity_gb, not both");
+        OPENVINO_ASSERT(!use_cache_offload || cache_offload_config.capacity_bytes > 0 ||
+                            cache_offload_config.ssd_cache_capacity_gb > 0,
+                "SchedulerConfig cache_offload_config.capacity_bytes or ssd_cache_capacity_gb must be greater than 0 when use_cache_offload is enabled");
     }
 
     bool operator==(const SchedulerConfig& other) const {

@@ -161,9 +161,18 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     }
 
     const std::string block_size_str = std::to_string(layout.get_slot_size());
-    std::vector<OvKVCacheProperty> properties = {{"block_size_bytes", block_size_str.c_str()}, {"device", device.c_str()}};
+    const std::string dram_capacity_str = std::to_string(config.dram_cache_capacity_gb);
+    const std::string reuse_str = config.reuse_ssd_cache ? "true" : "false";
+    std::vector<OvKVCacheProperty> properties = {{"block_size_bytes", block_size_str.c_str()},
+                                                 {"device", device.c_str()},
+                                                 {"dram_cache_capacity_gb", dram_capacity_str.c_str()},
+                                                 {"reuse_ssd_cache", reuse_str.c_str()}};
+    if (!config.debug_log_path.empty()) {
+        properties.push_back({"debug_log_path", config.debug_log_path.c_str()});
+    }
     for (const auto& [key, value] : config.store_properties) {
-        if (key == "block_size_bytes" || key == "device") {
+        if (key == "block_size_bytes" || key == "device" || key == "dram_cache_capacity_gb" ||
+            key == "reuse_ssd_cache" || key == "debug_log_path") {
             GENAI_WARN("KV cache store property '%s' is set by the host and cannot be overridden; ignoring it", key.c_str());
             continue;
         }
@@ -171,7 +180,7 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     }
 
     OvKVCacheStoreOpenOptions options{};
-    options.directory = config.path.empty() ? nullptr : config.path.c_str();
+    options.directory = config.kv_cache_dir.empty() ? nullptr : config.kv_cache_dir.c_str();
     options.capacity_bytes = config.capacity_bytes;
     options.properties = properties.data();
     options.property_count = properties.size();

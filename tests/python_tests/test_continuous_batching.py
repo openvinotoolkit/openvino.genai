@@ -193,8 +193,12 @@ def test_generation_handle_echo_only_publishes_output_and_finished_status(
 def test_cache_offload_config_defaults():
     config = CacheOffloadConfig()
 
-    assert config.path == ""
+    assert config.kv_cache_dir == ""
     assert config.capacity_bytes == 0
+    assert config.ssd_cache_capacity_gb == 0
+    assert config.dram_cache_capacity_gb == 0
+    assert config.reuse_ssd_cache is True
+    assert config.debug_log_path == ""
     assert config.linear_attention_capacity_bytes == 0
     assert config.buffer_slots == 2
     assert config.use_page_cache is True
@@ -211,16 +215,24 @@ def test_cache_offload_config_defaults():
 
 def test_cache_offload_config_keyword_construction_and_assignment(tmp_path: Path):
     config = CacheOffloadConfig(
-        path=str(tmp_path),
+        kv_cache_dir=str(tmp_path),
         capacity_bytes=1 << 20,
         buffer_slots=4,
         linear_attention_capacity_bytes=2 << 20,
         store_completed_blocks=True,
         store_properties={"tier": "ssd"},
+        ssd_cache_capacity_gb=8,
+        dram_cache_capacity_gb=2,
+        reuse_ssd_cache=False,
+        debug_log_path=str(tmp_path / "logs"),
     )
 
-    assert config.path == str(tmp_path)
+    assert config.kv_cache_dir == str(tmp_path)
     assert config.capacity_bytes == 1 << 20
+    assert config.ssd_cache_capacity_gb == 8
+    assert config.dram_cache_capacity_gb == 2
+    assert config.reuse_ssd_cache is False
+    assert config.debug_log_path == str(tmp_path / "logs")
     assert config.buffer_slots == 4
     assert config.linear_attention_capacity_bytes == 2 << 20
     assert config.store_completed_blocks is True
@@ -238,6 +250,7 @@ def test_cache_offload_config_keyword_construction_and_assignment(tmp_path: Path
     assert scheduler_config.cache_offload_config.allow_untrusted_store_plugin is True
     assert scheduler_config.cache_offload_config.store_library_path == "plugin.dll"
     assert "capacity_bytes: 4194304" in config.to_string()
+    assert "ssd_cache_capacity_gb: 8" in config.to_string()
 
 
 @pytest.mark.parametrize(
@@ -245,6 +258,14 @@ def test_cache_offload_config_keyword_construction_and_assignment(tmp_path: Path
     [
         pytest.param({"enable_prefix_caching": False, "capacity_bytes": 1 << 20}, id="without_prefix_caching"),
         pytest.param({"enable_prefix_caching": True, "capacity_bytes": 0}, id="without_capacity"),
+        pytest.param(
+            {"enable_prefix_caching": True, "capacity_bytes": 1 << 20, "ssd_cache_capacity_gb": 1},
+            id="both_capacity_units",
+        ),
+        pytest.param(
+            {"enable_prefix_caching": True, "capacity_bytes": 0, "ssd_cache_capacity_gb": -1},
+            id="negative_ssd_capacity",
+        ),
     ],
 )
 def test_cache_offload_rejects_invalid_scheduler_config(
@@ -253,7 +274,10 @@ def test_cache_offload_rejects_invalid_scheduler_config(
     scheduler_config = SchedulerConfig()
     scheduler_config.enable_prefix_caching = scheduler_params["enable_prefix_caching"]
     scheduler_config.use_cache_offload = True
-    scheduler_config.cache_offload_config = CacheOffloadConfig(capacity_bytes=scheduler_params["capacity_bytes"])
+    scheduler_config.cache_offload_config = CacheOffloadConfig(
+        capacity_bytes=scheduler_params["capacity_bytes"],
+        ssd_cache_capacity_gb=scheduler_params.get("ssd_cache_capacity_gb", 0),
+    )
 
     with pytest.raises(RuntimeError):
         ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, scheduler_config, "CPU")
@@ -273,7 +297,7 @@ def test_cache_offload_restores_an_evicted_prefix_with_the_same_output(
         if use_offload:
             scheduler_config.use_cache_offload = True
             scheduler_config.cache_offload_config = CacheOffloadConfig(
-                path=str(tmp_path), capacity_bytes=256 << 20, buffer_slots=16
+                kv_cache_dir=str(tmp_path), capacity_bytes=256 << 20, buffer_slots=16
             )
         return scheduler_config
 

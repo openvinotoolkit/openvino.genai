@@ -138,7 +138,7 @@ SchedulerConfig make_restart_scheduler_config() {
 SchedulerConfig make_persistent_store_config(const std::string& plugin_path, const std::string& store_dir, bool hybrid) {
     auto config = make_restart_scheduler_config();
     config.use_cache_offload = true;
-    config.cache_offload_config.path = store_dir;
+    config.cache_offload_config.kv_cache_dir = store_dir;
     config.cache_offload_config.capacity_bytes = 2048ull * 1024 * 1024;
     if (hybrid) {
         // A linear-attention checkpoint is large, so the store holds only a few of them.

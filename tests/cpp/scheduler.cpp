@@ -1723,6 +1723,25 @@ TEST(TestScheduler, scheduler_config_zero_cache_interval_multiplier_requires_dis
     EXPECT_EQ(scheduler_config.cache_interval_multiplier.value(), 0);
 }
 
+TEST(TestScheduler, scheduler_config_cache_offload_takes_either_capacity_unit_but_not_both) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.use_cache_offload = true;
+    EXPECT_ANY_THROW(scheduler_config.validate());
+
+    scheduler_config.cache_offload_config.ssd_cache_capacity_gb = 1;
+    EXPECT_NO_THROW(scheduler_config.validate());
+
+    scheduler_config.cache_offload_config.capacity_bytes = 1 << 20;
+    EXPECT_ANY_THROW(scheduler_config.validate());
+
+    scheduler_config.cache_offload_config.ssd_cache_capacity_gb = 0;
+    EXPECT_NO_THROW(scheduler_config.validate());
+
+    scheduler_config.cache_offload_config.dram_cache_capacity_gb = -1;
+    EXPECT_ANY_THROW(scheduler_config.validate());
+}
+
 TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_is_ignored_for_kv_only_model) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(get_dummy_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();

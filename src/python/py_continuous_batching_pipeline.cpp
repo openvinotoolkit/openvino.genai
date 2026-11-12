@@ -114,11 +114,29 @@ auto cache_offload_config_docstring = R"(
     SchedulerConfig.use_cache_eviction.
 
     Parameters:
-    :param path: existing directory to place the offload file in. When empty, the system temporary directory is used.
-    :type path: str
+    :param kv_cache_dir: existing directory on the SSD where the offloaded KV cache files are stored, which is also the
+        directory a store plugin keeps its files under. When empty, the system temporary directory is used.
+    :type kv_cache_dir: str
 
     :param capacity_bytes: upper bound of the offload file size in bytes. The usable slot count is derived from this.
     :type capacity_bytes: int
+
+    :param ssd_cache_capacity_gb: upper bound of the SSD space used for the KV cache, in GB. When greater than 0 it
+        takes the place of capacity_bytes, which then has to stay 0.
+    :type ssd_cache_capacity_gb: int
+
+    :param dram_cache_capacity_gb: upper bound of the DRAM used for the KV cache, in GB. Handed to a store plugin as the
+        dram_cache_capacity_gb property; the in-tree file store has no DRAM tier and ignores it.
+    :type dram_cache_capacity_gb: int
+
+    :param reuse_ssd_cache: whether a store plugin loads the cache that an earlier run left in kv_cache_dir for the same model
+        (True, default) or purges it when opening the store (False). Handed to the plugin as the reuse_ssd_cache
+        property; the in-tree file store ignores it.
+    :type reuse_ssd_cache: bool
+
+    :param debug_log_path: directory for the debug logs of a store plugin, handed to it as the debug_log_path property
+        when not empty.
+    :type debug_log_path: str
 
     :param linear_attention_capacity_bytes: upper bound of the linear attention state offload file size in bytes,
         in a separate file from the KV cache offload file. When 0 (default), linear attention cache offload is
@@ -144,7 +162,8 @@ auto cache_offload_config_docstring = R"(
     :type allow_untrusted_store_plugin: bool
 
     :param store_properties: plugin-specific key/value settings handed to the store plugin when it opens a store, next
-        to the ones the host always passes (block_size_bytes and device, which cannot be overridden).
+        to the ones the host always passes (block_size_bytes, device, dram_cache_capacity_gb, reuse_ssd_cache and
+        debug_log_path, which cannot be overridden).
     :type store_properties: dict[str, str]
 
     :param store_completed_blocks: also store every block as soon as the forward pass that completed it has finished
@@ -484,13 +503,19 @@ void init_continuous_batching_pipeline(py::module_& m) {
 
     py::class_<CacheOffloadConfig>(m, "CacheOffloadConfig", cache_offload_config_docstring)
             .def(py::init<>())
-            .def(py::init([](const std::string& path, size_t capacity_bytes, size_t buffer_slots, bool use_page_cache,
+            .def(py::init([](const std::string& kv_cache_dir, size_t capacity_bytes, size_t buffer_slots, bool use_page_cache,
                              size_t linear_attention_capacity_bytes, const std::string& store_library_path,
                              const std::string& store_provider_name, bool allow_untrusted_store_plugin,
-                             bool store_completed_blocks, const std::map<std::string, std::string>& store_properties) {
+                             bool store_completed_blocks, const std::map<std::string, std::string>& store_properties,
+                             int32_t ssd_cache_capacity_gb, int32_t dram_cache_capacity_gb, bool reuse_ssd_cache,
+                             const std::string& debug_log_path) {
                 CacheOffloadConfig config;
-                config.path = path;
+                config.kv_cache_dir = kv_cache_dir;
                 config.capacity_bytes = capacity_bytes;
+                config.ssd_cache_capacity_gb = ssd_cache_capacity_gb;
+                config.dram_cache_capacity_gb = dram_cache_capacity_gb;
+                config.reuse_ssd_cache = reuse_ssd_cache;
+                config.debug_log_path = debug_log_path;
                 config.linear_attention_capacity_bytes = linear_attention_capacity_bytes;
                 config.buffer_slots = buffer_slots;
                 config.use_page_cache = use_page_cache;
@@ -500,7 +525,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 config.store_completed_blocks = store_completed_blocks;
                 config.store_properties = store_properties;
                 return config; }),
-                 py::arg("path") = std::string{},
+                 py::arg("kv_cache_dir") = std::string{},
                  py::arg("capacity_bytes") = 0,
                  py::arg("buffer_slots") = 2,
                  py::arg("use_page_cache") = true,
@@ -509,9 +534,17 @@ void init_continuous_batching_pipeline(py::module_& m) {
                  py::arg("store_provider_name") = std::string{},
                  py::arg("allow_untrusted_store_plugin") = false,
                  py::arg("store_completed_blocks") = false,
-                 py::arg("store_properties") = std::map<std::string, std::string>{})
-            .def_readwrite("path", &CacheOffloadConfig::path)
+                 py::arg("store_properties") = std::map<std::string, std::string>{},
+                 py::arg("ssd_cache_capacity_gb") = 0,
+                 py::arg("dram_cache_capacity_gb") = 0,
+                 py::arg("reuse_ssd_cache") = true,
+                 py::arg("debug_log_path") = std::string{})
+            .def_readwrite("kv_cache_dir", &CacheOffloadConfig::kv_cache_dir)
             .def_readwrite("capacity_bytes", &CacheOffloadConfig::capacity_bytes)
+            .def_readwrite("ssd_cache_capacity_gb", &CacheOffloadConfig::ssd_cache_capacity_gb)
+            .def_readwrite("dram_cache_capacity_gb", &CacheOffloadConfig::dram_cache_capacity_gb)
+            .def_readwrite("reuse_ssd_cache", &CacheOffloadConfig::reuse_ssd_cache)
+            .def_readwrite("debug_log_path", &CacheOffloadConfig::debug_log_path)
             .def_readwrite("linear_attention_capacity_bytes", &CacheOffloadConfig::linear_attention_capacity_bytes)
             .def_readwrite("buffer_slots", &CacheOffloadConfig::buffer_slots)
             .def_readwrite("use_page_cache", &CacheOffloadConfig::use_page_cache)

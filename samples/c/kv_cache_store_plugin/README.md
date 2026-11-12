@@ -20,7 +20,7 @@ This sample implements the **full** ABI surface and exports two providers:
 - `sample-in-memory`: a process-local, in-memory linked list protected by a mutex. Deliberately **not production
   quality** (no persistence, no real I/O, O(n) key lookup, unbounded memory growth) - its only job is to show
   exactly what a vendor plugin needs to implement, and to prove the pattern works end-to-end with a real model.
-- `sample-persistent-file`: one file per block under `CacheOffloadConfig.path` (set it to a directory), written to a
+- `sample-persistent-file`: one file per block under `CacheOffloadConfig.kv_cache_dir` (set it to a directory), written to a
   temporary name, synced and renamed. Blocks survive the process, so blocks stored by one process (see
   `store_completed_blocks`) can be reused by another (see `verify_chunk_store.py`). Still a reference: no eviction, no
   locking between processes, and a store reopened with a smaller `capacity_bytes` than the blocks it already holds
@@ -89,6 +89,23 @@ Or via a `tools/llm_bench` `--cb_config` JSON file:
 If the library fails to load, fails the ABI handshake, or the named provider is not found, the
 host logs a warning and falls back to the default `FileKVCacheStore` - offload is always
 best-effort, never a hard dependency on the plugin being present.
+
+### Settings the host hands to the plugin
+
+`CacheOffloadConfig` carries the settings of an SSD-backed store. The host passes them to `open` as follows; the
+property keys cannot be overridden through `store_properties`:
+
+| `CacheOffloadConfig` field | Reaches the plugin as |
+|---|---|
+| `kv_cache_dir` | `OvKVCacheStoreOpenOptions.directory` |
+| `capacity_bytes` or `ssd_cache_capacity_gb` (set one of them) | `OvKVCacheStoreOpenOptions.capacity_bytes` |
+| `dram_cache_capacity_gb` | property `dram_cache_capacity_gb` (decimal string, `0` for no budget) |
+| `reuse_ssd_cache` | property `reuse_ssd_cache` (`true` or `false`) |
+| `debug_log_path` | property `debug_log_path`, only when not empty |
+
+With `reuse_ssd_cache` set to `false` a plugin must purge what it holds for the opened namespace before serving
+requests; `sample-persistent-file` deletes the block files of that namespace. The in-tree file store ignores
+`dram_cache_capacity_gb`, `reuse_ssd_cache` and `debug_log_path`.
 
 ## Writing your own plugin
 

@@ -197,7 +197,7 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
     EXPECT_EQ(second->get_num_free_blocks(), NUM_BLOCKS);
 }
 
-// The persistent provider keeps a block in a file under CacheOffloadConfig::path, which is what lets another process
+// The persistent provider keeps a block in a file under CacheOffloadConfig::kv_cache_dir, which is what lets another process
 // read it back; the cross-process round trip itself is checked by verify_chunk_store.py (write/read phases).
 TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
     const std::optional<std::string> library_path = find_sample_plugin_library();
@@ -208,7 +208,7 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
     const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_persistent_store_test";
     std::filesystem::remove_all(directory);
     CacheOffloadConfig config = make_config();
-    config.path = directory.string();
+    config.kv_cache_dir = directory.string();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-persistent-file";
     config.allow_untrusted_store_plugin = true;
@@ -227,9 +227,90 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
     }
 
     // Without a directory the provider refuses to open, and the registry falls back to its default store.
-    config.path.clear();
+    config.kv_cache_dir.clear();
     auto fallback = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(fallback, nullptr);
     EXPECT_FALSE(fallback->is_plugin_backed());
+    std::filesystem::remove_all(directory);
+}
+
+namespace {
+
+size_t count_block_files(const std::filesystem::path& directory) {
+    size_t block_files = 0;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+        block_files += entry.is_regular_file() && entry.path().extension() == ".blk" ? 1 : 0;
+    }
+    return block_files;
+}
+
+}  // namespace
+
+TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToReuseSsdCache) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_reuse_ssd_cache_test";
+    std::filesystem::remove_all(directory);
+    CacheOffloadConfig config = make_config();
+    config.kv_cache_dir = directory.string();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-persistent-file";
+    config.allow_untrusted_store_plugin = true;
+
+    {
+        auto first = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+        ASSERT_NE(first, nullptr);
+        ASSERT_TRUE(first->is_plugin_backed());
+        ASSERT_TRUE(first->write_block(1, make_block(/*seed=*/5)));
+    }
+    ASSERT_EQ(count_block_files(directory), 1u);
+
+    ASSERT_TRUE(config.reuse_ssd_cache);
+    {
+        auto reused = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+        ASSERT_NE(reused, nullptr);
+        ASSERT_TRUE(reused->is_plugin_backed());
+        EXPECT_TRUE(reused->has_block(1));
+    }
+
+    config.reuse_ssd_cache = false;
+    auto purged = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(purged, nullptr);
+    ASSERT_TRUE(purged->is_plugin_backed());
+    EXPECT_FALSE(purged->has_block(1));
+    EXPECT_EQ(purged->get_num_free_blocks(), NUM_BLOCKS);
+    EXPECT_EQ(count_block_files(directory), 0u);
+    std::filesystem::remove_all(directory);
+}
+
+// The settings the host owns reach the plugin from their own fields, so a store_properties entry cannot undo them.
+TEST(TestStoreRegistry, StorePropertiesCannotOverrideReuseSsdCache) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_reuse_ssd_cache_override_test";
+    std::filesystem::remove_all(directory);
+    CacheOffloadConfig config = make_config();
+    config.kv_cache_dir = directory.string();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-persistent-file";
+    config.allow_untrusted_store_plugin = true;
+    config.store_properties = {{"reuse_ssd_cache", "false"}, {"dram_cache_capacity_gb", "7"}};
+
+    {
+        auto first = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+        ASSERT_NE(first, nullptr);
+        ASSERT_TRUE(first->is_plugin_backed());
+        ASSERT_TRUE(first->write_block(1, make_block(/*seed=*/5)));
+    }
+    auto second = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(second, nullptr);
+    ASSERT_TRUE(second->is_plugin_backed());
+    EXPECT_TRUE(second->has_block(1));
     std::filesystem::remove_all(directory);
 }

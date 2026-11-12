@@ -7,7 +7,7 @@
 //   - "sample-in-memory": a process-local, in-memory linked list - NOT meant for production use (no
 //     persistence, no real I/O, naive O(n) key lookup, unbounded memory growth) but enough to show exactly what
 //     a vendor plugin needs to implement and how the host drives it.
-//   - "sample-persistent-file": keeps every block in its own file under `CacheOffloadConfig::path`, so blocks
+//   - "sample-persistent-file": keeps every block in its own file under `CacheOffloadConfig::kv_cache_dir`, so blocks
 //     survive the process. This is what reuse of the blocks in another process needs. It is still a
 //     reference (one file per block, no eviction, no locking across processes), not a production store.
 // A real plugin would replace the storage in store_read_blocks/store_write_blocks/store_drop_blocks with its own
@@ -478,8 +478,9 @@ static void ensure_registry_mutex(void) {
     }
 }
 
-/* Shows what CacheOffloadConfig.store_properties looks like on the plugin side: the host's own two entries come
- * first, anything the user configured follows. A real plugin would parse the keys it knows and ignore the rest. */
+/* Shows what CacheOffloadConfig.store_properties looks like on the plugin side: the host's own entries (block_size_bytes
+ * and device are skipped here, dram_cache_capacity_gb, reuse_ssd_cache and debug_log_path are listed) come first,
+ * anything the user configured follows. A real plugin would parse the keys it knows and ignore the rest. */
 static void log_user_properties(const OvKVCacheStoreOpenOptions* opts) {
     uint64_t i;
     if (opts == NULL || opts->log == NULL) {
@@ -495,6 +496,20 @@ static void log_user_properties(const OvKVCacheStoreOpenOptions* opts) {
         snprintf(message, sizeof(message), "sample: user property %s=%s", property->key, property->value);
         opts->log(OV_KVCACHE_LOG_INFO, message);
     }
+}
+
+static int property_equals(const OvKVCacheStoreOpenOptions* opts, const char* key, const char* value) {
+    uint64_t i;
+    if (opts == NULL || opts->properties == NULL) {
+        return 0;
+    }
+    for (i = 0; i < opts->property_count; ++i) {
+        const OvKVCacheProperty* property = &opts->properties[i];
+        if (property->key != NULL && property->value != NULL && strcmp(property->key, key) == 0) {
+            return strcmp(property->value, value) == 0;
+        }
+    }
+    return 0;
 }
 
 static OvKVCacheStatus provider_open(void* self,
@@ -797,8 +812,17 @@ static void count_block_file(PersistentStore* store, const char* path) {
     }
 }
 
-/* Counts the blocks already on disk, so a store opened in a new process reports them in stats(). */
-static void scan_persistent_store(PersistentStore* store) {
+static void visit_block_file(PersistentStore* store, const char* path, int purge) {
+    if (purge) {
+        remove(path);
+    } else {
+        count_block_file(store, path);
+    }
+}
+
+/* Counts the blocks already on disk, so a store opened in a new process reports them in stats(). With `purge`, the
+ * block files are deleted instead and the store starts empty. */
+static void scan_persistent_store(PersistentStore* store, int purge) {
     size_t buffer_length = strlen(store->dir) + 300;
     char* path = (char*)malloc(buffer_length);
     if (path == NULL) {
@@ -813,7 +837,7 @@ static void scan_persistent_store(PersistentStore* store) {
         if (handle != INVALID_HANDLE_VALUE) {
             do {
                 snprintf(path, buffer_length, "%s/%s", store->dir, found.cFileName);
-                count_block_file(store, path);
+                visit_block_file(store, path, purge);
             } while (FindNextFileA(handle, &found));
             FindClose(handle);
         }
@@ -827,7 +851,7 @@ static void scan_persistent_store(PersistentStore* store) {
             size_t length = strlen(entry->d_name);
             if (length > suffix_length && strcmp(entry->d_name + length - suffix_length, PERSISTENT_BLOCK_SUFFIX) == 0) {
                 snprintf(path, buffer_length, "%s/%s", store->dir, entry->d_name);
-                count_block_file(store, path);
+                visit_block_file(store, path, purge);
             }
         }
         if (directory != NULL) {
@@ -1111,6 +1135,7 @@ static OvKVCacheStatus persistent_provider_open(void* self,
     uint64_t ns_hash;
     const uint8_t* ns_bytes;
     size_t ns_len;
+    int purge;
     (void)self;
     if (out == NULL) {
         return OV_KVCACHE_ERR_INVALID_ARG;
@@ -1118,11 +1143,12 @@ static OvKVCacheStatus persistent_provider_open(void* self,
     memset(out, 0, sizeof(*out));
     if (opts == NULL || opts->directory == NULL || opts->directory[0] == '\0') {
         if (opts != NULL && opts->log != NULL) {
-            opts->log(OV_KVCACHE_LOG_ERROR, "sample-persistent-file: set CacheOffloadConfig.path to a directory");
+            opts->log(OV_KVCACHE_LOG_ERROR, "sample-persistent-file: set CacheOffloadConfig.kv_cache_dir to a directory");
         }
         out->status = OV_KVCACHE_ERR_INVALID_ARG;
         return out->status;
     }
+    purge = property_equals(opts, "reuse_ssd_cache", "false");
     ns_bytes = (ns != NULL && ns->bytes != NULL) ? ns->bytes : (const uint8_t*)"";
     ns_len = (ns != NULL && ns->bytes != NULL) ? (size_t)ns->len : 0;
     ns_hash = fnv1a64(ns_bytes, ns_len);
@@ -1163,9 +1189,16 @@ static OvKVCacheStatus persistent_provider_open(void* self,
         store->dir = dir;
         dir = NULL;
         sample_mutex_init(&store->mutex);
-        scan_persistent_store(store);
+        scan_persistent_store(store, purge);
         store->next = g_persistent_stores;
         g_persistent_stores = store;
+    } else if (purge) {
+        /* An instance kept from an earlier open in this process: drop what it holds before handing it out again. */
+        sample_mutex_lock(&store->mutex);
+        scan_persistent_store(store, 1);
+        store->blocks = 0;
+        store->bytes = 0;
+        sample_mutex_unlock(&store->mutex);
     }
     sample_mutex_unlock(&g_registry_mutex);
     free(dir);

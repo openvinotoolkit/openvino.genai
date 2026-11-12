@@ -166,6 +166,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     m_device = device;
     SchedulerConfig normalized_config = scheduler_config;
     normalized_config.validate();
+    auto& normalized_offload_config = normalized_config.cache_offload_config;
+    constexpr size_t bytes_per_gb = size_t{1} << 30;
+    if (normalized_offload_config.ssd_cache_capacity_gb > 0) {
+        normalized_offload_config.capacity_bytes =
+            static_cast<size_t>(normalized_offload_config.ssd_cache_capacity_gb) * bytes_per_gb;
+        normalized_offload_config.ssd_cache_capacity_gb = 0;
+    }
 
     // A store plugin may keep blocks across pipelines, so its namespaces need to tell models apart. The in-tree
     // file store lives and dies with this pipeline and needs no identity.

@@ -36,7 +36,7 @@ def make_pipeline(args, offload: bool) -> ov_genai.ContinuousBatchingPipeline:
         offload_config.store_library_path = args.plugin
         offload_config.store_provider_name = args.provider
         offload_config.allow_untrusted_store_plugin = True
-        offload_config.path = args.store_dir
+        offload_config.kv_cache_dir = args.store_dir
         offload_config.capacity_bytes = 4 * 1024 ** 3
         offload_config.linear_attention_capacity_bytes = 8 * 1024 ** 3
         offload_config.buffer_slots = 512

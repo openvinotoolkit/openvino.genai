@@ -147,8 +147,8 @@ TEST(TestKVCacheOffloadManager, RejectsUnsupportedDeviceAndDirectIO) {
 
 TEST(TestKVCacheOffloadManager, RejectsMissingDirectory) {
     CacheOffloadConfig config = make_config(1);
-    config.path = (std::filesystem::temp_directory_path() / "ov_genai_offload_missing_dir").string();
-    ASSERT_FALSE(std::filesystem::exists(config.path));
+    config.kv_cache_dir = (std::filesystem::temp_directory_path() / "ov_genai_offload_missing_dir").string();
+    ASSERT_FALSE(std::filesystem::exists(config.kv_cache_dir));
 
     EXPECT_THROW(KVCacheOffloadManager(make_layout(), config, "CPU"), ov::Exception);
 }
@@ -158,7 +158,7 @@ TEST(TestKVCacheOffloadManager, UsesConfiguredDirectory) {
     std::filesystem::create_directories(directory);
 
     CacheOffloadConfig config = make_config(1);
-    config.path = directory.string();
+    config.kv_cache_dir = directory.string();
 
     {
         KVCacheOffloadManager manager(make_layout(), config, "CPU");
