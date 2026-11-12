@@ -223,7 +223,7 @@ ASRDecodedResults SenseVoiceSmall::generate(const AudiosView& audios,
         const std::string text = m_tokenizer.decode(transcription_token_ids);
         detokenization_stop_time = std::chrono::steady_clock::now();
         detokenization_microseconds += PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time);
-        generated_token_count += transcription_token_ids.size();
+        generated_token_count += token_ids.size();
 
         results.texts.push_back(text);
         results.scores.push_back(0.0f);

@@ -22,6 +22,12 @@ pip install git+https://github.com/huggingface/optimum-intel.git
 ```
 :::
 
+:::note Models converted only by genai-cli
+Models marked as **genai-cli only** are not supported by `optimum-cli` yet. Convert them with
+[`genai-cli`](../guides/model-preparation/convert-to-openvino.mdx#genai-cli) (preview), the export tool of OpenVINO GenAI,
+which takes the same options as `optimum-cli export openvino`. All other models can be converted with either tool.
+:::
+
 ## Large Language Models (LLMs)
 
 :::tip LoRA Support
@@ -101,6 +107,18 @@ The model requires `transformers>=5.20.2`. Until
 optimum-intel from that PR. Export it with
 `--task image-text-to-text --trust-remote-code`. `VLMPipeline` produces text from text, image, video and audio input.
 Speech output goes through `OmniPipeline`, see [LFM3-Omni Notes](/docs/use-cases/visual-processing/#lfm3-omni-notes).
+
+#### Molmo2 {#molmo2-notes}
+
+Molmo2 is converted only by [`genai-cli`](../guides/model-preparation/convert-to-openvino.mdx#genai-cli) (preview), `optimum-cli` does not support it yet:
+
+```bash
+pip install openvino-genai[export]
+genai-cli export -m allenai/MolmoWeb-4B --trust-remote-code --weight-format int4 MolmoWeb-4B-ov-int4
+```
+
+The model is implemented by remote code that requires `transformers==4.57.6`; `genai-cli` provides it automatically
+in an ephemeral environment, the active one is not modified.
 
 #### MiniCPM-V-4_5 {#minicpm-v-4_5-notes}
 

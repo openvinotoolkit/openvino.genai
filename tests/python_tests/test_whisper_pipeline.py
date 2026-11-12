@@ -1248,7 +1248,7 @@ def streamer_for_test(request):
     indirect=True,
 )
 def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
-    _, genai_pipe, model_id, _ = pipelines_fixture
+    _, genai_pipe, model_id, pipeline_type = pipelines_fixture
 
     generate_kwargs = {}
     if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
@@ -1279,9 +1279,13 @@ def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer, **generate_kwargs)
+    result = genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer, **generate_kwargs)
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+
+    if model_id == "openai/whisper-tiny" and isinstance(streamer, ov_genai.StreamerBase):
+        chunks = result.chunks[0] if pipeline_type == PipelineType.ASR else result.chunks
+        assert result.perf_metrics.get_num_generated_tokens() == (len(result_handler.container) + 2 * len(chunks) + 1)
     result_handler.reset()
 
 
