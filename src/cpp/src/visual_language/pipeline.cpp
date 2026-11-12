@@ -621,13 +621,14 @@ public:
         auto& raw_counters = perf_metrics.raw_metrics;
 
         // ChatHistory carries the conversation, so a later string generate() must not continue it.
+        const bool was_chat_conversation = m_is_chat_conversation;
         struct ChatModeGuard {
             bool& flag;
             const bool saved;
             ~ChatModeGuard() {
                 flag = saved;
             }
-        } chat_mode_guard{m_is_chat_conversation, m_is_chat_conversation};
+        } chat_mode_guard{m_is_chat_conversation, was_chat_conversation};
         m_is_chat_conversation = true;
 
         setup_generation_config(generation_config);
