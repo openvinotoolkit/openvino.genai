@@ -4,7 +4,7 @@
 # - name: LLM
 #   marker: llm and not transformers_lower_v5
 #   cmd: tests/python_tests/samples
-#   runner: aks-win-8-cores-32gb-test
+#   runner: aks-win-16-cores-32gb-128gb-st
 #   components:
 #     - LLM_samples
 
@@ -19,7 +19,7 @@
 # - name: dreamlike_anime_1_0
 #   marker: dreamlike_anime_1_0
 #   cmd: tests/python_tests/samples
-#   runner: aks-win-8-cores-32gb-test
+#   runner: aks-win-16-cores-32gb-128gb-st
 #   components:
 #     - Image_generation_samples
 
@@ -77,7 +77,7 @@
   extra_cmd: python -m pip install transformers==5.0.0
   marker: qwen3_vl
   cmd: tests/python_tests/samples
-  runner: aks-win-8-cores-32gb-test
+  runner: aks-win-16-cores-32gb-128gb-st
   components:
     - VLM_samples
 
@@ -92,7 +92,7 @@
   extra_cmd: python -m pip install transformers==4.57.6
   marker: eagle3_decoding
   cmd: tests/python_tests/samples
-  runner: aks-win-8-cores-32gb-test
+  runner: aks-win-16-cores-32gb-128gb-st
   components:
     - speculative_decoding
 
@@ -100,7 +100,7 @@
   extra_cmd: python -m pip install transformers==4.57.6 diffusers==0.37.1
   marker: llm and (transformers_dependent or transformers_lower_v5)
   cmd: tests/python_tests/samples
-  runner: aks-win-8-cores-32gb-test
+  runner: aks-win-16-cores-32gb-128gb-st
   components:
     - LLM_samples
 
