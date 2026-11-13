@@ -111,6 +111,10 @@ public:
         }
 
         for (auto& handle : handles) {
+            OPENVINO_ASSERT(
+                handle->get_status() != ov::genai::GenerationStatus::IGNORED,
+                "Qwen3-TTS request ran out of KV-cache memory. "
+                "Increase SchedulerConfig.cache_size or reduce the batch size.");
             auto output = handle->read_all();
             result.perf_metrics.num_generated_samples += output.waveform.get_size();
             result.speeches.push_back(std::move(output.waveform));
