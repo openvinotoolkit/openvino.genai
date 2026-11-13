@@ -200,13 +200,14 @@ class TokenCollector(ov_genai.StreamerBase):
         super().__init__()
         self.tokens: list[int] = []
         self.status = status
+        self.ends = 0
 
     def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
         self.tokens.extend(token if isinstance(token, list) else [token])
         return self.status
 
     def end(self) -> None:
-        pass
+        self.ends += 1
 
 
 def _text_config(max_new_tokens: int) -> ov_genai.GenerationConfig:
@@ -637,6 +638,28 @@ def test_speech_streamer_end_is_called_once(
         with pytest.raises(Exception, match=error):
             run()
     assert counter.ends == 1
+
+
+class FailingSpeechStreamer(ov_genai.OmniSpeechStreamerBase):
+    def write(self, chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+        raise ValueError("speech chunk failure")
+
+    def end(self) -> None:
+        pass
+
+
+def test_speech_streamer_failure_ends_text_streamer(omni_pipe: ov_genai.OmniPipeline) -> None:
+    collector = TokenCollector()
+    with pytest.raises(Exception, match="speech chunk failure"):
+        omni_pipe.generate(
+            PROMPT,
+            text_config=_text_config(1000),
+            talker_speech_config=_speech_config(8, audio_chunk_frames=1),
+            streamer=collector,
+            speech_streamer=FailingSpeechStreamer(),
+        )
+    assert collector.tokens
+    assert collector.ends == 1
 
 
 def test_vlm_pipeline_ends_speech_streamer_on_rejected_config(vlm_pipe: ov_genai.VLMPipeline) -> None:

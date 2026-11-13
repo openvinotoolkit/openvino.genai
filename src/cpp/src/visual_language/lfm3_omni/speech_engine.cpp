@@ -523,6 +523,20 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     bool text_done = false;
     bool finished = false;
     bool speech_streamer_stopped = false;
+    // As on PA: a failed call still ends a healthy text streamer, and an end() failure is dropped so the original
+    // error reaches the caller. A text streamer that threw itself is not called again.
+    struct TextStreamerGuard {
+        const std::shared_ptr<StreamerBase>& streamer;
+        bool done = false;
+        ~TextStreamerGuard() {
+            if (streamer && !done) {
+                try {
+                    streamer->end();
+                } catch (...) {
+                }
+            }
+        }
+    } text_streamer_guard{streamer};
     while (!finished) {
         const bool interleaving = mode == Mode::INTERLEAVED;
         ov::Tensor next_embeds;
@@ -574,7 +588,9 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
             result.text_tokens.push_back(token);
             result.slot_tokens.push_back(token);
             if (streamer) {
+                text_streamer_guard.done = true;
                 const StreamingStatus status = streamer->write(token);
+                text_streamer_guard.done = false;
                 if (status == StreamingStatus::STOP) {
                     result.status = GenerationStatus::STOP;
                     finished = true;
@@ -623,6 +639,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
             step = timed_step(next_embeds, ++attention_length);
         }
     }
+    text_streamer_guard.done = true;
     if (streamer) {
         streamer->end();
     }
