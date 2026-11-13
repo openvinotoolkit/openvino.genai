@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import io
 import os
 import numpy as np
 from PIL import Image
@@ -44,7 +45,45 @@ def _get_text_to_speech_prompts_from_json(output_data_list, prompt_file_list):
     return text_list
 
 
+def _dataset_image(value):
+    if isinstance(value, dict):
+        # Not decoded datasets.Image value: {"bytes": ..., "path": ...}
+        if value.get("bytes"):
+            return Image.open(io.BytesIO(value["bytes"]))
+        return value["path"]
+    if isinstance(value, (str, Image.Image)):
+        return value
+    raise RuntimeError(f"== Unsupported image value type in dataset: {type(value)} ==")
+
+
+def get_dataset_samples(args):
+    from datasets import load_dataset
+
+    columns = args["dataset_columns"]
+    log.info(
+        f"Read {args['dataset_samples']} samples from dataset {args['dataset']} "
+        f"(subset: {args['dataset_subset']}, split: {args['dataset_split']}, columns: {columns}, "
+        f"seed: {args['dataset_seed']}) in streaming mode"
+    )
+    dataset = load_dataset(args["dataset"], name=args["dataset_subset"], split=args["dataset_split"], streaming=True)
+    if args["dataset_seed"] is not None:
+        dataset = dataset.shuffle(seed=args["dataset_seed"])
+
+    samples = []
+    for sample in dataset.take(args["dataset_samples"]):
+        missing = [column for column in columns.values() if column not in sample]
+        if missing:
+            raise RuntimeError(f"== Column(s) {missing} do not exist in dataset {args['dataset']}: {list(sample)} ==")
+        data = {"prompt": sample[columns["prompt"]]}
+        if sample.get(columns.get("media")) is not None:
+            data["media"] = _dataset_image(sample[columns["media"]])
+        samples.append(data)
+    return samples
+
+
 def get_text_prompt(args):
+    if args.get("dataset"):
+        return [sample["prompt"] for sample in get_dataset_samples(args)]
     text_list = []
     output_data_list, is_json_data = get_param_from_file(args, 'prompt')
     if is_json_data is True:
@@ -164,6 +203,10 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
 
         func_load_image = load_image_genai if genai_flag else load_image
         for media_item in _normalize_to_list(input_data.get("media")):
+            if isinstance(media_item, Image.Image):
+                # Images decoded by Hugging Face datasets
+                images.append(func_load_image(media_item))
+                continue
             entry = Path(media_item)
             if entry.is_dir():
                 for file in sorted(entry.iterdir()):
@@ -182,6 +225,8 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
 
 
 def get_vlm_prompt(args):
+    if args.get("dataset"):
+        return get_dataset_samples(args)
     vlm_file_list = []
 
     def _resolve_media_path(vlm_input_item, prompt_file_path):

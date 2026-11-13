@@ -80,11 +80,11 @@ optimum-cli export openvino --model meta-llama/Llama-2-7b-chat-hf --weight-forma
 To benchmark the performance of the LLM, use the following command:
 
 ``` bash
-python benchmark.py -m <model> -d <device> -r <report_csv> -f <framework> -p <prompt text> -n <num_iters> --task <pipeline_type>
+python benchmark.py -m <model> -d <device> -r <report_csv> -f <framework> -p <prompt text> -n <num_iters> --model-type <model_type>
 # e.g.
-python benchmark.py -m models/llama-2-7b-chat/ -n 2 --task text_gen
-python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen
-python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jsonl -n 2 --task text_gen
+python benchmark.py -m models/llama-2-7b-chat/ -n 2 --model-type text
+python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --model-type text
+python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jsonl -n 2 --model-type text
 ```
 
 **General parameters:**
@@ -121,7 +121,7 @@ To benchmark the original PyTorch model, first download the model locally and th
 # Download PyTorch Model
 huggingface-cli download meta-llama/Llama-2-7b-chat-hf --local-dir models/llama-2-7b-chat/pytorch
 # Benchmark with PyTorch Framework
-python benchmark.py -m models/llama-2-7b-chat/pytorch -n 2 -f pt --task text_gen
+python benchmark.py -m models/llama-2-7b-chat/pytorch -n 2 -f pt --model-type text
 ```
 
 > **Note:** If needed, You can install a specific OpenVINO version using pip:
@@ -177,7 +177,7 @@ OpenVINO is by default built with [oneTBB](https://github.com/oneapi-src/oneTBB/
 ## 7. Supported use cases
 ### Text Generation Models (LLMs)
 ```sh
-python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen
+python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --model-type text
 ```
 **Some additional parameters:**
 - `--cb_config`: Path to file with Continuous Batching Scheduler settings or dict".
@@ -188,13 +188,18 @@ python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --t
 ```sh
 optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 models/TinyLlama-1.1B-Chat-v1.0
 # speculative decoding
-python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -p "What is openvino?" -n 2 --task text_gen --num_assistant_tokens 5
+python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -p "What is openvino?" -n 2 --model-type text --num_assistant_tokens 5
+# speculative decoding on 10 samples of Hugging Face dataset read in streaming mode
+python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -n 2 --model-type text --dataset openai/gsm8k --dataset_subset main --dataset_split test --dataset_column question --dataset_samples 10
+# 10 samples of a visual Hugging Face dataset shuffled with a fixed seed: --dataset_column takes text, image columns in this order
+# or by role, e.g. --dataset_column text=question
+python benchmark.py -m models/Qwen2.5-VL-3B-Instruct/ -n 2 --model-type visual-text --dataset lmms-lab/textvqa --dataset_split validation --dataset_column question image --dataset_samples 10 --dataset_seed 42
 ```
 
 ```sh
 # chat iteration
-python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen_chat --chat_iter 3
-python benchmark.py -m ./models/llama-2-7b-chat/ -n 2 --task text_gen_chat -pf ./prompts/llm_chat.jsonl
+python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --model-type text-chat --chat_iter 3
+python benchmark.py -m ./models/llama-2-7b-chat/ -n 2 --model-type text-chat -pf ./prompts/llm_chat.jsonl
 ```
 
 **Some additional parameters:**
@@ -204,7 +209,7 @@ python benchmark.py -m ./models/llama-2-7b-chat/ -n 2 --task text_gen_chat -pf .
 
 ```sh
 # prompt lookup decoding
-python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen --max_ngram_size 3 --num_assistant_tokens 5
+python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --model-type text --max_ngram_size 3 --num_assistant_tokens 5
 ```
 
 > **Supported LLM model types:** arcee, decoder, falcon, glm, aquila, gpt2, open-llama, openchat, neural-chat, llama, tiny-llama, tinyllama, opt, pythia, stablelm, stable-zephyr, rocket, vicuna, dolly, bloom, red-pajama, xgen, longchat, jais, orca-mini, baichuan, qwen, zephyr, mistral, mixtral, phi2, minicpm, gemma, deci, phi3, deci, internlm, olmo, starcoder, instruct-gpt, granite, granitemoe, gptj, t5, gpt, mpt, blenderbot, chatglm, yi, phi
@@ -214,15 +219,15 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code models/MiniCPM-V-2_6
 # run benchmark.py
-python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task visual_text_gen -i ./image.png
+python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --model-type visual-text -i ./image.png
 ```
 
 ```sh
 # convert model to OpenVINO IR format
 optimum-cli export openvino -m google/gemma-3n-E2B-it gemma-3n-E2B-it --task=image-text-to-text
 # chat iteration
-python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat --chat_iter 3
-python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --model-type visual-text-chat --chat_iter 3
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --model-type visual-text-chat -pf ./prompts/vlm_chat.jsonl
 ```
 
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, minicpmv4-7, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
@@ -232,11 +237,11 @@ python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_cha
 # convert model to OpenVINO IRs format
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16
 # text to image
-python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task text-to-image
+python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --model-type text-to-image
 # image to image
-python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task image-to-image --media ./image.png
+python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --model-type image-to-image --media ./image.png
 # inpainting
-python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task inpainting --media ./image.png --mask_image ./mask.png
+python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --model-type image-inpainting --media ./image.png --mask_image ./mask.png
 ```
 
 **Some additional parameters:**
@@ -256,7 +261,7 @@ LoRA is supported for Text Generation and Image Generation OpenVINO GenAI Pipeli
 # load LoRA adapters
 wget -O soulcard.safetensors https://civitai.com/api/download/models/72591
 # run text to image pipeline with lora
-python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "curly-haired unicorn in the forest, anime, line" -n 2 --task text-to-image -i ./image.png --lora soulcard.safetensors --lora_alphas 0.7
+python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "curly-haired unicorn in the forest, anime, line" -n 2 --model-type text-to-image -i ./image.png --lora soulcard.safetensors --lora_alphas 0.7
 ```
 
 **Some additional parameters:**
@@ -272,16 +277,16 @@ optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vo
 # load speaker embeddings
 wget https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin
 # run benchmark.py
-python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
+python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --model-type speech-generation --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
 
 # Kokoro export (Optimum)
 pip install kokoro
 optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code models/ov_Kokoro-82M
 # run benchmark.py with Kokoro (Optimum or GenAI)
-python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice af_heart --speech_language en-us
+python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --model-type speech-generation --speech_voice af_heart --speech_language en-us
 
 # Qwen3-Omni text-to-speech
-python benchmark.py -m models/qwen3-omni/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice Ethan
+python benchmark.py -m models/qwen3-omni/ -p "Hello OpenVINO GenAI" -n 2 --model-type speech-generation --speech_voice Ethan
 
 # Qwen3-TTS
 # Install following packages for optimum export:
@@ -293,9 +298,9 @@ optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-Base models/qwen3-t
 # Optional: provide explicit reference audio. Note: It must be 24 kHz.
 wget https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav
 # Run benchmark.py (xvector mode, no ref text)
-python benchmark.py -m models/qwen3-tts-base/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_ref_audio clone.wav
+python benchmark.py -m models/qwen3-tts-base/ -p "Hello OpenVINO GenAI" -n 2 --model-type speech-generation --speech_ref_audio clone.wav
 # Run benchmark.py with additional ref text (ICL mode)
-python benchmark.py -m models/qwen3-tts-base/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_ref_audio clone.wav --speech_ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
+python benchmark.py -m models/qwen3-tts-base/ -p "Hello OpenVINO GenAI" -n 2 --model-type speech-generation --speech_ref_audio clone.wav --speech_ref_text "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
 # If --speech_ref_audio is omitted for Qwen3-TTS Base, benchmark.py uses the default
 # clone.wav URL and default reference text above automatically.
 
@@ -303,12 +308,12 @@ python benchmark.py -m models/qwen3-tts-base/ -p "Hello OpenVINO GenAI" -n 2 --t
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --trust-remote-code models/qwen3-tts-customvoice/
 # Run benchmark.py (defaults to speaker Ryan when --speech_voice is omitted)
-python benchmark.py -m models/qwen3-tts-customvoice/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_instruct "Speak with a calm and clear narration style."
+python benchmark.py -m models/qwen3-tts-customvoice/ -p "Hello OpenVINO GenAI" -n 2 --model-type speech-generation --speech_instruct "Speak with a calm and clear narration style."
 
 # Qwen3-TTS VoiceDesign
 optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --trust-remote-code models/qwen3-tts-voicedesign/
 # Run benchmark.py
-python benchmark.py -m models/qwen3-tts-voicedesign/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_instruct "Male, 17 years old, tenor range"
+python benchmark.py -m models/qwen3-tts-voicedesign/ -p "Hello OpenVINO GenAI" -n 2 --model-type speech-generation --speech_instruct "Male, 17 years old, tenor range"
 # If --speech_instruct is omitted for Qwen3-TTS VoiceDesign, benchmark.py uses a default instruction.
 ```
 
@@ -330,10 +335,10 @@ optimum-cli export openvino --model openai/whisper-base models/whisper-base
 # load audio
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 # run benchmark.py
-python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
+python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --model-type speech-recognition
 
 # Qwen3-Omni speech recognition
-python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
+python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --model-type speech-recognition
 
 # FunASR speech recognition
 optimum-cli export openvino --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
@@ -352,7 +357,7 @@ python benchmark.py -m models/sensevoice-small/ --media ./how_are_you_doing_toda
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model cross-encoder/ms-marco-MiniLM-L2-v2 --task text-classification models/ms-marco-MiniLM-L2-v2
 # run benchmark.py
-python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
+python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --model-type text-reranking
 ```
 
 **Some additional parameters:**
@@ -369,9 +374,8 @@ python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --task feature-extraction models/bge-small-en-v1.5
 # run benchmark.py
-python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task embed
+python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --model-type embedding
 ```
-> `--task embed` is the recommended value; `text_embed` is kept as an alias for backward compatibility.
 
 **Some additional parameters:**
 - `-p`: Text for creating embeddings. Optional for Qwen3-VL-Embedding when `--media`/`--video` is given — the embedding is then computed for the media alone. Defaults to `"What is OpenVINO?"` for text-only runs.
@@ -384,22 +388,22 @@ python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task embed
 > **Supported Text Embeddings model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3, qwen3-vl
 
 ### Compare Multimodal (Qwen3-VL) Embedding models
-Qwen3-VL-Embedding shares its architecture with Qwen3-VL text generation; the embedding behavior requires `--task embed` explicitly.
+Qwen3-VL-Embedding shares its architecture with Qwen3-VL text generation; the embedding behavior requires `--model-type embedding` explicitly.
 ```sh
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model Qwen/Qwen3-VL-Embedding-8B --task feature-extraction models/Qwen3-VL-Embedding-8B
 # text-only embedding
-python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Describe OpenVINO"
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --model-type embedding -p "Describe OpenVINO"
 # image embedding
-python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Represent this image" --media cat.png
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --model-type embedding -p "Represent this image" --media cat.png
 # video embedding
-python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Represent this video" --video video.mp4 -vf 4
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --model-type embedding -p "Represent this video" --video video.mp4 -vf 4
 # media-only embedding: -p is optional when media is provided
-python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed --media cat.png
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --model-type embedding --media cat.png
 # with Optimum Intel
-python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed --media cat.png --optimum
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --model-type embedding --media cat.png --optimum
 # JSONL input (each entry may include prompt/media/video; prompt may be omitted for media-only entries)
-python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -pf inputs.jsonl
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --model-type embedding -pf inputs.jsonl
 ```
 
 The GenAI backend uses `openvino_genai.EmbeddingPipeline` when available (falling back to `TextEmbeddingPipeline` on older `openvino_genai`); multimodal inputs require `EmbeddingPipeline`. For Qwen3-VL-Embedding it applies `LAST_TOKEN` pooling by default and chat-template preprocessing. `--batch_size N` repeats the prompt N times; media (images/videos) are decoded once and applied to every prompt in the batch by the GenAI pipeline.
@@ -409,19 +413,19 @@ The GenAI backend uses `openvino_genai.EmbeddingPipeline` when available (fallin
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model Salesforce/codegen-350M-multi models/codegen-350M-multi
 # run benchmark.py
-python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --task code_gen
+python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --model-type code_gen
 ```
 
 > **Supported Code Generation model types:**: codegen, codegen2, stable-code, replit, codet5
 
 ### Video Generation Models
 ```sh
-python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --task text-to-video
+python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --model-type text-to-video
 ```
 
 Image-to-video requires an input image (`-i`/`--media`) and a model directory containing a `vae_encoder`. The prompt should describe how the input image animates:
 ```sh
-python benchmark.py -m models/LTX-Video/FP16 -i input.png -p "The camera slowly pushes in as the scene comes to life with gentle, natural motion." --num_frames 5 -n 2 --num_steps 25 --task image-to-video
+python benchmark.py -m models/LTX-Video/FP16 -i input.png -p "The camera slowly pushes in as the scene comes to life with gentle, natural motion." --num_frames 5 -n 2 --num_steps 25 --model-type image-to-video
 ```
 
 **Some additional parameters:**
@@ -442,7 +446,7 @@ Enables memory usage information collection mode. This mode affects execution ti
 
 ```sh
 # run benchmark.py in memory consumption mode
-python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen -mc 2 -mc_dir ./mem_output_info
+python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --model-type text -mc 2 -mc_dir ./mem_output_info
 ```
 
 **Parameters:**

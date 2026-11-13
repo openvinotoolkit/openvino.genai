@@ -435,7 +435,47 @@ def get_argparser():
             "image-to-video",
             "inpainting",
         ],
-        help="The task to setup the pipeline type",
+        help="[DEPRECATED] please, use --model-type. The --task to setup the pipeline type",
+    )
+    parser.add_argument(
+        "--model-type",
+        default=None,
+        choices=[
+            "text",
+            "text-chat",
+            "visual-text",
+            "visual-text-chat",
+            "speech-recognition",
+            "image_cls",
+            "code_gen",
+            "ldm_super_resolution",
+            "embedding",
+            "embedding",
+            "text-reranking",
+            "speech-generation",
+            "text-to-image",
+            "image-to-image",
+            "text-to-video",
+            "image-to-video",
+            "image-inpainting",
+        ],
+        help=(
+            "The type of model to use for the pipeline. This replaces the deprecated --task argument.\n"
+            "text (prev text_gen) - for causal text generation, \n"
+            "text-chat (prev text_gen_chat) - for causal text generation in chat mode, \n"
+            "visual-text (prev visual_text_gen)- for Visual Language Models with image inputs, \n"
+            "visual-text-chat (prev visual_text_gen_chat) - for Visual Language Models with image inputs in chat mode, \n"  #
+            "text-to-image - for image generation, \n"
+            "image-to-image - for image generation based on image and prompt, \n"
+            "image-inpainting (prev inpainting) - for image generation based on image, mask and prompt, \n"
+            "text-to-video - for video generation, \n"
+            "image-to-video - for video generation conditioned on an input image and prompt, \n"
+            "text-reranking (prev text_rerank) - for reranking a list of texts based on relevance to query, \n"
+            "embedding (prev text_embed/embed) - for creation of embedding for a list of texts, \n"
+            "speech-generation (prev text-to-speech) - for text to speech generation, \n"
+            "speech-recognition (prev speech_to_text) - for speech to text generation, with native ASR models (FunASR) "
+            "or audio-capable multimodal models"
+        ),
     )
     parser.add_argument(
         "--strength",
@@ -582,6 +622,46 @@ def get_argparser():
         "Specifies the number of prefill tokens to use for generation. \n"
         "If this number is not specified or is greater than the tokens in the prompt, the entire prompt is used for generation.\n"
         "If this number is less than the tokens in the prompt, llm_bench trims prompt and takes only the first prefill tokens.\n",
+    )
+    dataset_group = parser.add_argument_group(
+        "Hugging Face dataset",
+        "Read prompts and image from a Hugging Face dataset. Dataset is loading in streaming mode. "
+        "Applicable for --model-type text and visual-text (--task text_gen and visual_text_gen).",
+    )
+    dataset_group.add_argument(
+        "--dataset",
+        default=None,
+        help="Hugging Face dataset name, e.g. lmms-lab/VQAv2.",
+    )
+    dataset_group.add_argument(
+        "--dataset_subset",
+        default=None,
+        help="Dataset subset (config name), if applicable.",
+    )
+    dataset_group.add_argument(
+        "--dataset_split", default="test", help="Dataset split, e.g. 'train', 'validation', 'test'."
+    )
+    dataset_group.add_argument(
+        "--dataset_column",
+        nargs="+",
+        default=[],
+        help="Dataset column(s) with inputs. Positional order: text, image, "
+        "e.g. '--dataset_column question image'. Columns can also be set by role: "
+        "'--dataset_column text=question'. Image columns are applicable "
+        "only for  --model-type visual-text (--task visual_text_gen).",
+    )
+    dataset_group.add_argument(
+        "--dataset_samples",
+        default=10,
+        type=greater_than_zero,
+        help="Number of samples to read from the dataset.",
+    )
+    dataset_group.add_argument(
+        "--dataset_seed",
+        default=None,
+        type=int,
+        help="Seed to shuffle the dataset before reading samples. The same seed gives the same samples. "
+        "If not set, the first --dataset_samples samples are read without shuffling.",
     )
 
     return parser.parse_args()
