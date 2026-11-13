@@ -1124,7 +1124,7 @@ class BagelPipeline:
     def __init__(self, models_path: os.PathLike | str | bytes, device: str, tokenizer_path: os.PathLike | str | bytes = ..., **kwargs) -> None:
         """
                     BagelPipeline class constructor.
-                    models_path (os.PathLike): Directory with the BAGEL IRs and bagel_ov_config.json.
+                    models_path (os.PathLike): Directory with the BAGEL IRs and bagel_ov_config.json, or an optimum-intel export.
                     device (str): Inference device.
                     tokenizer_path (os.PathLike): Directory with openvino_tokenizer.xml / openvino_detokenizer.xml;
                         models_path if empty.

@@ -57,7 +57,7 @@ void init_bagel_pipeline(py::module_& m) {
              py::arg("tokenizer_path") = std::filesystem::path{},
              R"(
             BagelPipeline class constructor.
-            models_path (os.PathLike): Directory with the BAGEL IRs and bagel_ov_config.json.
+            models_path (os.PathLike): Directory with the BAGEL IRs and bagel_ov_config.json, or an optimum-intel export.
             device (str): Inference device.
             tokenizer_path (os.PathLike): Directory with openvino_tokenizer.xml / openvino_detokenizer.xml;
                 models_path if empty.

@@ -13,8 +13,8 @@
 #include <numeric>
 #include <random>
 #include <set>
-#include <sstream>
 
+#include "bagel/npu/npu_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
@@ -27,22 +27,6 @@ using Clock = std::chrono::steady_clock;
 
 float ms_since(Clock::time_point t0) {
     return std::chrono::duration<float, std::milli>(Clock::now() - t0).count();
-}
-
-std::vector<size_t> parse_buckets(const std::string& text) {
-    std::vector<size_t> buckets;
-    std::stringstream ss(text);
-    for (std::string item; std::getline(ss, item, ',');) {
-        buckets.push_back(std::stoul(item));
-    }
-    return buckets;
-}
-
-size_t pick_bucket(const std::vector<size_t>& buckets, size_t n) {
-    const auto it = std::find_if(buckets.begin(), buckets.end(), [n](size_t b) {
-        return b >= n;
-    });
-    return it == buckets.end() ? n : *it;
 }
 
 // numpy.random.RandomState(seed).randn: MT19937 with the legacy polar Box-Muller transform
@@ -84,12 +68,12 @@ int py_round(double v) {
     return static_cast<int>(std::nearbyint(v));
 }
 
-// BAGEL ImageTransform: MaxLongEdgeMinShortEdgeResize (Pillow bicubic), ToTensor, Normalize(0.5, 0.5)
+// BAGEL ImageTransform: MaxLongEdgeMinShortEdgeResize (bicubic), then ToTensor and Normalize(0.5, 0.5)
 struct ImageTransform {
     int max_size;
     int min_size;
     int stride;
-    double max_pixels = 14.0 * 14 * 9 * 1024;
+    double max_pixels;
 
     int make_divisible(int v) const {
         return std::max(stride, py_round(static_cast<double>(v) / stride) * stride);
@@ -99,16 +83,8 @@ struct ImageTransform {
         return {make_divisible(py_round(w * scale)), make_divisible(py_round(h * scale))};
     }
 
-    // Returns a [3, H, W] f32 tensor
-    ov::Tensor operator()(const ov::Tensor& image) const {
-        const auto& shape = image.get_shape();
-        OPENVINO_ASSERT(image.get_element_type() == ov::element::u8 &&
-                            (shape.size() == 3 || (shape.size() == 4 && shape[0] == 1)) && shape.back() == 3,
-                        "BAGEL expects a u8 RGB image with [1, H, W, 3] or [H, W, 3] layout");
-        const int h = static_cast<int>(shape[shape.size() - 3]);
-        const int w = static_cast<int>(shape[shape.size() - 2]);
-        OPENVINO_ASSERT(h > 0 && w > 0, "BAGEL expects a non-empty image");
-
+    clip_image_u8 resize(const clip_image_u8& src) const {
+        const int w = src.nx, h = src.ny;
         double scale = std::min(static_cast<double>(max_size) / std::max(w, h), 1.0);
         scale = std::max(scale, static_cast<double>(min_size) / std::min(w, h));
         auto [nw, nh] = apply_scale(w, h, scale);
@@ -118,22 +94,35 @@ struct ImageTransform {
         if (std::max(nw, nh) > max_size) {
             std::tie(nw, nh) = apply_scale(nw, nh, static_cast<double>(max_size) / std::max(nw, nh));
         }
-
-        clip_image_u8 src{w, h, {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}};
         clip_image_u8 dst;
         bicubic_resize(src, dst, nw, nh);
-
-        ov::Tensor out(ov::element::f32, {3, static_cast<size_t>(nh), static_cast<size_t>(nw)});
-        float* o = out.data<float>();
-        const size_t plane = static_cast<size_t>(nh) * nw;
-        for (size_t i = 0; i < plane; ++i) {
-            for (size_t c = 0; c < 3; ++c) {
-                o[c * plane + i] = (static_cast<float>(dst.buf[i * 3 + c]) / 255.0f - 0.5f) / 0.5f;
-            }
-        }
-        return out;
+        return dst;
     }
 };
+
+clip_image_u8 to_clip_image(const ov::Tensor& image) {
+    const auto& shape = image.get_shape();
+    OPENVINO_ASSERT(image.get_element_type() == ov::element::u8 &&
+                        (shape.size() == 3 || (shape.size() == 4 && shape[0] == 1)) && shape.back() == 3,
+                    "BAGEL expects a u8 RGB image with [1, H, W, 3] or [H, W, 3] layout");
+    const int h = static_cast<int>(shape[shape.size() - 3]);
+    const int w = static_cast<int>(shape[shape.size() - 2]);
+    OPENVINO_ASSERT(h > 0 && w > 0, "BAGEL expects a non-empty image");
+    return {w, h, {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}};
+}
+
+// [3, H, W] f32 in [-1, 1]
+ov::Tensor to_normalized_tensor(const clip_image_u8& img) {
+    ov::Tensor out(ov::element::f32, {3, static_cast<size_t>(img.ny), static_cast<size_t>(img.nx)});
+    float* o = out.data<float>();
+    const size_t plane = static_cast<size_t>(img.ny) * img.nx;
+    for (size_t i = 0; i < plane; ++i) {
+        for (size_t c = 0; c < 3; ++c) {
+            o[c * plane + i] = (static_cast<float>(img.buf[i * 3 + c]) / 255.0f - 0.5f) / 0.5f;
+        }
+    }
+    return out;
+}
 
 // [C, H, W] -> [(H / p) * (W / p), p * p * C] in (row, col, py, px, c) order; crops to the given grid
 ov::Tensor patchify(const float* src, size_t c, size_t h, size_t w, size_t p, size_t grid_h, size_t grid_w) {
@@ -208,6 +197,106 @@ float l2_norm(const std::vector<float>& v) {
     return static_cast<float>(std::sqrt(s));
 }
 
+nlohmann::json read_json(const std::filesystem::path& path) {
+    std::ifstream f(path);
+    OPENVINO_ASSERT(f.is_open(), "Failed to open ", path.string());
+    return nlohmann::json::parse(f);
+}
+
+// optimum-intel exports name the models openvino_<name>; the original BAGEL IR set uses <name> directly
+std::string model_file(const std::filesystem::path& models_dir, const std::string& name) {
+    return std::filesystem::exists(models_dir / ("openvino_" + name)) ? "openvino_" + name : name;
+}
+
+struct BagelConfig {
+    size_t hidden, layers, kv_heads, head_dim, latent_channel, latent_patch, latent_downsample, vit_patch, vit_max_side,
+        max_latent;
+    int64_t bos, eos, soi, eoi;
+    // BagelImageProcessor defaults; an optimum-intel export stores its own
+    ImageTransform vit_transform{980, 224, 14, 14.0 * 14 * 9 * 1024};
+    ImageTransform vae_transform{1024, 512, 16, 14.0 * 14 * 9 * 1024};
+};
+
+// preprocessor_config.json, or the image_processor entry of processor_config.json
+void read_image_processor(const std::filesystem::path& models_dir, BagelConfig& c) {
+    nlohmann::json cfg;
+    if (std::filesystem::exists(models_dir / "preprocessor_config.json")) {
+        cfg = read_json(models_dir / "preprocessor_config.json");
+    } else if (std::filesystem::exists(models_dir / "processor_config.json")) {
+        cfg = read_json(models_dir / "processor_config.json").value("image_processor", nlohmann::json::object());
+    }
+    if (cfg.empty()) {
+        return;
+    }
+    const double max_pixels = cfg.value("max_pixels", c.vit_transform.max_pixels);
+    const auto& size = cfg.value("size", nlohmann::json::object());
+    c.vit_transform = {size.value("longest_edge", c.vit_transform.max_size),
+                       size.value("shortest_edge", c.vit_transform.min_size),
+                       cfg.value("patch_size", c.vit_transform.stride),
+                       max_pixels};
+    c.vae_transform = {cfg.value("vae_max_size", c.vae_transform.max_size),
+                       cfg.value("vae_min_size", c.vae_transform.min_size),
+                       cfg.value("vae_stride", c.vae_transform.stride),
+                       max_pixels};
+}
+
+// bagel_ov_config.json of the original IR set, or the Hugging Face config.json of an optimum-intel export
+BagelConfig read_bagel_config(const std::filesystem::path& models_dir) {
+    BagelConfig c;
+    if (std::filesystem::exists(models_dir / "bagel_ov_config.json")) {
+        const auto cfg = read_json(models_dir / "bagel_ov_config.json");
+        const auto& ids = cfg.at("new_token_ids");
+        c = {cfg.at("hidden_size").get<size_t>(),
+             cfg.at("num_layers").get<size_t>(),
+             cfg.at("num_kv_heads").get<size_t>(),
+             cfg.at("head_dim").get<size_t>(),
+             cfg.at("latent_channel").get<size_t>(),
+             cfg.at("latent_patch_size").get<size_t>(),
+             cfg.at("latent_downsample").get<size_t>(),
+             cfg.at("vit_patch_size").get<size_t>(),
+             cfg.at("vit_max_num_patch_per_side").get<size_t>(),
+             cfg.at("max_latent_size").get<size_t>(),
+             ids.at("bos_token_id").get<int64_t>(),
+             ids.at("eos_token_id").get<int64_t>(),
+             ids.at("start_of_image").get<int64_t>(),
+             ids.at("end_of_image").get<int64_t>()};
+        return c;
+    }
+    const auto cfg = read_json(models_dir / "config.json");
+    OPENVINO_ASSERT(cfg.value("model_type", "") == "bagel",
+                    "BagelPipeline expects a BAGEL model, got model_type '",
+                    cfg.value("model_type", ""),
+                    "' in ",
+                    (models_dir / "config.json").string());
+    const auto& text = cfg.at("text_config");
+    const auto& vision = cfg.at("vision_config");
+    const auto& vae = cfg.at("vae_config");
+    const auto hidden = text.at("hidden_size").get<size_t>();
+    const auto head_dim = text.contains("head_dim") && !text.at("head_dim").is_null()
+                              ? text.at("head_dim").get<size_t>()
+                              : hidden / text.at("num_attention_heads").get<size_t>();
+    const auto latent_patch = cfg.at("latent_patch_size").get<size_t>();
+    const size_t vae_downsample = size_t{1} << (vae.at("channel_multiplier").size() - 1);
+    // <|im_start|> / <|im_end|> wrap every prompt; the converted checkpoint stores them as bos / eos
+    const auto generation = read_json(models_dir / "generation_config.json");
+    c = {hidden,
+         text.at("num_hidden_layers").get<size_t>(),
+         text.at("num_key_value_heads").get<size_t>(),
+         head_dim,
+         vae.at("latent_channels").get<size_t>(),
+         latent_patch,
+         vae_downsample * latent_patch,
+         vision.at("patch_size").get<size_t>(),
+         vision.at("max_num_patches_per_side").get<size_t>(),
+         cfg.at("max_latent_size").get<size_t>(),
+         generation.at("bos_token_id").get<int64_t>(),
+         generation.at("eos_token_id").get<int64_t>(),
+         cfg.at("start_of_image_token_id").get<int64_t>(),
+         cfg.at("end_of_image_token_id").get<int64_t>()};
+    read_image_processor(models_dir, c);
+    return c;
+}
+
 }  // namespace
 
 class BagelPipeline::Impl {
@@ -218,54 +307,45 @@ public:
          const ov::AnyMap& properties)
         : m_npu(device.rfind("NPU", 0) == 0),
           m_tokenizer(tokenizer_dir.empty() ? models_dir : tokenizer_dir) {
-        std::ifstream f(models_dir / "bagel_ov_config.json");
-        OPENVINO_ASSERT(f.is_open(), "Failed to open ", (models_dir / "bagel_ov_config.json").string());
-        const auto cfg = nlohmann::json::parse(f);
-        m_hidden = cfg.at("hidden_size").get<size_t>();
-        m_layers = cfg.at("num_layers").get<size_t>();
-        m_kv_heads = cfg.at("num_kv_heads").get<size_t>();
-        m_head_dim = cfg.at("head_dim").get<size_t>();
-        m_latent_channel = cfg.at("latent_channel").get<size_t>();
-        m_latent_patch = cfg.at("latent_patch_size").get<size_t>();
-        m_latent_downsample = cfg.at("latent_downsample").get<size_t>();
-        m_vit_patch = cfg.at("vit_patch_size").get<size_t>();
-        m_vit_max_side = cfg.at("vit_max_num_patch_per_side").get<size_t>();
-        m_max_latent = cfg.at("max_latent_size").get<size_t>();
-        const auto& ids = cfg.at("new_token_ids");
-        m_bos = ids.at("bos_token_id").get<int64_t>();
-        m_eos = ids.at("eos_token_id").get<int64_t>();
-        m_soi = ids.at("start_of_image").get<int64_t>();
-        m_eoi = ids.at("end_of_image").get<int64_t>();
-
-        // On NPU the dynamic IRs go through NPUW_BAGEL, which compiles static variants on first use;
-        // the text embedding lookup stays on CPU like in GenAI VLMs
-        ov::AnyMap npu_config{{"NPU_USE_NPUW", "YES"}, {"NPUW_BAGEL", "YES"}};
-        for (const auto& [k, v] : properties) {
-            npu_config[k] = v;
-        }
+        const auto cfg = read_bagel_config(models_dir);
+        m_hidden = cfg.hidden;
+        m_layers = cfg.layers;
+        m_kv_heads = cfg.kv_heads;
+        m_head_dim = cfg.head_dim;
+        m_latent_channel = cfg.latent_channel;
+        m_latent_patch = cfg.latent_patch;
+        m_latent_downsample = cfg.latent_downsample;
+        m_vit_patch = cfg.vit_patch;
+        m_vit_max_side = cfg.vit_max_side;
+        m_max_latent = cfg.max_latent;
+        m_bos = cfg.bos;
+        m_eos = cfg.eos;
+        m_soi = cfg.soi;
+        m_eoi = cfg.eoi;
+        m_vit_transform = cfg.vit_transform;
+        m_vae_transform = cfg.vae_transform;
 
         auto& core = utils::singleton_core();
         if (m_npu) {
-            // Only used to name the NPUW_BAGEL static variant each call compiles
-            const auto buckets = [&](const std::string& key) {
-                const auto it = properties.find(key);
-                return parse_buckets(it != properties.end() ? it->second.as<std::string>()
-                                                            : core.get_property(device, key).as<std::string>());
-            };
-            m_seq_buckets = buckets("NPUW_BAGEL_SEQ_BUCKETS");
-            m_kv_buckets = buckets("NPUW_BAGEL_KV_BUCKETS");
+            m_npu_variants = bagel::npu::VariantNames(core, device, properties);
         }
-        const auto compile = [&](const std::string& file, const std::string& dev, const ov::AnyMap& config) {
+        const auto compile = [&](const std::string& name, const std::string& dev, const ov::AnyMap& config) {
             const auto t0 = Clock::now();
-            auto compiled = core.compile_model((models_dir / file).string(), dev, config);
-            m_perf.compile_ms.emplace_back("compile_model " + file.substr(0, file.find("_model.xml")), ms_since(t0));
+            auto compiled = core.compile_model((models_dir / model_file(models_dir, name)).string(), dev, config);
+            m_perf.compile_ms.emplace_back("compile_model " + name.substr(0, name.find("_model.xml")), ms_since(t0));
             return compiled.create_infer_request();
         };
-        const auto& config = m_npu ? npu_config : properties;
+        // the text embedding lookup stays on CPU on NPU, like in the GenAI VLMs
+        const auto config = m_npu ? bagel::npu::compile_properties(properties) : properties;
         m_text_emb = m_npu ? compile("text_embeddings_model.xml", "CPU", {})
                            : compile("text_embeddings_model.xml", device, properties);
         m_vit = compile("vision_embeddings_model.xml", device, config);
-        m_lm = compile("language_model.xml", device, config);
+        ov::AnyMap lm_config = config;
+        if (device.rfind("GPU", 0) == 0) {
+            // BAGEL's outlier activations break GPU dynamic quantization of compressed weights (INT4 rel err 0.4)
+            lm_config.emplace(ov::hint::dynamic_quantization_group_size.name(), uint64_t{0});
+        }
+        m_lm = compile("language_model.xml", device, lm_config);
         m_vae_enc = compile("vae_encoder_model.xml", device, config);
         m_vae_dec = compile("vae_decoder_model.xml", device, config);
     }
@@ -279,7 +359,7 @@ public:
             prefill_text(system_prompt);
         }
         if (image) {
-            prefill_image(*image);
+            prefill_image(to_clip_image(*image));
         }
         prefill_text(prompt);
 
@@ -316,11 +396,13 @@ public:
     ov::Tensor edit_image(const ov::Tensor& image,
                           const std::string& prompt,
                           const BagelImageGenerationConfig& config) {
-        const auto [vae_ctx, hw] = vae_prefill(image, Context{empty_kv(), 0, 0});
+        // as BagelImageProcessor, the ViT sees the image after the VAE resize
+        const auto vae_image = m_vae_transform.resize(to_clip_image(image));
+        const auto [vae_ctx, hw] = vae_prefill(vae_image, Context{empty_kv(), 0, 0});
 
         reset();
         m_ctx = vae_ctx;
-        prefill_image(image);
+        prefill_image(vae_image);
         const Context img_ctx = m_ctx;
         prefill_text(prompt);
         const Context main = m_ctx;
@@ -369,16 +451,6 @@ private:
 
     void record(const std::string& stage, Clock::time_point t0) {
         m_perf.infer_ms.emplace_back(stage, ms_since(t0));
-    }
-
-    // Generation-free calls get one padded dummy generation token in NPUW_BAGEL
-    std::string lm_variant(size_t seq, size_t gen, size_t kv) const {
-        if (gen == 0) {
-            seq = pick_bucket(m_seq_buckets, seq + 1);
-            gen = 1;
-        }
-        return "language S=" + std::to_string(seq) + " gen=" + std::to_string(gen) +
-               " kv=" + std::to_string(pick_bucket(m_kv_buckets, std::max<size_t>(kv, 1)));
     }
 
     // A not-yet-compiled NPU variant runs twice so compile and inference times split
@@ -439,10 +511,12 @@ private:
         }
 
         // Only the needed outputs are read: NPUW_BAGEL crops an output on first access
-        timed("lm." + stage + ".infer", lm_variant(embeds.get_shape()[0], gen_idx.size(), past[0].get_shape()[2]), [&] {
-            m_lm.start_async();
-            m_lm.wait();
-        });
+        timed("lm." + stage + ".infer",
+              m_npu_variants.language(embeds.get_shape()[0], gen_idx.size(), past[0].get_shape()[2]),
+              [&] {
+                  m_lm.start_async();
+                  m_lm.wait();
+              });
 
         const auto t0 = Clock::now();
         LmOutputs out;
@@ -532,8 +606,8 @@ private:
         m_ctx.rope += static_cast<int64_t>(t);
     }
 
-    void prefill_image(const ov::Tensor& image) {
-        const auto img = ImageTransform{980, 224, static_cast<int>(m_vit_patch)}(image);
+    void prefill_image(const clip_image_u8& image) {
+        const auto img = to_normalized_tensor(m_vit_transform.resize(image));
         const size_t h = img.get_shape()[1], w = img.get_shape()[2];
         const size_t gh = h / m_vit_patch, gw = w / m_vit_patch;
         const auto patches = patchify(img.data<const float>(), 3, h, w, m_vit_patch, gh, gw);
@@ -567,9 +641,9 @@ private:
         return flat_position_ids(h, w, m_max_latent);
     }
 
-    // Encodes the image into a [soi, latent, eoi] context; returns it with the latent grid
-    std::pair<Context, std::pair<size_t, size_t>> vae_prefill(const ov::Tensor& image, const Context& ctx) {
-        const auto img = ImageTransform{1024, 512, 16}(image);
+    // Encodes the VAE-resized image into a [soi, latent, eoi] context; returns it with the latent grid
+    std::pair<Context, std::pair<size_t, size_t>> vae_prefill(const clip_image_u8& vae_image, const Context& ctx) {
+        const auto img = to_normalized_tensor(vae_image);
         const size_t img_h = img.get_shape()[1], img_w = img.get_shape()[2];
         ov::Tensor batched(ov::element::f32, {1, 3, img_h, img_w}, img.data());
         timed("vae_enc", "vae_encoder " + std::to_string(img_h) + "x" + std::to_string(img_w), [&] {
@@ -699,7 +773,8 @@ private:
     Tokenizer m_tokenizer;
     ov::InferRequest m_text_emb, m_vit, m_lm, m_vae_enc, m_vae_dec;
     std::set<std::string> m_compiled;
-    std::vector<size_t> m_seq_buckets, m_kv_buckets;
+    bagel::npu::VariantNames m_npu_variants;
+    ImageTransform m_vit_transform{}, m_vae_transform{};
     Context m_ctx;
     ov::Tensor m_soi_emb, m_eoi_emb;
 

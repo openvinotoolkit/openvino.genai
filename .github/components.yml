@@ -13,6 +13,7 @@ tests_dependencies:
     - continuous_batching
     - visual_language
     - omni
+    - bagel
     - LLM
     - GGUF
     - tokenizers
@@ -105,6 +106,9 @@ omni:
     - llm_bench
     - WWB
     - VLM_samples
+
+bagel:
+  revalidate: []
 
 automatic_speech_recognition:
   revalidate:

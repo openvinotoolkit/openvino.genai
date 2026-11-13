@@ -125,6 +125,16 @@
   components:
     - omni
 
+- name: BAGEL
+  cmd: |-
+    # TODO: drop when the tests/python_tests/requirements.txt pins include BAGEL (transformers and optimum-intel)
+    python -m pip install "transformers @ git+https://github.com/huggingface/transformers.git@main"
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+    python -m pytest -v ./tests/python_tests/test_bagel_pipeline.py --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 30
+  components:
+    - bagel
+
 - name: Video Generation
   cmd: |-
     # LTX-2.3 export support landed after the optimum-intel pin in tests/python_tests/requirements.txt

@@ -85,6 +85,13 @@ LoRA adapters targeting other multimodal components are not supported.
 <VLMModelsTable />
 
 :::warning VLM Models Notes
+#### BAGEL {#bagel-notes}
+
+BAGEL runs with `ov::genai::BagelPipeline` (`openvino_genai.BagelPipeline`), not `VLMPipeline`: visual question
+answering, text-to-image generation and image editing with one model. See the
+[BAGEL samples](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/bagel) for the export with
+`optimum-cli`, which requires transformers and optimum-intel versions with BAGEL support.
+
 #### InternVL2 {#internvl2-notes}
 
 To convert InternVL2 models, `timm` and `einops` are required:

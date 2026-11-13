@@ -29,7 +29,7 @@ def print_report(perf):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("model_dir", help="Directory with the BAGEL IRs and bagel_ov_config.json")
+    parser.add_argument("model_dir", help="Directory with the BAGEL IRs (bagel_ov_config.json or optimum-intel export)")
     parser.add_argument("tokenizer_dir", help="Directory with openvino_tokenizer.xml / openvino_detokenizer.xml")
     parser.add_argument("device", help="Device to run the models on, e.g. NPU or CPU")
     parser.add_argument("task", choices=["vqa", "t2i", "edit"])
