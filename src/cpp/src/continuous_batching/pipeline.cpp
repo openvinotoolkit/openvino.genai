@@ -64,13 +64,6 @@ void assert_supported_add_request_lora_modes(const std::optional<AdapterConfig>&
     assert_supported_add_request_lora_mode(sampling_params.adapters);
 }
 
-// sampler_num_threads is consumed by ContinuousBatchingImpl and isn't a plugin property.
-ov::AnyMap remove_sampler_num_threads(const ov::AnyMap& properties) {
-    auto embedder_properties = properties;
-    embedder_properties.erase("sampler_num_threads");
-    return embedder_properties;
-}
-
 } // namespace
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
@@ -99,9 +92,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model);
-        plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties);
-        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, plugin_only_properties);
+        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -168,9 +160,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model);
-        plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties);
-        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, plugin_only_properties);
+        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -236,9 +227,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto generation_config = utils::from_config_json_if_exists(models_path);
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model_without_gguf);
-        plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties);
-        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, plugin_only_properties);
+        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model_without_gguf));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -299,9 +289,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (!model_config_dir_path.empty() && std::filesystem::exists(model_config_dir_path / "openvino_text_embeddings_model.xml")) {
-        auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model);
-        plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties, generation_config.adapters);
-        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, device, plugin_only_properties);
+        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -359,9 +348,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         std::string weights_path = rt_info.at("__weights_path").as<std::string>();
         directory = std::filesystem::path(weights_path).parent_path();
         if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml")) {
-            auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model);
-            plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties, generation_config.adapters);
-            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device, plugin_only_properties);
+            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device,
+                                                        forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
         }
     }
 
@@ -427,17 +415,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     std::shared_ptr<InputsEmbedder> embedder = nullptr;
     if (embedder_config_dir_path.has_value()) {
         auto path = *embedder_config_dir_path;
-        auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model);
-        plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties, generation_config.adapters);
-        embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device, plugin_only_properties);
+        embedder =
+            std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device,
+                                            forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
     }
     else if (rt_info.find("__weights_path") != rt_info.end()) {
         std::string weights_path = rt_info.at("__weights_path").as<std::string>();
         directory = std::filesystem::path(weights_path).parent_path();
         if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml")) {
-            auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model);
-            plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties, generation_config.adapters);
-            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device, plugin_only_properties);
+            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device,
+                                                        forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
         }
     }
 
@@ -498,17 +485,15 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     std::shared_ptr<InputsEmbedder> embedder = nullptr;
     if (embedder_config_dir_path.has_value()) {
         auto path = *embedder_config_dir_path;
-        auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model);
-        plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties, generation_config.adapters);
-        embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device, plugin_only_properties);
+        embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
     }
     else if (rt_info.find("__weights_path") != rt_info.end()) {
         std::string weights_path = rt_info.at("__weights_path").as<std::string>();
         directory = std::filesystem::path(weights_path).parent_path();
         if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml")) {
-            auto plugin_only_properties = remove_sampler_num_threads(properties_without_draft_model);
-            plugin_only_properties = forward_adapters_to_submodels(plugin_only_properties, generation_config.adapters);
-            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device, plugin_only_properties);
+            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device,
+                                                        forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
         }
     }
 

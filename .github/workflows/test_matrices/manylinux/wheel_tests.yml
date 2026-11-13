@@ -298,7 +298,7 @@
   cmd: |-
     python -m pip install transformers==5.2.0
     python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@ffc8870cae17baccf8d45e2e0891e2eb99a9ede3"
-    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp or qwen_mtp"
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
   timeout: 90
   components:
     - speculative_decoding

@@ -529,6 +529,8 @@ public:
     // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
     void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on && !m_has_mrope_position_ids; }
 
+    bool has_mrope_position_ids() const { return m_has_mrope_position_ids; }
+
     // DFlash draft: each scheduled request forwards [target hidden-state rows ; seed + mask block]. The target
     // rows come from set_initial_hidden_state() and get token type 0; the remaining scheduled rows are the block
     // and get token type 1. The block rows after the first `candidate_position_offset` ones are gathered.
@@ -665,9 +667,7 @@ public:
         ov::Tensor hidden_state_input = m_dflash_draft
                                             ? _make_zeroed_hidden_state_input(total_num_tokens, m_dflash_hidden_state_size)
                                             : _prepare_hidden_state_input(total_num_tokens, hidden_state_size);
-        if (hidden_size == 0) {
-            hidden_size = hidden_state_size;
-        }
+
         float* hidden_state_data = nullptr;
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();

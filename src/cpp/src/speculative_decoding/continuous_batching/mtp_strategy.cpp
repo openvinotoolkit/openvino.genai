@@ -179,19 +179,29 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     // Use insert_or_assign, not insert: a finished prior request may leave a stale (stopped) handle
     // under the same request_id. insert() would be a no-op there, dropping the new handle as a
     // temporary whose destructor stops the freshly added draft request before it can draft.
-    // ContinuousBatchingImpl::add_request() reads prompt positions from the shared embedder.
-    const ov::Tensor main_position_ids = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0).first;
+    // ContinuousBatchingImpl::add_request() reads prompt positions from the shared embedder,
+    // ModelRunner uses them only for a draft with M-RoPE position_ids, other drafts get sequential positions.
+    ov::Tensor main_position_ids;
+    if (m_draft_pipeline->has_mrope_position_ids()) {
+        main_position_ids = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0).first;
+    }
     try {
-        m_inputs_embedder->set_position_ids(create_draft_position_ids(main_position_ids));
+        if (main_position_ids) {
+            m_inputs_embedder->set_position_ids(create_draft_position_ids(main_position_ids));
+        }
         m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
-        m_inputs_embedder->set_position_ids(main_position_ids);
+        if (main_position_ids) {
+            m_inputs_embedder->set_position_ids(main_position_ids);
+        }
         auto main_handle = m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
         align_request_pair_processed_prefix(request_id);
         return main_handle;
     } catch (...) {
-        m_inputs_embedder->set_position_ids(main_position_ids);
-        std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline)->discard_awaiting_request(request_id);
-        std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_draft_pipeline)->discard_awaiting_request(request_id);
+        if (main_position_ids) {
+            m_inputs_embedder->set_position_ids(main_position_ids);
+        }
+        m_main_pipeline->discard_awaiting_request(request_id);
+        m_draft_pipeline->discard_awaiting_request(request_id);
         m_draft_generations.erase(request_id);
         throw;
     }

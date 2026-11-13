@@ -95,6 +95,10 @@ public:
         return m_scheduler->has_linear_attention_cache();
     }
 
+    bool has_mrope_position_ids() const {
+        return m_model_runner->has_mrope_position_ids();
+    }
+
     // Returns the awaiting request with the given id, or nullptr if there is none.
     SequenceGroup::Ptr find_awaiting_request(uint64_t request_id) {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
