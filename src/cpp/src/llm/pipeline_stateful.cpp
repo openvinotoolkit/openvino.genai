@@ -147,6 +147,9 @@ DecodedResults StatefulLLMPipeline::generate(
     StringInputs inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer) {
+    if (m_chat_started_by_history)
+        finish_chat();
+
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::STRING;
 
@@ -262,6 +265,9 @@ DecodedResults StatefulLLMPipeline::generate(
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
+    // Without start_chat() the chat lasts only while ChatHistory inputs keep coming
+    const bool chat_started_by_history = !is_chat_conversation || m_chat_started_by_history;
+    m_chat_started_by_history = chat_started_by_history;
     is_chat_conversation = true;
 
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
@@ -310,20 +316,32 @@ DecodedResults StatefulLLMPipeline::generate(
         ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
         encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
     }
-    return get_decoded_results(
-        encoded_input,
-        config,
-        streamer,
-        start_time,
-        tokenization_start_time,
-        PerfMetrics::get_microsec(tokenization_start_time - template_start_time)
-    );
+    // get_decoded_results() calls generate(EncodedInputs), which must not end this chat
+    m_chat_started_by_history = false;
+    try {
+        auto decoded_results = get_decoded_results(
+            encoded_input,
+            config,
+            streamer,
+            start_time,
+            tokenization_start_time,
+            PerfMetrics::get_microsec(tokenization_start_time - template_start_time)
+        );
+        m_chat_started_by_history = chat_started_by_history;
+        return decoded_results;
+    } catch (...) {
+        m_chat_started_by_history = chat_started_by_history;
+        throw;
+    }
 }
 
 EncodedResults StatefulLLMPipeline::generate(
     const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer) {
+    if (m_chat_started_by_history)
+        finish_chat();
+
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS;
 
@@ -556,6 +574,7 @@ void StatefulLLMPipeline::reset_state() {
 
 void StatefulLLMPipeline::finish_chat() {
     is_chat_conversation = false;
+    m_chat_started_by_history = false;
     m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     bool have_state = 0 != m_model_runner.get_tensor("attention_mask").get_size();
     if (!m_cache_state.get_state().empty() || have_state) {
