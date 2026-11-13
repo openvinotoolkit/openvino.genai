@@ -12,8 +12,6 @@ OpenVINO GenAI can load a local `.gguf` file directly, including its tokenizer m
 
 The default `GGUF_READER="LEGACY"` supports the `llama`, `qwen2`, and `qwen3` architectures. Select `GGUF_READER="FRONTEND"` explicitly to use the OpenVINO GGUF frontend, which supports more architectures and is expected to provide better model quality through more complete handling of GGUF metadata.
 
-The frontend supports read-only GGUF files and non-ASCII paths on Windows. The legacy reader still requires write access to the GGUF file.
-
 :::warning Preview feature
 The GGUF frontend is in preview. Architecture, quantization, tokenizer, and attention-backend support depend on the OpenVINO version. Generated output can differ from other runtimes. If the default legacy reader fails, GenAI includes a suggestion to try the frontend in the error message; retry by selecting it explicitly.
 :::
