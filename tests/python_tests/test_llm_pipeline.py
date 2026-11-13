@@ -4,6 +4,7 @@
 
 import pytest
 import torch
+import itertools
 import os
 import json
 import logging
@@ -433,6 +434,76 @@ def test_linear_attention_batch_input_same_as_individual(
             f"Individual result: {individual_result}\n"
             f"Prompt: {prompt}"
         )
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
+@pytest.mark.parametrize(
+    "prompts,early_idx",
+    [
+        (["table is made", "return 0", "b c d", "e f g"], 0),
+        (["Name a color.", "Name a fruit.", "Name a river.", "Name a tree.", "Name a city."], 0),
+    ],
+    ids=["first_of_four_finishes_first", "first_of_five_finishes_first"],
+)
+def test_batch_same_as_individual_when_request_finishes_early(
+    llm_model: OVConvertedModelSchema,
+    pipeline_type: PipelineType,
+    prompts: list[str],
+    early_idx: int,
+) -> None:
+    """Batched generation must match individual (greedy) generation when requests in the batch
+    finish at different steps.
+
+    All prompts are padded to the same token length on purpose: padding would otherwise change
+    the numerics and make batched and individual results differ for reasons unrelated to this bug.
+
+    Regression test for the per-request KV-cache row offsets (beam_offets) being recomputed with
+    a stale key after a request that is not the last one in the batch finished early.
+    """
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    tokenizer = ov_pipe.get_tokenizer()
+
+    generation_config = ov_genai.GenerationConfig()
+    generation_config.max_new_tokens = 20
+    generation_config.apply_chat_template = False
+
+    # Padding must not influence the result, so require equally sized prompts.
+    encoded = [tokenizer.encode(prompt) for prompt in prompts]
+    if len({tokens.input_ids.get_shape()[1] for tokens in encoded}) != 1:
+        pytest.skip(f"Prompts are not of equal token length: {[t.input_ids.get_shape()[1] for t in encoded]}")
+
+    # Find a stop token that makes prompts[early_idx] finish strictly before every other prompt,
+    # so the batch shrinks and the stale-offset branch of the offset recomputation is exercised.
+    stop_token = None
+    for candidate in dict.fromkeys(ov_pipe.generate(encoded[early_idx], generation_config).tokens[0]):
+        stop_token_ids = {candidate}
+        lengths = [
+            len(ov_pipe.generate(tokens, generation_config, stop_token_ids=stop_token_ids).tokens[0])
+            for tokens in encoded
+        ]
+        early_length, others = lengths[early_idx], [length for i, length in enumerate(lengths) if i != early_idx]
+        if all(early_length < length for length in others) and early_length + 2 <= lengths[-1]:
+            stop_token = candidate
+            break
+    if stop_token is None:
+        pytest.skip("Could not find a stop token that makes a non-last request finish first")
+    generation_config.stop_token_ids = {stop_token}
+
+    reference = [ov_pipe.generate(prompt, generation_config=generation_config) for prompt in prompts]
+
+    # The offset that the finished request used to occupy must be given to the next running
+    # request, so the result must not depend on where the early finisher sits in the batch.
+    for order in itertools.permutations(range(len(prompts))):
+        batch_result = ov_pipe.generate([prompts[i] for i in order], generation_config=generation_config)
+        for position, i in enumerate(order):
+            assert batch_result.texts[position] == reference[i], (
+                f"Order: {order}\n"
+                f"Prompt idx: {i}\n"
+                f"Batch result:      {batch_result.texts[position]}\n"
+                f"Individual result: {reference[i]}\n"
+                f"Prompt: {prompts[i]}"
+            )
 
 
 #
