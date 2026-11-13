@@ -515,6 +515,10 @@ def test_gguf_tokenizer_reads_readonly_file(tiny_gguf_model, tokenizer_type):
 
 
 @pytest.mark.parametrize("read_only", [False, True], ids=["shared", "shared-readonly"])
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="CPU PagedAttention requires SVE, unavailable on Apple Silicon",
+)
 def test_gguf_frontend_continuous_batching_with_shared_file(tiny_gguf_model, read_only):
     scheduler = ov_genai.SchedulerConfig()
     scheduler.num_kv_blocks = 4
