@@ -173,6 +173,11 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
+### Continuous Batching and Prefix Caching
+
+On CPU and GPU, `VLMPipeline` uses the PagedAttention backend with prefix caching enabled by default, and accepts a `scheduler_config` argument to configure it.
+Refer to [Continuous Batching](/docs/concepts/optimization-techniques/continuous-batching#supported-pipelines-and-configuration) for backend selection and `SchedulerConfig`, and to [Prefix Caching](/docs/concepts/optimization-techniques/prefix-caching) for how cached prefixes are reused with images and videos.
+
 ### Video Metadata and Sampling
 
 When a video is provided as an input, video metadata can be passed along with the video to control the sampling of video frames.
