@@ -1,8 +1,6 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-set(TARGET_NAME "openvino_custom_add_extension")
-
 if(NOT TARGET openvino::runtime)
      # The OpenVINO installed from PyPI can be used to find OpenVINO_DIR
      if(NOT CMAKE_CROSSCOMPILING)
@@ -19,21 +17,28 @@ if(NOT TARGET openvino::runtime)
     find_package(OpenVINO REQUIRED PATHS "${OpenVINO_DIR_PY}")
 endif()
 
-set(SRC custom_add.cpp ov_extension.cpp)
+function(add_test_extension TARGET_NAME)
+    add_library(${TARGET_NAME} MODULE ${ARGN})
 
-add_library(${TARGET_NAME} MODULE ${SRC})
+    if(DEFINED TEST_TARGET_NAME)
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:${TEST_TARGET_NAME}>"
+            RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:${TEST_TARGET_NAME}>"
+        )
+    endif()
 
-if(DEFINED TEST_TARGET_NAME)
-    set_target_properties(${TARGET_NAME} PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:${TEST_TARGET_NAME}>"
-        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:${TEST_TARGET_NAME}>"
-    )
+    target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
+
+    install(TARGETS ${TARGET_NAME}
+            COMPONENT tests
+            LIBRARY DESTINATION tests
+            RUNTIME DESTINATION tests
+            ARCHIVE DESTINATION tests)
+endfunction()
+
+add_test_extension(openvino_custom_add_extension custom_add.cpp ov_extension.cpp)
+if(ENABLE_GGUF)
+    add_test_extension(openvino_gguf_test_extension gguf_throwing_extension.cpp)
+    add_test_extension(openvino_gguf_generation_extension gguf_extension.cpp)
+    add_test_extension(openvino_gguf_genai_extension gguf_genai_extension.cpp)
 endif()
-
-target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
-
-install(TARGETS ${TARGET_NAME}
-        COMPONENT tests
-        LIBRARY DESTINATION tests
-        RUNTIME DESTINATION tests
-        ARCHIVE DESTINATION tests)

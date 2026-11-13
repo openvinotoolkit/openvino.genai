@@ -44,10 +44,14 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
 }
 
 std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_path,
-                                         const GGUFProperties& properties) {
+                                         const GGUFProperties& properties,
+                                         const ov::genai::ExtensionList& frontend_extensions) {
 #ifdef ENABLE_GGUF
     try {
-        return create_from_gguf(model_path.string(), properties.enable_save_ov_model, properties.use_legacy_reader());
+        return create_from_gguf(model_path.string(),
+                                properties.enable_save_ov_model,
+                                properties.use_legacy_reader(),
+                                frontend_extensions);
     } catch (const std::exception& error) {
         if (!properties.legacy_reader.has_value()) {
             OPENVINO_THROW(error.what(),

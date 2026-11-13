@@ -34,7 +34,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties)
     : StatefulLLMPipeline{
-        utils::read_model(models_path, properties),
+        utils::read_model(models_path, properties, ov::genai::ExtensionList{}),
         tokenizer,
         device,
         properties,
