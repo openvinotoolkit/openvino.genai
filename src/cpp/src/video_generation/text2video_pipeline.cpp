@@ -87,7 +87,12 @@ void Text2VideoPipeline::compile(const std::string& text_encode_device,
 }
 
 VideoGenerationResult Text2VideoPipeline::decode(const ov::Tensor& latent) {
-    return m_impl->decode(latent);
+    return decode(latent, std::nullopt);
+}
+
+VideoGenerationResult Text2VideoPipeline::decode(const ov::Tensor& latent,
+                                                 const std::optional<VideoGenerationConfig>& generation_config) {
+    return m_impl->decode(latent, generation_config);
 }
 
 Text2VideoPipeline::~Text2VideoPipeline() = default;
