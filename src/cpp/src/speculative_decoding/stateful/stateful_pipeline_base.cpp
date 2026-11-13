@@ -135,6 +135,7 @@ DecodedResults StatefulSpeculativePipelineBase::generate(StringInputs inputs,
                                                          StreamerVariant streamer) {
     ManualTimer generate_timer("StatefulSpeculativePipelineBase::generate(StringInputs)");
     generate_timer.start();
+    m_sd_perf_metrics = SDPerModelsPerfMetrics();
 
     // Extract prompt string
     std::string prompt = std::visit(
@@ -186,6 +187,7 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
                                                          StreamerVariant streamer) {
     ManualTimer generate_timer("StatefulSpeculativePipelineBase::generate(ChatHistory)");
     generate_timer.start();
+    m_sd_perf_metrics = SDPerModelsPerfMetrics();
 
     ManualTimer encode_timer("Encode");
     encode_timer.start();
@@ -235,9 +237,10 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
 EncodedResults StatefulSpeculativePipelineBase::generate(const EncodedInputs& inputs,
                                                          OptionalGenerationConfig generation_config,
                                                          StreamerVariant streamer) {
+    m_sd_perf_metrics = SDPerModelsPerfMetrics();
     // Resolve configuration
     GenerationConfig config = resolve_generation_config(generation_config);
-    
+
     // Delegate to generate_tokens (implemented by child classes)
     return generate_tokens(inputs, config, streamer);
 }
