@@ -650,12 +650,7 @@ def test_preemption_completes_all_requests(model_pair):
     results = _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4, [config] * len(PROMPTS_4))
 
     assert [result.m_status for result in results] == [GenerationStatus.FINISHED] * len(PROMPTS_4)
-    assert all(result.m_generation_ids[0] for result in results)
-    # When the target is preempted with candidates waiting for validation, the replay is scheduled one token short
-    # of the validation window, so the candidates are validated against shifted logits. FastDraft fails the same
-    # way. Related: CVS-198275. Whether the shifted validation changes the output depends on the draft.
-    if [result.m_generation_ids for result in results] != reference:
-        pytest.xfail("Target preemption with pending candidates corrupts speculative decoding output, CVS-198275")
+    assert [result.m_generation_ids for result in results] == reference
 
 
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
@@ -681,10 +676,7 @@ def test_target_and_draft_preemption_complete(model_pair):
             raise
         pytest.xfail("Linear-attention targets cannot recompute requests preempted during validation, CVS-198275")
     assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
-    # Candidates waiting for validation when the target is preempted are validated against shifted logits, with any
-    # speculative draft (CVS-198275).
-    if outputs != _block_target_outputs(model_pair):
-        pytest.xfail("Target preemption with pending candidates corrupts speculative decoding output, CVS-198275")
+    assert outputs == _block_target_outputs(model_pair)
 
 
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
