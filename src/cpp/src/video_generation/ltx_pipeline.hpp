@@ -577,7 +577,9 @@ public:
                             "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video = m_vae->decode(latent,
+                                         merged_generation_config.vae_tile_sample_min_num_frames,
+                                         merged_generation_config.vae_tile_sample_stride_num_frames);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -764,7 +766,9 @@ public:
                             "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video = m_vae->decode(latent,
+                                         merged_generation_config.vae_tile_sample_min_num_frames,
+                                         merged_generation_config.vae_tile_sample_stride_num_frames);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -779,7 +783,9 @@ public:
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(postprocessed);
+        ov::Tensor video = m_vae->decode(postprocessed,
+                                         m_generation_config.vae_tile_sample_min_num_frames,
+                                         m_generation_config.vae_tile_sample_stride_num_frames);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();

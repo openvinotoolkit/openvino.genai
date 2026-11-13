@@ -95,6 +95,16 @@ struct VideoGenerationConfig {
     /// Transformer block indices perturbed by Spatio-Temporal Guidance. Indices outside the model's
     /// block range are ignored, matching the reference implementation.
     std::optional<std::vector<int64_t>> spatio_temporal_guidance_blocks = std::nullopt;
+
+    /// Temporal tiling of the VAE decoder (LTX-Video): a chunk length in video frames. The latent video is decoded
+    /// in overlapping chunks which are cross-faded, so peak memory of the decoder is bounded by the chunk instead
+    /// of the whole clip. Must be a multiple of the VAE temporal compression ratio (8). 0 disables tiling.
+    /// @note Requires a VAE decoder with a dynamic number of frames, so it cannot be combined with reshape().
+    size_t vae_tile_sample_min_num_frames = 0;
+    /// A distance between chunk starts in video frames for temporal tiling of the VAE decoder. Must be a multiple
+    /// of the VAE temporal compression ratio not greater than `vae_tile_sample_min_num_frames`. The difference
+    /// between the two is the overlap. Ignored if `vae_tile_sample_min_num_frames` is 0.
+    size_t vae_tile_sample_stride_num_frames = 8;
 };
 
 /**
@@ -136,6 +146,10 @@ static constexpr ov::Property<float> audio_guidance_rescale{"audio_guidance_resc
 /// Transformer block indices perturbed by Spatio-Temporal Guidance.
 static constexpr ov::Property<std::vector<int64_t>> spatio_temporal_guidance_blocks{
     "spatio_temporal_guidance_blocks"};
+/// A chunk length in video frames for temporal tiling of the VAE decoder. 0 disables tiling.
+static constexpr ov::Property<size_t> vae_tile_sample_min_num_frames{"vae_tile_sample_min_num_frames"};
+/// A distance between chunk starts in video frames for temporal tiling of the VAE decoder.
+static constexpr ov::Property<size_t> vae_tile_sample_stride_num_frames{"vae_tile_sample_stride_num_frames"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.
