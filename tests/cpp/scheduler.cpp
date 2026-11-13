@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <future>
+#include <iterator>
 #include <numeric>
 #include <set>
 #include "openvino/runtime/core.hpp"
@@ -3674,4 +3675,73 @@ TEST(TestScheduler, dflash_draft_windows_are_scheduled_whole) {
             }
         }
     }
+}
+
+namespace {
+SequenceGroup::Ptr make_validating_request(uint64_t request_id) {
+    std::vector<int64_t> prompt(TEST_BLOCK_SIZE);
+    std::iota(prompt.begin(), prompt.end(), 0);
+    return std::make_shared<SequenceGroup>(request_id, prompt, utils::get_greedy_config());
+}
+
+// Runs the prompts, then gives each request the token the target sampled after its prompt and num_candidates draft
+// candidates to validate.
+void start_validation_windows(ContinuousBatchingScheduler& scheduler,
+                              const std::vector<SequenceGroup::Ptr>& requests,
+                              size_t num_candidates) {
+    for (;;) {
+        std::vector<SequenceGroup::Ptr> prompts;
+        std::copy_if(requests.begin(), requests.end(), std::back_inserter(prompts), [](const SequenceGroup::Ptr& request) {
+            return request->get_num_processed_tokens() < request->get_prompt_len();
+        });
+        if (prompts.empty()) {
+            break;
+        }
+        std::ignore = scheduler.schedule(prompts);
+        for (const auto& request : prompts) {
+            request->finish_iteration();
+        }
+    }
+    for (const auto& request : requests) {
+        const Sequence::Ptr sequence = request->get_running_sequences().front();
+        for (size_t token = 0; token <= num_candidates; ++token) {
+            sequence->append_token(100 + static_cast<int64_t>(token), 0.0f);
+        }
+        request->update_processed_tokens_num(request->get_prompt_len());
+        request->set_num_validated_tokens(num_candidates);
+    }
+}
+
+void free_requests(ContinuousBatchingScheduler& scheduler, const std::vector<SequenceGroup::Ptr>& requests) {
+    for (const auto& request : requests) {
+        for (const auto& sequence : request->get_sequences()) {
+            if (scheduler.has_block_table(sequence->get_id())) {
+                scheduler.free_sequence(sequence->get_id());
+            }
+        }
+    }
+}
+}  // namespace
+
+// With no KV block for the window and no request to preempt, the request runs nothing in this step and still has its
+// candidates to validate.
+TEST(TestScheduler, validation_window_without_kv_blocks_keeps_its_candidates) {
+    constexpr size_t num_candidates = 3;
+    SchedulerConfig scheduler_config;
+    // the block of the prompt
+    scheduler_config.num_kv_blocks = 1;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0)};
+    start_validation_windows(scheduler, requests, num_candidates);
+
+    auto out = scheduler.schedule(requests);
+    EXPECT_TRUE(out.m_scheduled_sequence_groups_ids.empty());
+    EXPECT_EQ(requests[0]->get_num_scheduled_tokens(), 0u);
+    EXPECT_EQ(requests[0]->get_num_tokens_to_validate(), num_candidates);
+
+    free_requests(scheduler, requests);
 }
