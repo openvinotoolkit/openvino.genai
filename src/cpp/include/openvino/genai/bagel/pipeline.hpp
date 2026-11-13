@@ -61,17 +61,39 @@ public:
                   const ov::AnyMap& properties = {});
     ~BagelPipeline();
 
+    /**
+     * @brief Greedy text generation, optionally about an image
+     * @param prompt user prompt
+     * @param image optional u8 RGB image
+     * @param max_new_tokens maximum number of generated tokens
+     * @param system_prompt optional system prompt prefilled before the image and the prompt
+     * @return generated text
+     */
     std::string generate_text(const std::string& prompt,
                               const std::optional<ov::Tensor>& image = std::nullopt,
                               size_t max_new_tokens = 256,
                               const std::string& system_prompt = {});
 
+    /**
+     * @brief Text-to-image generation
+     * @param prompt image description
+     * @param config generation parameters
+     * @return u8 [1, size, size, 3] RGB image
+     */
     ov::Tensor generate_image(const std::string& prompt, const BagelImageGenerationConfig& config = {});
 
+    /**
+     * @brief Image editing
+     * @param image u8 RGB image to edit
+     * @param prompt edit instruction
+     * @param config generation parameters, `size` is ignored
+     * @return u8 [1, H, W, 3] RGB image at the VAE resolution of the input image
+     */
     ov::Tensor edit_image(const ov::Tensor& image,
                           const std::string& prompt,
                           const BagelImageGenerationConfig& config = {});
 
+    /// @brief Compile and inference timings accumulated since construction or the last reset_perf_metrics()
     const BagelPerfMetrics& get_perf_metrics() const;
     void reset_perf_metrics();
 

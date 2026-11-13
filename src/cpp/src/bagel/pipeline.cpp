@@ -305,7 +305,7 @@ public:
          const std::string& device,
          const std::filesystem::path& tokenizer_dir,
          const ov::AnyMap& properties)
-        : m_npu(device.rfind("NPU", 0) == 0),
+        : m_npu(device.find("NPU") != std::string::npos),
           m_tokenizer(tokenizer_dir.empty() ? models_dir : tokenizer_dir) {
         const auto cfg = read_bagel_config(models_dir);
         m_hidden = cfg.hidden;
@@ -341,7 +341,7 @@ public:
                            : compile("text_embeddings_model.xml", device, properties);
         m_vit = compile("vision_embeddings_model.xml", device, config);
         ov::AnyMap lm_config = config;
-        if (device.rfind("GPU", 0) == 0) {
+        if (device.find("GPU") != std::string::npos) {
             // BAGEL's outlier activations break GPU dynamic quantization of compressed weights (INT4 rel err 0.4)
             lm_config.emplace(ov::hint::dynamic_quantization_group_size.name(), uint64_t{0});
         }
@@ -679,6 +679,12 @@ private:
         const size_t dim = latent_dim();
         const auto vae_pos = vae_position_ids(h, w);
         const auto interval = config.cfg_interval.value_or(default_interval);
+        OPENVINO_ASSERT(interval.first <= interval.second,
+                        "cfg_interval must be (low, high), got (",
+                        interval.first,
+                        ", ",
+                        interval.second,
+                        ")");
         load_soi_eoi();
 
         ov::Tensor x(ov::element::f32, {n, dim});
