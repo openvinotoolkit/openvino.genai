@@ -3383,7 +3383,9 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
-@pytest.fixture(scope="module", params=[MODEL_QWEN35_MTP, MODEL_QWEN38_FLASH_NEXT])
+# TODO: Enable test when OV ops are merged
+# @pytest.fixture(scope="module", params=[MODEL_QWEN35_MTP, MODEL_QWEN38_FLASH_NEXT])
+@pytest.fixture(scope="module", params=[MODEL_QWEN35_MTP])
 def mtp_model_path(request) -> Path:
     model_path = Path(_get_ov_model(request.param))
     assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5/8 export must include the MTP draft model"
@@ -3409,7 +3411,7 @@ def test_qwen35_mtp_rejects_prefix_mismatch(mtp_model_path, main_prefix):
         )
 
 
-def test_mtp_text_add_request(mtp_model_path, monkeypatch, capfd):
+def test_qwen_mtp_text_add_request(mtp_model_path, monkeypatch, capfd):
     model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
