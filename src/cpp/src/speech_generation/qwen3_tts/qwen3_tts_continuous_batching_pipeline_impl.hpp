@@ -26,6 +26,8 @@ public:
                                        const std::string& text,
                                        const ov::Tensor& speaker_embedding,
                                        const SpeechGenerationConfig& generation_config) override;
+    void prepare_shared_voice_inputs(ov::Tensor& speaker_embedding,
+                                    SpeechGenerationConfig& generation_config);
 
     void step() override;
     bool has_non_finished_requests() const override;

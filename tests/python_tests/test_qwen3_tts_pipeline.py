@@ -1116,6 +1116,41 @@ def test_qwen3_tts_continuous_batching_handle_stop_and_cancel(
 
 
 @pytest.mark.speech_generation
+def test_qwen3_tts_sync_cb_batch_with_shared_ref_audio(
+    tiny_qwen3_tts_base_ov_path: Path,
+):
+    language = "English"
+    prompts = [
+        LANGUAGE_TEST_TEXTS[language]["prompt"],
+        LANGUAGE_TEST_TEXTS[language]["prompt"] + " Again.",
+    ]
+    pipe = ov_genai.Text2SpeechPipeline(
+        str(tiny_qwen3_tts_base_ov_path),
+        "CPU",
+        ATTENTION_BACKEND="PA",
+    )
+    result = pipe.generate(
+        prompts,
+        language=language,
+        ref_audio=ov.Tensor(_make_ref_audio()),
+        ref_text=LANGUAGE_TEST_TEXTS[language]["reference_text"],
+        do_sample=False,
+        subtalker_dosample=False,
+        max_new_tokens=8,
+        non_streaming_mode=True,
+    )
+
+    assert len(result.speeches) == len(prompts)
+    assert result.output_sample_rate == SAMPLE_RATE
+    assert result.speaker_embedding
+    assert result.ref_codec_ids
+    for speech in result.speeches:
+        waveform = np.asarray(speech.data, dtype=np.float32).reshape(-1)
+        assert waveform.size > 0
+        assert np.isfinite(waveform).all()
+
+
+@pytest.mark.speech_generation
 def test_qwen3_tts_sync_cb_recovers_after_partial_request_submission(
     tiny_qwen3_tts_base_ov_path: Path,
 ):

@@ -100,10 +100,16 @@ public:
         const auto generation_start = std::chrono::steady_clock::now();
         std::vector<ov::genai::SpeechGenerationHandle> handles;
         handles.reserve(texts.size());
+        ov::Tensor shared_speaker_embedding = speaker_embedding;
+        ov::genai::SpeechGenerationConfig shared_generation_config = generation_config;
+        if (!texts.empty()) {
+            m_cb_impl->prepare_shared_voice_inputs(shared_speaker_embedding, shared_generation_config);
+        }
 
         for (const auto& text : texts) {
             const uint64_t request_id = m_next_request_id.fetch_add(1, std::memory_order_relaxed);
-            handles.push_back(m_cb_impl->add_request(request_id, text, speaker_embedding, generation_config));
+            handles.push_back(
+                m_cb_impl->add_request(request_id, text, shared_speaker_embedding, shared_generation_config));
         }
 
         while (m_cb_impl->has_non_finished_requests()) {

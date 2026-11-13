@@ -43,6 +43,8 @@ public:
                                               const std::string& text,
                                               const ov::Tensor& speaker_embedding,
                                               const SpeechGenerationConfig& generation_config);
+    void prepare_shared_voice_inputs(ov::Tensor& speaker_embedding,
+                                    SpeechGenerationConfig& generation_config);
 
     ov::Shape get_speaker_embedding_shape() const;
     uint32_t get_output_sample_rate() const;

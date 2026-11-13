@@ -29,6 +29,12 @@ SpeechGenerationHandle Qwen3TTSContinuousBatchingPipelineImpl::add_request(uint6
     return handle;
 }
 
+void Qwen3TTSContinuousBatchingPipelineImpl::prepare_shared_voice_inputs(
+    ov::Tensor& speaker_embedding,
+    SpeechGenerationConfig& generation_config) {
+    m_impl->prepare_shared_voice_inputs(speaker_embedding, generation_config);
+}
+
 void Qwen3TTSContinuousBatchingPipelineImpl::step() {
     m_impl->step();
     m_impl->report_perf_if_drained();

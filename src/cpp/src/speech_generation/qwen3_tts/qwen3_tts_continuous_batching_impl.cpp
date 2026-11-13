@@ -134,6 +134,24 @@ ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::Qwen3TTSContinuousBa
     m_model_runner->enable_hidden_state_export(true);
 }
 
+void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::prepare_shared_voice_inputs(
+    ov::Tensor& speaker_embedding,
+    SpeechGenerationConfig& generation_config) {
+    if (!m_engine.is_base_model() || !generation_config.ref_audio) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock{m_request_state_mutex};
+    const ov::Tensor ref_audio = generation_config.ref_audio;
+    if (!speaker_embedding) {
+        speaker_embedding = m_engine.extract_qwen3_speaker_embedding_from_audio(ref_audio);
+    }
+    if (!generation_config.ref_text.empty() && !generation_config.ref_codec_ids) {
+        generation_config.ref_codec_ids = m_engine.extract_qwen3_ref_code_from_audio(ref_audio);
+    }
+    generation_config.ref_audio = ov::Tensor();
+}
+
 SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::add_speech_request(
     uint64_t request_id,
     const std::string& text,
