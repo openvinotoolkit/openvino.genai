@@ -665,6 +665,28 @@ def test_speech_streamer_end_is_called_once(
     assert counter.ends == 1
 
 
+class FailingSpeechStreamer(ov_genai.OmniSpeechStreamerBase):
+    def write(self, chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+        raise ValueError("speech chunk failure")
+
+    def end(self) -> None:
+        pass
+
+
+def test_speech_streamer_failure_ends_text_streamer(speech_pipe: ov_genai.OmniPipeline) -> None:
+    collector = TokenCollector()
+    with pytest.raises(Exception, match="speech chunk failure"):
+        speech_pipe.generate(
+            PROMPT,
+            text_config=_text_config(1000),
+            talker_speech_config=_speech_config(8, audio_chunk_frames=1),
+            streamer=collector,
+            speech_streamer=FailingSpeechStreamer(),
+        )
+    assert collector.tokens
+    assert collector.ends == 1
+
+
 def test_vlm_pipeline_ends_speech_streamer_on_rejected_config(vlm_pipe: ov_genai.VLMPipeline) -> None:
     # Called on VLMPipeline directly: both backends reject the speaker.
     counter = EndCounter()
@@ -769,30 +791,6 @@ def test_streamer_stop_on_last_allowed_token_keeps_its_reason(
         PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=TokenCollector(status)
     )
     assert result.finish_reasons == [reason]
-
-
-class FailingSpeechStreamer(ov_genai.OmniSpeechStreamerBase):
-    def write(self, chunk: ov.Tensor) -> ov_genai.StreamingStatus:
-        raise ValueError("speech chunk failure")
-
-    def end(self) -> None:
-        pass
-
-
-@SKIP_PA_ON_MACOS_ARM64
-def test_paged_attention_speech_streamer_failure_ends_text_streamer(omni_pa_pipe: ov_genai.OmniPipeline) -> None:
-    # As in ContinuousBatchingImpl::generate(), a failed call still ends the text streamer on PA.
-    collector = TokenCollector()
-    with pytest.raises(Exception, match="speech chunk failure"):
-        omni_pa_pipe.generate(
-            PROMPT,
-            text_config=_text_config(1000),
-            talker_speech_config=_speech_config(8, audio_chunk_frames=1),
-            streamer=collector,
-            speech_streamer=FailingSpeechStreamer(),
-        )
-    assert collector.tokens
-    assert collector.ends == 1
 
 
 def test_default_stop_token_ids_end_speech_generation(speech_pipe: ov_genai.OmniPipeline) -> None:

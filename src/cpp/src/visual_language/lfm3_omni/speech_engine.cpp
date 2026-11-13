@@ -108,6 +108,20 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     };
     StepOutput step = timed_step(prompt_embeds, attention_length);
 
+    // As on PA: a failed call still ends a healthy text streamer, and an end() failure is dropped so the original
+    // error reaches the caller. A text streamer that threw itself is not called again.
+    struct TextStreamerGuard {
+        const std::shared_ptr<StreamerBase>& streamer;
+        bool done = false;
+        ~TextStreamerGuard() {
+            if (streamer && !done) {
+                try {
+                    streamer->end();
+                } catch (...) {
+                }
+            }
+        }
+    } text_streamer_guard{streamer};
     while (!state.finished()) {
         ov::Tensor next_embeds;
         if (state.next_is_frame()) {
@@ -117,7 +131,13 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
             next_embeds.set_shape({1, 1, next_embeds.get_shape().at(1)});
         } else {
             const int64_t token = state.sample_text(step.logits);
-            state.accept_text(token, streamer ? streamer->write(token) : StreamingStatus::RUNNING);
+            StreamingStatus status = StreamingStatus::RUNNING;
+            if (streamer) {
+                text_streamer_guard.done = true;
+                status = streamer->write(token);
+                text_streamer_guard.done = false;
+            }
+            state.accept_text(token, status);
             next_embeds = embed_token(token);
         }
         raw_perf.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
@@ -127,6 +147,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
             step = timed_step(next_embeds, ++attention_length);
         }
     }
+    text_streamer_guard.done = true;
     if (streamer) {
         streamer->end();
     }
