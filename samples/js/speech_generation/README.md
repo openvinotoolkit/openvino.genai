@@ -68,6 +68,13 @@ Use `--language` to set the language. Supported values are model-dependent; comm
 
 ## Run samples
 
+From the `samples/js` directory, install dependencies (if not already done):
+```bash
+npm install
+```
+
+If you use the master branch, you may need to [build openvino-genai-node from source](../../../src/js/README.md#build-bindings) first.
+
 ### 1) `text2speech.js`
 
 SpeechT5:
