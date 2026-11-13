@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <vector>
 #include "sampling/sampler.hpp"
+#include "sampling/sampling_distribution.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "utils.hpp"
 
@@ -129,6 +130,38 @@ ov::Tensor make_logits(size_t num_tokens) {
 }
 
 }  // namespace
+
+TEST(SamplerMultinomialTest, shared_primitive_matches_request_sampling) {
+    const std::vector<std::pair<size_t, float>> filters{{0, 1.0f}, {2, 1.0f}, {0, 0.8f}, {2, 0.8f}};
+    for (const auto& filter : filters) {
+        for (size_t seed : {size_t{0}, size_t{42}, size_t{123}}) {
+            GenerationConfig sampling_config = ov::genai::utils::get_greedy_config();
+            sampling_config.do_sample = true;
+            sampling_config.top_k = filter.first;
+            sampling_config.top_p = filter.second;
+            sampling_config.temperature = 0.8f;
+            sampling_config.rng_seed = seed;
+            sampling_config.max_new_tokens = 1;
+
+            SequenceGroup::Ptr sequence_group = make_scheduled_group(0, sampling_config);
+            std::vector<float> scores{0.1f, 0.4f, 0.2f, 0.3f};
+            ov::Tensor logits(ov::element::f32, ov::Shape{1, 1, scores.size()});
+            std::copy(scores.begin(), scores.end(), logits.data<float>());
+
+            Logits logits_view(scores.data(), scores.size());
+            LogitProcessor processor(sampling_config, sequence_group->get_prompt_ids());
+            processor.update_generated_len(0);
+            processor.apply(logits_view);
+            std::mt19937 rng(seed);
+            const Token expected = SamplingDistribution(logits_view).sample(rng);
+
+            Sampler sampler(1);
+            sampler.sample({sequence_group}, logits, false);
+            EXPECT_EQ(sequence_group->get_sequences().front()->get_generated_ids(),
+                      TokenIds({expected.m_index}));
+        }
+    }
+}
 
 TEST(SamplerWorkerJoiningTest, waits_for_blocked_worker_and_preserves_worker_exception) {
     SequenceGroup::Ptr failing_group = make_scheduled_group(0);

@@ -545,15 +545,6 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
           m_sequence_group_type(SequenceGroupType::TOKENS),
           m_generation_stream(GenerationStream::create()) { }
 
-    bool out_of_memory() const {
-        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->out_of_memory()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     void stream_output() {
         deliver_notification(prepare_notification());
     }
@@ -561,6 +552,15 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
+
+    bool out_of_memory() const {
+        for (const auto& sequence : m_sequences) {
+            if (sequence->out_of_memory()) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params)

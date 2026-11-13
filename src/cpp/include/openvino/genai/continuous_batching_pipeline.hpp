@@ -25,6 +25,7 @@
 namespace ov::genai {
 
 class ContinuousBatchingAdapter;
+class Qwen3TTSContinuousBatchingPipelineImpl;
 
 /**
  * @brief Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
@@ -147,6 +148,7 @@ protected:
     class DFlashDecodingImpl;
     class MtpDecodingImpl;
     class PromptLookupImpl;
+    class Qwen3TTSContinuousBatchingImpl;
 
     friend class ContinuousBatchingForSpeculativeDecodingImpl;
 
@@ -159,6 +161,8 @@ protected:
     friend class DFlashDecodingImpl;
     friend class MtpDecodingImpl;
     friend class PromptLookupImpl;
+    friend class Qwen3TTSContinuousBatchingImpl;
+    friend class Qwen3TTSContinuousBatchingPipelineImpl;
     friend class VLMPipeline;
     friend class ContinuousBatchingAdapter;
 
