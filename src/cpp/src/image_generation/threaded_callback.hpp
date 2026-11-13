@@ -23,6 +23,8 @@ public:
 
     ~ThreadedCallbackWrapper() noexcept {
         if (m_worker_thread && m_worker_thread->joinable()) {
+            // generate() threw before calling end(): drop queued callbacks instead of running them.
+            m_status = CallbackStatus::STOP;
             end();
         }
     }
@@ -50,7 +52,6 @@ public:
             return;
         }
 
-        m_status = CallbackStatus::STOP;
         m_squeue.push(std::monostate());
 
         if (m_worker_thread && m_worker_thread->joinable()) {
