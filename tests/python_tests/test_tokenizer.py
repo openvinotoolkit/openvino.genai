@@ -108,9 +108,7 @@ def test_gguf_pre_tokenization(tmp_path, pre_type, text, expected_tokens):
     writer.add_tokenizer_pre(pre_type)
     writer.add_token_list(vocab)
     writer.add_token_types([3] + [1] * (len(vocab) - 1))
-    writer.add_token_merges(
-        ["\u0120 \u010a", "\u0120 (", ": e", "a \u00cc", "a\u00cc \u0123", "1 2", "12 3", "123 4"]
-    )
+    writer.add_token_merges(["\u0120 \u010a", "\u0120 (", ": e", "a \u00cc", "a\u00cc \u0123", "1 2", "12 3", "123 4"])
     writer.add_eos_token_id(0)
     writer.write_header_to_file()
     writer.write_kv_data_to_file()
