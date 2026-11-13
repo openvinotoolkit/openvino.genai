@@ -21,11 +21,19 @@
 #include "visual_language/vision_token_pruning_processor.hpp"
 
 namespace ov::genai {
+
 struct VLMPerfMetrics;
 
 const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 const static std::regex UNIVERSAL_VIDEO_PATTERN{R"(<ov_genai_video_(\d+)>)"};
 const static std::regex UNIVERSAL_AUDIO_PATTERN{R"(<ov_genai_audio_(\d+)>)"};
+
+// Explicit add_special_tokens settings override these defaults.
+enum class PromptFormatting {
+    Raw,              // Skip templating; add special tokens by default outside chat.
+    NeedsTemplate,    // Apply the template; omit extra special tokens by default.
+    AlreadyTemplated  // Skip templating and extra special tokens by default.
+};
 
 struct NormalizedPrompt {
     std::string unified_prompt;
@@ -73,6 +81,10 @@ public:
 
     // returns per-layer embeddings callback, or nullptr if not available
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
+    
+    // returns ngram embeddings callback, or nullptr if not available
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
+    get_ngram_embeddings_callback();
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -103,6 +115,11 @@ public:
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel::Ptr get_embedding_model() const;
 
+    // sets LoRA adapters to apply to the vision sub-models during the next generation
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
+
+    std::optional<std::string> get_lora_tensor_prefix() const;
+
     // returns tokenizer
     Tokenizer get_tokenizer() const;
 
@@ -118,8 +135,7 @@ public:
     // gets last pruned prompt after vision token pruning
     std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
-    // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
-    void set_apply_chat_template_status(bool apply_chat_template);
+    void set_prompt_formatting(PromptFormatting prompt_formatting);
 
     // finishes chat and clears a chat history
     void finish_chat();
@@ -180,9 +196,7 @@ private:
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
-        // Chat history
-        // True if chat template should be applied for non-chat scenario
-        bool m_apply_chat_template = true;
+        PromptFormatting m_prompt_formatting = PromptFormatting::NeedsTemplate;
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
@@ -202,6 +216,9 @@ private:
         virtual ~IInputsEmbedder() = default;
 
     public:
+        // Architectures that support LoRA for the vision part override this to pick up the per-generation config.
+        virtual void set_adapters(const std::optional<AdapterConfig>& adapters) {}
+        virtual std::optional<std::string> get_lora_tensor_prefix() const { return std::nullopt; }
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt,
@@ -216,6 +233,11 @@ private:
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
         virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
+            return nullptr;
+        }
+
+        virtual std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
+        get_ngram_embeddings_callback() {
             return nullptr;
         }
 
@@ -291,8 +313,8 @@ private:
             return m_cache_state;
         }
 
-        void set_apply_chat_template_status(bool apply_chat_template) {
-            m_apply_chat_template = apply_chat_template;
+        void set_prompt_formatting(PromptFormatting prompt_formatting) {
+            m_prompt_formatting = prompt_formatting;
         }
 
         /**
@@ -455,6 +477,7 @@ private:
     std::shared_ptr<IInputsEmbedder> m_impl;
 
     friend class InputsEmbedderMiniCPM;
+    friend class InputsEmbedderMiniCPMV4_6;
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderNanoLLaVA;
     friend class InputsEmbedderLLaVANext;
@@ -474,6 +497,9 @@ private:
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
     friend class InputsEmbedderMiniCPMv4_7;
+    friend class InputsEmbedderMistral3;
+    friend class InputsEmbedderLFM3VL;
+    friend class InputsEmbedderMolmo2;
 };
 
 /// @brief Universal-tag pattern for a modality. A switch, not a ternary on IMAGE: a ternary would

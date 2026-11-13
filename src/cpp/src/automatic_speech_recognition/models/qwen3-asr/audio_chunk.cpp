@@ -100,13 +100,12 @@ std::vector<ov::genai::AudioChunk> split_audio_into_chunks(const std::vector<flo
     OPENVINO_ASSERT(sr > 0, "Sampling rate must be greater than 0.");
     OPENVINO_ASSERT(max_chunk_sec > 0, "max_chunk_sec must be greater than 0.");
 
-    constexpr float SEARCH_EXPAND_SEC = 5.0f;
     constexpr float MIN_WINDOW_MS = 100.0f;
     constexpr float MIN_ASR_INPUT_SECONDS = 0.5f;
 
     const size_t max_len = max_chunk_sec * sr;
+    const size_t expand = ov::genai::CHUNK_BOUNDARY_SEARCH_SECONDS * sr;
     // std::round returns float; outer static_cast<size_t> truncates to sample count.
-    const size_t expand = static_cast<size_t>(std::round(SEARCH_EXPAND_SEC * static_cast<float>(sr)));
     const size_t min_chunk_len = static_cast<size_t>(std::round(MIN_ASR_INPUT_SECONDS * static_cast<float>(sr)));
     const size_t win =
         std::max<size_t>(4, static_cast<size_t>(std::round((MIN_WINDOW_MS / 1000.0f) * static_cast<float>(sr))));
@@ -141,12 +140,12 @@ std::vector<ov::genai::AudioChunk> split_audio_into_chunks(const std::vector<flo
 
 namespace ov::genai {
 
-std::vector<AudioChunk> split_audio_into_chunks(const std::vector<std::vector<float>>& raw_speech,
+std::vector<AudioChunk> split_audio_into_chunks(const AudiosView& raw_speech,
                                                 const size_t sr,
                                                 const size_t max_chunk_sec) {
     std::vector<AudioChunk> chunks;
     for (size_t batch = 0; batch < raw_speech.size(); ++batch) {
-        std::vector<AudioChunk> sample_chunks = ::split_audio_into_chunks(raw_speech[batch], sr, max_chunk_sec);
+        std::vector<AudioChunk> sample_chunks = ::split_audio_into_chunks(raw_speech[batch].get(), sr, max_chunk_sec);
         for (AudioChunk& chunk : sample_chunks) {
             chunk.orig_batch = batch;
             chunks.push_back(std::move(chunk));

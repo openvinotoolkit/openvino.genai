@@ -22,6 +22,12 @@ pip install git+https://github.com/huggingface/optimum-intel.git
 ```
 :::
 
+:::note Models converted only by genai-cli
+Models marked as **genai-cli only** are not supported by `optimum-cli` yet. Convert them with
+[`genai-cli`](../guides/model-preparation/convert-to-openvino.mdx#genai-cli) (preview), the export tool of OpenVINO GenAI,
+which takes the same options as `optimum-cli export openvino`. All other models can be converted with either tool.
+:::
+
 ## Large Language Models (LLMs)
 
 :::tip LoRA Support
@@ -52,6 +58,18 @@ Models should belong to the same family and have the same tokenizers.
 
 <ImageGenerationModelsTable />
 
+:::warning Image Generation Models Notes
+#### Qwen-Image-2.1 {#qwen-image-2_1-notes}
+
+The model requires `diffusers==0.41.0` and `transformers==5.15.1` for the export with `optimum-cli`:
+
+```bash
+pip install diffusers==0.41.0 transformers==5.15.1
+```
+
+`diffusers==0.41.0` imports the LTX2 pipeline, which requires `Gemma4UnifiedForConditionalGeneration` from `transformers`.
+:::
+
 ## Video Generation Models
 
 <VideoGenerationModelsTable />
@@ -60,7 +78,8 @@ Models should belong to the same family and have the same tokenizers.
 
 :::tip LoRA Support
 VLM pipeline supports LoRA adapters applied to the language-model (LLM) part.
-LoRA adapters targeting the vision encoder or other multimodal components are not supported.
+Qwen-VL models also support vision LoRA adapters targeting the `vision_embeddings_merger` submodel.
+LoRA adapters targeting other multimodal components are not supported.
 :::
 
 <VLMModelsTable />
@@ -78,9 +97,29 @@ pip install timm einops
 1. `openbmb/MiniCPM-o-2_6` doesn't support `transformers>=4.52` which is required for `optimum-cli` export.
 2. `--task image-text-to-text` is required for `optimum-cli export openvino --trust-remote-code` because `image-text-to-text` isn't `MiniCPM-o-2_6`'s native task.
 
+#### LFM3-VL {#lfm3-vl-notes}
+
+The model requires `transformers>=5.20` for the export with `optimum-cli` and `--trust-remote-code` argument.
+
+#### Molmo2 {#molmo2-notes}
+
+Molmo2 is converted only by [`genai-cli`](../guides/model-preparation/convert-to-openvino.mdx#genai-cli) (preview), `optimum-cli` does not support it yet:
+
+```bash
+pip install openvino-genai[export]
+genai-cli export -m allenai/MolmoWeb-4B --trust-remote-code --weight-format int4 MolmoWeb-4B-ov-int4
+```
+
+The model is implemented by remote code that requires `transformers==4.57.6`; `genai-cli` provides it automatically
+in an ephemeral environment, the active one is not modified.
+
 #### MiniCPM-V-4_5 {#minicpm-v-4_5-notes}
 
 The model requires `transformers<5.0` for the export with `optimum-cli`.
+
+#### MiniCPM-V-4.6 {#minicpmv4_6-notes}
+
+The model requires `transformers>=5.7.0` and an Optimum Intel version with `minicpmv4_6` export support.
 
 #### MiniCPM-V-4.7 {#minicpmv4_7-notes}
 
@@ -125,6 +164,10 @@ The model requires `transformers==5.2` for the export with `optimum-cli`.
 #### nanoLLaVA {#nanollava-notes}
 
 The model requires `transformers>=4.48` for the export with `optimum-cli`.
+
+#### Mistral3 {#mistral3-notes}
+
+Ministral-3 models require `transformers>=5.0` for the export with `optimum-cli`.
 :::
 
 ## Speech Recognition Models

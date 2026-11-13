@@ -39,12 +39,21 @@ Windows PowerShell:
 
 ## Download and Convert the Model
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../export-requirements.txt
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 ```
 
@@ -89,6 +98,11 @@ This example showcases inference of speech recognition Whisper Models using the 
 
 ```text
  How are you doing today?
+```
+
+With `return_timestamps` enabled, the sample also prints:
+
+```text
 timestamps: [0.00, 2.00] text:  How are you doing today?
 ```
 
@@ -98,7 +112,7 @@ The sample will:
 2. Automatically resample to 16kHz if needed
 3. Perform speech-to-text transcription
 4. Output the full transcription
-5. Display word-level timestamps for each text chunk
+5. Display segment timestamps for each text chunk when `return_timestamps` is enabled (disabled by default)
 
 ## Troubleshooting
 
