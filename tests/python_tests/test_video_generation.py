@@ -97,6 +97,11 @@ class TestVideoGenerationConfig:
         assert hasattr(config, "num_inference_steps")
         assert hasattr(config, "max_sequence_length")
 
+    def test_config_vae_tiling_defaults(self):
+        config = ov_genai.VideoGenerationConfig()
+        assert config.vae_tile_sample_min_num_frames == 0  # tiling is off by default
+        assert config.vae_tile_sample_stride_num_frames == 8
+
     def test_config_update(self):
         config = ov_genai.VideoGenerationConfig()
         config.num_frames = 17
@@ -166,6 +171,7 @@ class TestVideoGenerationPipelines:
             ("audio_modality_scale", 3.0),
             ("audio_guidance_rescale", 0.7),
             ("spatio_temporal_guidance_blocks", [0]),
+            ("vae_tile_sample_min_num_frames", 16),
         ],
     )
     def test_audio_and_ltx2_3_fields_rejected(self, video_generation_model, field, value):
@@ -978,6 +984,153 @@ class TestAutoEncoderKLLTXVideoEncoder:
         video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
         with pytest.raises(RuntimeError, match="requires a non-null generator"):
             vae.encode(video, None)
+
+
+
+@pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
+class TestAutoEncoderKLLTX2VideoTemporalTiling:
+    """Temporal tiling of the LTX-2 video VAE decoder: overlapping chunks of latent frames, cross-faded in time."""
+
+    LATENT_FRAMES = 5
+
+    def _make_vae(self, video_generation_model):
+        vae = ov_genai.AutoencoderKLLTX2Video(Path(video_generation_model) / "vae_decoder")
+        vae.compile("CPU")
+        return vae
+
+    def _latent(self, vae, seed=42):
+        shape = [1, vae.get_config().latent_channels, self.LATENT_FRAMES, 2, 2]
+        return ov.Tensor(np.random.default_rng(seed).standard_normal(shape).astype(np.float32))
+
+    @staticmethod
+    def _decode(vae, latent, *tiling):
+        return np.array(vae.decode(latent, *tiling).data)
+
+    def _reference(self, vae, latent, tile_min, tile_stride, ratio):
+        """The same tiling in NumPy on top of plain decode() calls: video [1, F, H, W, C] as float32."""
+        chunk, step, overlap = tile_min // ratio, tile_stride // ratio, tile_min - tile_stride
+        frames, previous = [], None
+        for begin in range(0, self.LATENT_FRAMES, step):
+            piece = latent.data[:, :, begin : begin + chunk + 1]
+            if begin > 0 and piece.shape[2] == 1:
+                break
+            current = self._decode(vae, ov.Tensor(np.ascontiguousarray(piece))).astype(np.float32)
+            if begin > 0:
+                current = current[:, 1:]  # the frame of the first latent frame was produced by the previous chunk
+                extent = min(previous.shape[1], current.shape[1], overlap)
+                tail = previous[:, previous.shape[1] - extent :]
+                for k in range(extent):
+                    previous_weight, current_weight = np.float32(1.0 - k / extent), np.float32(k / extent)
+                    current[:, k] = tail[:, k] * previous_weight + current[:, k] * current_weight
+            frames.append(current[:, : tile_stride + (begin == 0)])
+            previous = current  # like diffusers: the next chunk blends with this chunk after its own blend
+        return np.concatenate(frames, axis=1)[:, : (self.LATENT_FRAMES - 1) * ratio + 1]
+
+    def test_tiling_off_matches_default(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        latent = self._latent(vae)
+        np.testing.assert_array_equal(self._decode(vae, latent, 0, 8), self._decode(vae, latent))
+
+    def test_chunk_not_smaller_than_clip_matches_untiled(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        latent = self._latent(vae)
+        ratio = vae.get_config().temporal_compression_ratio
+        # all latent frames fit into one chunk, so there is nothing to tile
+        tiled = self._decode(vae, latent, self.LATENT_FRAMES * ratio, ratio)
+        np.testing.assert_array_equal(tiled, self._decode(vae, latent))
+
+    # chunk / stride in latent frames: diffusers' default 16 / 8 frames, no overlap, overlap longer than the stride
+    @pytest.mark.parametrize(("chunk", "step"), [(2, 1), (1, 1), (3, 1), (2, 2)])
+    def test_small_chunks_match_reference(self, video_generation_model, chunk, step):
+        vae = self._make_vae(video_generation_model)
+        latent = self._latent(vae)
+        ratio = vae.get_config().temporal_compression_ratio
+        untiled = self._decode(vae, latent)
+
+        tiled = self._decode(vae, latent, chunk * ratio, step * ratio)
+        assert tiled.shape == untiled.shape
+        assert tiled.dtype == np.uint8
+
+        reference = self._reference(vae, latent, chunk * ratio, step * ratio, ratio)
+        # Both cross-fade the same uint8 chunks with the same weights. The implementation rounds a blended frame
+        # to uint8 right away, the reference rounds once at the end, so a frame which is blended twice
+        # (overlap longer than the stride) or a tie broken differently can be off by one level, not more.
+        difference = np.abs(tiled.astype(np.float32) - np.rint(reference))
+        assert difference.max() <= 1, f"max abs difference {difference.max()}"
+
+    def test_small_chunks_close_to_untiled(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        latent = self._latent(vae)
+        ratio = vae.get_config().temporal_compression_ratio
+        untiled = self._decode(vae, latent).astype(np.float32)
+        tiled = self._decode(vae, latent, 2 * ratio, ratio).astype(np.float32)
+        unrelated = self._decode(vae, self._latent(vae, seed=7)).astype(np.float32)
+
+        # A chunk doesn't see the latent frames outside of it, and the LTX-2 decoders are not causal in time, so
+        # tiled frames differ from untiled ones. With the random weights of the test models there is no absolute
+        # level of error to expect, so both checks are relative to the untiled video itself:
+        # 1. the tiled video is closer to the untiled one than a video decoded from other latents;
+        # 2. it is aligned with it: frame i is closer to untiled frame i than to untiled frame i - 1. Dropping the
+        #    wrong frame of a chunk (the last one instead of the first one) shows every chunk but the first one a
+        #    frame late and inverts this inequality.
+        error = np.abs(tiled - untiled).mean()
+        assert error < np.abs(unrelated - untiled).mean(), (error, np.abs(unrelated - untiled).mean())
+        error_same_frame = np.abs(tiled[:, 1:] - untiled[:, 1:]).mean()
+        error_previous_frame = np.abs(tiled[:, 1:] - untiled[:, :-1]).mean()
+        assert error_same_frame < error_previous_frame, (error_same_frame, error_previous_frame)
+
+    def test_invalid_tile_sizes_raise(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        latent = self._latent(vae)
+        ratio = vae.get_config().temporal_compression_ratio
+        with pytest.raises(RuntimeError, match="must be divisible by"):
+            vae.decode(latent, 2 * ratio + 1, ratio)
+        with pytest.raises(RuntimeError, match="tile_sample_stride_num_frames"):
+            vae.decode(latent, ratio, 2 * ratio)
+        with pytest.raises(RuntimeError, match="tile_sample_stride_num_frames"):
+            vae.decode(latent, ratio, 0)
+
+    def test_generate(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        kwargs = dict(GEN_KWARGS, num_frames=25)
+
+        def run(**tiling):
+            result = pipe.generate("test prompt", generator=ov_genai.CppStdGenerator(42), **tiling, **kwargs)
+            return np.array(result.video.data), np.array(result.audio.data)
+
+        untiled, audio = run()
+        np.testing.assert_array_equal(run(vae_tile_sample_min_num_frames=0)[0], untiled)
+        # the whole clip fits into one chunk
+        np.testing.assert_array_equal(run(vae_tile_sample_min_num_frames=32)[0], untiled)
+        tiled, tiled_audio = run(vae_tile_sample_min_num_frames=16, vae_tile_sample_stride_num_frames=8)
+        assert tiled.shape == untiled.shape == (1, 25, 32, 32, 3)
+        assert tiled.dtype == np.uint8
+        np.testing.assert_array_equal(tiled_audio, audio)  # only the video VAE is tiled
+
+    def test_invalid_generation_config_rejected(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        with pytest.raises(RuntimeError, match="must be divisible by"):
+            pipe.generate("test prompt", vae_tile_sample_min_num_frames=12, **GEN_KWARGS)
+        with pytest.raises(RuntimeError, match="vae_tile_sample_stride_num_frames"):
+            pipe.generate(
+                "test prompt", vae_tile_sample_min_num_frames=8, vae_tile_sample_stride_num_frames=16, **GEN_KWARGS
+            )
+        config = pipe.get_generation_config()
+        config.vae_tile_sample_min_num_frames = 16
+        config.vae_tile_sample_stride_num_frames = 0
+        with pytest.raises(RuntimeError, match="vae_tile_sample_stride_num_frames"):
+            pipe.set_generation_config(config)
+
+    def test_generate_after_static_reshape_raises(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 25, 32, 32, 3.0)
+        pipe.compile("CPU")
+        with pytest.raises(RuntimeError, match="dynamic number of frames"):
+            pipe.generate(
+                "test prompt",
+                vae_tile_sample_min_num_frames=16,
+                **dict(GEN_KWARGS, num_frames=25),
+            )
 
 
 class TestTaylorSeer:

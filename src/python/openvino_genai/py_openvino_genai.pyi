@@ -926,10 +926,14 @@ class AutoencoderKLLTX2Video:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def decode(self, latent: openvino._pyopenvino.Tensor, tile_sample_min_num_frames: typing.SupportsInt = 0, tile_sample_stride_num_frames: typing.SupportsInt = 8) -> openvino._pyopenvino.Tensor:
         """
                         Decodes latent video to pixel space.
                         latent (ov.Tensor): Latent video tensor.
+                        tile_sample_min_num_frames (int): Chunk length in video frames for temporal tiling: the latent
+                            video is decoded in overlapping chunks which are cross-faded, so peak memory is bounded by
+                            the chunk instead of the whole clip. 0 disables tiling.
+                        tile_sample_stride_num_frames (int): Distance between chunk starts in video frames.
                         Returns: Decoded video tensor.
         """
     def get_config(self) -> AutoencoderKLLTX2Video.Config:
@@ -7060,6 +7064,18 @@ class VideoGenerationConfig:
         ...
     @stg_scale.setter
     def stg_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def vae_tile_sample_min_num_frames(self) -> int:
+        ...
+    @vae_tile_sample_min_num_frames.setter
+    def vae_tile_sample_min_num_frames(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def vae_tile_sample_stride_num_frames(self) -> int:
+        ...
+    @vae_tile_sample_stride_num_frames.setter
+    def vae_tile_sample_stride_num_frames(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def width(self) -> int:
