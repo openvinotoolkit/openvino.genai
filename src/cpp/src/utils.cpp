@@ -332,8 +332,16 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
             break;
         }
     }
+    const auto as_lm_head = [](const std::shared_ptr<ov::Node>& node) -> std::shared_ptr<ov::Node> {
+        if (ov::is_type<ov::op::v0::MatMul>(node) ||
+            (node->get_rt_info().count("gguf_lm_head") &&
+             std::string(node->get_type_name()) == "FullyConnectedCompressed")) {
+            return node;
+        }
+        return nullptr;
+    };
     auto last_node = logits_output.get_node()->input_value(0).get_node_shared_ptr();
-    std::shared_ptr<ov::Node> matmul = ov::as_type_ptr<ov::op::v0::MatMul>(last_node);
+    std::shared_ptr<ov::Node> matmul = as_lm_head(last_node);
 
     // in case of PA all tokens are moved to batch dimension and we have to slice / gather accordingly
     const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension")
@@ -349,7 +357,7 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     // MatMul -> Multiply -> Divide -> Tanh -> Multiply -> Result
     if (!matmul) {
         if (auto add = ov::as_type_ptr<ov::op::v1::Add>(last_node)) {
-            matmul = ov::as_type_ptr<ov::op::v0::MatMul>(add->input_value(0).get_node_shared_ptr());
+            matmul = as_lm_head(add->input_value(0).get_node_shared_ptr());
         } else if (auto transpose = ov::as_type_ptr<ov::op::v1::Transpose>(last_node)) {
             auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr());
             OPENVINO_ASSERT(order, "Transpose after the LLM head must have a constant order.");
@@ -357,16 +365,16 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
             OPENVINO_ASSERT(static_cast<size_t>(slice_gather_dim) < order_values.size(),
                             "Transpose after the LLM head permutes ", order_values.size(),
                             " axes, which does not cover axis ", slice_gather_dim, ".");
-            matmul = ov::as_type_ptr<ov::op::v0::MatMul>(transpose->input_value(0).get_node_shared_ptr());
+            matmul = as_lm_head(transpose->input_value(0).get_node_shared_ptr());
             slice_gather_dim = order_values[slice_gather_dim];
         } else if (auto multiply = ov::as_type_ptr<ov::op::v1::Multiply>(last_node)) {
             if (auto tanh = ov::as_type_ptr<ov::op::v0::Tanh>(multiply->input_value(0).get_node_shared_ptr())) {
                 if (auto divide = ov::as_type_ptr<ov::op::v1::Divide>(tanh->input_value(0).get_node_shared_ptr())) {
                     auto divide_input = divide->input_value(0).get_node_shared_ptr();
-                    matmul = as_type_ptr<ov::op::v0::MatMul>(divide_input);
+                    matmul = as_lm_head(divide_input);
                     if (!matmul) {
                         if (auto scale_multiply = ov::as_type_ptr<ov::op::v1::Multiply>(divide_input)) {
-                            matmul = as_type_ptr<ov::op::v0::MatMul>(scale_multiply->input_value(0).get_node_shared_ptr());
+                            matmul = as_lm_head(scale_multiply->input_value(0).get_node_shared_ptr());
                         }
                     }
                 }
