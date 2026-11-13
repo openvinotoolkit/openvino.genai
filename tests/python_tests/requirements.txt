@@ -12,7 +12,7 @@ uv==0.13.7
 
 # rag requirements
 langchain_community==0.4.2
-langchain-core==1.7.6
+langchain-core==1.7.7
 
 # requirements for specific models
 # - Qwen/Qwen-7B
