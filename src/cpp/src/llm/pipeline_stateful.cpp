@@ -25,6 +25,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         OPENVINO_ASSERT(execution_devices.size() == 1u);
         m_is_npu = true;
         m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        init_npu_chat_mode(compiled_model);
     }
 }
 
@@ -75,6 +76,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, *filtered_properties, kv_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
+        init_npu_chat_mode(compiled_model);
     } else {
        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     }
@@ -177,6 +179,8 @@ DecodedResults StatefulLLMPipeline::generate(
                 encoded_input = new_chat_tokens;
             } else {
                 ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+                if (m_npu_continuous_prefill)
+                    negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1));
                 encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
             }
         } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
@@ -213,6 +217,8 @@ DecodedResults StatefulLLMPipeline::generate(
                 encoded_input = new_chat_tokens;
             } else {
                 ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+                if (m_npu_continuous_prefill)
+                    negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1));
                 encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
             }
             // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
@@ -308,6 +314,8 @@ DecodedResults StatefulLLMPipeline::generate(
         encoded_input = new_chat_tokens;
     } else {
         ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+        if (m_npu_continuous_prefill)
+            negotiate_npu_history_reuse(new_chat_tokens.input_ids.get_shape().at(1));
         encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
     }
     return get_decoded_results(
@@ -383,6 +391,8 @@ EncodedResults StatefulLLMPipeline::generate(
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
         ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
         ov::genai::align_cache_and_history(new_chat_tokens, m_cache_state);
+        if (m_npu_continuous_prefill)
+            negotiate_npu_history_reuse(new_chat_tokens.get_shape().at(1));
 
         auto encoded_input = get_chat_encoded_input(new_chat_tokens, m_cache_state);
         input_ids = encoded_input.input_ids;
@@ -417,10 +427,13 @@ EncodedResults StatefulLLMPipeline::generate(
                     "but you have '" + std::to_string(num_inputs) + "' inputs");
 
     if (is_chat_conversation) {
-        if (m_use_full_chat_history)
+        if (m_use_full_chat_history) {
             reset_state();
-        else
+        } else if (!m_npu_continuous_prefill) {
             ov::genai::utils::trim_kv_cache(m_model_runner, m_cache_state, m_adapter_controller);
+        }
+        // With continuous prefill the negotiation already issued this turn's only plugin
+        // command, so there is nothing to trim.
     }
 
     size_t cache_len = 0;
@@ -540,6 +553,68 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
         return;
 
     m_history.push_back({{"role", "system"}, {"content", system_message}});
+}
+
+void StatefulLLMPipeline::init_npu_chat_mode(const ov::CompiledModel& compiled_model) {
+    // Only the compiled model knows whether continuous prefill applies to it. The plugin
+    // reports the effective state through the enable option, and without it every chat
+    // turn resends the full history.
+    m_npu_continuous_prefill = compiled_model.get_property("NPUW_LLM_ENABLE_CONTINUOUS_PREFILL").as<bool>();
+    m_use_full_chat_history = !m_npu_continuous_prefill;
+}
+
+void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len) {
+    OPENVINO_ASSERT(m_npu_continuous_prefill);
+
+    // The prompt limit applies to the full history, not just the delta sent below. It is
+    // checked before the proposal so that a rejected turn leaves no pending plugin command.
+    OPENVINO_ASSERT(full_history_len <= m_max_prompt_len,
+                    "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+                    m_max_prompt_len,
+                    " tokens. ",
+                    full_history_len,
+                    " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+
+    auto& state = m_cache_state.get_state();
+    const size_t k_common = state.size();
+    int64_t granted = 0;
+    if (k_common > 0) {
+        // Propose the common prefix and read the grant back. The write is not idempotent,
+        // the plugin clamps by capacity, chunk alignment and its prefill watermark, so
+        // slicing must happen at the granted value, never at the proposed one.
+        std::optional<ov::VariableState> channel;
+        for (auto& st : m_model_runner.query_state()) {
+            if (st.get_name() == utils::NPUW_STORED_TOKENS_STATE) {
+                channel = st;
+                break;
+            }
+        }
+        OPENVINO_ASSERT(channel.has_value(),
+                        utils::NPUW_STORED_TOKENS_STATE,
+                        " is missing while continuous prefill is enabled.");
+
+        ov::Tensor proposal(ov::element::i64, {1});
+        proposal.data<int64_t>()[0] = static_cast<int64_t>(k_common);
+        channel->set_state(proposal);
+        granted = channel->get_state().data<int64_t>()[0];
+        OPENVINO_ASSERT(granted >= 0 && static_cast<size_t>(granted) <= k_common,
+                        "NPU continuous prefill granted an invalid keep of ",
+                        granted,
+                        " for a proposal of ",
+                        k_common,
+                        ".");
+    }
+    if (granted == 0) {
+        // Nothing is kept, so the plugin must run a full prefill. Without a pending reset
+        // it would route a one-token prompt to generate on whatever its cache still holds,
+        // such as a cancelled turn. The reset is idempotent after a zero grant.
+        reset_state();
+    }
+
+    // The tokens in [granted, k_common) become part of the delta, since the full
+    // tokenized history is still available to the caller.
+    state.resize(static_cast<size_t>(granted));
+    m_cache_state.num_tokens_to_trim = 0;
 }
 
 void StatefulLLMPipeline::reset_state() {
