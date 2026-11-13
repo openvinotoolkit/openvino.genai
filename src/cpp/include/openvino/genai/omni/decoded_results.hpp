@@ -9,17 +9,11 @@
 namespace ov::genai {
 
 /**
- * @brief Omni-specific decoded results including speech outputs.
- *
- * Extends VLMDecodedResults with a TalkerResults that holds speech waveforms and perf metrics.
+ * @brief Result of OmniPipeline::generate. The speech output is the inherited
+ * VLMDecodedResults::speech_result; `speech_result.waveforms` is empty when speech was not requested.
  *
  * @note This is a preview API and is subject to change.
  */
-class OPENVINO_GENAI_EXPORTS OmniDecodedResults : public VLMDecodedResults {
-public:
-    /// Talker-side result: speech waveforms + perf metrics.
-    /// `speech_result.waveforms` is empty when speech generation was not requested.
-    TalkerResults speech_result;
-};
+class OPENVINO_GENAI_EXPORTS OmniDecodedResults : public VLMDecodedResults {};
 
 }  // namespace ov::genai

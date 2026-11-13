@@ -146,4 +146,12 @@ ov::Tensor build_inputs_embeds_from_text_and_visual_chunks(
     return inputs_embeds;
 }
 
+/// @brief Copy each audio's features into its own placeholder run. Binds run k to
+/// audios[audios_sequence[k]], so out-of-order tags still place the right audio.
+void merge_audio_embeddings(ov::Tensor& input_embeds,
+                            const std::vector<int64_t>& input_ids,
+                            const std::vector<EncodedAudio>& audios,
+                            const std::vector<size_t>& audios_sequence,
+                            int64_t audio_token_id);
+
 }  // namespace ov::genai::vlm_utils

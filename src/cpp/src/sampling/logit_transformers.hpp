@@ -527,6 +527,26 @@ protected:
     std::set<int64_t> m_stop_token_ids;
 };
 
+class SuppressTokensTransform : public ILogitTransformer {
+public:
+    explicit SuppressTokensTransform(const std::set<int64_t>& token_ids) : m_token_ids(token_ids) {}
+
+    void apply(Logits& logits) override {
+        for (const int64_t token_id : m_token_ids) {
+            OPENVINO_ASSERT(token_id >= 0 && token_id < static_cast<int64_t>(logits.m_size),
+                            "Suppressed token id is out of vocabulary range: ",
+                            token_id);
+            if (logits.is_vector_initialized())
+                logits.m_vector[token_id].m_log_prob = -std::numeric_limits<float>::infinity();
+            else
+                logits.m_data[token_id] = -std::numeric_limits<float>::infinity();
+        }
+    }
+
+protected:
+    std::set<int64_t> m_token_ids;
+};
+
 class FrequencyPenaltyTransform : public IPenaltyTransformer {
 public:
     FrequencyPenaltyTransform(double value) {

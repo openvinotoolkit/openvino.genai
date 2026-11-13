@@ -723,6 +723,19 @@ TEST(TopKThenTemperatureTest, DeferredExpfPathTemperatureOneIsNoOp) {
     }
 }
 
+TEST(LogitProcessorTest, SuppressedTokensKeepRawLogprobs) {
+    GenerationConfig config;
+    config.logprobs = 1;
+    LogitProcessor logit_processor(config, {}, nullptr, {1});
+    float input[]{1.0f, 3.0f, 2.0f};
+    Logits logits(input, 3);
+    logit_processor.apply(logits);
+    // Reported log-probabilities use the raw logits; only the sampling copy is masked.
+    EXPECT_FLOAT_EQ(logits.m_data[1], 3.0f);
+    EXPECT_NEAR(logits.m_full_vocab_log_sum_exp, std::log(std::exp(1.0f) + std::exp(3.0f) + std::exp(2.0f)), 1e-5);
+    EXPECT_EQ(logits.m_vector[1].m_log_prob, -std::numeric_limits<float>::infinity());
+}
+
 // Speculative decoding removes rejected draft tokens from the generated history. Token 3 keeps one of its two
 // occurrences and stays penalized; token 4 loses its only one and must not be penalized any more.
 TEST(LogitProcessorGeneratedHistory, PenalizesOnlyTokensThatRemainAfterRemoval) {
