@@ -239,11 +239,11 @@ public:
         std::string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
         
         JsonContainer kv;
-        // Parse arguments of the form key="value"
-        std::regex arg_re(R"((\w+)\s*=\s*\"([^"]*)\")");
+        // Parse arguments of the form key="value" or key='value'
+        std::regex arg_re(R"((\w+)\s*=\s*(["'])([\s\S]*?)\2)");
         auto it = std::sregex_iterator(args.begin(), args.end(), arg_re);
         for (; it != std::sregex_iterator(); ++it) {
-            kv[std::string((*it)[1])] = std::string((*it)[2]);
+            kv[std::string((*it)[1])] = std::string((*it)[3]);
         }
         
         // Split function name and arguments
