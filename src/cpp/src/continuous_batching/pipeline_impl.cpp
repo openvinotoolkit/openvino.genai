@@ -265,7 +265,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                                        is_use_xattention,
                                                        is_use_adaptive_rkv);
         if (eviction_config.apply_rotation) {
-            const auto& kv_mgr = static_cast<const KVCacheManager&>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
+            const auto& kv_mgr = static_cast<const IKVCacheManager&>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
             _prepare_rotation_data_storage(normalized_config, kv_mgr.get_v_head_size(0));
         }
     } else {
