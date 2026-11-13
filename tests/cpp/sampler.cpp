@@ -515,6 +515,29 @@ TEST(SamplerValidationMode, gen_phase) {
     EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 4u);
 }
 
+TEST(SamplerValidationMode, prompt_chunk_before_the_validation_window_keeps_the_candidates) {
+    // The draft proposed candidates after the whole prompt; the chunk ends before the last prompt token, whose row
+    // validates the first candidate.
+    const std::vector<int64_t> prompt{0, 1, 2, 3, 4};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, ov::genai::utils::get_greedy_config());
+    for (const int64_t token_id : {1, 2, 3}) {
+        sequence_group->get_sequences().front()->append_token(token_id, 1.f);
+    }
+    sequence_group->set_num_validated_tokens(3);
+    sequence_group->schedule_tokens(4);
+    std::vector<float> logits(4 * 5, 0.f);
+    ov::Tensor chunk_logits(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
+
+    Sampler sampler;
+    sampler.sample({sequence_group}, chunk_logits, true);
+
+    EXPECT_EQ(sequence_group->get_sequences().front()->get_generated_ids(), TokenIds({1, 2, 3}));
+    EXPECT_EQ(sequence_group->get_num_processed_tokens(), 4u);
+    EXPECT_EQ(sequence_group->get_num_tokens_to_validate(), 3u);
+    // the last prompt token and the candidates
+    EXPECT_EQ(sequence_group->get_num_available_tokens_for_batching(), 4u);
+}
+
 TEST(SamplerValidationMode, terminal_stop_token_preserves_acceptance_result) {
     auto sampling_config = ov::genai::utils::get_greedy_config();
     sampling_config.stop_token_ids = {2};

@@ -785,7 +785,10 @@ private:
 
                 // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
                 if (!m_cache_orchestrator->can_append_slots(sequence_group)) {
+                    // the request runs nothing in this step and keeps its pending candidates
+                    const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
                     sequence_group->clear_scheduled_tokens();
+                    sequence_group->set_num_validated_tokens(num_tokens_to_validate);
                     if (linear_attention_group_reservation) {
                         linear_attention_reservations.release_group(*linear_attention_group_reservation);
                     }

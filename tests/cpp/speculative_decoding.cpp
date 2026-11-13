@@ -44,12 +44,24 @@ protected:
             mtp_mode_enabled = true;
         }
 
+        void enable_validation_mode() {
+            m_is_validation_mode_enabled = true;
+        }
+
         bool is_waiting(uint64_t request_id) const {
             auto request_it = std::find_if(m_requests.begin(), m_requests.end(), [request_id](const ov::genai::SequenceGroup::Ptr& request) {
                 return request->get_request_id() == request_id;
             });
             OPENVINO_ASSERT(request_it != m_requests.end(), "Request is not found");
             return (*request_it)->is_waiting();
+        }
+
+        size_t get_num_tokens_to_validate(uint64_t request_id) const {
+            auto request_it = std::find_if(m_requests.begin(), m_requests.end(), [request_id](const ov::genai::SequenceGroup::Ptr& request) {
+                return request->get_request_id() == request_id;
+            });
+            OPENVINO_ASSERT(request_it != m_requests.end(), "Request is not found");
+            return (*request_it)->get_num_tokens_to_validate();
         }
 
         bool can_publish_kv_only_completed_blocks() const {
@@ -409,6 +421,26 @@ TEST_F(CBForSDTest, mtp_rejection_pauses_draft_generation) {
     ASSERT_EQ(update_result.removed_tokens_cnt, 1);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 0);
     ASSERT_TRUE(m_pipeline.is_waiting(0));
+}
+
+// The main model did not run the window of the first candidates, so the candidates of the next draft round join them.
+TEST_F(CBForSDTest, main_model_keeps_the_candidates_it_has_not_validated__one_sequence) {
+    m_pipeline.enable_validation_mode();
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> tokens = {10, 11};
+    std::vector<float> log_probs = {0.1f, 0.2f};
+    ov::genai::GeneratedSequences candidate{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, false).inserted_tokens_cnt, 2);
+    ASSERT_EQ(m_pipeline.get_num_tokens_to_validate(0), 2u);
+
+    tokens.insert(tokens.end(), {12, 13});
+    log_probs.insert(log_probs.end(), {0.3f, 0.4f});
+    ov::genai::GeneratedSequences candidate_1{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate_1, false).inserted_tokens_cnt, 2);
+    EXPECT_EQ(m_pipeline.get_num_tokens_to_validate(0), 4u);
 }
 
 TEST_F(CBForSDTest, remove_and_replace_tokens__one_sequence) {
