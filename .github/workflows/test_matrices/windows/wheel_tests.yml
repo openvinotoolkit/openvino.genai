@@ -256,6 +256,7 @@
 
 - name: WWB tests with transformers 5.1
   cmd: |-
+    $env:HF_HUB_DISABLE_IMPLICIT_TOKEN = "1"
     python -m pip install transformers==5.1.0
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_vlm.py -m "transformers_higher_v5_1"
   timeout: 60

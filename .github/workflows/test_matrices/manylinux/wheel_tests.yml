@@ -263,6 +263,7 @@
 
 - name: WWB tests with transformers 5.1
   cmd: |-
+    export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
     python -m pip install transformers==5.1.0
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_vlm.py -m "transformers_higher_v5_1"
   timeout: 60
@@ -411,6 +412,7 @@
 # TODO: Include this job in the main VLM test suite once optimum-intel commit includes gemma4 audio inputs support.
 - name: VLM (gemma4)
   cmd: |-
+    export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
     python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@00131a8967a21cd7bea3fe59413fb35b537d57af"
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4 and not gemma4-unified"
