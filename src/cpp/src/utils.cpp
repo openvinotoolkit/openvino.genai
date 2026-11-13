@@ -977,6 +977,16 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
     OPENVINO_THROW("Model with key '", key, "' not found in models map.");
 }
 
+ModelsMap select_models(const ModelsMap& models_map, const std::vector<std::string>& keys) {
+    ModelsMap selected;
+    for (const auto& key : keys) {
+        if (const auto it = models_map.find(key); it != models_map.end()) {
+            selected.insert(*it);
+        }
+    }
+    return selected;
+}
+
 void validate_vlm_model_properties(const ov::AnyMap& properties) {
     static const std::vector<std::string> known_roles{
         "vision_embeddings",
@@ -990,6 +1000,9 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "audio_encoder",
         "language_model",
         "ngram_embeddings",
+        "depth_decoder",
+        "audio_out_embeddings",
+        "audio_decoder",
     };
     const auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {

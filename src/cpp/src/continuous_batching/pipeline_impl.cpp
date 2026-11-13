@@ -138,6 +138,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     prepare_model_for_paged_attention(model, scheduler_config);
     initialize_pipeline(model, scheduler_config, device, properties);
+    m_sampler->set_suppressed_token_ids(inputs_embedder->get_suppressed_token_ids());
 
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
@@ -340,6 +341,23 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
         _throw_if_failed();
     }
 
+    // Until the request is queued, a failure must also drop what the step hook took for it.
+    struct StepHookRequestGuard {
+        IStepHook* hook;
+        uint64_t request_id;
+        ~StepHookRequestGuard() {
+            if (hook) {
+                hook->on_request_dropped(request_id);
+            }
+        }
+    };
+    ov::Tensor inputs = input_ids;
+    StepHookRequestGuard step_hook_guard{nullptr, request_id};
+    if (m_step_hook && m_model_input_type == ModelInputType::EMBEDDINGS) {
+        step_hook_guard.hook = m_step_hook.get();
+        m_step_hook->on_add_request(request_id, inputs, prompt_ids, *m_inputs_embedder);
+    }
+
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params_copy.stop_token_ids.empty())
@@ -348,20 +366,24 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params_copy.validate();
+    // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
+    OPENVINO_ASSERT(!sampling_params_copy.is_beam_search() || !m_inputs_embedder ||
+                        m_inputs_embedder->get_suppressed_token_ids().empty(),
+                    "Beam search is not supported for this model because it has suppressed token ids");
     size_t prompt_len;
-    if (input_ids.get_shape().size() > 1) {
-        prompt_len = input_ids.get_shape()[1];
+    if (inputs.get_shape().size() > 1) {
+        prompt_len = inputs.get_shape()[1];
     } else {
-        prompt_len = input_ids.get_size();
+        prompt_len = inputs.get_size();
     }
     OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len,
                     "'max_length' must be greater than the number of prompt tokens");
 
     std::shared_ptr<SequenceGroup> sequence_group;
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        const auto [position_ids, rope_delta] = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
+        const auto [position_ids, rope_delta] = m_inputs_embedder->get_position_ids(inputs.get_shape()[1], 0);
         sequence_group = std::make_shared<SequenceGroup>(request_id,
-                                                         input_ids,
+                                                         inputs,
                                                          sampling_params_copy,
                                                          lm_extra_inputs,
                                                          position_ids,
@@ -387,6 +409,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
         sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
         m_awaiting_requests.push_back(sequence_group);
     }
+    step_hook_guard.hook = nullptr;
 
     return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params_copy);
 }
@@ -807,6 +830,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     // process generation_config.echo parameter
     _fill_prompt_log_probs(m_requests, logits);
 
+    if (m_step_hook) {
+        m_step_hook->before_sampling(m_requests, logits);
+    }
+
     SamplerOutput sampler_output;
     {
         static ManualTimer timer("sample");
@@ -820,6 +847,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
+    }
+
+    if (m_step_hook) {
+        // Set before append_embeddings() below, which then skips these tokens.
+        for (const auto& generated : m_step_hook->after_sampling(m_requests, sampler_output)) {
+            m_model_runner->append_generated_embedding(generated.sequence_group,
+                                                       generated.sequence,
+                                                       generated.embedding);
+        }
     }
 
     std::vector<std::pair<SequenceGroup::Ptr, SequenceGroup::PendingNotification>> deferred_notifications;
@@ -907,6 +943,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     step_timer.end();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_step_hook(std::shared_ptr<IStepHook> hook) {
+    m_step_hook = std::move(hook);
+    m_model_runner->enable_hidden_state_export(m_step_hook != nullptr);
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std::optional<AdapterConfig>& adapters) {
     if (m_adapter_controller) {
         m_adapter_controller->apply(m_model_runner->get_infer_request(), adapters);
@@ -970,7 +1011,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                                                        return params.return_omni_outputs;
                                                    });
     std::optional<HiddenStateExportGuard> hidden_state_guard;
-    if (collect_hidden_states) {
+    // An installed step hook keeps the export on for every call, so this call must not switch it off.
+    if (collect_hidden_states && !m_step_hook) {
         hidden_state_guard.emplace(m_model_runner);
     }
 
@@ -1157,6 +1199,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
                     m_scheduler->free_sequence(sequence->get_id());
                 }
             }
+            if (m_step_hook) {
+                m_step_hook->on_request_freed(request);
+            }
             m_sampler->clear_request_info(request->get_request_id());
             requests_iterator = m_requests.erase(requests_iterator);
         } else {
@@ -1196,6 +1241,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
             if (m_scheduler->has_block_table(sequence->get_id())) {
                 m_scheduler->free_sequence(sequence->get_id());
             }
+        }
+        if (m_step_hook) {
+            m_step_hook->on_request_dropped(request->get_request_id());
         }
         m_sampler->clear_request_info(request->get_request_id());
     }
@@ -1239,6 +1287,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fail_pipeline(std::exc
             }
         }
         try {
+            if (m_step_hook) {
+                m_step_hook->on_request_dropped(request->get_request_id());
+            }
             m_sampler->clear_request_info(request->get_request_id());
         } catch (...) {
             released = false;

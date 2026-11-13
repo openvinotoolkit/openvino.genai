@@ -316,6 +316,9 @@ auto decoded_results_docstring = R"(
     texts:            vector of resulting sequences.
     scores:           scores for each sequence.
     metrics:          performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+    speech_result:    speech output of type openvino_genai.TalkerResults. VLMPipeline fills it only for LFM3-Omni
+                      when talker_speech_config.return_audio is True; empty for other models. OmniPipeline also
+                      fills it for Qwen3-Omni. Preview API: subject to change.
 )";
 
 auto video_metadata_docstring = R"(
@@ -341,8 +344,8 @@ py::object call_vlm_generate(
     const py::kwargs& kwargs
 ) {
     // Route through AnyMap overload when audio kwargs are present, since only the AnyMap path
-    // extracts the audio tensors and sets up the speech streamer for the underlying pipeline.
-    if (kwargs.contains("audios") || kwargs.contains("speech_streamer")) {
+    // extracts the audio tensors and sets up the speech config and streamer for the underlying pipeline.
+    if (kwargs.contains("audios") || kwargs.contains("speech_streamer") || kwargs.contains("talker_speech_config")) {
         auto map = pyutils::kwargs_to_any_map(kwargs);
         if (!images.empty()) {
             map[ov::genai::images.name()] = images;
@@ -391,7 +394,7 @@ py::object call_vlm_generate_with_chat_history(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    if (kwargs.contains("audios") || kwargs.contains("speech_streamer")) {
+    if (kwargs.contains("audios") || kwargs.contains("speech_streamer") || kwargs.contains("talker_speech_config")) {
         auto map = pyutils::kwargs_to_any_map(kwargs);
         if (!images.empty()) {
             map[ov::genai::images.name()] = images;
@@ -466,6 +469,31 @@ void init_vlm_pipeline(py::module_& m) {
 An input image without explicit slicing metadata counts as one slice.)")
         .def_readonly("vlm_raw_metrics", &ov::genai::VLMPerfMetrics::vlm_raw_metrics);
 
+    // Registered before VLMDecodedResults so its speech_result renders as a Python type.
+    py::class_<ov::genai::TalkerPerfMetrics>(m, "TalkerPerfMetrics",
+        R"(Performance metrics for Talker speech generation.
+
+        Parameters:
+        num_generated_samples:  number of audio samples generated (waveform length).
+        generation_time_ms:     total speech generation time in milliseconds. LFM3-Omni decodes
+                                text and speech in one loop, so its value is the whole generate() call.
+        )")
+        .def(py::init<>())
+        .def_readonly("num_generated_samples", &ov::genai::TalkerPerfMetrics::num_generated_samples)
+        .def_readonly("generation_time_ms", &ov::genai::TalkerPerfMetrics::generation_time_ms);
+
+    py::class_<ov::genai::TalkerResults>(m, "TalkerResults",
+        R"(Speech output: waveforms and perf metrics. Returned by TalkerBase.generate and held by
+        VLMDecodedResults.speech_result.
+
+        Parameters:
+        waveforms:       speech waveform tensors (one per result, present when return_audio=True).
+        perf_metrics:    speech-side perf metrics (TalkerPerfMetrics).
+        )")
+        .def(py::init<>())
+        .def_readonly("waveforms", &ov::genai::TalkerResults::waveforms)
+        .def_readonly("perf_metrics", &ov::genai::TalkerResults::perf_metrics);
+
     py::class_<ov::genai::VLMDecodedResults, ov::genai::DecodedResults>(m, "VLMDecodedResults", decoded_results_docstring)
         .def(py::init<>())
         .def_property_readonly("texts", [](const ov::genai::VLMDecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8(dr.texts); })
@@ -473,6 +501,7 @@ An input image without explicit slicing metadata counts as one slice.)")
         .def_readonly("perf_metrics", &ov::genai::VLMDecodedResults::perf_metrics)
         .def_readonly("intermediate_hidden_states", &ov::genai::VLMDecodedResults::intermediate_hidden_states)
         .def_readonly("full_token_ids", &ov::genai::VLMDecodedResults::full_token_ids)
+        .def_readonly("speech_result", &ov::genai::VLMDecodedResults::speech_result)
         .def("__str__", [](const ov::genai::VLMDecodedResults &dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8(dr.texts);
             py::str res;

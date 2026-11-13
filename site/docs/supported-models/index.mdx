@@ -101,6 +101,14 @@ pip install timm einops
 
 The model requires `transformers>=5.20` for the export with `optimum-cli` and `--trust-remote-code` argument.
 
+#### LFM3-Omni {#lfm3-omni-notes}
+
+The model requires `transformers>=5.20.2`. Until
+[huggingface/optimum-intel#2087](https://github.com/huggingface/optimum-intel/pull/2087) is merged, install
+optimum-intel from that PR. Export it with
+`--task image-text-to-text --trust-remote-code`. `VLMPipeline` produces text from text, image, video and audio input.
+Speech output goes through `OmniPipeline`, see [LFM3-Omni Notes](/docs/use-cases/visual-processing/#lfm3-omni-notes).
+
 #### Molmo2 {#molmo2-notes}
 
 Molmo2 is converted only by [`genai-cli`](../guides/model-preparation/convert-to-openvino.mdx#genai-cli) (preview), `optimum-cli` does not support it yet:

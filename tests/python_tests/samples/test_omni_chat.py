@@ -12,7 +12,7 @@ import soundfile as sf
 from conftest import SAMPLES_CPP_DIR, SAMPLES_PY_DIR
 from test_utils import run_sample
 
-# Qwen3-Omni speech output is 24kHz mono.
+# Qwen3-Omni and LFM3-Omni speech output is 24kHz mono.
 SPEECH_SAMPLE_RATE = 24000
 # The second turn passes no media, so it checks that speech output still works on a follow-up turn.
 QUESTIONS = "Describe <ov_genai_audio_0>.\nWhat happens in the video?"
@@ -45,9 +45,15 @@ def omni_chat_command(sample: str, model_dir: str, image: str, audio: str, video
 
 
 class TestOmniChat:
-    @pytest.mark.qwen3_omni
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "convert_model",
+        [
+            pytest.param("tiny-random-qwen3-omni", marks=pytest.mark.qwen3_omni),
+            pytest.param("tiny-random-lfm3-omni", marks=pytest.mark.lfm3_omni),
+        ],
+        indirect=True,
+    )
     @pytest.mark.parametrize("download_test_content", [["monalisa.jpg", "how_are_you_doing_today.wav"]], indirect=True)
     @pytest.mark.parametrize("sample", ["cpp", "py"])
     def test_sample_omni_chat(

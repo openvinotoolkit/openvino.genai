@@ -227,6 +227,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-omni",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
+    "tiny-random-lfm3-omni": {
+        "name": "optimum-intel-internal-testing/tiny-random-lfm3-omni",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
     "tiny-random-qwen3-vl-embedding": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding",
         "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],

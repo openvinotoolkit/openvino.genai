@@ -495,6 +495,8 @@ public:
             const auto& name = output.get_any_name();
             if (name == "hidden_states") {
                 m_has_hidden_states_output = true;
+            } else if (name == "last_hidden_state") {
+                m_has_last_hidden_state_output = true;
             } else if (name == "intermediate_hidden_states") {
                 m_has_intermediate_hidden_states_output = true;
             }
@@ -1129,12 +1131,12 @@ public:
         _reset_cache_rotation_coefficients();
 
         if (_is_hs_export()) {
-            // Use "hidden_states" output only when the model also exports "intermediate_hidden_states"
-            // (Qwen3-Omni pattern). Otherwise prefer "last_hidden_state" to preserve existing behavior
-            // for speculative decoding and other models.
-            m_hidden_states = (m_has_hidden_states_output && m_has_intermediate_hidden_states_output)
-                ? m_request.get_tensor("hidden_states")
-                : m_request.get_tensor("last_hidden_state");
+            // Use "hidden_states" output when the model also exports "intermediate_hidden_states"
+            // (Qwen3-Omni pattern) or has no "last_hidden_state" (LFM3-Omni). Otherwise prefer
+            // "last_hidden_state" to preserve existing behavior for speculative decoding and other models.
+            const bool use_hidden_states = m_has_hidden_states_output &&
+                                           (m_has_intermediate_hidden_states_output || !m_has_last_hidden_state_output);
+            m_hidden_states = m_request.get_tensor(use_hidden_states ? "hidden_states" : "last_hidden_state");
 
             // Capture intermediate hidden states if available (Qwen3-Omni talker support)
             if (m_has_intermediate_hidden_states_output) {
@@ -1176,6 +1178,23 @@ public:
         }
         // return logits
         return m_request.get_tensor("logits");
+    }
+
+    /**
+     * @brief Stores a ready-made input embedding [1, 1, hidden_size] for the last generated token of sequence, so
+     * append_embeddings() does not embed that token id. Used when the next input is not the embedding of a token,
+     * e.g. an LFM3-Omni speech frame.
+     */
+    void append_generated_embedding(const SequenceGroup::Ptr& sequence_group,
+                                    const Sequence::Ptr& sequence,
+                                    const ov::Tensor& embedding) {
+        const size_t token_idx = sequence->get_generated_ids_embeds().size();
+        OPENVINO_ASSERT(token_idx + 1 == sequence->get_generated_len(),
+                        "A generated embedding can only be set for the last generated token");
+        const size_t position_id = token_idx + sequence_group->get_prompt_len();
+        sequence->append_position_ids(
+            m_inputs_embedder->get_generation_phase_position_ids(1, position_id, sequence->get_rope_delta()).first);
+        sequence->append_generated_ids_embeds(embedding);
     }
 
     bool _has_missing_generated_embeddings(const std::vector<SequenceGroup::Ptr>& sequence_groups,
@@ -1257,6 +1276,7 @@ private:
     ov::Tensor m_intermediate_hidden_states;
     // Whether model has "hidden_states" vs "last_hidden_state" output name
     bool m_has_hidden_states_output = false;
+    bool m_has_last_hidden_state_output = false;
     // Whether model has intermediate_hidden_states output (e.g., Qwen3-Omni)
     bool m_has_intermediate_hidden_states_output = false;
     // Whether model has the Eagle3 "qq_bias_begins" input (tree-decoding query-to-query bias).

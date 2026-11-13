@@ -400,6 +400,21 @@ ov::genai::StopCriteria js_to_cpp<ov::genai::StopCriteria>(const Napi::Env& env,
 }
 
 template <>
+ov::genai::SpeechOutputMode js_to_cpp<ov::genai::SpeechOutputMode>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsNumber(), "talkerSpeechConfig.output_mode must be a SpeechOutputMode value.");
+    // Compared as a double: Int32Value() would turn 0.5, 1.5 or NaN into a valid mode.
+    const double mode = value.As<Napi::Number>().DoubleValue();
+    if (mode == static_cast<double>(ov::genai::SpeechOutputMode::INTERLEAVED)) {
+        return ov::genai::SpeechOutputMode::INTERLEAVED;
+    }
+    if (mode == static_cast<double>(ov::genai::SpeechOutputMode::SPEECH_ONLY)) {
+        return ov::genai::SpeechOutputMode::SPEECH_ONLY;
+    }
+    OPENVINO_THROW("Invalid talkerSpeechConfig.output_mode: " + value.ToString().Utf8Value() +
+                   ". Expected 0 (INTERLEAVED) or 1 (SPEECH_ONLY).");
+}
+
+template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value) {
     if (value.IsArray()) {
         auto array = value.As<Napi::Array>();
@@ -800,6 +815,9 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
         OPENVINO_ASSERT(field.IsBoolean(), "talkerSpeechConfig.return_audio must be a boolean.");
         config.return_audio = field.ToBoolean().Value();
     }
+    if (const Napi::Value field = object.Get("output_mode"); !field.IsUndefined() && !field.IsNull()) {
+        config.output_mode = js_to_cpp<ov::genai::SpeechOutputMode>(env, field);
+    }
     if (const Napi::Value field = object.Get("speaker"); !field.IsUndefined() && !field.IsNull()) {
         if (field.IsString()) {
             config.speaker = js_to_cpp<std::string>(env, field);
@@ -834,6 +852,9 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
     }
     if (const Napi::Value field = object.Get("cp_top_k"); !field.IsUndefined() && !field.IsNull()) {
         config.cp_top_k = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("cp_repetition_penalty"); !field.IsUndefined() && !field.IsNull()) {
+        config.cp_repetition_penalty = js_to_cpp<float>(env, field);
     }
     return config;
 }

@@ -63,6 +63,10 @@ public:
                                 const std::vector<size_t>& image_sequence = {},
                                 const std::vector<size_t>& videos_sequence = {},
                                 const std::vector<std::pair<size_t, size_t>>& history_vision_count = {}) override;
+
+protected:
+    /// @brief Prompt ids of the last get_inputs_embeds() call.
+    ov::Tensor m_last_input_ids;
 };
 
 }  // namespace ov::genai

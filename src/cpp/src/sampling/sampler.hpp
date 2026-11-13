@@ -220,6 +220,7 @@ class Sampler {
     size_t m_default_seed = std::mt19937::default_seed;  // kept for set_seed/get_seed API compat
 
     Tokenizer m_tokenizer;
+    std::set<int64_t> m_suppressed_token_ids;
 
     ThreadPool m_thread_pool;
     std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
@@ -252,6 +253,11 @@ public:
 
     void set_tokenizer(const Tokenizer& tokenizer) {
         m_tokenizer = tokenizer;
+    }
+
+    // Token ids that are never sampled, whatever the generation config says.
+    void set_suppressed_token_ids(const std::set<int64_t>& token_ids) {
+        m_suppressed_token_ids = token_ids;
     }
 
     void clear_request_info(uint64_t request_id);
