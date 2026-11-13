@@ -3723,6 +3723,55 @@ void free_requests(ContinuousBatchingScheduler& scheduler, const std::vector<Seq
 }
 }  // namespace
 
+// The token budget has room for one validation window: the window of the second request waits for the next step
+// instead of running in part.
+TEST(TestScheduler, validation_window_runs_whole_or_waits_for_a_later_step) {
+    constexpr size_t num_candidates = 3;
+    constexpr size_t window = num_candidates + 1;
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = window + window / 2;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0), make_validating_request(1)};
+    start_validation_windows(scheduler, requests, num_candidates);
+
+    auto out = scheduler.schedule(requests);
+    EXPECT_EQ(requests[0]->get_num_scheduled_tokens(), window);
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), 0u);
+    EXPECT_EQ(requests[1]->get_num_tokens_to_validate(), num_candidates);
+    EXPECT_EQ(out.m_scheduled_sequence_groups_ids, std::vector<uint64_t>({0}));
+    requests[0]->finish_iteration();
+
+    std::vector<SequenceGroup::Ptr> waiting = {requests[1]};
+    out = scheduler.schedule(waiting);
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), window);
+    EXPECT_TRUE(requests[1]->requires_sampling());
+    requests[1]->finish_iteration();
+
+    free_requests(scheduler, requests);
+}
+
+TEST(TestScheduler, validation_window_larger_than_the_token_budget_throws) {
+    constexpr size_t num_candidates = 4;
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.dynamic_split_fuse = true;
+    // one row less than the window
+    scheduler_config.max_num_batched_tokens = num_candidates;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0)};
+    start_validation_windows(scheduler, requests, num_candidates);
+
+    EXPECT_THROW(std::ignore = scheduler.schedule(requests), ov::Exception);
+
+    free_requests(scheduler, requests);
+}
+
 // With no KV block for the window and no request to preempt, the request runs nothing in this step and still has its
 // candidates to validate.
 TEST(TestScheduler, validation_window_without_kv_blocks_keeps_its_candidates) {

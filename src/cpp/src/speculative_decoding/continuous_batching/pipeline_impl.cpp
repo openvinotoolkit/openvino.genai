@@ -953,6 +953,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                        sampling_params.num_assistant_tokens.value() > 0 &&
                        sampling_params.num_assistant_tokens.value() <= generated_tokens_cnt) {
                 request->pause_generation(true);
+            } else if (sampling_params.assistant_confidence_threshold > 0.f &&
+                       generated_tokens_cnt + 1 >= m_scheduler->get_config().max_num_batched_tokens) {
+                // the target validates the candidates and their base token in one forward
+                request->pause_generation(true);
             } else if (request->get_max_new_tokens() == 0) {
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {

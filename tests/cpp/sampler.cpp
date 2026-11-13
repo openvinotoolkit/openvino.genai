@@ -515,6 +515,37 @@ TEST(SamplerValidationMode, gen_phase) {
     EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 4u);
 }
 
+namespace {
+// Greedy request with prompt [0, 1, 2, 3, 4], processed prompt, next token 0 and the given candidates to validate.
+SequenceGroup::Ptr make_validation_window(const std::vector<int64_t>& candidates) {
+    const std::vector<int64_t> prompt{0, 1, 2, 3, 4};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, ov::genai::utils::get_greedy_config());
+    Sequence::Ptr sequence = sequence_group->get_sequences().front();
+    sequence->append_token(0, 1.f);
+    sequence_group->update_processed_tokens_num(prompt.size());
+    for (const int64_t token_id : candidates) {
+        sequence->append_token(token_id, 1.f);
+    }
+    sequence_group->set_num_validated_tokens(candidates.size());
+    return sequence_group;
+}
+}  // namespace
+
+TEST(SamplerValidationMode, rejects_a_validation_window_split_over_two_forwards) {
+    auto sequence_group = make_validation_window({1, 2, 3});
+    // the rows of the base token and of two candidates, without the row of the last candidate
+    sequence_group->schedule_tokens(3);
+    std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 1.f, 0,
+    };
+    ov::Tensor validation_logits(ov::element::f32, ov::Shape{3, 1, 5}, logits.data());
+
+    Sampler sampler;
+    EXPECT_THROW(std::ignore = sampler.sample({sequence_group}, validation_logits, true), ov::Exception);
+}
+
 TEST(SamplerValidationMode, prompt_chunk_before_the_validation_window_keeps_the_candidates) {
     // The draft proposed candidates after the whole prompt; the chunk ends before the last prompt token, whose row
     // validates the first candidate.

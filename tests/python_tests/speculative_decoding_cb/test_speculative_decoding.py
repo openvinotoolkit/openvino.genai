@@ -396,6 +396,16 @@ def test_batched_prompts_with_chunked_prefill_match_target(model_pair):
     assert [result.m_generation_ids for result in results] == reference
 
 
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_rejects_a_token_budget_below_the_validation_window(model_pair):
+    # The target validates the seed and its 3 candidates in one forward, which a budget of 3 tokens never fits.
+    config = _greedy_config(num_assistant_tokens=3)
+    scheduler_config = _scheduler_config(dynamic_split_fuse=True, max_num_batched_tokens=3)
+
+    with pytest.raises(RuntimeError, match="too small to ever schedule the speculative validation window"):
+        _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4[:1], [config])
+
+
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
 def test_chunked_prefill_matches_target(model_pair):
     # 16 tokens split the prompts over several steps and fit the 1 + BLOCK_NUM_ASSISTANT_TOKENS rows of the
