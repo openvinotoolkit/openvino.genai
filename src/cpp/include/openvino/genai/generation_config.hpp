@@ -548,6 +548,9 @@ public:
     std::optional<std::variant<StructuralTagsConfig, StructuralTag>> structural_tags_config;
     std::optional<CompoundGrammar> compound_grammar;
     std::optional<std::string> backend;
+    /// Maximum consecutive whitespace characters between tokens of json_schema.
+    /// Zero selects compact JSON. An unset limit allows arbitrary whitespace.
+    std::optional<int> max_whitespace_cnt;
     void validate() const;
     void validate(Tokenizer& tokenizer) const;
     void update_config(const ov::AnyMap& properties);
@@ -783,6 +786,7 @@ static constexpr ov::Property<size_t> tree_depth{"tree_depth"};
 static constexpr ov::Property<StructuredOutputConfig> structured_output_config{"structured_output_config"};
 static constexpr ov::Property<std::string> regex{"regex"};
 static constexpr ov::Property<std::string> json_schema{"json_schema"};
+static constexpr ov::Property<int> max_whitespace_cnt{"max_whitespace_cnt"};
 static constexpr ov::Property<std::string> grammar{"grammar"};
 static constexpr ov::Property<std::string> backend{"backend"};
 

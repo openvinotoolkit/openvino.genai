@@ -4,6 +4,7 @@
 #include "include/helper.hpp"
 
 #include <cmath>
+#include <limits>
 #include <typeindex>
 
 #include "include/addon.hpp"
@@ -686,6 +687,15 @@ ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(c
     if (obj.Has("json_schema") && !obj.Get("json_schema").IsUndefined()) {
         config.json_schema = js_to_cpp<std::string>(env, obj.Get("json_schema"));
     }
+    if (obj.Has("max_whitespace_cnt") && !obj.Get("max_whitespace_cnt").IsUndefined()) {
+        const auto value = obj.Get("max_whitespace_cnt");
+        OPENVINO_ASSERT(value.IsNumber(), "max_whitespace_cnt must be a number.");
+        const auto limit = value.As<Napi::Number>();
+        OPENVINO_ASSERT(is_js_integer(env, limit) && limit.DoubleValue() >= 0 &&
+                            limit.DoubleValue() <= std::numeric_limits<int>::max(),
+                        "max_whitespace_cnt must be a non-negative integer in the int range.");
+        config.max_whitespace_cnt = limit.Int32Value();
+    }
     if (obj.Has("regex") && !obj.Get("regex").IsUndefined()) {
         config.regex = js_to_cpp<std::string>(env, obj.Get("regex"));
     }
@@ -1349,6 +1359,9 @@ template <>
 Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig, Napi::Value>(const Napi::Env& env,
                                                                       const ov::genai::StructuredOutputConfig& config) {
     Napi::Object obj = Napi::Object::New(env);
+    if (config.max_whitespace_cnt.has_value()) {
+        obj.Set("max_whitespace_cnt", Napi::Number::New(env, *config.max_whitespace_cnt));
+    }
     if (config.json_schema.has_value()) {
         obj.Set("json_schema", Napi::String::New(env, *config.json_schema));
     }
