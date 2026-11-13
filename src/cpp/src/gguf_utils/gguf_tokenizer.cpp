@@ -27,6 +27,7 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/subtract.hpp"
 #include "openvino/op/unsqueeze.hpp"
+#include "utils.hpp"
 
 #ifdef _WIN32
 #    define NOMINMAX
@@ -353,7 +354,7 @@ std::vector<std::string> split_utf8_chars(const std::string& input) {
 }
 
 std::vector<uint8_t> apply_unicode_to_bytes(const std::string& token) {
-    auto bytes_encoder = unicode_to_bytes();
+    const auto& bytes_encoder = unicode_to_bytes();
 
     std::vector<uint8_t> res{};
     bool return_original = false;
@@ -1130,6 +1131,15 @@ ov::AnyMap take_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model)
 
 void erase_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model) {}
 #endif
+
+std::function<std::string(const std::string&)> gguf_chat_template_patcher(
+    const std::map<std::string, GGUFMetaData>& tokenizer_config) {
+    // Qwen3.5 templates test "enable_thinking is undefined"; reuse the Qwen3.5 VLM patch.
+    if (const auto* pre = get_if_exist<std::string>(tokenizer_config, "pre"); pre && *pre == "qwen35") {
+        return utils::patch_chat_template_undefined_tests;
+    }
+    return {};
+}
 
 std::string patch_gguf_chat_template(const std::string& chat_template) {
     std::string patched_chat_template = chat_template;

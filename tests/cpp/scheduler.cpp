@@ -75,7 +75,8 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
                                                           get_test_cache_interval(scheduler_config, kv_block_size),
                                                           1,
                                                           0,
-                                                          true);
+                                                          true,
+                                                          cap_la_pool ? scheduler_config.num_linear_attention_blocks : 0);
     } else {
         const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
                                          ? scheduler_config.num_linear_attention_blocks
@@ -2173,6 +2174,302 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_inside_interval_reuses_same
     }
 }
 
+struct HybridPreemptionStep {
+    std::shared_ptr<CacheOrchestrator> orchestrator;
+    std::vector<SequenceGroup::Ptr> requests;
+    std::vector<uint64_t> scheduled_ids;
+};
+
+// Request 0 (4-token prompt) needs one more KV block on its first generate step while the KV pool is full,
+// so request 1 is the only preemption victim. KV block = 4 tokens, LA cache interval = 8 tokens.
+HybridPreemptionStep run_hybrid_prefix_caching_generate_step_under_kv_pressure(size_t victim_prompt_len,
+                                                                               size_t num_kv_blocks,
+                                                                               size_t num_linear_attention_blocks,
+                                                                               const GenerationConfig& victim_config,
+                                                                               bool advance_live_state = false) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = num_kv_blocks;
+    scheduler_config.num_linear_attention_blocks = num_linear_attention_blocks;
+    scheduler_config.cache_interval_multiplier = 2;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> target_tokens = {0, 1, 2, 3};
+    // Distinct token ids keep the two prompts from sharing prefix-cached blocks.
+    std::vector<uint64_t> victim_tokens(victim_prompt_len);
+    std::iota(victim_tokens.begin(), victim_tokens.end(), 100);
+    auto target = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()),
+        utils::get_greedy_config());
+    auto victim = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()),
+        victim_config);
+
+    HybridPreemptionStep step{init_hybrid_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE, 1, 1, true), {target, victim}, {}};
+    ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(step.orchestrator, scheduler_config);
+
+    auto prompt_out = scheduler.schedule(step.requests);
+    EXPECT_EQ(prompt_out.m_scheduled_sequence_groups_ids.size(), 2);
+    for (auto& req : step.requests) {
+        req->finish_iteration();
+        if (advance_live_state) {
+            const auto seq_id = req->get_running_sequences().front()->get_id();
+            step.orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                .advance_linear_attention_live_state(seq_id, req->get_num_processed_tokens());
+        }
+        req->get_running_sequences()[0]->append_token(42, 0.9f);
+    }
+
+    step.scheduled_ids = scheduler.schedule(step.requests).m_scheduled_sequence_groups_ids;
+    return step;
+}
+
+void free_all_sequences(CacheOrchestrator& orchestrator, const std::vector<SequenceGroup::Ptr>& requests) {
+    for (const auto& req : requests) {
+        for (const auto& seq : req->get_sequences()) {
+            orchestrator.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_rewinds_victim_to_linear_attention_checkpoint) {
+    // 20-token victim holds 5 KV blocks and 3 LA blocks (checkpoints at 8 and 16, live state at 20).
+    auto step = run_hybrid_prefix_caching_generate_step_under_kv_pressure(20, 6, 4, utils::get_greedy_config(), true);
+    const auto& victim = step.requests[1];
+    const auto victim_seq_id = victim->get_sequences()[0]->get_id();
+
+    EXPECT_EQ(step.scheduled_ids, std::vector<uint64_t>({0}));
+    // Releasing one KV block lands on token 16, which is the checkpoint held by LA block 1.
+    EXPECT_EQ(victim->get_num_processed_tokens(), 16);
+    EXPECT_EQ(step.orchestrator->get_kv_block_tables(victim_seq_id)[0].size(), 4);
+    EXPECT_EQ(step.orchestrator->get_linear_attention_block_table(victim_seq_id).size(), 2);
+    const auto& la_mgr = step.orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+    const auto& live_state = la_mgr.get_linear_attention_live_state(victim_seq_id);
+    EXPECT_EQ(live_state.endpoint, 16);
+    EXPECT_EQ(live_state.rows.front(), step.orchestrator->get_linear_attention_block_table(victim_seq_id).back());
+    EXPECT_EQ(la_mgr.num_free_blocks(), 1);
+
+    free_all_sequences(*step.orchestrator, step.requests);
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_counts_shared_physical_blocks) {
+    SchedulerConfig config;
+    config.max_num_batched_tokens = 32;
+    config.num_kv_blocks = 6;
+    config.num_linear_attention_blocks = 4;
+    config.cache_interval_multiplier = 2;
+    config.enable_prefix_caching = true;
+    config.dynamic_split_fuse = true;
+    config.max_num_seqs = 4;
+
+    std::vector<uint64_t> target_tokens = {0, 1, 2, 3};
+    std::vector<uint64_t> victim_tokens(20);
+    std::iota(victim_tokens.begin(), victim_tokens.end(), 100);
+    auto victim_config = utils::get_greedy_config();
+    victim_config.do_sample = true;
+    victim_config.num_return_sequences = 2;
+    auto target = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()), utils::get_greedy_config());
+    auto victim = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()), victim_config);
+    std::vector<SequenceGroup::Ptr> requests = {target, victim};
+    auto orchestrator = init_hybrid_cache_orchestrator(config);
+    ContinuousBatchingScheduler scheduler(orchestrator, config);
+
+    EXPECT_EQ(scheduler.schedule(requests).m_scheduled_sequence_groups_ids.size(), 2);
+    for (const auto& request : requests) {
+        request->finish_iteration();
+    }
+
+    const auto parent = victim->get_running_sequences().front();
+    const auto child = victim->fork_sequence(parent);
+    scheduler.fork_sequence(parent->get_id(), child->get_id());
+    target->schedule_tokens(8);
+
+    ASSERT_TRUE(orchestrator->can_partially_preempt(victim, target));
+    EXPECT_EQ(orchestrator->free_group_partially_for_target(victim, target), 12);
+    EXPECT_EQ(orchestrator->get_kv_block_tables(parent->get_id())[0].size(), 2);
+    EXPECT_EQ(orchestrator->get_kv_block_tables(child->get_id())[0].size(), 2);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(parent->get_id()).size(), 1);
+    EXPECT_EQ(orchestrator->num_free_blocks(), 2);
+
+    target->clear_scheduled_tokens();
+    free_all_sequences(*orchestrator, requests);
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_preemption_rejects_inexact_restored_checkpoint) {
+    SchedulerConfig config;
+    config.num_kv_blocks = 5;
+    config.num_linear_attention_blocks = 16;
+    config.cache_interval_multiplier = 1;
+    config.enable_prefix_caching = true;
+    config.dynamic_split_fuse = true;
+    config.max_num_batched_tokens = 32;
+    config.max_num_seqs = 4;
+
+    auto orchestrator = init_hybrid_cache_orchestrator(config);
+    auto& kv_mgr = orchestrator->get_block_manager(CacheType::KV_CACHE);
+    auto& la_mgr = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+
+    std::vector<uint64_t> target_tokens = {0, 1, 2, 3};
+    std::vector<uint64_t> victim_tokens(16);
+    std::iota(victim_tokens.begin(), victim_tokens.end(), 100);
+    auto target = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()), utils::get_greedy_config());
+    auto victim = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()), utils::get_greedy_config());
+
+    target->schedule_tokens(target_tokens.size());
+    kv_mgr.append_slots(target);
+    la_mgr.append_slots(target);
+    target->finish_iteration();
+    victim->schedule_tokens(victim_tokens.size());
+    kv_mgr.append_slots(victim);
+    victim->finish_iteration();
+
+    std::vector<uint64_t> partial_tokens(victim_tokens.begin(), victim_tokens.begin() + 7);
+    auto partial_producer = std::make_shared<SequenceGroup>(
+        2, ov::Tensor(ov::element::i64, {partial_tokens.size()}, partial_tokens.data()), utils::get_greedy_config());
+    partial_producer->schedule_tokens(partial_tokens.size());
+    la_mgr.append_slots(partial_producer);
+    partial_producer->finish_iteration();
+    la_mgr.free_sequence(partial_producer->get_running_sequences().front()->get_id());
+
+    auto full_producer = std::make_shared<SequenceGroup>(
+        3, ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()), utils::get_greedy_config());
+    full_producer->schedule_tokens(victim_tokens.size());
+    la_mgr.append_slots(full_producer);
+    full_producer->finish_iteration();
+    la_mgr.free_sequence(full_producer->get_running_sequences().front()->get_id());
+
+    BlockManager::PrefixRestorePlan plan;
+    plan.block_content_lengths = {7, 12, 16};
+    plan.cache_token_position = 16;
+    plan.processed_tokens = 16;
+    plan.logical_block_start = 1;
+    ASSERT_TRUE(la_mgr.restore_cached_blocks(victim, plan));
+    target->schedule_tokens(8);
+
+    const auto victim_seq_id = victim->get_running_sequences().front()->get_id();
+    EXPECT_EQ(la_mgr.get_earliest_complete_checkpoint(victim_seq_id), 12);
+    EXPECT_FALSE(orchestrator->can_partially_preempt(victim, target));
+
+    target->clear_scheduled_tokens();
+    free_all_sequences(*orchestrator, {target, victim});
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_requires_sufficient_checkpoint) {
+    SchedulerConfig config;
+    config.max_num_batched_tokens = 32;
+    config.num_kv_blocks = 4;
+    config.num_linear_attention_blocks = 3;
+    config.cache_interval_multiplier = 2;
+    config.enable_prefix_caching = true;
+    config.dynamic_split_fuse = true;
+    config.max_num_seqs = 4;
+
+    std::vector<uint64_t> target_tokens = {0, 1, 2, 3};
+    std::vector<uint64_t> victim_tokens(12);
+    std::iota(victim_tokens.begin(), victim_tokens.end(), 100);
+    auto victim_config = utils::get_greedy_config();
+    victim_config.do_sample = true;
+    victim_config.num_return_sequences = 2;
+    auto target = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()), utils::get_greedy_config());
+    auto victim = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()), victim_config);
+    std::vector<SequenceGroup::Ptr> requests = {target, victim};
+    auto orchestrator = init_hybrid_cache_orchestrator(config);
+    ContinuousBatchingScheduler scheduler(orchestrator, config);
+
+    EXPECT_EQ(scheduler.schedule(requests).m_scheduled_sequence_groups_ids.size(), 2);
+    for (const auto& request : requests) {
+        request->finish_iteration();
+    }
+    const auto parent = victim->get_running_sequences().front();
+    const auto child = victim->fork_sequence(parent);
+    scheduler.fork_sequence(parent->get_id(), child->get_id());
+    target->schedule_tokens(8);
+
+    EXPECT_FALSE(orchestrator->can_partially_preempt(victim, target));
+    EXPECT_EQ(victim->get_num_processed_tokens(), 12);
+    EXPECT_EQ(orchestrator->get_kv_block_tables(parent->get_id())[0].size(), 3);
+
+    target->clear_scheduled_tokens();
+    free_all_sequences(*orchestrator, requests);
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_partial_preemption_skips_blocks_held_by_other_request) {
+    SchedulerConfig config;
+    config.max_num_batched_tokens = 32;
+    config.num_kv_blocks = 6;
+    config.num_linear_attention_blocks = 4;
+    config.cache_interval_multiplier = 2;
+    config.enable_prefix_caching = true;
+    config.dynamic_split_fuse = true;
+    config.max_num_seqs = 4;
+
+    std::vector<uint64_t> target_tokens = {0, 1, 2, 3};
+    std::vector<uint64_t> victim_tokens(20);
+    std::iota(victim_tokens.begin(), victim_tokens.end(), 100);
+    auto victim_config = utils::get_greedy_config();
+    victim_config.do_sample = true;
+    victim_config.num_return_sequences = 2;
+    auto target = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()), utils::get_greedy_config());
+    auto victim = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {victim_tokens.size()}, victim_tokens.data()), victim_config);
+    auto other = std::make_shared<SequenceGroup>(
+        2, ov::Tensor(ov::element::i64, {target_tokens.size()}, target_tokens.data()), utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {target, victim};
+    auto orchestrator = init_hybrid_cache_orchestrator(config);
+    ContinuousBatchingScheduler scheduler(orchestrator, config);
+
+    EXPECT_EQ(scheduler.schedule(requests).m_scheduled_sequence_groups_ids.size(), 2);
+    for (const auto& request : requests) {
+        request->finish_iteration();
+    }
+    const auto parent = victim->get_running_sequences().front();
+    const auto child = victim->fork_sequence(parent);
+    scheduler.fork_sequence(parent->get_id(), child->get_id());
+    scheduler.fork_sequence(parent->get_id(), other->get_running_sequences().front()->get_id());
+    target->schedule_tokens(8);
+
+    EXPECT_FALSE(orchestrator->can_partially_preempt(victim, target));
+    target->clear_scheduled_tokens();
+    free_all_sequences(*orchestrator, requests);
+    free_all_sequences(*orchestrator, {other});
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_victim_before_first_checkpoint_is_fully_preempted) {
+    // Mirrors model_server#4428: a 6-token victim has no completed LA checkpoint, so it cannot resume mid-sequence.
+    auto step = run_hybrid_prefix_caching_generate_step_under_kv_pressure(6, 3, 2, utils::get_greedy_config());
+    const auto& victim = step.requests[1];
+
+    EXPECT_EQ(step.scheduled_ids, std::vector<uint64_t>({0}));
+    EXPECT_EQ(victim->get_num_processed_tokens(), 0);
+    EXPECT_FALSE(step.orchestrator->has_block_table(victim->get_sequences()[0]->get_id()));
+
+    free_all_sequences(*step.orchestrator, step.requests);
+}
+
+TEST(TestScheduler, hybrid_prefix_caching_beam_search_victim_is_fully_preempted) {
+    auto step = run_hybrid_prefix_caching_generate_step_under_kv_pressure(20, 6, 4, utils::get_beam_search_config());
+    const auto& victim = step.requests[1];
+
+    EXPECT_EQ(step.scheduled_ids, std::vector<uint64_t>({0}));
+    EXPECT_EQ(victim->get_num_processed_tokens(), 0);
+    for (const auto& seq : victim->get_sequences()) {
+        EXPECT_FALSE(step.orchestrator->has_block_table(seq->get_id()));
+    }
+
+    free_all_sequences(*step.orchestrator, step.requests);
+}
+
 SchedulerConfig get_scheduler_config(size_t max_num_batched_tokens,
                                      size_t num_kv_blocks,
                                      bool dynamic_split_fuse,
@@ -3301,4 +3598,80 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
         scheduler.free_sequence(seq->get_id());
     }
     sequence_group->finish_iteration();
+}
+
+// A DFlash draft asks for the rows of its window [committed rows, window end) past what the request offers by
+// itself as extra rows, and caps a prefill chunk; the scheduler then offers exactly that window, both for the prompt
+// rows and for a block window after them.
+TEST(TestScheduler, dflash_draft_windows_are_scheduled_whole) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    auto make_draft_group = [](uint64_t request_id, size_t prompt_len, size_t generated_len) {
+        std::vector<int64_t> prompt(prompt_len);
+        std::iota(prompt.begin(), prompt.end(), 0);
+        auto group = std::make_shared<SequenceGroup>(request_id,
+                                                     ov::Tensor(ov::element::i64, {prompt_len}, prompt.data()),
+                                                     utils::get_greedy_config());
+        for (size_t i = 0; i < generated_len; ++i) {
+            group->get_running_sequences().front()->append_token(100 + static_cast<int64_t>(i), 0.0f);
+        }
+        return group;
+    };
+    auto set_window = [](const SequenceGroup::Ptr& group, size_t committed_rows, size_t window_rows) {
+        group->update_processed_tokens_num(committed_rows);
+        const size_t base_rows = group->get_num_available_tokens_for_batching();
+        if (window_rows > base_rows) {
+            group->set_num_validated_tokens(window_rows - base_rows);
+        }
+    };
+
+    // the 8 prompt rows of a request whose target sampled the seed
+    auto block_window = make_draft_group(0, 8, 1);
+    set_window(block_window, 0, 8);
+    // the first 4 rows of a 16-token prompt, limited to the rows the target exported
+    auto prefill_window = make_draft_group(1, 16, 0);
+    set_window(prefill_window, 0, 4);
+    auto paused = make_draft_group(2, 8, 1);
+    set_window(paused, 8, 0);
+    paused->pause_generation(true);
+    std::vector<SequenceGroup::Ptr> requests = {block_window, prefill_window, paused};
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    scheduler.set_expected_num_scheduled_tokens(1, 4);
+    auto out = scheduler.schedule(requests);
+
+    EXPECT_EQ(block_window->get_num_scheduled_tokens(), 8);
+    EXPECT_EQ(prefill_window->get_num_scheduled_tokens(), 4);
+    EXPECT_EQ(paused->get_num_scheduled_tokens(), 0);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 12);
+    for (const auto& group : requests) {
+        group->finish_iteration();
+    }
+    scheduler.clear_expected_num_scheduled_tokens(1);
+
+    // the target generated the next seed: the row of the first seed, then the seed + 3 mask block
+    for (int64_t token : {200, 201, 202, 203}) {
+        block_window->get_running_sequences().front()->append_token(token, 0.0f);
+    }
+    set_window(block_window, 8, 5);
+    prefill_window->pause_generation(true);
+    auto block = scheduler.schedule(requests);
+
+    EXPECT_TRUE(block_window->can_generate_tokens());
+    EXPECT_EQ(block_window->get_num_processed_tokens(), 8);
+    EXPECT_EQ(block_window->get_num_scheduled_tokens(), 5);
+    EXPECT_EQ(block.m_total_num_scheduled_tokens, 5);
+
+    for (const auto& group : requests) {
+        group->finish_iteration();
+        for (const auto& sequence : group->get_sequences()) {
+            if (scheduler.has_block_table(sequence->get_id())) {
+                scheduler.free_sequence(sequence->get_id());
+            }
+        }
+    }
 }

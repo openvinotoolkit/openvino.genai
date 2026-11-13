@@ -86,6 +86,25 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
 namespace ov {
 namespace genai {
 
+void fill_ngram_history(
+    const ov::Tensor& prompt_ngram_history,
+    const TokenIds& generated_ids,
+    const size_t generated_offset,
+    int64_t* dst
+) {
+    OPENVINO_ASSERT(prompt_ngram_history.get_element_type() == ov::element::i64,
+        "ngram_history must have element type i64, got ", prompt_ngram_history.get_element_type());
+    const size_t ngram_history_size = prompt_ngram_history.get_size();
+    const int64_t* prompt_ngram_history_data = prompt_ngram_history.data<const int64_t>();
+    // Window [generated_offset, generated_offset + ngram_history_size) of prompt_ngram_history followed by generated_ids
+    for (size_t i = 0; i < ngram_history_size; ++i) {
+        const size_t index = generated_offset + i;
+        dst[i] = index < ngram_history_size
+            ? prompt_ngram_history_data[index]
+            : generated_ids.at(index - ngram_history_size);
+    }
+}
+
 ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     ov::InferRequest& m_llm,
     const ov::Tensor& input_ids,
@@ -100,7 +119,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     const size_t max_kv_cache_size,
     const bool use_intermediate_remote_tensor,
     const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
-    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback,
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)> ngram_embeddings_callback
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -145,6 +165,14 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
 
+    ov::Tensor prompt_ngram_history;
+    if (ngram_embeddings_callback) {
+        const auto ngram_history_it = lm_extra_inputs.find("ngram_history");
+        OPENVINO_ASSERT(ngram_history_it != lm_extra_inputs.end(),
+            "ngram_history extra input is required to compute ngram embeddings of generated tokens");
+        prompt_ngram_history = ngram_history_it->second;
+    }
+
     // Initialize results and performance metrics.
 
     ov::genai::utils::GenerationFinishInfo finish_info;
@@ -158,6 +186,10 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
         // Set extra inputs for LLM if any
         for (const auto& [name, tensor] : lm_extra_inputs) {
+            // Skip ngram_history as it is not actual LM input, used to compute ngram embeddings of generated tokens
+            if (name == "ngram_history") {
+                continue;
+            }
             m_llm.set_tensor(name, tensor);
         }
     } else {
@@ -220,6 +252,13 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         ov::Tensor new_input_ids(ov::element::i64, {total_num_tokens, 1});
         int64_t * input_ids_data = new_input_ids.data<int64_t>();
 
+        ov::Tensor ngram_history;
+        int64_t* ngram_history_data = nullptr;
+        if (ngram_embeddings_callback) {
+            ngram_history = ov::Tensor(ov::element::i64, {total_num_tokens, prompt_ngram_history.get_size()});
+            ngram_history_data = ngram_history.data<int64_t>();
+        }
+
         std::vector<int32_t> next_beams;
         size_t current_batch_size = 0;
 
@@ -243,6 +282,17 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
                 // apply strides to shift to a next sequence
                 input_ids_data += num_scheduled_tokens;
+
+                if (ngram_embeddings_callback) {
+                    const size_t generated_offset_from_prompt = group_position_id - sequence_group->get_prompt_len();
+                    fill_ngram_history(
+                        prompt_ngram_history,
+                        sequence->get_generated_ids(),
+                        generated_offset_from_prompt,
+                        ngram_history_data
+                    );
+                    ngram_history_data += prompt_ngram_history.get_size();
+                }
 
                 // for different sequences iteration of beams started from 0, but we collect it to one input_ids
                 next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offets.at(sequence_group->get_request_id()));
@@ -279,6 +329,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     ov::Tensor new_token_type_ids(tensor.get_element_type(), {total_num_tokens, 1});
                     std::fill_n(new_token_type_ids.data<int64_t>(), new_token_type_ids.get_size(), 0);
                     m_llm.set_tensor(name, new_token_type_ids);
+                } else if (name == "ngram_embeddings" && ngram_embeddings_callback) {
+                    // TODO Unify callbacks handling (per_layer_embeddings_callback, ngram_embeddings_callback)
+                    m_llm.set_tensor(name, ngram_embeddings_callback(new_input_ids, ngram_history));
                 }
             }
         } else {
