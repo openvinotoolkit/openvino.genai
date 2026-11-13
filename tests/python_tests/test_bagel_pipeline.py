@@ -37,7 +37,8 @@ def bagel_ov_path() -> Path:
 
 @pytest.fixture(scope="module")
 def genai_pipe(bagel_ov_path: Path) -> ov_genai.BagelPipeline:
-    return ov_genai.BagelPipeline(bagel_ov_path, "CPU", bagel_ov_path, INFERENCE_PRECISION_HINT="f32")
+    # no tokenizer_path: the tokenizer is read from the export directory
+    return ov_genai.BagelPipeline(bagel_ov_path, "CPU", INFERENCE_PRECISION_HINT="f32")
 
 
 @pytest.fixture(scope="module")

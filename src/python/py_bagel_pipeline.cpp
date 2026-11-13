@@ -44,23 +44,23 @@ void init_bagel_pipeline(py::module_& m) {
     py::class_<BagelPipeline>(m, "BagelPipeline", "BAGEL-7B-MoT pipeline: VQA, text-to-image and image editing.")
         .def(py::init([](const std::filesystem::path& models_path,
                          const std::string& device,
-                         const std::filesystem::path& tokenizer_path,
+                         const std::optional<std::filesystem::path>& tokenizer_path,
                          const py::kwargs& kwargs) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
                  return std::make_unique<BagelPipeline>(models_path,
                                                         device,
-                                                        tokenizer_path,
+                                                        tokenizer_path.value_or(models_path),
                                                         pyutils::kwargs_to_any_map(kwargs));
              }),
              py::arg("models_path"),
              py::arg("device"),
-             py::arg("tokenizer_path") = std::filesystem::path{},
+             py::arg("tokenizer_path") = py::none(),
              R"(
             BagelPipeline class constructor.
             models_path (os.PathLike): Directory with the BAGEL IRs and bagel_ov_config.json, or an optimum-intel export.
             device (str): Inference device.
-            tokenizer_path (os.PathLike): Directory with openvino_tokenizer.xml / openvino_detokenizer.xml;
-                models_path if empty.
+            tokenizer_path (os.PathLike | None): Directory with openvino_tokenizer.xml / openvino_detokenizer.xml;
+                models_path if None.
             kwargs: Properties applied on top of the default per-model configuration.
         )")
         .def("generate_text",

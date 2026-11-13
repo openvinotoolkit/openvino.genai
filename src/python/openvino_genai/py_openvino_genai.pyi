@@ -1121,13 +1121,13 @@ class BagelPipeline:
     """
     BAGEL-7B-MoT pipeline: VQA, text-to-image and image editing.
     """
-    def __init__(self, models_path: os.PathLike | str | bytes, device: str, tokenizer_path: os.PathLike | str | bytes = ..., **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, tokenizer_path: os.PathLike | str | bytes | None = None, **kwargs) -> None:
         """
                     BagelPipeline class constructor.
                     models_path (os.PathLike): Directory with the BAGEL IRs and bagel_ov_config.json, or an optimum-intel export.
                     device (str): Inference device.
-                    tokenizer_path (os.PathLike): Directory with openvino_tokenizer.xml / openvino_detokenizer.xml;
-                        models_path if empty.
+                    tokenizer_path (os.PathLike | None): Directory with openvino_tokenizer.xml / openvino_detokenizer.xml;
+                        models_path if None.
                     kwargs: Properties applied on top of the default per-model configuration.
         """
     def edit_image(self, image: openvino._pyopenvino.Tensor, prompt: str, config: BagelImageGenerationConfig = ...) -> openvino._pyopenvino.Tensor:
