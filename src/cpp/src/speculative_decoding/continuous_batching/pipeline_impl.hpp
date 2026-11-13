@@ -91,6 +91,10 @@ public:
         return m_scheduler->get_config().enable_prefix_caching;
     }
 
+    bool has_linear_attention_cache() const {
+        return m_scheduler->has_linear_attention_cache();
+    }
+
     // Returns the awaiting request with the given id, or nullptr if there is none.
     SequenceGroup::Ptr find_awaiting_request(uint64_t request_id) {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
