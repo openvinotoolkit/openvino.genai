@@ -21,6 +21,7 @@
 #include "json_utils.hpp"
 #include "sampling/logit_processor.hpp"
 #include "sampling/logit_transformers.hpp"
+#include "sampling/sampling_distribution.hpp"
 #include "sampling/sampler.hpp"
 #include "speech_generation/qwen3_tts/mel_preprocess.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_utils.hpp"
@@ -865,7 +866,7 @@ int64_t Qwen3TTSCodecEngine::sample_token_from_logits(const ov::Tensor& logits,
         return greedy_pick();
     }
 
-    return ov::genai::sample_multinomial(logits_view, 1, rng).front().m_index;
+    return ov::genai::SamplingDistribution(logits_view).sample(rng).m_index;
 }
 
 std::vector<int64_t> Qwen3TTSCodecEngine::generate_codec_groups(const ov::Tensor& past_hidden,

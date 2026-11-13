@@ -171,9 +171,14 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
 /// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
 extern const std::string PER_MODEL_PROPERTIES;
 
+/// @brief Key under which a pipeline forwards the adapters it already consumed to its sub-model constructors.
+/// Value shape: AdapterConfig. GenAI-internal: absent from the public API, so a user-supplied `adapters` entry
+/// is never mistaken for it and still reaches the plugin.
+extern const std::string FORWARDED_ADAPTERS_PROPERTY;
+
 /// @brief Resolve properties for @p model_role by merging three layers (priority low to high):
-///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
-///           and DEVICE_PROPERTIES if device is specified)
+///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES,
+///           FORWARDED_ADAPTERS_PROPERTY and DEVICE_PROPERTIES if device is specified)
 ///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)
 ///        3. PER_MODEL_PROPERTIES[model_role]
 ///        MODEL_PROPERTIES wins over DEVICE_PROPERTIES wins

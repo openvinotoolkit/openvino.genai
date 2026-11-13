@@ -118,6 +118,37 @@ def test_stop_strings_facebook_opt(
     generate_and_compare(model_facebook_opt_125m, prompts, generation_config, pipeline_type=pipeline_type)
 
 
+@pytest.mark.parametrize("include_stop_str_in_output", [True, False])
+@pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
+def test_stop_strings_in_first_validation_window(
+    model_facebook_opt_125m: OVConvertedModelSchema, include_stop_str_in_output: bool, pipeline_type
+):
+    # The repetition lets prompt lookup accept its first window, and the long stop string makes the window checked
+    # for stop strings longer than the generated sequence.
+    prompts = ["OpenVINO is a toolkit. OpenVINO is a toolkit. OpenVINO is a toolkit. OpenVINO"]
+    generation_config = {
+        "max_new_tokens": 30,
+        "stop_strings": {"toolkit", "software toolkit developed by"},
+        "include_stop_str_in_output": include_stop_str_in_output,
+    }
+    generate_and_compare(model_facebook_opt_125m, prompts, generation_config, pipeline_type=pipeline_type)
+
+
+@pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
+def test_stop_string_at_start_of_generation(model_facebook_opt_125m: OVConvertedModelSchema, pipeline_type):
+    # The generation starts with " is", so excluding the stop string leaves only the space before it, which is
+    # trimmed. The long stop string makes the first prompt-lookup window longer than the generated sequence.
+    prompts = ["OpenVINO is a toolkit. OpenVINO is a toolkit. OpenVINO is a toolkit. OpenVINO"]
+    generation_config = GenerationConfig(
+        max_new_tokens=30,
+        stop_strings={"is", "software toolkit developed by"},
+        include_stop_str_in_output=False,
+    )
+    results = run_ov_pipeline(model_facebook_opt_125m.models_path, prompts, generation_config, pipeline_type)
+
+    assert results[0].m_generation_ids == [""]
+
+
 @pytest.mark.parametrize(
     "generation_config",
     [
