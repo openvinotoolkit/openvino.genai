@@ -279,7 +279,8 @@ DecodedResults StatefulLLMPipeline::generate(
     OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
 
-    bool is_history_continuation = history.size() > m_history.size();
+    // An empty history starts a new chat, whatever an earlier non-chat generate() left in the cache
+    bool is_history_continuation = !m_history.empty() && history.size() > m_history.size();
     if (is_history_continuation) {
         for (size_t i = 0; i < m_history.size(); ++i) {
             if (history[i] != m_history[i]) {
@@ -557,11 +558,12 @@ void StatefulLLMPipeline::reset_state() {
 void StatefulLLMPipeline::finish_chat() {
     is_chat_conversation = false;
     m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
+    // start_chat(system_message) fills the history before there is any state
+    m_history.clear();
     bool have_state = 0 != m_model_runner.get_tensor("attention_mask").get_size();
     if (!m_cache_state.get_state().empty() || have_state) {
         reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
-        m_history.clear();
         m_tokenized_chat_history.clear();
         m_cache_state.reset_state();
     }

@@ -724,6 +724,54 @@ def test_linear_attention_chat_matches_last_answer_after_cache_reset(llm_model, 
     assert last_answer["content"] == decoded_results.texts[0]
 
 
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("previous_prompt", [QUESTIONS[0], QUESTIONS[1]])
+def test_chat_history_after_plain_generate_matches_fresh_pipeline(llm_model, previous_prompt):
+    config = ov_genai.GenerationConfig(max_new_tokens=5, do_sample=False)
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": QUESTIONS[0]}])
+
+    fresh_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    expected = fresh_pipe.generate(chat_history, config)
+
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    ov_pipe.generate(previous_prompt, config)
+    result = ov_pipe.generate(chat_history, config)
+    assert result.texts == expected.texts
+    assert result.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_chat_history_after_plain_generate_keeps_cache_on_continuation(llm_model):
+    config = ov_genai.GenerationConfig(max_new_tokens=5, do_sample=False)
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    ov_pipe.generate(QUESTIONS[0], config)
+
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": QUESTIONS[0]}])
+    answer = ov_pipe.generate(chat_history, config).texts[0]
+    chat_history.append({"role": "assistant", "content": answer})
+    chat_history.append({"role": "user", "content": QUESTIONS[1]})
+    continuation = ov_pipe.generate(chat_history, config)
+
+    fresh_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    full_prompt = fresh_pipe.generate(chat_history, config)
+    assert continuation.texts == full_prompt.texts
+    assert continuation.perf_metrics.get_num_input_tokens() < full_prompt.perf_metrics.get_num_input_tokens()
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_finish_chat_without_generate_drops_system_message(llm_model):
+    config = ov_genai.GenerationConfig(max_new_tokens=5, do_sample=False)
+    fresh_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    fresh_pipe.start_chat("You are a pirate.")
+    expected = fresh_pipe.generate(QUESTIONS[0], config)
+
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    ov_pipe.start_chat("You speak French.")
+    ov_pipe.finish_chat()
+    ov_pipe.start_chat("You are a pirate.")
+    assert ov_pipe.generate(QUESTIONS[0], config) == expected
+
+
 #
 # Streaming with callback
 #
