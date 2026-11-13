@@ -35,7 +35,7 @@ peft==0.21.2
 # - openbmb/MiniCPM-o-2_6
 vocos==0.1.0
 torchaudio==2.11.0
-vector-quantize-pytorch==1.32.2
+vector-quantize-pytorch==1.34.0
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
 av==18.1.0; python_version < "3.12"
 av==19.0.2; python_version >= "3.12"
