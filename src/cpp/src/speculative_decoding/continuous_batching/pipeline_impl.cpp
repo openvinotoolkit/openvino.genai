@@ -684,8 +684,17 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         if (num_tokens_needs_kv_update >= 0) {
             // Generation stage: use KV update count
             request->set_num_validated_tokens(num_tokens_needs_kv_update);
+        } else if (m_is_validation_mode_enabled) {
+            // Validation stage: the candidates of a window the main model has not run yet stay in the window
+            const size_t num_pending_candidates = request->get_num_tokens_to_validate();
+            OPENVINO_ASSERT(result.removed_tokens_cnt <= num_pending_candidates,
+                            "Request ", request_id, ": the draft model dropped ", result.removed_tokens_cnt,
+                            " tokens, more than the ", num_pending_candidates,
+                            " candidates the main model has not validated");
+            request->set_num_validated_tokens(num_pending_candidates - result.removed_tokens_cnt +
+                                              result.inserted_tokens_cnt);
         } else if (result.inserted_tokens_cnt > 0 && result.removed_tokens_cnt == 0) {
-            // Validation stage or all inserted tokens were accepted
+            // All inserted tokens were accepted
             request->set_num_validated_tokens(result.inserted_tokens_cnt);
         }
 
