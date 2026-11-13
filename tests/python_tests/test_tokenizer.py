@@ -65,6 +65,62 @@ prompts = [
 ]
 
 
+@pytest.mark.parametrize(
+    "pre_type,text,expected_tokens",
+    [
+        ("qwen35", " \na", ["\u0120\u010a", "a"]),
+        ("qwen35", " (s)", ["\u0120(", "s", ")"]),
+        ("qwen35", ":e", [":e"]),
+        ("qwen35", "a\u0301", ["a\u00cc\u0123"]),
+        ("qwen35", "1234", ["1", "2", "3", "4"]),
+        ("qwen2", " \na", ["\u0120\u010a", "a"]),
+        ("qwen2", " (s)", ["\u0120(", "s", ")"]),
+        ("qwen2", ":e", [":e"]),
+        ("qwen2", "a\u0301", ["a", "\u00cc", "\u0123"]),
+        ("qwen2", "1234", ["1", "2", "3", "4"]),
+        ("smollm", " \na", ["\u0120", "\u010a", "a"]),
+        ("smollm", " (s)", ["\u0120(", "s", ")"]),
+        ("smollm", ":e", [":", "e"]),
+        ("smollm", "a\u0301", ["a", "\u00cc", "\u0123"]),
+        ("smollm", "1234", ["1", "2", "3", "4"]),
+        ("default", " \na", ["\u0120", "\u010a", "a"]),
+        ("default", " (s)", ["\u0120", "(", "s", ")"]),
+        ("default", ":e", [":", "e"]),
+        ("default", "a\u0301", ["a", "\u00cc", "\u0123"]),
+        ("default", "1234", ["123", "4"]),
+    ],
+)
+def test_gguf_pre_tokenization(tmp_path, pre_type, text, expected_tokens):
+    gguf = pytest.importorskip("gguf")
+    from openvino_genai import GGUFTokenizer
+
+    byte_alphabet = [
+        chr(codepoint)
+        for begin, end in [(33, 127), (161, 173), (174, 256), (256, 324)]
+        for codepoint in range(begin, end)
+    ]
+    vocab = ["<eos>"] + sorted(byte_alphabet)
+    vocab += ["\u0120\u010a", "\u0120(", ":e", "a\u00cc", "a\u00cc\u0123", "12", "123", "1234"]
+    model_path = tmp_path / "tokenizer.gguf"
+    writer = gguf.GGUFWriter(model_path, "gpt2")
+    writer.add_tokenizer_model("gpt2")
+    writer.add_tokenizer_pre(pre_type)
+    writer.add_token_list(vocab)
+    writer.add_token_types([3] + [1] * (len(vocab) - 1))
+    writer.add_token_merges(["\u0120 \u010a", "\u0120 (", ": e", "a \u00cc", "a\u00cc \u0123", "1 2", "12 3", "123 4"])
+    writer.add_eos_token_id(0)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+
+    tokenizer = GGUFTokenizer(model_path)
+    actual = tokenizer.encode(text, add_special_tokens=False).input_ids.data.tolist()[0]
+    expected = [vocab.index(token) for token in expected_tokens]
+    assert actual == expected
+    assert tokenizer.decode(actual, skip_special_tokens=False) == text
+
+
 @pytest.fixture(scope="module")
 def ov_hf_tokenizers(request):
     model_schema = download_and_convert_model(request.param)
