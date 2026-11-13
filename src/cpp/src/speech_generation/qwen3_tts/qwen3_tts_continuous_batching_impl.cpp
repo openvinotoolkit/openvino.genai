@@ -291,6 +291,8 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     try {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         _throw_if_failed();
+        initialize_prefix_cache(sequence_group);
+        sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
         m_awaiting_requests.push_back(sequence_group);
     } catch (...) {
         on_request_failed(sequence_group, std::current_exception());
@@ -552,6 +554,7 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
 
     SpeechGenerationPerfMetrics perf_metrics;
     perf_metrics.num_generated_samples = wav_tensor.get_size();
+    perf_metrics.num_prefix_cache_hit_tokens = sequence_group->get_num_prefix_cache_hit_tokens();
     perf_metrics.raw_metrics.generate_durations.emplace_back(
         PerfMetrics::get_microsec(std::chrono::steady_clock::now() - state.start_time));
     perf_metrics.evaluate_statistics();

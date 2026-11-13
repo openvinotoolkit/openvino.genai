@@ -948,6 +948,44 @@ def test_qwen3_tts_non_base_continuous_batching_concurrent_requests(
 
 
 @pytest.mark.speech_generation
+def test_qwen3_tts_continuous_batching_reuses_prefix_cache(
+    tiny_qwen3_tts_customvoice_ov_path: Path,
+):
+    scheduler_config = ov_genai.SchedulerConfig()
+    scheduler_config.enable_prefix_caching = True
+    cb_pipe = ov_genai.Text2SpeechContinuousBatchingPipeline(
+        str(tiny_qwen3_tts_customvoice_ov_path),
+        scheduler_config,
+        "CPU",
+    )
+    prompt = "Please generate the same cached speech prefix. " * 16
+    properties = {
+        "language": "English",
+        "speaker": LANGUAGE_TEST_TEXTS["English"]["customvoice_speaker"],
+        "do_sample": False,
+        "subtalker_dosample": False,
+        "max_new_tokens": 8,
+    }
+
+    outputs = []
+    cache_hits = []
+    for request_id in (1, 2):
+        handle = cb_pipe.add_request(request_id, prompt, **properties)
+        while cb_pipe.has_non_finished_requests():
+            cb_pipe.step()
+        outputs.append(handle.read_all())
+        cache_hits.append(handle.get_perf_metrics().get_num_prefix_cache_hit_tokens())
+
+    assert cache_hits[0] == 0
+    assert cache_hits[1] > 0
+    _assert_waveform_equal(
+        np.asarray(outputs[0].waveform.data, dtype=np.float32).reshape(-1),
+        np.asarray(outputs[1].waveform.data, dtype=np.float32).reshape(-1),
+        "prefix-cached versus uncached TTS request",
+    )
+
+
+@pytest.mark.speech_generation
 @pytest.mark.parametrize(
     "model_fixture,variant_properties,use_ref_audio",
     [
@@ -1011,8 +1049,7 @@ def test_qwen3_tts_continuous_batching_predictor_batch_matches_serial(
         concurrent_handles.append(cb_pipe.add_request(2, prompts[1], **properties))
     else:
         concurrent_handles = [
-            cb_pipe.add_request(request_id, prompt, **properties)
-            for request_id, prompt in enumerate(prompts, start=1)
+            cb_pipe.add_request(request_id, prompt, **properties) for request_id, prompt in enumerate(prompts, start=1)
         ]
     while cb_pipe.has_non_finished_requests():
         cb_pipe.step()
