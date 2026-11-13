@@ -90,7 +90,7 @@ pip install -r ../../deployment-requirements.txt
 
 - **Run Command:**
   ```bash
-  python text2video.py model_dir prompt [--device DEVICE] [--output OUTPUT]
+  python text2video.py model_dir prompt [num_frames]
   ```
 
   Example:
@@ -134,7 +134,7 @@ pip install -r ../../deployment-requirements.txt
 
 - **Run Command:**
   ```bash
-  python lora_text2video.py model_dir prompt [lora_adapter_path alpha] ...
+  python lora_text2video.py model_dir prompt [num_frames] [lora_adapter_path alpha] ...
   ```
 
   Example:
@@ -181,7 +181,7 @@ video = pipe.generate(
 
 - **Run Command:**
   ```bash
-  python taylorseer_text2video.py model_dir prompt
+  python taylorseer_text2video.py model_dir prompt [num_frames]
   ```
 
   Example:
