@@ -21,6 +21,7 @@
 #include "visual_language/vision_token_pruning_processor.hpp"
 
 namespace ov::genai {
+
 struct VLMPerfMetrics;
 
 const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
@@ -113,6 +114,11 @@ public:
 
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel::Ptr get_embedding_model() const;
+
+    // sets LoRA adapters to apply to the vision sub-models during the next generation
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
+
+    std::optional<std::string> get_lora_tensor_prefix() const;
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
@@ -210,6 +216,9 @@ private:
         virtual ~IInputsEmbedder() = default;
 
     public:
+        // Architectures that support LoRA for the vision part override this to pick up the per-generation config.
+        virtual void set_adapters(const std::optional<AdapterConfig>& adapters) {}
+        virtual std::optional<std::string> get_lora_tensor_prefix() const { return std::nullopt; }
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt,
