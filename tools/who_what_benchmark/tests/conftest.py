@@ -5,8 +5,11 @@ import shutil
 import subprocess  # nosec B404
 import sys
 
+from functools import cache
 from pathlib import Path
 from typing import Any, Callable, Dict
+
+from huggingface_hub import snapshot_download
 
 from ov_utils import AtomicDownloadManager, get_ov_cache_dir, retry_request  # noqa
 
@@ -42,7 +45,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "Qwen2.5-0.5B-Instruct": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct",
         "cache_name": "Qwen2.5-0.5B-Instruct-v2",
-        "convert_args": ["--trust-remote-code"],
+        "convert_args": ["--trust-remote-code", "--task", "text-generation-with-past"],
     },
     "tiny-random-qwen2vl": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen2vl",
@@ -66,7 +69,8 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "whisper-tiny": {
         "name": "openai/whisper-tiny",
-        "convert_args": ["--weight-format", "fp32"],
+        "cache_name": "whisper-tiny-v2",
+        "convert_args": ["--task", "automatic-speech-recognition-with-past", "--weight-format", "fp32"],
     },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
@@ -88,19 +92,42 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "Qwen/Qwen2-VL-2B-Instruct",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
-    "tiny-random-stable-diffusion-xl": {"name": "echarlaix/tiny-random-stable-diffusion-xl", "convert_args": []},
-    "stable-diffusion-3-tiny-random": {"name": "yujiepan/stable-diffusion-3-tiny-random", "convert_args": []},
-    "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
-    "tiny-random-flux-fill": {"name": "optimum-intel-internal-testing/tiny-random-flux-fill", "convert_args": []},
-    "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
-    "tiny-random-ltx2": {"name": "optimum-intel-internal-testing/tiny-random-ltx2", "convert_args": []},
+    "tiny-random-stable-diffusion-xl": {
+        "name": "echarlaix/tiny-random-stable-diffusion-xl",
+        "convert_args": ["--task", "text-to-image"],
+    },
+    "stable-diffusion-3-tiny-random": {
+        "name": "yujiepan/stable-diffusion-3-tiny-random",
+        "convert_args": ["--task", "text-to-image"],
+    },
+    "tiny-random-flux": {
+        "name": "optimum-intel-internal-testing/tiny-random-flux",
+        "convert_args": ["--task", "text-to-image"],
+    },
+    "tiny-random-flux-fill": {
+        "name": "optimum-intel-internal-testing/tiny-random-flux-fill",
+        "convert_args": ["--task", "fill"],
+    },
+    "tiny-random-ltx-video": {
+        "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
+        "convert_args": ["--task", "text-to-video"],
+    },
+    "tiny-random-ltx2": {
+        "name": "optimum-intel-internal-testing/tiny-random-ltx2",
+        "convert_args": ["--task", "text-to-video"],
+    },
     "tiny-videochat-flash-qwen": {
         "name": "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
     "speecht5_tts": {
         "name": "microsoft/speecht5_tts",
-        "convert_args": ["--model-kwargs", '{"vocoder": "microsoft/speecht5_hifigan"}'],
+        "convert_args": [
+            "--task",
+            "text-to-audio-with-past",
+            "--model-kwargs",
+            '{"vocoder": "microsoft/speecht5_hifigan"}',
+        ],
     },
     "Kokoro-82M": {
         "name": "hexgrad/Kokoro-82M",
@@ -127,6 +154,14 @@ MODELS: Dict[str, Dict[str, Any]] = {
 
 def get_ov_cache_converted_models_dir():
     return get_ov_cache_dir() / "converted_models"
+
+
+@cache
+def hub_snapshot(model: str) -> str:
+    """Local snapshot for a Hub model id: loading by id calls the Hub API on every load."""
+    if Path(model).exists():
+        return model
+    return retry_request(lambda: snapshot_download(model))
 
 
 def convert_text_model(
@@ -175,10 +210,11 @@ def convert_model(model_name: str) -> str:
     def convert(temp_path: Path) -> None:
         if "--weight-format" not in convert_args:
             convert_args.extend(["--weight-format", "fp16"])
+        source_model = hub_snapshot(MODELS[model_id]["name"])
         command = [
-            *_export_tool(MODELS[model_id]["name"]),
+            *_export_tool(source_model),
             "--model",
-            MODELS[model_id]["name"],
+            source_model,
             *convert_args,
             str(temp_path),
         ]
@@ -229,6 +265,10 @@ def session_setup_teardown():
 
 
 def run_wwb(args: list[str], env=None):
+    args = list(args)
+    for i, arg in enumerate(args[:-1]):
+        if arg in ("--base-model", "--target-model"):
+            args[i + 1] = hub_snapshot(str(args[i + 1]))
     command = ["wwb"] + args
     base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
     if env:
