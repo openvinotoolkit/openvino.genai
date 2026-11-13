@@ -258,6 +258,79 @@ Without a speech streamer, both fields have no effect and the whole audio is ret
     </TabItemJS>
 </LanguageTabs>
 
+### Starting Speech Before Text Generation Finishes
+
+By default, `OmniPipeline` runs the talker after the thinker has produced the whole response. Set `GenerationConfig.stream_text2speech` on the text config to start the talker as soon as the first thinker token is available: the talker then runs on its own thread and consumes the thinker's tokens and hidden states one decode step at a time, so the first audio chunk arrives while text is still being generated. The generated text is unchanged, and with the same `OmniTalkerSpeechConfig.rng_seed` the waveform is the same as without the flag, as long as the thinker does not generate an `<|im_start|>` token.
+
+The flag requires `return_audio` and works with the continuous batching backend that `OmniPipeline` uses by default. It is not compatible with speculative decoding, prompt lookup, beam search, or `num_return_sequences > 1`.
+
+When streaming, the speech streamer is called from the talker's thread and can run concurrently with the text streamer.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        vlm = ov_genai.VLMPipeline(model_path, "GPU")
+        talker = ov_genai.Talker(model_path, "CPU")
+        pipe = ov_genai.OmniPipeline(vlm, talker)
+
+        text_config = ov_genai.GenerationConfig()
+        text_config.max_new_tokens = 100
+        text_config.stream_text2speech = True
+
+        speech_config = ov_genai.OmniTalkerSpeechConfig(model_path)
+
+        def speech_streamer(chunk):
+            # Called from the talker's thread while the thinker is still generating
+            return ov_genai.StreamingStatus.RUNNING
+
+        result = pipe.generate(prompt, images=images, text_config=text_config,
+                               talker_speech_config=speech_config, speech_streamer=speech_streamer)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            auto vlm = std::make_shared<ov::genai::VLMPipeline>(model_path, "GPU");
+            auto talker = std::make_shared<ov::genai::Talker>(model_path, "CPU");
+            ov::genai::OmniPipeline pipe(vlm, talker);
+
+            ov::genai::GenerationConfig text_config;
+            text_config.max_new_tokens = 100;
+            text_config.stream_text2speech = true;
+
+            ov::genai::OmniTalkerSpeechConfig speech_config(model_path);
+
+            auto speech_streamer = [](const ov::Tensor& chunk) {
+                // Called from the talker's thread while the thinker is still generating
+                return ov::genai::StreamingStatus::RUNNING;
+            };
+
+            auto result = pipe.generate(prompt, images, text_config, speech_config, std::monostate{}, speech_streamer);
+        }
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        import { OmniPipeline, StreamingStatus } from 'openvino-genai-node';
+
+        const pipe = await OmniPipeline(modelPath, "CPU");
+
+        const result = await pipe.generate(prompt, {
+            images: images,
+            textConfig: { max_new_tokens: 100, stream_text2speech: true },
+            speechStreamer: (chunk) => {
+                // Called from the talker's thread while the thinker is still generating
+                return StreamingStatus.RUNNING;
+            }
+        });
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+To drive the two stages yourself, `OmniChannel` is the bridge `OmniPipeline` uses: pass it as `omni_streamer` to `VLMPipeline::generate()` on one thread and as the text source to `Talker::generate()` on another. `OmniStreamerBase` and `OmniTextSourceBase` are the two ends of that bridge, so a custom VLM or talker can implement them to take part in streaming.
+
 ### Working with LoRA Adapters
 
 For Vision Language Models (VLMs), LoRA adapters can customize the generated text by applying adapters to the language-model (LLM) part.

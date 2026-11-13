@@ -73,6 +73,10 @@ configs = [
     dict(max_new_tokens=1, num_assistant_tokens=2, max_ngram_size=2), # prompt lookup
     dict(max_new_tokens=1, apply_chat_template=True),
     dict(max_new_tokens=1, apply_chat_template=False),
+    # omni
+    dict(max_new_tokens=1, return_omni_outputs=True),
+    dict(max_new_tokens=1, stream_text2speech=True),
+    dict(max_new_tokens=1, stream_text2speech=False),
 ]
 @pytest.mark.parametrize("generation_config_kwargs", configs)
 def test_valid_configs(generation_config_kwargs):

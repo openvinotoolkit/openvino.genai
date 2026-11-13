@@ -87,6 +87,16 @@ describe("OmniPipeline", { skip: os.platform() === "darwin" }, () => {
     );
   });
 
+  it("should generate speech while text is still being generated", async () => {
+    const result = await pipeline.generate("Say hello.", {
+      textConfig: { max_new_tokens: 20, stream_text2speech: true },
+      talkerSpeechConfig: deterministicSpeechConfig,
+    });
+    assert.ok(result instanceof OmniDecodedResults);
+    assert.ok(result.texts.length > 0, "Should generate text");
+    assert.ok(result.speechResult.waveforms.length > 0, "Should produce speech waveforms");
+  });
+
   it("should stream text and speech chunks", async () => {
     let textChunks = 0;
     let audioChunks = 0;

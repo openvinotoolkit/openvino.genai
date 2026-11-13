@@ -167,6 +167,11 @@ char generation_config_docstring[] = R"(
     logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                     Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
     apply_chat_template: whether to apply chat_template for non-chat scenarios
+    stream_text2speech: if set to true, OmniPipeline streams the thinker's tokens and hidden states to the talker as they are
+                        produced instead of handing over the whole sequence once text generation has finished, so speech starts
+                        before the text is complete. Requires talker_speech_config.return_audio and the continuous-batching backend.
+                        Tokens rewound out of the text by a stop string have already reached the talker, so the speech may voice
+                        up to one stop string more than the returned text shows. (default: false)
 
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
     presence_penalty: reduces absolute log prob if the token was generated at least once.
@@ -461,6 +466,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("adapters", &GenerationConfig::adapters)
         .def_readwrite("apply_chat_template", &GenerationConfig::apply_chat_template)
         .def_readwrite("return_omni_outputs", &GenerationConfig::return_omni_outputs)
+        .def_readwrite("stream_text2speech", &GenerationConfig::stream_text2speech)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
         .def("is_beam_search", &GenerationConfig::is_beam_search)
         .def("is_greedy_decoding", &GenerationConfig::is_greedy_decoding)

@@ -135,6 +135,9 @@ def main() -> None:
     # Set talker_speech_config.return_audio = False to get text-only responses.
     text_config = openvino_genai.GenerationConfig()
     text_config.max_new_tokens = 256
+    # Hand the thinker's tokens and hidden states to the talker as they are produced.
+    # OmniPipeline creates the bridge between the two stages.
+    text_config.stream_text2speech = True
 
     talker_speech_config = openvino_genai.OmniTalkerSpeechConfig(args.model_dir)
     talker_speech_config.return_audio = True

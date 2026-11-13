@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <memory>
+#include <utility>
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embeddings_registry.hpp"
@@ -17,6 +20,20 @@ namespace ov::genai {
 enum class ModelInputType {
     TOKENS,
     EMBEDDINGS
+};
+
+/// @brief Abandon a thinker -> talker bridge still owned by the current generate() scope. Once
+/// ownership is transferred to a decode loop, that loop becomes responsible for ending the bridge.
+struct PendingOmniStreamerGuard {
+    std::shared_ptr<OmniStreamerBase>& slot;
+    ~PendingOmniStreamerGuard() noexcept {
+        if (auto unconsumed = std::exchange(slot, nullptr)) {
+            try {
+                unconsumed->abandon();
+            } catch (...) {
+            }
+        }
+    }
 };
 
 
@@ -175,6 +192,17 @@ public:
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) = 0;
 
+    /// @brief Low-level generation with a thinker -> talker bridge. Backends that do not support
+    ///        bridge streaming reject it; the plain continuous batching implementation overrides it.
+    virtual std::vector<EncodedGenerationResult> generate_with_omni_streamer(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt);
+
     /**
      * Performs monolitic generation based on text prompts
      */
@@ -215,7 +243,8 @@ public:
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
     );
 
 
@@ -259,7 +288,8 @@ public:
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
     );
 
     /**

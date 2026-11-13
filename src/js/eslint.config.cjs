@@ -105,6 +105,7 @@ module.exports = defineConfig([
             "cp_temperature",
             "cp_top_k",
             "frames_indices",
+            "stream_text2speech",
           ],
         },
       ],

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <optional>
 #include <thread>
+#include <utility>
 
 #include "openvino/genai/cache_eviction.hpp"
 
@@ -913,6 +914,115 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std:
     }
 }
 
+namespace {
+
+/// @brief Forwards the thinker's per-step output to a talker bridge while the decode loop is still
+/// running. No-op (and zero cost beyond a null check) when no bridge was passed.
+///
+/// The batch path hands the talker two co-indexed arrays: the full token ids (prompt ids followed
+/// by generated ids) and the intermediate hidden states. Both only ever grow, so this tracks a
+/// cursor into each and writes whatever tail is new. Concatenating every write reproduces both
+/// arrays exactly as the batch path would have built them.
+///
+/// The two cursors move independently on purpose: the arrays are the same length only in the
+/// middle of generation. A hidden state at position i is what *predicted* the token at position
+/// i + 1, so the very last generated token (typically EOS) is sampled from position n-1's state and
+/// never fed back — it never gets a hidden state of its own. Clamping tokens to the hidden-state
+/// count would silently drop it, and the talker would speak a sentence short of its ending.
+class OmniStepForwarder {
+public:
+    /// @param requests Exactly one request with one running sequence; checked by the caller before
+    ///                 the request was added, so a rejected call leaves no request behind.
+    OmniStepForwarder(std::shared_ptr<OmniStreamerBase> streamer,
+                      const std::vector<SequenceGroup::Ptr>& requests)
+        : m_streamer(std::move(streamer)) {
+        if (!m_streamer) {
+            return;
+        }
+        const auto& running_sequences = requests.front()->get_running_sequences();
+        OPENVINO_ASSERT(requests.size() == 1 && running_sequences.size() == 1,
+                        "Internal error: the omni_streamer constraints were supposed to be validated before add_request");
+        // Held by shared_ptr so it stays reachable after the group drops it from the running list.
+        m_sequence = running_sequences.front();
+        m_prompt_ids = requests.front()->get_prompt_ids();
+    }
+
+    OmniStepForwarder(const OmniStepForwarder&) = delete;
+    OmniStepForwarder& operator=(const OmniStepForwarder&) = delete;
+
+    /// @brief A bridge still open here was neither ended nor abandoned by the decode loop, so the
+    /// loop left through an exception the loop's own catch did not see (a throwing text streamer,
+    /// or the bridge's write()). Abandon it so the reader does not block forever.
+    ~OmniStepForwarder() noexcept {
+        abandon();
+    }
+
+    /// @brief Write whatever the last step added, if anything.
+    /// @return What the bridge asked the decode loop to do; RUNNING when there is no bridge.
+    StreamingStatus flush() {
+        if (!m_streamer) {
+            return StreamingStatus::RUNNING;
+        }
+        const auto& hidden_states = m_sequence->get_all_intermediate_hidden_states();
+        const auto& generated_ids = m_sequence->get_generated_ids();
+        const size_t total_tokens = m_prompt_ids.size() + generated_ids.size();
+        // Stop strings are stripped by rewinding generated_ids, so the token count can shrink.
+        // Nothing to take back — those tokens are already on their way — but don't underflow either.
+        const size_t new_tokens = total_tokens > m_forwarded_tokens ? total_tokens - m_forwarded_tokens : 0;
+        const size_t new_hidden_states = hidden_states.size() - m_forwarded_hidden_states;
+        if (new_tokens == 0 && new_hidden_states == 0) {
+            return StreamingStatus::RUNNING;
+        }
+
+        std::vector<int64_t> step_tokens;
+        step_tokens.reserve(new_tokens);
+        for (size_t pos = m_forwarded_tokens; pos < m_forwarded_tokens + new_tokens; ++pos) {
+            step_tokens.push_back(pos < m_prompt_ids.size() ? m_prompt_ids[pos]
+                                                            : generated_ids[pos - m_prompt_ids.size()]);
+        }
+        std::vector<ov::Tensor> step_hidden_states(hidden_states.begin() + m_forwarded_hidden_states,
+                                                   hidden_states.end());
+        m_forwarded_tokens += new_tokens;
+        m_forwarded_hidden_states = hidden_states.size();
+
+        return m_streamer->write({omni_stream::tokens(step_tokens),
+                                  omni_stream::hidden_states(step_hidden_states),
+                                  omni_stream::prompt_length(m_prompt_ids.size())});
+    }
+
+    /// @brief Close the write end. Idempotent, so the exception path can call it without racing
+    /// the normal one. A reader blocked on the bridge is released here and nowhere else.
+    void end() {
+        if (m_streamer) {
+            m_streamer->end();
+            m_streamer.reset();
+        }
+    }
+
+    /// @brief Close the write end after the decode loop threw, so the talker can tell the tokens it
+    /// got are a prefix and stop instead of speaking a half sentence to its end. @see end.
+    void abandon() {
+        if (m_streamer) {
+            auto streamer = std::exchange(m_streamer, nullptr);
+            try {
+                streamer->abandon();
+            } catch (...) {
+            }
+        }
+    }
+
+private:
+    std::shared_ptr<OmniStreamerBase> m_streamer;
+    Sequence::Ptr m_sequence;
+    TokenIds m_prompt_ids;
+    /// How far into each stream the writes have gotten. Kept apart because the streams end at
+    /// different lengths — see the class comment.
+    size_t m_forwarded_tokens = 0;
+    size_t m_forwarded_hidden_states = 0;
+};
+
+}  // namespace
+
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
@@ -920,6 +1030,24 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
+    return generate_with_omni_streamer(input_ids,
+                                       sampling_params,
+                                       streamer,
+                                       nullptr,
+                                       position_ids_list,
+                                       prompt_ids,
+                                       lm_extra_inputs_list);
+}
+
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_with_omni_streamer(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    std::shared_ptr<OmniStreamerBase> omni_streamer,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
+    const std::optional<std::vector<ov::Tensor>>& prompt_ids,
+    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
+    PendingOmniStreamerGuard bridge_guard{omni_streamer};
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
     generate_timer.start();
@@ -982,6 +1110,15 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
+    // Checked before add_request so a rejected call leaves no request behind.
+    OPENVINO_ASSERT(!omni_streamer || input_ids.size() == 1,
+                    "Streaming the thinker's output to a talker requires batch size 1, got ",
+                    input_ids.size(), " requests");
+    OPENVINO_ASSERT(!omni_streamer ||
+                        sampling_params[0].num_return_sequences == 1 && !sampling_params[0].is_beam_search(),
+                    "Streaming the thinker's output to a talker requires a single sequence per request "
+                    "(num_return_sequences == 1, no beam search)");
+
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
@@ -1010,6 +1147,10 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
 
     GenerationHandle& generation = generations.at(0);
 
+    // Build the bridge forwarder after add_request so the sequence it follows exists.
+    OmniStepForwarder omni_forwarder(omni_streamer, all_requests);
+    omni_streamer.reset();
+
     streamer_ptr->start();
     m_sampler->clear_structured_output_compile_times();
     while (has_non_finished_requests()) {
@@ -1028,6 +1169,22 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
                 raw_perf_counters.m_sampling_durations.emplace_back(m_pipeline_metrics.sampling_duration);
             }
+
+            stream_tokens(streamer_ptr, generation);
+
+            switch (omni_forwarder.flush()) {
+            case StreamingStatus::CANCEL:
+                generation->cancel();
+                break;
+            case StreamingStatus::STOP:
+                generation->stop();
+                break;
+            case StreamingStatus::TOOL_CALL_STOP:
+                generation->stop(GenerationFinishReason::TOOL_CALL);
+                break;
+            default:
+                break;
+            }
         } catch (...) {
             const std::exception_ptr error = std::current_exception();
             bool pipeline_failed = false;
@@ -1045,9 +1202,10 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 streamer_ptr->end();
             } catch (...) {
             }
+            // Release the talker too, otherwise it blocks forever on a thinker that threw.
+            omni_forwarder.abandon();
             std::rethrow_exception(error);
         }
-        stream_tokens(streamer_ptr, generation);
     }
 
     auto times = m_sampler->get_structured_output_times();
@@ -1058,6 +1216,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
 
     // waiting for completion of streaming
     streamer_ptr->end();
+    // Everything the last step produced has been forwarded by the loop above; tell the talker the
+    // thinker is done so its read() stops blocking.
+    omni_forwarder.end();
 
     OPENVINO_ASSERT(m_requests.empty(),
                     "Internal error: current request is supposed to be dropped within step() function as completed");

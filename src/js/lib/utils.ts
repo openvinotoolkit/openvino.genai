@@ -358,6 +358,11 @@ export type GenericGenerationConfig = {
   stop_strings?: Set<string>;
   /** a set of tokens that will cause pipeline to stop generating further tokens. */
   stop_token_ids?: Set<Uint>;
+  /** OmniPipeline only: start speech generation while text is still being generated, feeding the
+   * talker one thinker step at a time instead of after the whole response. Requires speech output
+   * (`return_audio`), the continuous batching backend and a single prompt. Doesn't change the
+   * produced text; with a fixed talker `rng_seed` the waveform matches the non-streamed one. */
+  stream_text2speech?: boolean;
 };
 
 export type StructuredOutputGenerationConfig = {

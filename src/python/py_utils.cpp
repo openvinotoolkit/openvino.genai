@@ -761,6 +761,12 @@ py::object any_to_py_object(const ov::Any& any) {
     if (any.is<std::vector<float>>()) {
         return py::cast(any.as<std::vector<float>>());
     }
+    if (any.is<ov::Tensor>()) {
+        return py::cast(any.as<ov::Tensor>());
+    }
+    if (any.is<std::vector<ov::Tensor>>()) {
+        return py::cast(any.as<std::vector<ov::Tensor>>());
+    }
     if (any.is<std::vector<ov::Any>>()) {
         py::list items;
         for (const ov::Any& item : any.as<std::vector<ov::Any>>()) {
