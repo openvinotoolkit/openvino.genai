@@ -691,6 +691,12 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                             "Request ", request_id, ": the draft model dropped ", result.removed_tokens_cnt,
                             " tokens, more than the ", num_pending_candidates,
                             " candidates the main model has not validated");
+            OPENVINO_ASSERT(num_pending_candidates == 0 || result.inserted_tokens_cnt <= result.removed_tokens_cnt,
+                            "Request ",
+                            request_id,
+                            ": the draft model added ",
+                            result.inserted_tokens_cnt - result.removed_tokens_cnt,
+                            " candidates to a validation window the main model has not run");
             request->set_num_validated_tokens(num_pending_candidates - result.removed_tokens_cnt +
                                               result.inserted_tokens_cnt);
         } else if (result.inserted_tokens_cnt > 0 && result.removed_tokens_cnt == 0) {
@@ -952,6 +958,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                        sampling_params.num_assistant_tokens.has_value() &&
                        sampling_params.num_assistant_tokens.value() > 0 &&
                        sampling_params.num_assistant_tokens.value() <= generated_tokens_cnt) {
+                request->pause_generation(true);
+            } else if (sampling_params.assistant_confidence_threshold > 0.f &&
+                       generated_tokens_cnt + 1 >= m_scheduler->get_config().max_num_batched_tokens) {
+                // the target validates the candidates and their base token in one forward
                 request->pause_generation(true);
             } else if (request->get_max_new_tokens() == 0) {
                 request->pause_generation(true);
