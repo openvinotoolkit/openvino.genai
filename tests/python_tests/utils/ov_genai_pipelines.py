@@ -109,8 +109,13 @@ def create_ov_pipeline(
     dynamic_quantization_group_size: str | None = None,
     gguf_reader: str | None = None,
 ) -> LLMPipeline:
-    if ov_config is None:
-        ov_config = get_default_llm_properties()
+    ov_config = get_default_llm_properties() if ov_config is None else ov_config.copy()
+    if Path(models_path).suffix == ".gguf" and gguf_reader is None:
+        gguf_reader = "FRONTEND"
+        ov_config.setdefault("DYNAMIC_QUANTIZATION_GROUP_SIZE", 0)
+
+    if gguf_reader is not None:
+        ov_config["GGUF_READER"] = gguf_reader
 
     if scheduler_config is None:
         scheduler_config = SchedulerConfig()
@@ -120,8 +125,6 @@ def create_ov_pipeline(
             ov_config["enable_save_ov_model"] = enable_save_ov_model
         if dynamic_quantization_group_size is not None: 
             ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
-        if gguf_reader is not None:
-            ov_config["GGUF_READER"] = gguf_reader
 
     if pipeline_type == PipelineType.AUTO:
         return LLMPipeline(models_path, device, ov_config)
