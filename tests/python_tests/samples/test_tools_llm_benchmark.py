@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import csv
 import json
 import pytest
 import sys
@@ -615,6 +616,55 @@ class TestBenchmarkLLM:
             "--media", media_path,
         ] + sample_args
         run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.sensevoice
+    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
+    @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
+    @pytest.mark.parametrize("convert_model", ["tiny-random-sense-voice-small"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["3283_1447_000.tar.gz"], indirect=True)
+    def test_python_tool_llm_benchmark_sensevoice(
+        self, convert_model, download_test_content, media_file, sample_args, tmp_path
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        report_csv = tmp_path / "report.csv"
+        report_json = tmp_path / "report.json"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            Path(download_test_content) / media_file,
+            "--report",
+            report_csv,
+            "--report_json",
+            report_json,
+        ] + sample_args
+        result = run_sample(benchmark_py_command)
+        assert "model_type: sense-voice" in result.stdout
+        assert "Output size: " in result.stdout
+        assert "End-to-end token throughput: " in result.stdout
+        assert any(
+            "[Average]" in line and "End-to-end token throughput: " in line for line in result.stdout.splitlines()
+        )
+
+        perfdata = json.loads(report_json.read_text())["perfdata"]
+        measured = [entry for entry in perfdata["results"] if entry["iteration"] != 0]
+        for entry in perfdata["results"]:
+            assert entry["throughput_token_count"] == entry["output_size"]
+            assert entry["end_to_end_token_throughput"] >= 0
+        assert perfdata["results_averaged"]["end_to_end_token_throughput"] == pytest.approx(
+            sum(entry["throughput_token_count"] for entry in measured)
+            / sum(entry["generation_time"] for entry in measured),
+            rel=1e-3,
+        )
+
+        with open(report_csv, newline="") as f:
+            rows = {row["iteration"]: row for row in csv.DictReader(f)}
+        for iteration in ["0", "1", "avg", "mini", "median"]:
+            assert rows[iteration]["throughput_token_count"] != ""
+            assert float(rows[iteration]["end_to_end_token_throughput(tokens/s)"]) >= 0
 
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["bge-small-en-v1.5"], indirect=True)
