@@ -157,7 +157,10 @@ def test_video_model_genai_with_taylorseer(model_id, model_type, tmp_path):
 @pytest.mark.xfail(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows. Ticket CVS-179750")
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
-    [("optimum-intel-internal-testing/tiny-random-ltx-video", "image-to-video")],
+    [
+        ("optimum-intel-internal-testing/tiny-random-ltx-video", "image-to-video"),
+        ("optimum-intel-internal-testing/tiny-random-ltx2", "image-to-video"),
+    ],
 )
 def test_image2video_model_genai(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"

@@ -105,11 +105,22 @@ public:
                                             bool isolate_modalities = false,
                                             const std::vector<int64_t>& stg_blocks = {});
 
+    /// @brief Same with an explicit video 'timestep' tensor (e.g. per-token zeros on conditioned frames)
+    std::pair<ov::Tensor, ov::Tensor> infer(const ov::Tensor& video_latent,
+                                            const ov::Tensor& audio_latent,
+                                            const ov::Tensor& timestep,
+                                            float audio_timestep,
+                                            bool isolate_modalities = false,
+                                            const std::vector<int64_t>& stg_blocks = {});
+
+    /// @param per_token_timestep Keeps the [B, S] per-token 'timestep' on external-RoPE exports, which otherwise
+    /// take a shared [B, 1] one. Image-to-video needs it to hold the conditioned frame-0 tokens at timestep 0.
     LTX2VideoTransformer3DModel& reshape(int64_t batch_size,
                                          int64_t num_frames,
                                          int64_t height,
                                          int64_t width,
-                                         int64_t audio_num_frames);
+                                         int64_t audio_num_frames,
+                                         bool per_token_timestep = false);
 
     size_t get_expected_batch_size() const;
 
