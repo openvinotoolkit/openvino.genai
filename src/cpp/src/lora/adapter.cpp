@@ -258,10 +258,12 @@ template<typename TENSOR_TYPE, typename NODE_TYPE>
 struct LoRAWeightGetterDefault {
     const std::map<std::string, TENSOR_TYPE>* lora_tensors = nullptr;
     const std::string prefix;
+    const std::string foreign_prefix;    // tensors applied by another model sharing the same adapter file
     mutable std::set<std::string> used_tensors;
     mutable bool active = false;    // true if operator() was called at least once to filter out the case when this object is temporary object that is not used for tensor queries
 
-    LoRAWeightGetterDefault (const std::map<std::string, TENSOR_TYPE>* lora_tensors, const std::string& prefix) : lora_tensors(lora_tensors), prefix(prefix) {}
+    LoRAWeightGetterDefault (const std::map<std::string, TENSOR_TYPE>* lora_tensors, const std::string& prefix, const std::string& foreign_prefix = {}) :
+        lora_tensors(lora_tensors), prefix(prefix), foreign_prefix(foreign_prefix) {}
 
     std::optional<NODE_TYPE> operator() (const std::string& name) const {
         active = true;
@@ -292,10 +294,14 @@ struct LoRAWeightGetterDefault {
     std::list<std::string> get_unused_tensors() const {
         std::list<std::string> unused;
         for(auto const& tensor: *lora_tensors) {
-            if(tensor.first.find(prefix) == 0) {
-                if(used_tensors.find(tensor.first) == used_tensors.end()) {
-                    unused.push_back(tensor.first);
-                }
+            if(tensor.first.find(prefix) != 0) {
+                continue;
+            }
+            if(!foreign_prefix.empty() && tensor.first.find(foreign_prefix) == 0) {
+                continue;
+            }
+            if(used_tensors.find(tensor.first) == used_tensors.end()) {
+                unused.push_back(tensor.first);
             }
         }
         return unused;
@@ -311,7 +317,8 @@ struct LoRAWeightGetterDefault {
             return;
         }
 
-        std::cerr << "[ WARNING ] There unused LoRA tensors. The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
+        std::cerr << "[ WARNING ] There unused LoRA tensors for tensor name prefix \"" << prefix
+                  << "\". The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
 
         for(const auto& unused_name: unused) {
             std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
@@ -532,7 +539,8 @@ public:
 
     OPENVINO_MATCHER_PASS_RTTI("LoRATransformBase");
 
-    LoRATransformBase(const LoRAWeightByNodeGetter& lora_weight_getter) {
+    LoRATransformBase(const LoRAWeightByNodeGetter& lora_weight_getter, const std::string& tensor_name_prefix) :
+        tensor_name_prefix(tensor_name_prefix) {
         register_matcher(
             std::make_shared<ov::pass::pattern::Matcher>(ov::pass::pattern::wrap_type<v0::MatMul, v1::Convolution>(), this->get_type_info().name),
             ([lora_weight_getter, this](ov::pass::pattern::Matcher& m) {
@@ -557,18 +565,20 @@ public:
     }
 
     ~LoRATransformBase () {
-        DEBUG_PRINT("LoRA applied for " << applied << " layers");
+        DEBUG_PRINT("LoRA applied for " << applied << " layers with tensor name prefix \"" << tensor_name_prefix << "\"");
     }
 
 protected:
 
     virtual bool apply(NodePtr node, const LoRANode& lora_weight) = 0;
+    std::string tensor_name_prefix;    // identifies the sub-model the statistics belong to
     size_t applied = 0; // For debug statistics only
 };
 
 class LoRAReplaceConstantTransform : public ov::pass::MatcherPass {
 public:
-    LoRAReplaceConstantTransform(const LoRAConstantByNodeGetter& getter) {
+    LoRAReplaceConstantTransform(const LoRAConstantByNodeGetter& getter, const std::string& tensor_name_prefix) :
+        tensor_name_prefix(tensor_name_prefix) {
         register_matcher(
             std::make_shared<ov::pass::pattern::Matcher>(ov::pass::pattern::wrap_type<v0::Constant>(), this->get_type_info().name),
             ([getter, this](ov::pass::pattern::Matcher& m) {
@@ -593,18 +603,19 @@ public:
     }
 
     ~LoRAReplaceConstantTransform () {
-        DEBUG_PRINT("LoRA Constant replacement is applied for " << applied << " layers");
+        DEBUG_PRINT("LoRA Constant replacement is applied for " << applied << " layers with tensor name prefix \"" << tensor_name_prefix << "\"");
     }
 
 protected:
+    std::string tensor_name_prefix;    // identifies the sub-model the statistics belong to
     size_t applied = 0; // For debug statistics only
     virtual bool apply(NodePtr node, const NodePtr& lora_weight) = 0;
 };
 
 class LoRAReplaceConstantTransformStatic : public LoRAReplaceConstantTransform {
 public:
-    LoRAReplaceConstantTransformStatic(const LoRAConstantByNodeGetter& getter) :
-        LoRAReplaceConstantTransform(getter) {}
+    LoRAReplaceConstantTransformStatic(const LoRAConstantByNodeGetter& getter, const std::string& tensor_name_prefix) :
+        LoRAReplaceConstantTransform(getter, tensor_name_prefix) {}
 
 protected:
     bool apply(NodePtr node, const NodePtr& lora_weight) override {
@@ -616,8 +627,9 @@ protected:
 class LoRAReplaceConstantTransformDynamic : public LoRAReplaceConstantTransform {
 public:
     LoRAReplaceConstantTransformDynamic(const LoRAConstantByNodeGetter& getter,
-                                        const NodePtr if_input) :
-    LoRAReplaceConstantTransform(getter), if_input(if_input) {}
+                                        const NodePtr if_input,
+                                        const std::string& tensor_name_prefix) :
+    LoRAReplaceConstantTransform(getter, tensor_name_prefix), if_input(if_input) {}
 
 protected:
     NodePtr if_input;
@@ -895,8 +907,8 @@ public:
 
     OPENVINO_RTTI("LoRAFuseTransform", "genai", LoRATransformBase);
 
-    LoRAFuseTransform(const LoRAWeightByNodeGetter& lora_weight_getter, const std::string& device_for_fusion = "CPU") :
-        LoRATransformBase(lora_weight_getter),
+    LoRAFuseTransform(const LoRAWeightByNodeGetter& lora_weight_getter, const std::string& tensor_name_prefix, const std::string& device_for_fusion = "CPU") :
+        LoRATransformBase(lora_weight_getter, tensor_name_prefix),
         fusers(device_for_fusion)
     {}
 
@@ -974,7 +986,7 @@ public:
 
     OPENVINO_RTTI("LoRASeparateTransform", "genai", LoRATransformBase);
 
-    LoRASeparateTransform(const LoRAWeightByNodeGetter& lora_getter) : LoRATransformBase(lora_getter) {}
+    LoRASeparateTransform(const LoRAWeightByNodeGetter& lora_getter, const std::string& tensor_name_prefix) : LoRATransformBase(lora_getter, tensor_name_prefix) {}
 
     bool apply (NodePtr node, const LoRANode& lora_weight) override {
         auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
@@ -1534,11 +1546,17 @@ struct AdapterControllerImpl {
     std::unordered_set<std::string> variable_names;
     AdapterConfig current_config;
     bool need_full_apply = true;
-    // Tracks which ov::InferRequest instance last received a full apply, since need_full_apply
-    // alone only reflects whether *some* request was initialized, not this one; a pipeline that
-    // recreates infer requests would otherwise skip set_new_adapter_tensors() for requests that
-    // were never actually initialized.
-    std::optional<ov::InferRequest> last_applied_infer_request;
+
+    struct AppliedInferRequest {
+        ov::InferRequest request;
+        // An alpha-only change does not force a full upload, so track the alphas separately
+        bool alphas_applied;
+    };
+    // Infer requests whose state already holds the current adapters. A single flag is not enough because a model can
+    // be served by a pool of infer requests (VLM), and a pipeline may recreate them; a request missing here was never
+    // initialized and needs a full upload
+    std::vector<AppliedInferRequest> applied_infer_requests;
+    size_t max_applied_infer_requests = 0;
     InferRequestSignatureCache lora_state_evaluators;
 
     PreparedTensorCache prepared_tensor_cache;
@@ -1567,7 +1585,7 @@ struct AdapterControllerImpl {
                     return (*const_getter_impl)(name);
                 };
             }
-            params_getter.weight_getter.push_back(LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or("")));
+            params_getter.weight_getter.push_back(LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or(""), config.foreign_tensor_name_prefix.value_or("")));
             if(params_getter.type != ov::element::f32) {
                 for(auto const& tensor : adapter_impl->get_tensors()) {
                     auto lora_tensor_type = tensor.second.A->get_output_element_type(0);
@@ -1616,23 +1634,27 @@ struct AdapterControllerImpl {
 
         ov::pass::Manager pm;
         auto mode = current_config.get_mode();
+        const std::string tensor_name_prefix = current_config.get_tensor_name_prefix().value_or("");
         if(mode == AdapterConfig::MODE_DYNAMIC || mode == AdapterConfig::MODE_STATIC_RANK || mode == AdapterConfig::MODE_AUTO) {
             // State mode
             params_getter.dynamic_lora_rank = (mode != AdapterConfig::MODE_STATIC_RANK);
-            pm.register_pass<LoRASeparateTransform>(LoRAWeightStateGetter(params_getter, model, variable_ids));
+            pm.register_pass<LoRASeparateTransform>(LoRAWeightStateGetter(params_getter, model, variable_ids), tensor_name_prefix);
             if (const_getter) {
                 LoRAStateGetterForConst getter = LoRAStateGetterForConst(const_getter, model, constant_variable_ids);
-                pm.register_pass<LoRAReplaceConstantTransformDynamic>(getter, getter.create_if_input());
+                pm.register_pass<LoRAReplaceConstantTransformDynamic>(getter, getter.create_if_input(), tensor_name_prefix);
             }
         } else if(mode == AdapterConfig::MODE_STATIC) {
             // Separate constant mode
-            pm.register_pass<LoRASeparateTransform>(weight_as_constant);
-            pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter);
-
+            pm.register_pass<LoRASeparateTransform>(weight_as_constant, tensor_name_prefix);
+            if (const_getter) {
+                pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter, tensor_name_prefix);
+            }
         } else if(mode == AdapterConfig::MODE_FUSE) {
             // Fuse mode
-            pm.register_pass<LoRAFuseTransform>(weight_as_constant);
-            pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter);
+            pm.register_pass<LoRAFuseTransform>(weight_as_constant, tensor_name_prefix);
+            if (const_getter) {
+                pm.register_pass<LoRAReplaceConstantTransformStatic>(const_replacement_getter, tensor_name_prefix);
+            }
         } else {
             OPENVINO_THROW("Unrecognized AdapterConfig::Mode was used: ", mode);
         }
@@ -1703,19 +1725,27 @@ struct AdapterControllerImpl {
                 "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
             current_config = std::move(updated_config);
         }
-        bool is_new_infer_request = !last_applied_infer_request || *last_applied_infer_request != infer_request;
+        if(need_full_apply || diff.adapter || diff.tensor_name_prefix) {
+            // The uploaded A and B matrices became stale for every request.
+            applied_infer_requests.clear();
+        } else if(diff.alpha) {
+            for(auto& applied : applied_infer_requests) {
+                applied.alphas_applied = false;
+            }
+        }
+        auto applied = std::find_if(
+            applied_infer_requests.begin(),
+            applied_infer_requests.end(),
+            [&infer_request](const AppliedInferRequest& applied) { return applied.request == infer_request; });
         try {
-            if(need_full_apply || is_new_infer_request) {
+            if(applied == applied_infer_requests.end()) {
                 set_new_adapter_tensors(infer_request);
                 // Record initialization only after every state upload has succeeded.
-                last_applied_infer_request = infer_request;
+                register_applied_infer_request(infer_request);
                 need_full_apply = false;
-            } else if(diff) {
-                if(diff.adapter || diff.tensor_name_prefix) {
-                    set_new_adapter_tensors(infer_request);
-                } else if(diff.alpha) {
-                    set_new_adapter_alphas(infer_request);
-                }
+            } else if(!applied->alphas_applied) {
+                set_new_adapter_alphas(infer_request);
+                applied->alphas_applied = true;
             }
         } catch (...) {
             // Uploads may have updated only part of the state; retry with a full apply.
@@ -1723,6 +1753,17 @@ struct AdapterControllerImpl {
             need_full_apply = true;
             throw;
         }
+    }
+
+    void register_applied_infer_request(ov::InferRequest& infer_request) {
+        if(max_applied_infer_requests == 0) {
+            max_applied_infer_requests = std::max<size_t>(
+                infer_request.get_compiled_model().get_property(ov::optimal_number_of_infer_requests), 1);
+        }
+        if(applied_infer_requests.size() >= max_applied_infer_requests) {
+            applied_infer_requests.erase(applied_infer_requests.begin());
+        }
+        applied_infer_requests.push_back({infer_request, true});
     }
 
     bool has_state_name(const std::string& name) {
@@ -1768,7 +1809,8 @@ struct AdapterControllerImpl {
             auto adapter_impl = get_adapter_impl(adapter);
             weight_getters.emplace_back(
                 LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(),
-                                                              config.get_tensor_name_prefix().value_or(std::string())));
+                                                              config.get_tensor_name_prefix().value_or(std::string()),
+                                                              config.foreign_tensor_name_prefix.value_or(std::string())));
         }
         return weight_getters;
     }
@@ -1963,7 +2005,8 @@ struct AdapterControllerImpl {
             }
             weight_getters.emplace_back(
                 LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(),
-                                                              current_config.get_tensor_name_prefix().value_or("")));
+                                                              current_config.get_tensor_name_prefix().value_or(""),
+                                                              current_config.foreign_tensor_name_prefix.value_or("")));
         }
 
         auto state = infer_request.query_state();
@@ -2375,6 +2418,9 @@ void AdapterConfig::update (const AdapterConfig& other) {
     }
     if(other.tensor_name_prefix) {
         tensor_name_prefix = other.tensor_name_prefix;
+    }
+    if(other.foreign_tensor_name_prefix) {
+        foreign_tensor_name_prefix = other.foreign_tensor_name_prefix;
     }
 }
 

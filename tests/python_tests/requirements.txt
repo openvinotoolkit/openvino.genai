@@ -1,16 +1,18 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 diffusers==0.39.0
-optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@dd4ed1a86f9c2abf34d8dce777da5b592765b644
-pytest==9.1.1
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@20390257acb98993f99cdd3bf4df1c983eccadef
+pytest==9.2.0
 transformers==5.5.4
 hf_transfer==0.1.9
 # tqdm 4.70.0 thread_map fails on generators, which breaks snapshot_download for repos with >1000 files
-tqdm==4.69.1
+tqdm==4.70.1
 gguf==0.19.0
+# genai-cli provides the transformers version a natively exported model needs (e.g. molmo2) with uv
+uv==0.13.7
 
 # rag requirements
 langchain_community==0.4.2
-langchain-core==1.6.5
+langchain-core==1.7.6
 
 # requirements for specific models
 # - Qwen/Qwen-7B
@@ -20,7 +22,7 @@ einops==0.8.2
 torchvision==0.26.0
 pillow==13.0.0
 # - openbmb/MiniCPM-V-2
-timm==1.0.30
+timm==1.0.31
 # - openai/whisper-base
 librosa==0.11.0
 soundfile==0.14.0
@@ -29,14 +31,15 @@ datasets==3.6.0; sys_platform != "linux"
 torchcodec==0.11.0; sys_platform == "linux"
 rouge==1.0.1
 # - microsoft/Phi-4-multimodal-instruct
-peft==0.21.0
+peft==0.21.2
 # - openbmb/MiniCPM-o-2_6
 vocos==0.1.0
 torchaudio==2.11.0
-vector-quantize-pytorch==1.31.6
+vector-quantize-pytorch==1.32.2
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
-av==18.1.0
-imageio==2.37.4
+av==18.1.0; python_version < "3.12"
+av==19.0.2; python_version >= "3.12"
+imageio==2.38.1
 decord==0.6.0; platform_system != "Darwin"
 opencv-python==5.0.0.93
 # - kokoro TTS

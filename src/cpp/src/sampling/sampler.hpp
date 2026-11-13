@@ -21,6 +21,7 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+#include "sampling/block_row_source.hpp"
 #include "sampling/logit_transformers.hpp"
 #include "sampling/logit_processor.hpp"
 #include "continuous_batching/scheduler.hpp"
@@ -29,6 +30,8 @@
 #include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov::genai {
+class SamplingDistribution;
+
 // Handle stop_token_ids
 inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t> & stop_token_ids) {
     for (auto & stop_token_id : stop_token_ids) {
@@ -145,13 +148,32 @@ class Sampler {
 
     Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
     Token _greedy_sample(const Logits& logits, size_t top_logprobs) const;
-    std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr& sequence_group,
                                                  const std::pair<size_t, std::set<std::string>>& stop_strings);
 
-    bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities,
-                            std::mt19937& rng_engine);
+    // Draws the token of the running sequence. The first step of a request with num_return_sequences > 1 draws a
+    // token per sequence and forks the other sequences off the running one.
+    Token _multinomial_sample(SequenceGroup::Ptr sequence_group,
+                              const SamplingDistribution& distribution,
+                              RequestSamplerContext& context,
+                              SamplerOutput& sampler_output);
+
+    // A draft or target-only step: samples the token after the last row of each running sequence. A draft records the
+    // proposal of each sampled token.
+    void _sample_next_tokens(SequenceGroup::Ptr sequence_group,
+                             const ov::Tensor& sequence_group_logits,
+                             RequestSamplerContext& context,
+                             size_t num_tokens_to_process,
+                             SequenceGroupSamplingInfo& sg_sampling_info);
+
+    // A main model step over a window of candidates: verifies the candidates in order, with speculative sampling for
+    // sampled drafts and by exact match for greedy decoding and prompt lookup, then samples the token after the window.
+    // The first rejected candidate is replaced by a token drawn for its position, which ends the window.
+    void _validate_candidates(SequenceGroup::Ptr sequence_group,
+                              const ov::Tensor& sequence_group_logits,
+                              RequestSamplerContext& context,
+                              size_t num_tokens_to_process,
+                              SequenceGroupSamplingInfo& sg_sampling_info);
 
     // Verify the candidate tree against target-model logits: greedily accept the longest
     // matching prefix across all tree paths, then append a bonus token.
@@ -165,6 +187,26 @@ class Sampler {
                                                         RequestSamplerContext& context,
                                                         bool is_validation_mode_enabled,
                                                         bool notify_handle);
+
+    // Block sampling of one request: samples one token from each gathered row, in row order, in place of the
+    // request's trailing placeholder tokens.
+    SequenceGroupSamplingInfo _sample_block_from_sequence_group(const SequenceGroup::Ptr& sequence_group,
+                                                                const ov::Tensor& sequence_group_logits,
+                                                                RequestSamplerContext& context);
+    // Removes the request's placeholder tokens and returns its block, whose rows start at first_row. The block has no
+    // candidates when its window gathered no rows or the request has no token left to draft.
+    SampledBlock _start_block(const SequenceGroup::Ptr& sequence_group, size_t first_row);
+    // Samples the next token of a block from its row with the request's logit processors and appends it.
+    int64_t _sample_block_token(const Sequence::Ptr& sequence,
+                                const ov::genai::GenerationConfig& sampling_params,
+                                Logits& logits,
+                                RequestSamplerContext& context);
+    // Appends a token that a row source drew for a block.
+    void _append_block_token(const Sequence::Ptr& sequence, const BlockToken& token, RequestSamplerContext& context);
+    // Samples the blocks of all requests from the rows of m_block_row_source, by request or by position.
+    std::vector<SequenceGroupSamplingInfo> _sample_blocks(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                                          const std::vector<size_t>& first_rows,
+                                                          const ov::Tensor& logits);
 
     // request ID => beam search tracking information (kept separate — has its own mutex)
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
@@ -181,6 +223,17 @@ class Sampler {
 
     ThreadPool m_thread_pool;
     std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
+    // Whether m_d2t_mapping sends the draft tokens to distinct non-negative target ids, which recording proposals
+    // in target ids requires.
+    bool m_d2t_mapping_is_one_to_one = false;
+    bool m_collect_draft_proposals = false;
+    bool m_block_sampling = false;
+    // Rows from the row of the last real token (the seed) to the first gathered row: 1 when the gathered rows start
+    // at the first placeholder (DFlash), 0 when they start at the seed (DeepSpec).
+    size_t m_block_sampling_start_offset = 1;
+    // the rows block sampling draws from instead of the gathered logits rows
+    std::shared_ptr<BlockRowSource> m_block_row_source;
+
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -211,9 +264,22 @@ public:
     std::pair<std::map<std::string, float>, std::vector<float>> get_structured_output_times();
     void clear_structured_output_compile_times();
 
-    void set_d2t_for_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t) {
-        m_d2t_mapping = d2t;
-    };
+    void set_d2t_for_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t);
+
+    // A draft pipeline's sampler records the distribution q(.) of each multinomially sampled token, which the main
+    // pipeline needs to verify it.
+    void set_collect_draft_proposals(bool collect_draft_proposals) {
+        m_collect_draft_proposals = collect_draft_proposals;
+    }
+
+    // Block sampling: each gathered row of a request yields one token, in row order, and the tokens replace the
+    // request's trailing placeholder tokens. Used by the DFlash draft. A row source gives the row of each token in
+    // place of the gathered row, and its block ends when it has no row for the next position.
+    void set_block_sampling(size_t start_offset, std::shared_ptr<BlockRowSource> row_source = nullptr) {
+        m_block_sampling = true;
+        m_block_sampling_start_offset = start_offset;
+        m_block_row_source = std::move(row_source);
+    }
 };
 
 class Sampler::Searcher {

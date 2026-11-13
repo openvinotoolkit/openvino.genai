@@ -13,6 +13,10 @@ Refer to the [Supported Models](../../supported-models/index.mdx) for a list of 
 
 For downloading pre-converted models, see [Download Pre-Converted OpenVINO Models](./download-openvino-models.mdx).
 
+Models are converted with the `optimum-cli` tool of [Optimum Intel](https://huggingface.co/docs/optimum/en/intel/openvino/export).
+OpenVINO GenAI also provides its own export tool, [`genai-cli`](#genai-cli) (preview), as an additional option:
+it takes the same options as `optimum-cli export openvino` and converts models that `optimum-cli` does not support yet.
+
 ## Converting Models from Hugging Face
 
 1. Install `optimum-intel` package to download, convert and optimize models:
@@ -54,6 +58,64 @@ For downloading pre-converted models, see [Download Pre-Converted OpenVINO Model
     Check a full list of conversion options [here](https://huggingface.co/docs/optimum/en/intel/openvino/export).
 
     :::
+
+## Converting Models with genai-cli (Preview) {#genai-cli}
+
+:::warning Preview feature
+`genai-cli` is in preview. Its options, the list of natively converted models and the layout of the exported files
+may change in future releases.
+:::
+
+`genai-cli` is the export tool shipped with OpenVINO GenAI. It accepts the same options as `optimum-cli export openvino`
+and works in two modes:
+
+- **Native export.** The models listed in the table below are converted by `genai-cli` itself, without `optimum-intel`.
+  Some of them, such as Molmo2, are converted **only** by `genai-cli` because `optimum-cli` does not support them yet.
+- **Fallback export.** Every other model is exported through `optimum-intel` with the same command line,
+  so `genai-cli` can be used instead of `optimum-cli` for any supported model.
+
+1. Install OpenVINO GenAI with the export dependencies (`torch`, `torchvision`, `transformers`, `nncf` and `uv`):
+    ```bash
+    pip install openvino-genai[export]
+    ```
+
+2. Export a model. For example, Molmo2 (`allenai/MolmoWeb-4B`) compressed to INT4:
+    ```bash
+    genai-cli export -m allenai/MolmoWeb-4B --trust-remote-code --weight-format int4 MolmoWeb-4B-ov-int4
+    ```
+    The output directory contains the OpenVINO IRs, the converted tokenizer and detokenizer, and the configuration
+    files the GenAI pipelines read, so it can be passed to `VLMPipeline` directly.
+
+    A model without a native exporter is exported the same way, through `optimum-intel`:
+    ```bash
+    genai-cli export -m TinyLlama/TinyLlama-1.1B-Chat-v1.0 --weight-format int4 TinyLlama_1_1b_v1_ov
+    ```
+
+    Run `genai-cli export --help` for the full list of options. A local model directory, for example one downloaded
+    from [ModelScope](#converting-models-from-modelscope), can be passed to `-m` as well.
+
+| Model type | Architecture | Converted by | transformers version |
+|------------|--------------|--------------|----------------------|
+| `molmo2` | `Molmo2ForConditionalGeneration` | `genai-cli` only (native) | 4.57.6 |
+| Any other | | `optimum-intel` (fallback) | Supported by `optimum-intel` for the model |
+
+:::info How genai-cli provides dependencies
+
+- **transformers version overlays.** Every model is exported with the `transformers` version it is known to work with.
+  If the installed version differs, `genai-cli` runs the export again in an ephemeral environment created by
+  [`uv`](https://docs.astral.sh/uv/) on top of the active one (`uv run --with transformers==<version>`).
+  The active virtual environment is never modified; the overlays are cached by `uv`.
+- **Fallback exports.** For models without a native exporter, `genai-cli` runs `optimum-cli export openvino` with
+  the same arguments, switching to a `transformers` version supported by `optimum-intel` for the model if needed.
+  If `optimum-intel` is not installed, it is downloaded (without dependencies) to
+  `~/.cache/openvino_genai/genai-cli`, and `torch`, `openvino` and `nncf` are taken from the active environment.
+  Set `GENAI_CLI_OPTIMUM_INTEL_SPEC` to export with another `optimum-intel` version, for example
+  `optimum-intel @ git+https://github.com/huggingface/optimum-intel.git`.
+- **Native exporters** support FP32, FP16 and data-free weight compression (`int8`, `int4`, `mxfp4`, `nf4`, `cb4`,
+  with `--ratio`, `--group-size`, `--sym`, `--awq` and the other data-free options). Data-aware compression
+  (`--dataset`), full quantization (`--quant-mode`), `--disable-stateful` and `--model-kwargs` are rejected for them.
+
+:::
 
 ## Converting Models from ModelScope
 

@@ -1,10 +1,14 @@
+export type VLMModel = {
+  name: string;
+  links: string[];
+  notesLink?: string;
+  // The model is converted by genai-cli only, optimum-cli does not support it yet.
+  genaiCliOnly?: boolean;
+};
+
 type VLMModelType = {
   architecture: string;
-  models: Array<{
-    name: string;
-    links: string[];
-    notesLink?: string;
-  }>;
+  models: VLMModel[];
 };
 
 export const VLM_MODELS: VLMModelType[] = [
@@ -158,11 +162,34 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Molmo2ForConditionalGeneration',
+    models: [
+      {
+        name: 'Molmo2',
+        links: ['https://huggingface.co/allenai/MolmoWeb-4B'],
+        notesLink: '#molmo2-notes',
+        genaiCliOnly: true,
+      },
+    ],
+  },
+  {
     architecture: 'MuseGlimmerForConditionalGeneration',
     models: [
       {
         name: 'Muse-Glimmer',
         links: ['https://huggingface.co/meta-models/Muse-Glimmer-30B'],
+      },
+    ],
+  },
+  {
+    architecture: 'Mistral3ForConditionalGeneration',
+    models: [
+      {
+        name: 'Mistral3',
+        links: [
+          'https://huggingface.co/mistralai/Ministral-3-3B-Reasoning-2512',
+        ],
+        notesLink: '#mistral3-notes',
       },
     ],
   },
