@@ -20,8 +20,8 @@ void validate_mtp_generation_config(const GenerationConfig& config) {
                     "assistant_confidence_threshold must be 0.f.");
     OPENVINO_ASSERT(!config.is_tree_search(),
                     "MTP speculative decoding does not support tree search.");
-    OPENVINO_ASSERT(config.is_greedy_decoding(),
-                    "MTP speculative decoding supports greedy decoding only.");
+    OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
+                    "MTP speculative decoding supports greedy and multinomial decoding only.");
     OPENVINO_ASSERT(config.num_return_sequences == 1,
                     "MTP speculative decoding does not support parallel sampling; "
                     "num_return_sequences must be 1.");
@@ -134,9 +134,7 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::enable_mtp_hidden_state_pairin
 
 GenerationConfig ContinuousBatchingPipeline::MtpDecodingImpl::make_draft_generation_config(
     const GenerationConfig& config) {
-    GenerationConfig draft_config = config;
-    draft_config.ignore_eos = true;
-    draft_config.stop_strings.clear();
+    GenerationConfig draft_config = make_draft_sampling_params(config);
     if (draft_config.max_new_tokens == SIZE_MAX && draft_config.max_length == SIZE_MAX) {
         // The draft is stopped by the target, but ignore_eos requires a finite generation limit.
         draft_config.max_new_tokens = SIZE_MAX - 1;
@@ -160,6 +158,10 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
                         (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
                          prompt_ids->get_size() == input_ids.get_shape()[1]),
                     "MTP prefix caching requires built-in prompt preparation with one token ID per embedding");
+    OPENVINO_ASSERT(sampling_params.is_greedy_decoding() || !m_main_pipeline->is_prefix_caching_enabled() ||
+                        !m_main_pipeline->has_linear_attention_cache(),
+                    "MTP speculative decoding of models with linear-attention state supports greedy decoding only "
+                    "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
     // Use insert_or_assign, not insert: a finished prior request may leave a stale (stopped) handle
     // under the same request_id. insert() would be a no-op there, dropping the new handle as a
     // temporary whose destructor stops the freshly added draft request before it can draft.
@@ -256,8 +258,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
                                   const std::vector<ov::Tensor>& input_ids,
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
-                            (input_ids.size() == 1 && sampling_params[0].is_greedy_decoding()),
-                        "MTP streaming only supports batch size=1 with greedy decoding.");
+                            (input_ids.size() == 1 &&
+                             (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial())),
+                        "MTP streaming only supports batch size=1 with greedy/multinomial decoding.");
     };
     strategy.start_timer = []() { return std::chrono::steady_clock::now(); };
     strategy.stop_timer = [](const TimePoint& start) {

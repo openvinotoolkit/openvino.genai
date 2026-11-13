@@ -5,6 +5,7 @@ from openvino_genai import GenerationConfig, WhisperGenerationConfig, ASRGenerat
 import json
 import math
 import os
+import numpy as np
 import pytest
 
 
@@ -312,6 +313,42 @@ def test_stop_strings_are_read_from_json(tmp_path, stop_strings):
     assert generation_config.stop_strings == expected
 
 
+@pytest.mark.parametrize("config_source", ["kwargs", "update"])
+@pytest.mark.parametrize(
+    "stop_strings, expected",
+    [
+        ({"<|end|>", "###"}, {"<|end|>", "###"}),
+        (["<|end|>", "###"], {"<|end|>", "###"}),
+        (["Observation: done"], {"Observation: done"}),
+        ("<|end|>", {"<|end|>"}),
+        (" the", {" the"}),
+        ("", set()),
+        # a string with spaces is a single stop string, it isn't split into words
+        ("Observation: done", {"Observation: done"}),
+    ],
+)
+def test_stop_strings_from_kwargs(config_source, stop_strings, expected):
+    if config_source == "kwargs":
+        config = GenerationConfig(max_new_tokens=1, stop_strings=stop_strings)
+    else:
+        config = GenerationConfig(max_new_tokens=1)
+        config.update_generation_config(stop_strings=stop_strings)
+
+    assert config.stop_strings == expected
+
+
+@pytest.mark.parametrize("config_source", ["kwargs", "update"])
+@pytest.mark.parametrize("stop_token_ids", [{2, 5}, [2, 5], [5, 2, 5]])
+def test_stop_token_ids_from_kwargs(config_source, stop_token_ids):
+    if config_source == "kwargs":
+        config = GenerationConfig(max_new_tokens=1, stop_token_ids=stop_token_ids)
+    else:
+        config = GenerationConfig(max_new_tokens=1)
+        config.update_generation_config(stop_token_ids=stop_token_ids)
+
+    assert config.stop_token_ids == {2, 5}
+
+
 @pytest.mark.parametrize("use_itn", [True, False])
 def test_asr_use_itn_read_from_json(tmp_path, use_itn):
     config_path = tmp_path / "generation_config.json"
@@ -321,3 +358,26 @@ def test_asr_use_itn_read_from_json(tmp_path, use_itn):
     config = ASRGenerationConfig(config_path)
 
     assert config.use_itn == use_itn
+
+
+@pytest.mark.parametrize("config_source", ["kwargs", "update"])
+@pytest.mark.parametrize(
+    "fields",
+    [
+        dict(max_new_tokens=np.int64(7)),
+        dict(max_new_tokens=np.int32(7), top_k=np.uint8(3)),
+        dict(do_sample=np.bool_(True), top_p=np.float64(0.5)),
+        dict(do_sample=np.bool_(False), ignore_eos=np.bool_(True)),
+        dict(do_sample=True, temperature=np.float32(0.5)),
+        dict(do_sample=True, temperature=np.float16(0.5)),
+    ],
+)
+def test_numpy_scalars_from_kwargs(config_source, fields):
+    if config_source == "kwargs":
+        config = GenerationConfig(**fields)
+    else:
+        config = GenerationConfig()
+        config.update_generation_config(**fields)
+
+    for key, value in fields.items():
+        assert getattr(config, key) == value, key
