@@ -420,6 +420,10 @@ class RerankingSimilarity:
 
 
 class VideoSimilarity:
+    SSIM_KEY = "SSIM (higher is better, 1.0 best)"
+    LPIPS_KEY = "LPIPS (lower is better, 0 best)"
+    TLPIPS_KEY = "tLPIPS (lower is better, 0 best)"
+
     def __init__(self) -> None:
         from transformers import VivitImageProcessor, VivitModel
 
@@ -546,7 +550,8 @@ class VideoSimilarity:
         ssim_per_video = []
         lpips_per_video = []
         tlpips_per_video = []
-        for gold, prediction in tqdm(zip(videos_gold, videos_prediction), desc="Video Similarity evaluation"):
+        pairs = list(zip(videos_gold, videos_prediction))
+        for gold, prediction in tqdm(pairs, total=len(pairs), desc="Video Similarity evaluation"):
             # vivit requires 32 frames
             gold_video = self.load_video_frames(str(gold), num_frames=self.embeds_model_frame_num)
             predicted_video = self.load_video_frames(str(prediction), num_frames=self.embeds_model_frame_num)
@@ -564,10 +569,12 @@ class VideoSimilarity:
             lpips_per_video.append(lpips)
             tlpips_per_video.append(tlpips)
 
-        metric_dict = {"similarity": np.mean(metric_per_video)}
-        return metric_dict, {
+        metric_per_video_dict = {
             "similarity": metric_per_video,
-            "SSIM (higher is better, 1.0 best)": ssim_per_video,
-            "LPIPS (lower is better, 0 best)": lpips_per_video,
-            "tLPIPS (lower is better, 0 best)": tlpips_per_video,
+            self.SSIM_KEY: ssim_per_video,
+            self.LPIPS_KEY: lpips_per_video,
+            self.TLPIPS_KEY: tlpips_per_video,
         }
+        # the averages go to metrics.csv and the log, under the same names as the per-video columns
+        metric_dict = {name: np.mean(values) for name, values in metric_per_video_dict.items()}
+        return metric_dict, metric_per_video_dict

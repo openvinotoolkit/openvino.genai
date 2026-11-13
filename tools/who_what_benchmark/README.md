@@ -192,6 +192,29 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai
 ```
 
+#### Reference-free video metrics
+
+`similarity` measures how far the target videos are from the base videos: the cosine similarity of ViViT embeddings
+(`similarity`), plus SSIM, LPIPS and tLPIPS (LPIPS of frame differences, i.e. motion), each per video and averaged.
+LPIPS reacts most to changed structures and textures, so sorting the videos by it is the quickest way to find the ones a
+compressed model changed most. None of these can tell a different but equally good video from a degraded one. Two optional
+metrics score every video on its own and report the base value, the target value and the difference per video:
+
+* `video_quality`: imaging quality (MUSIQ, needs `pip install pyiqa`), aesthetic quality (LAION predictor on CLIP ViT-L/14
+  features) and temporal flicker. The formulas follow VBench (Huang, 2023), so the values are comparable with VBench
+  results. Imaging quality rates technical quality (sharpness, noise, banding); it does not detect geometric distortion,
+  so a video that LPIPS flags as changed still needs a look to decide whether the change is a degradation.
+* `object_presence`: fraction of frames in which an open-vocabulary detector (OWLv2) finds the objects listed for the prompt.
+  The built-in prompts carry their objects; a custom dataset provides them in an `objects` column, separated by `;`.
+  The `objects_lost` column names the objects the base model shows and the target does not.
+
+```sh
+wwb --base-model Lightricks/LTX-Video --gt-data video_gen_test/gt.csv --model-type text-to-video --hf \
+    --metrics similarity video_quality object_presence
+wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai \
+    --metrics similarity video_quality object_presence
+```
+
 ### Compare Text-to-video models with LoRA (LTX-Video)
 
 Community LoRA adapters for LTX-Video are available on [HuggingFace](https://huggingface.co/models?other=base_model:adapter:Lightricks/LTX-Video).
