@@ -608,7 +608,7 @@ public:
             );
             ngram_embeddings_context.init(
                 sequence_groups[first_sequence_groups_id]->get_ngram_embeddings(),
-                m_inputs_embedder->get_ngram_embeddings_callback()
+                m_inputs_embedder ? m_inputs_embedder->get_ngram_embeddings_callback() : nullptr
             );
         }
 
