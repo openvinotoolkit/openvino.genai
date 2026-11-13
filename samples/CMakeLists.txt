@@ -7,6 +7,7 @@ if(ENABLE_SAMPLES)
     add_subdirectory(cpp/video_generation)
     add_subdirectory(cpp/speech_generation)
     add_subdirectory(cpp/visual_language_chat)
+    add_subdirectory(cpp/bagel)
     add_subdirectory(cpp/automatic_speech_recognition)
     add_subdirectory(cpp/omni)
     add_subdirectory(cpp/rag)
@@ -32,6 +33,7 @@ install(DIRECTORY
             cpp/video_generation
             cpp/speech_generation
             cpp/visual_language_chat
+            cpp/bagel
             cpp/automatic_speech_recognition
             cpp/omni
             cpp/rag
@@ -43,6 +45,7 @@ install(DIRECTORY
             python/video_generation
             python/speech_generation
             python/visual_language_chat
+            python/bagel
             python/automatic_speech_recognition
             python/omni
             python/rag

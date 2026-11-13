@@ -57,6 +57,15 @@
 - 'samples/cpp/omni/**/*'
 - 'samples/python/omni/**/*'
 
+'category: bagel':
+- 'src/cpp/include/openvino/genai/bagel/**/*'
+- 'src/cpp/src/bagel/**/*'
+- 'src/python/py_bagel_pipeline.cpp'
+- 'tests/python_tests/test_bagel_pipeline.py'
+- 'tests/python_tests/utils/bagel_test_assets.py'
+- 'samples/cpp/bagel/**/*'
+- 'samples/python/bagel/**/*'
+
 'category: RAG':
 - 'src/cpp/include/openvino/genai/rag/**/*'
 - 'src/cpp/src/rag/**/*'
