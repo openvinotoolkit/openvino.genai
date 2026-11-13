@@ -49,7 +49,9 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    LTX2TextConnectors& reshape(int batch_size);
+    /// @param seq_len Text sequence length; -1 keeps the model's own dimension. A positive value makes the model fully
+    /// static, which devices such as NPU require.
+    LTX2TextConnectors& reshape(int batch_size, int64_t seq_len = -1);
 
     /// @brief Projects text encoder hidden states into per-modality embeddings for the transformer. Each
     /// connector's external RoPE (cos, sin) is computed here on the host. Legacy exports compute it internally.
