@@ -913,3 +913,86 @@ class TestTextToSpeechSample:
         assert "Text successfully converted to audio file" in c_result.stdout
 
         compare_speech_audio(cpp_output_wav, py_output_wav, c_output_wav, 24000, True)
+
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model,variant,variant_args",
+        [
+            ("tiny-random-qwen3-tts", "base", ()),
+            ("tiny-random-qwen3-tts-customvoice", "customvoice", ("--speaker", "serena")),
+            ("tiny-random-qwen3-tts-voicedesign", "voice-design", ("--instruct", "Speak calmly.")),
+        ],
+        ids=["base", "customvoice", "voice-design"],
+        indirect=["convert_model"],
+    )
+    @pytest.mark.parametrize("sample_kind", ["python", "cpp", "c"])
+    @pytest.mark.parametrize("qwen3_reference_audio_wav_path", [1], ids=["mono"], indirect=True)
+    def test_sample_qwen3_tts_sampling_options(
+        self,
+        convert_model,
+        qwen3_reference_audio_wav_path: str,
+        variant: str,
+        variant_args: tuple[str, ...],
+        sample_kind: str,
+        tmp_path: Path,
+    ):
+        prompt = "Hello from OpenVINO GenAI Qwen3 sample."
+        if sample_kind == "python":
+            launcher = [sys.executable, SAMPLES_PY_DIR / "speech_generation/qwen3_tts.py"]
+        elif sample_kind == "cpp":
+            launcher = [SAMPLES_CPP_DIR / "qwen3_tts"]
+        else:
+            launcher = [SAMPLES_C_DIR / "qwen3_tts_c"]
+
+        if variant == "base":
+            variant_args = ("--ref_audio_wav_path", qwen3_reference_audio_wav_path)
+
+        def run_generation(output_name: str, *sampling_args: str) -> np.ndarray:
+            output_wav = tmp_path / f"{output_name}.wav"
+            run_sample(
+                [
+                    *launcher,
+                    variant,
+                    convert_model,
+                    prompt,
+                    *variant_args,
+                    "--language",
+                    "english",
+                    "--max_new_tokens",
+                    "32",
+                    "--output_wav_path",
+                    str(output_wav),
+                    *sampling_args,
+                ]
+            )
+            audio, sample_rate = sf.read(output_wav, dtype="float32")
+            assert sample_rate == 24000
+            assert audio.ndim == 1 and audio.size > 0
+            assert np.isfinite(audio).all()
+            return audio
+
+        def sampling_args(do_sample: str, subtalker_dosample: str, seed: str = "7") -> tuple[str, ...]:
+            return ("--do_sample", do_sample, "--subtalker_dosample", subtalker_dosample, "--seed", seed)
+
+        greedy = run_generation("greedy_1", *sampling_args("false", "false"))
+        np.testing.assert_array_equal(greedy, run_generation("greedy_2", *sampling_args("false", "false")))
+
+        sampled = run_generation("sampled_seed_7_1", *sampling_args("true", "true"))
+        np.testing.assert_array_equal(sampled, run_generation("sampled_seed_7_2", *sampling_args("true", "true")))
+
+        do_sample_only = run_generation("do_sample_only", *sampling_args("true", "false"))
+        assert not np.array_equal(do_sample_only, greedy)
+        subtalker_dosample_only = run_generation("subtalker_dosample_only", *sampling_args("false", "true"))
+        assert not np.array_equal(subtalker_dosample_only, greedy)
+        another_seed = run_generation("sampled_seed_8", *sampling_args("true", "true", seed="8"))
+        assert not np.array_equal(another_seed, sampled)
+
+        for invalid_args in (
+            ("--do_sample", "maybe"),
+            ("--subtalker_dosample", "2"),
+            ("--seed", "abc"),
+        ):
+            with pytest.raises(subprocess.CalledProcessError):
+                run_generation("invalid", *invalid_args)
