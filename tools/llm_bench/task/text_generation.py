@@ -321,8 +321,11 @@ def run_text_generation(
     )
     # special tokens (EOS, ...) out: they are no words of the output (count_words),
     # and an output of them only is "empty" (text_output_repr)
-    output_text = (tokenizer.decode(result[0][len(result[0]) - first_gen_size :], skip_special_tokens=True)
-                   if first_gen_size > 0 else "")
+    output_text = (
+        tokenizer.decode(result[0][len(result[0]) - first_gen_size :], skip_special_tokens=True)
+        if first_gen_size > 0
+        else ""
+    )
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args["batch_size"],
