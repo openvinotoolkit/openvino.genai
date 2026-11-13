@@ -152,6 +152,10 @@ bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 // Sets a key/value pair in config only if the key is not already present.
 void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any value);
 
+// Returns the value of a YES/NO (or bool) property, false when it is absent.
+// Any other value throws an error that names the property.
+bool is_property_enabled(const ov::AnyMap& config, const std::string& name);
+
 // Returns true when NPUW is enabled via NPU_USE_NPUW.
 bool is_npuw_enabled(const ov::AnyMap& config);
 

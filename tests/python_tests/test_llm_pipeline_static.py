@@ -10,6 +10,8 @@ from openvino_genai import (
     ChatHistory,
     TokenizedInputs,
     StreamingStatus,
+    SchedulerConfig,
+    draft_model,
 )
 from pathlib import Path
 
@@ -31,6 +33,7 @@ from utils.generation_config import (
     get_beam_search,
 )
 from data.models import get_models_list
+from test_stateful_speculative_decoding import get_npu_llm_properties_for_test
 
 
 if sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"]:
@@ -489,3 +492,101 @@ def test_readonly_input_tensor(npu_model: LLMPipeline):
 
     readonly_tensor = ov.Tensor(input_ids)
     npu_model.generate(readonly_tensor, max_new_tokens=5)
+
+
+# The NPU PA front-end on CPU: NPUW_PA routes LLMPipeline on NPU to the
+# continuous batching pipeline, whose PA model the front-end runs.
+NPUW_PA_CONFIG: dict = {"NPU_USE_NPUW": "YES", "NPUW_PA": "YES", "NPUW_DEVICES": "CPU", "NPUW_F16IC": "NO"}
+
+# A batch of two prompts, which only the continuous batching route accepts on NPU.
+NPUW_PA_PROMPTS: list[str] = ["What is OpenVINO?", "Why do LLM servers batch requests?"]
+
+
+def npuw_pa_greedy() -> GenerationConfig:
+    # A few tokens are enough to check the route, and each one is slow on the emulated NPUW.
+    config = get_greedy()
+    config.max_new_tokens = 8
+    return config
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize(
+    "npuw_pa_config",
+    [
+        pytest.param(NPUW_PA_CONFIG, id="top_level"),
+        pytest.param({"NPU_USE_NPUW": "YES", "DEVICE_PROPERTIES": {"NPU": NPUW_PA_CONFIG}}, id="device_properties"),
+        pytest.param(
+            {"NPU_USE_NPUW": "YES", "MODEL_PROPERTIES": {"language_model": NPUW_PA_CONFIG}}, id="model_properties"
+        ),
+    ],
+)
+def test_npuw_pa_runs_through_continuous_batching(
+    llm_model: OVConvertedModelSchema, ov_model: LLMPipeline, npuw_pa_config: dict
+):
+    npu_pipe = LLMPipeline(llm_model.models_path, "NPU", **(npuw_pa_config | get_default_llm_properties()))
+
+    ref_out = ov_model.generate(NPUW_PA_PROMPTS, npuw_pa_greedy())
+    actual_out = npu_pipe.generate(NPUW_PA_PROMPTS, npuw_pa_greedy())
+
+    assert ref_out.texts == actual_out.texts
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_npuw_pa_off_keeps_the_stateful_pipeline(llm_model: OVConvertedModelSchema):
+    npu_pipe = LLMPipeline(llm_model.models_path, "NPU", **(DEFAULT_CONFIG | {"NPUW_PA": "NO"}))
+
+    with pytest.raises(RuntimeError, match="batch size"):
+        npu_pipe.generate(NPUW_PA_PROMPTS, npuw_pa_greedy())
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize(
+    "properties, with_draft, message",
+    [
+        pytest.param(
+            NPUW_PA_CONFIG | {"ATTENTION_BACKEND": "SDPA"},
+            False,
+            "NPUW_PA=YES needs ATTENTION_BACKEND=PA",
+            id="sdpa_backend",
+        ),
+        pytest.param(NPUW_PA_CONFIG, True, "NPUW_PA=YES does not support speculative decoding", id="draft_model"),
+        pytest.param(NPUW_PA_CONFIG | {"NPUW_PA": "MAYBE"}, False, "'NPUW_PA' must be 'YES' or 'NO'", id="bad_value"),
+        pytest.param(
+            DEFAULT_CONFIG | {"ATTENTION_BACKEND": "PA"},
+            False,
+            "ATTENTION_BACKEND=PA on NPU needs NPUW_PA=YES",
+            id="pa_backend_without_npuw_pa",
+        ),
+        pytest.param(
+            DEFAULT_CONFIG | {"scheduler_config": SchedulerConfig()},
+            False,
+            "scheduler config on NPU needs NPUW_PA=YES",
+            id="scheduler_config_without_npuw_pa",
+        ),
+    ],
+)
+def test_npuw_pa_rejects_conflicting_properties(
+    llm_model: OVConvertedModelSchema, properties: dict, with_draft: bool, message: str
+):
+    if with_draft:
+        properties = properties | {
+            "draft_model": draft_model(llm_model.models_path, "CPU", **get_default_llm_properties())
+        }
+    with pytest.raises(RuntimeError, match=message):
+        LLMPipeline(llm_model.models_path, "NPU", **properties)
+
+
+# A CPU main model with an NPU draft model stays on stateful speculative decoding with an explicit
+# ATTENTION_BACKEND=PA (llm_bench sets it): the NPUW_PA checks apply only to a main model on NPU.
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_cpu_main_with_npu_draft_keeps_the_stateful_pipeline(llm_model: OVConvertedModelSchema, ov_model: LLMPipeline):
+    draft = draft_model(llm_model.models_path, "NPU", **get_npu_llm_properties_for_test())
+    pipe = LLMPipeline(
+        llm_model.models_path,
+        "CPU",
+        **(get_default_llm_properties() | {"ATTENTION_BACKEND": "PA"}),
+        draft_model=draft,
+    )
+
+    prompt = NPUW_PA_PROMPTS[:1]
+    assert pipe.generate(prompt, npuw_pa_greedy()).texts == ov_model.generate(prompt, npuw_pa_greedy()).texts
