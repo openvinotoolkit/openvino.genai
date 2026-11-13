@@ -346,11 +346,22 @@ GGUFLoad get_gguf_data(const std::string& file) {
     }
 }
 
-std::unordered_map<std::string, GGUFMetaData> get_gguf_metadata(const std::string& file) {
-    check_file(file);
-    std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(gguf_open(file.data()), gguf_close);
-    OPENVINO_ASSERT(ctx, "Failed to open '", file, "' with gguf_open");
-    return load_metadata(ctx.get());
+std::unordered_map<std::string, GGUFMetaData> get_gguf_metadata(const std::filesystem::path& file) {
+    const auto data = ov::read_tensor_data(file);
+    const auto* bytes = data.data<uint8_t>();
+    OPENVINO_ASSERT(data.get_byte_size() >= sizeof(gguf_header) && std::memcmp(bytes, "GGUF", 4) == 0,
+                    "[load_gguf] Invalid GGUF header in '",
+                    file.u8string(),
+                    "'");
+
+    // gguflib's read API lacks const-correct pointers; it only advances the context cursor.
+    gguf_ctx ctx{};
+    ctx.data = const_cast<uint8_t*>(bytes);
+    ctx.size = data.get_byte_size();
+    ctx.header = reinterpret_cast<gguf_header*>(ctx.data);
+    ctx.alignment = 32;
+    gguf_rewind(&ctx);
+    return load_metadata(&ctx);
 }
 
 float metadata_to_float(const std::unordered_map<std::string, GGUFMetaData>& metadata, const std::string& key) {

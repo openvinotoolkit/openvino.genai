@@ -6,13 +6,16 @@ import pytest
 import torch
 import gc
 import os
+import stat
 import struct
 import subprocess  # nosec B404
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
-from gguf import GGUFReader
+import numpy as np
+from gguf import GGUFReader, GGUFWriter, TokenType
 from tokenizers.processors import TemplateProcessing
 
 import openvino as ov
@@ -412,3 +415,134 @@ def test_gguf_default_reader_failure_hint(tmp_path, reader, with_tokenizer):
         assert 'ov::genai::gguf_reader("FRONTEND")' in message
         assert "better model quality" in message
         assert "preview" in message
+
+
+@pytest.fixture
+def tiny_gguf_model(tmp_path):
+    path = tmp_path / "model.gguf"
+    writer = GGUFWriter(path, "qwen3")
+    writer.add_block_count(1)
+    writer.add_embedding_length(8)
+    writer.add_context_length(32)
+    writer.add_head_count(2)
+    writer.add_head_count_kv(1)
+    writer.add_rope_dimension_count(4)
+    writer.add_feed_forward_length(12)
+    writer.add_layer_norm_rms_eps(1e-5)
+    writer.add_file_type(0)
+    writer.add_tokenizer_model("gpt2")
+    writer.add_tokenizer_pre("qwen2")
+    writer.add_token_list(["<|endoftext|>", "a", "b", "aa"] + list("cdefghijklmn"))
+    writer.add_token_types([TokenType.CONTROL] + [TokenType.NORMAL] * 15)
+    writer.add_token_merges(["a a"])
+    writer.add_eos_token_id(0)
+    writer.add_pad_token_id(0)
+    writer.add_unk_token_id(0)
+    writer.add_add_bos_token(False)
+    for name, shape in {
+        "token_embd.weight": (16, 8),
+        "output_norm.weight": (8,),
+        "blk.0.attn_norm.weight": (8,),
+        "blk.0.attn_q.weight": (8, 8),
+        "blk.0.attn_k.weight": (4, 8),
+        "blk.0.attn_v.weight": (4, 8),
+        "blk.0.attn_output.weight": (8, 8),
+        "blk.0.attn_q_norm.weight": (4,),
+        "blk.0.attn_k_norm.weight": (4,),
+        "blk.0.ffn_norm.weight": (8,),
+        "blk.0.ffn_gate.weight": (12, 8),
+        "blk.0.ffn_up.weight": (12, 8),
+        "blk.0.ffn_down.weight": (8, 12),
+    }.items():
+        writer.add_tensor(name, np.full(shape, 1.0 if "norm" in name else 0.01, dtype=np.float32))
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    return path
+
+
+@contextmanager
+def _open_gguf_shared_readonly(path):
+    if sys.platform != "win32":
+        with path.open("rb"):
+            yield
+        return
+
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+    generic_read = 0x80000000
+    file_share_read = 0x00000001
+    file_share_delete = 0x00000004
+    open_existing = 3
+    file_attribute_normal = 0x80
+    handle = create_file(
+        str(path), generic_read, file_share_read | file_share_delete, None, open_existing, file_attribute_normal, None
+    )
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        yield
+    finally:
+        if not close_handle(handle):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+
+@pytest.mark.parametrize("tokenizer_type", [ov_genai.Tokenizer, ov_genai.GGUFTokenizer], ids=["tokenizer", "gguf"])
+def test_gguf_tokenizer_reads_readonly_file(tiny_gguf_model, tokenizer_type):
+    tiny_gguf_model.chmod(stat.S_IREAD)
+    try:
+        tokenizer = tokenizer_type(tiny_gguf_model)
+        assert tokenizer.encode("ab").input_ids.data.tolist() == [[1, 2]]
+    finally:
+        tiny_gguf_model.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+
+@pytest.mark.parametrize("read_only", [False, True], ids=["shared", "shared-readonly"])
+def test_gguf_frontend_continuous_batching_with_shared_file(tiny_gguf_model, read_only):
+    scheduler = ov_genai.SchedulerConfig()
+    scheduler.num_kv_blocks = 4
+    if read_only:
+        tiny_gguf_model.chmod(stat.S_IREAD)
+    try:
+        with _open_gguf_shared_readonly(tiny_gguf_model):
+            pipeline = ov_genai.ContinuousBatchingPipeline(
+                tiny_gguf_model, scheduler, "CPU", {"GGUF_READER": "FRONTEND"}
+            )
+            assert pipeline.get_tokenizer().encode("ab").input_ids.data.tolist() == [[1, 2]]
+            config = ov_genai.GenerationConfig(max_new_tokens=1, apply_chat_template=False)
+            assert len(pipeline.generate(["ab"], [config])) == 1
+    finally:
+        if read_only:
+            tiny_gguf_model.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+
+def test_gguf_frontend_unicode_path_and_serialization(tmp_path, tiny_gguf_model):
+    directory = tmp_path / "model-\u6a21\u578b"
+    directory.mkdir()
+    model_path = tiny_gguf_model.rename(directory / "\u043c\u043e\u0434\u0435\u043b.gguf")
+    pipeline = ov_genai.LLMPipeline(
+        model_path, "CPU", GGUF_READER="FRONTEND", enable_save_ov_model=True, ATTENTION_BACKEND="SDPA"
+    )
+    assert pipeline.get_tokenizer().encode("ab").input_ids.data.tolist() == [[1, 2]]
+    for name in ("openvino_model.xml", "openvino_tokenizer.xml", "openvino_detokenizer.xml"):
+        assert (directory / name).is_file()
+
+
+@pytest.mark.parametrize("data", [b"GGUF", b"XXXX" + bytes(20)], ids=["short", "bad-magic"])
+def test_gguf_tokenizer_rejects_invalid_header(tmp_path, data):
+    path = tmp_path / "invalid.gguf"
+    path.write_bytes(data)
+    with pytest.raises(RuntimeError):
+        ov_genai.Tokenizer(path)

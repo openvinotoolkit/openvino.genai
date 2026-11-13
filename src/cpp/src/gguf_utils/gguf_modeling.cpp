@@ -142,13 +142,13 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path) {
+std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::filesystem::path& model_path) {
     ov::frontend::gguf::FrontEnd frontend;
     frontend.add_extension(std::make_shared<ov::frontend::gguf::GenAIExtension>());
     return frontend.convert(frontend.load(model_path));
 }
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
+std::shared_ptr<ov::Model> create_from_gguf(const std::filesystem::path& model_path,
                                             bool enable_save_ov_model,
                                             bool use_legacy_reader) {
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -160,10 +160,11 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
     // ignores some metadata (e.g. rope_freqs.weight). Remove with create_language_model().
     if (use_legacy_reader) {
         ss << "ov::genai::gguf_reader is '" << ov::genai::LEGACY_GGUF_READER
-           << "': converting with the legacy GGUF reader instead of the OpenVINO GGUF frontend: " << model_path;
+           << "': converting with the legacy GGUF reader instead of the OpenVINO GGUF frontend: "
+           << model_path.u8string();
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        auto [config, consts, qtypes] = load_gguf(model_path);
+        auto [config, consts, qtypes] = load_gguf(model_path.string());
         const std::string model_arch = std::get<std::string>(config.at("architecture"));
         OPENVINO_ASSERT(model_arch == "llama" || model_arch == "qwen2" || model_arch == "qwen3",
                         "The legacy GGUF reader does not support architecture '",
@@ -173,15 +174,15 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                         "' to use the GGUF frontend.");
         model = create_language_model(config, consts, qtypes);
     } else {
-        ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
+        ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path.u8string();
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
         model = convert_gguf_with_frontend(model_path);
     }
 
     if (enable_save_ov_model) {
-        std::filesystem::path save_path = std::filesystem::path(model_path).parent_path() / "openvino_model.xml";
-        ov::genai::utils::save_openvino_model(model, save_path.string(), true);
+        std::filesystem::path save_path = model_path.parent_path() / "openvino_model.xml";
+        ov::genai::utils::save_openvino_model(model, save_path, true);
     }
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(

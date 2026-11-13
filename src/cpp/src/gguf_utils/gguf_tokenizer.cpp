@@ -1062,7 +1062,7 @@ std::tuple<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>, std::map<std:
 create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_tokenizers,
                              const std::filesystem::path& gguf_model_path) {
 #ifdef ENABLE_GGUF
-    auto gguf_metadata = get_gguf_metadata(gguf_model_path.string());
+    auto gguf_metadata = get_gguf_metadata(gguf_model_path);
     auto tokenizer_config = tokenizer_config_from_meta(gguf_metadata);
     return build_tokenizer_models(shared_object_ov_tokenizers, std::move(tokenizer_config));
 #else
