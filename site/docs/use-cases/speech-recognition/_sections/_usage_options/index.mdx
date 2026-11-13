@@ -342,6 +342,49 @@ Inputs are padded to the longest waveform, so grouping audio of similar duration
     </TabItemCpp>
 </LanguageTabs>
 
+#### Long Audio
+
+SenseVoiceSmall is designed for short utterances, so recognition quality can drop for audio longer than about 30 seconds. Set the `audio_chunk_duration` pipeline property, an integer number of seconds, to split longer audio into chunks of at most this duration. Each chunk is transcribed separately and the results are merged. Chunk boundaries are placed at low-energy positions of the waveform.
+
+If `audio_chunk_duration` is not set, audio is processed in a single pass. The exception is NPU, which uses 30 seconds.
+
+When chunks are merged:
+- `texts` are joined in order, separated by a space except for Chinese, Japanese and Cantonese.
+- `languages` and the `emotion` and `event` metadata are chosen by the largest total duration of the chunks that report them. The `EMO_UNKNOWN` emotion and the `Speech` event are used only if no other value is recognized.
+- A `language` passed to `generate()` is used as is.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        # Split audio into chunks of at most 10 seconds
+        pipe = ov_genai.ASRPipeline(model_path, "CPU", audio_chunk_duration=10)
+        result = pipe.generate(long_raw_speech)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        // Split audio into chunks of at most 10 seconds
+        ov::genai::ASRPipeline pipe(model_path, "CPU", ov::genai::audio_chunk_duration(10));
+        auto result = pipe.generate(long_raw_speech);
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        // Split audio into chunks of at most 10 seconds
+        const pipeline = await ASRPipeline(modelPath, "CPU", { audio_chunk_duration: 10 });
+        const result = await pipeline.generate(longRawSpeech);
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+:::note
+NPU requires static shapes, so the model is reshaped to accept one chunk of `audio_chunk_duration` seconds when the pipeline is created. Shorter audio is zero-padded, and batched inputs are processed one chunk at a time.
+:::
+
+:::note
+When streaming audio that is split into chunks, tokens of consecutive chunks are written without a separator. For space-delimited languages the streamed text can miss the space between chunks that is present in `texts`. A streamer that requests to stop skips the remaining chunks.
+:::
+
 ### Whisper-specific Features
 
 :::info

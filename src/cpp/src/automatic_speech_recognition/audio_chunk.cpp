@@ -96,7 +96,8 @@ ov::genai::AudioChunk make_audio_chunk(const std::vector<float>& raw_speech,
 
 std::vector<ov::genai::AudioChunk> split_audio_into_chunks(const std::vector<float>& raw_speech,
                                                            const size_t sr,
-                                                           const size_t max_chunk_sec) {
+                                                           const size_t max_chunk_sec,
+                                                           const size_t boundary_search_sec) {
     OPENVINO_ASSERT(sr > 0, "Sampling rate must be greater than 0.");
     OPENVINO_ASSERT(max_chunk_sec > 0, "max_chunk_sec must be greater than 0.");
 
@@ -104,7 +105,7 @@ std::vector<ov::genai::AudioChunk> split_audio_into_chunks(const std::vector<flo
     constexpr float MIN_ASR_INPUT_SECONDS = 0.5f;
 
     const size_t max_len = max_chunk_sec * sr;
-    const size_t expand = ov::genai::CHUNK_BOUNDARY_SEARCH_SECONDS * sr;
+    const size_t expand = boundary_search_sec * sr;
     // std::round returns float; outer static_cast<size_t> truncates to sample count.
     const size_t min_chunk_len = static_cast<size_t>(std::round(MIN_ASR_INPUT_SECONDS * static_cast<float>(sr)));
     const size_t win =
@@ -142,10 +143,12 @@ namespace ov::genai {
 
 std::vector<AudioChunk> split_audio_into_chunks(const AudiosView& raw_speech,
                                                 const size_t sr,
-                                                const size_t max_chunk_sec) {
+                                                const size_t max_chunk_sec,
+                                                const size_t boundary_search_sec) {
     std::vector<AudioChunk> chunks;
     for (size_t batch = 0; batch < raw_speech.size(); ++batch) {
-        std::vector<AudioChunk> sample_chunks = ::split_audio_into_chunks(raw_speech[batch].get(), sr, max_chunk_sec);
+        std::vector<AudioChunk> sample_chunks =
+            ::split_audio_into_chunks(raw_speech[batch].get(), sr, max_chunk_sec, boundary_search_sec);
         for (AudioChunk& chunk : sample_chunks) {
             chunk.orig_batch = batch;
             chunks.push_back(std::move(chunk));

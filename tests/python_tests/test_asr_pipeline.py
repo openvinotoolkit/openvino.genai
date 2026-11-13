@@ -23,7 +23,13 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs, get_default_llm_properties
+from utils.constants import (
+    NPUW_CPU_PROPERTIES,
+    get_ov_cache_converted_models_dir,
+    extra_generate_kwargs,
+    get_default_llm_properties,
+)
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
@@ -768,6 +774,142 @@ def test_sensevoice_batch_streamer(sample_from_dataset, pipelines_fixture, strea
     with pytest.raises(RuntimeError, match="streamers only for a single audio input"):
         genai_pipe.generate([sample_from_dataset, sample_from_dataset], streamer=streamer)
 
+
+@pytest.mark.parametrize("model_type", ["whisper", "qwen3_asr", "fun_asr"])
+def test_audio_chunk_duration_rejected_for_non_sensevoice(tmp_path, model_type):
+    # The dispatcher rejects the property before constructing a backend.
+    (tmp_path / "config.json").write_text(json.dumps({"model_type": model_type}))
+    with pytest.raises(RuntimeError, match="only supported for SenseVoiceSmall"):
+        ov_genai.ASRPipeline(tmp_path, "CPU", audio_chunk_duration=10)
+
+
+@pytest.mark.sensevoice
+def test_sensevoice_audio_chunk_duration():
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    properties = {"INFERENCE_PRECISION_HINT": "f32", "ENABLE_MMAP": False}
+    default_pipe = ov_genai.ASRPipeline(path, "CPU", **properties)
+    chunked_pipe = ov_genai.ASRPipeline(path, "CPU", audio_chunk_duration=5, **properties)
+
+    samples = get_audio_dataset(long_form=False)
+    long_audio = np.concatenate(samples[:10])
+    assert len(long_audio) > 5 * 16000
+
+    # A chunk duration longer than the audio does not change the result.
+    wide_pipe = ov_genai.ASRPipeline(path, "CPU", audio_chunk_duration=len(long_audio) // 16000 + 1, **properties)
+    assert wide_pipe.generate(long_audio).texts == default_pipe.generate(long_audio).texts
+
+    result = chunked_pipe.generate(long_audio)
+    assert len(result.texts) == 1
+    assert len(result.languages) == 1
+    assert len(result.metadata) == 1
+
+    batch = chunked_pipe.generate([samples[0], long_audio])
+    assert batch.texts == [chunked_pipe.generate(samples[0]).texts[0], result.texts[0]]
+
+    # A stop request of the streamer skips the inference of the remaining chunks.
+    stopped = chunked_pipe.generate(long_audio, streamer=lambda _: True)
+    assert len(stopped.perf_metrics.asr_raw_metrics.encode_inference_durations) == 1
+
+    for invalid_duration in (0, -1):
+        with pytest.raises(RuntimeError, match="audio_chunk_duration"):
+            ov_genai.ASRPipeline(path, "CPU", audio_chunk_duration=invalid_duration, **properties)
+
+
+@pytest.mark.sensevoice
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_sensevoice_npu_default_chunk_duration_is_30_seconds():
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    default_pipe = ov_genai.ASRPipeline(path, "NPU", **NPUW_CPU_PROPERTIES)
+    explicit_pipe = ov_genai.ASRPipeline(path, "NPU", audio_chunk_duration=30, **NPUW_CPU_PROPERTIES)
+
+    samples = get_audio_dataset(long_form=False)
+    # Longer than 30 seconds, but within the aligned capacity of the static input shape.
+    audio = np.pad(np.concatenate(samples[:10])[: 30 * 16000], (0, 3 * 16000 // 10))
+
+    default_result = default_pipe.generate(audio)
+    assert default_result.texts == explicit_pipe.generate(audio).texts
+    assert len(default_result.perf_metrics.asr_raw_metrics.encode_inference_durations) > 1
+
+
+@pytest.mark.sensevoice
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_sensevoice_npu_audio_chunk_duration_matches_cpu():
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    cpu_pipe = ov_genai.ASRPipeline(
+        path, "CPU", audio_chunk_duration=10, INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False
+    )
+    npu_pipe = ov_genai.ASRPipeline(path, "NPU", audio_chunk_duration=10, **NPUW_CPU_PROPERTIES)
+
+    samples = get_audio_dataset(long_form=False)
+    long_audio = np.concatenate(samples[:10])
+    assert len(long_audio) > 10 * 16000
+
+    expected = cpu_pipe.generate(long_audio)
+    actual = npu_pipe.generate(long_audio)
+    assert actual.texts == expected.texts
+    assert actual.metadata == expected.metadata
+
+
+@pytest.mark.sensevoice
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_sensevoice_npu_matches_cpu():
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    cpu_pipe = ov_genai.ASRPipeline(path, "CPU", INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False)
+    npu_pipe = ov_genai.ASRPipeline(path, "NPU", **NPUW_CPU_PROPERTIES)
+
+    samples = get_audio_dataset(long_form=False)
+    # The NPU model has static shapes: shorter audio is zero-padded and real lengths are passed to the model.
+    audios = [samples[0], samples[2], samples[1]]
+    for audio in audios:
+        expected = cpu_pipe.generate(audio)
+        actual = npu_pipe.generate(audio)
+        assert actual.texts == expected.texts
+        assert actual.languages == expected.languages
+        assert actual.metadata == expected.metadata
+
+    expected = cpu_pipe.generate(audios)
+    actual = npu_pipe.generate(audios)
+    assert actual.texts == expected.texts
+    assert actual.metadata == expected.metadata
+
+
+@pytest.mark.sensevoice
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_sensevoice_npu_splits_audio_longer_than_30_seconds():
+    model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
+    npu_pipe = ov_genai.ASRPipeline(path, "NPU", **NPUW_CPU_PROPERTIES)
+
+    samples = get_audio_dataset(long_form=False)
+    short_audio = samples[0]
+    long_audio = np.concatenate(samples[:10])
+    assert len(long_audio) > 30 * 16000
+
+    result = npu_pipe.generate(long_audio)
+    assert len(result.texts) == 1
+    assert len(result.languages) == 1
+    assert len(result.metadata) == 1
+    assert len(result.perf_metrics.asr_raw_metrics.encode_inference_durations) > 1
+
+    batch = npu_pipe.generate([short_audio, long_audio])
+    assert batch.texts == [npu_pipe.generate(short_audio).texts[0], result.texts[0]]
+
+    # Streamed tokens of consecutive windows are written without a separator, so only the resulting text is compared.
+    streamed = npu_pipe.generate(long_audio, streamer=lambda _: False)
+    assert streamed.texts == result.texts
+
+    # A stop request of the streamer skips the remaining windows.
+    stopped = npu_pipe.generate(long_audio, streamer=lambda _: True)
+    assert len(stopped.perf_metrics.asr_raw_metrics.encode_inference_durations) == 1
 
 @pytest.mark.parametrize(
     "pipelines_fixture",
