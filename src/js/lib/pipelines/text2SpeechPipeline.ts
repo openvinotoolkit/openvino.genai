@@ -68,7 +68,13 @@ export class Text2SpeechPipeline {
     const generatePromise = util.promisify(this.pipeline.generate.bind(this.pipeline));
     const res = await generatePromise(input, speakerEmbedding, generationConfig ?? {});
 
-    return new Text2SpeechDecodedResults(res.speeches, res.perfMetrics);
+    return new Text2SpeechDecodedResults(
+      res.speeches,
+      res.perfMetrics,
+      res.outputSampleRate,
+      res.speakerEmbedding,
+      res.refCodecIds,
+    );
   }
 
   /**
@@ -85,5 +91,13 @@ export class Text2SpeechPipeline {
   setGenerationConfig(config: SpeechGenerationConfig): void {
     if (!this.pipeline) throw new Error("Text2SpeechPipeline is not initialized");
     this.pipeline.setGenerationConfig(config);
+  }
+
+  /**
+   * Get the expected speaker embedding shape for the loaded model.
+   */
+  getSpeakerEmbeddingShape(): Array<number | bigint> {
+    if (!this.pipeline) throw new Error("Text2SpeechPipeline is not initialized");
+    return this.pipeline.getSpeakerEmbeddingShape();
   }
 }

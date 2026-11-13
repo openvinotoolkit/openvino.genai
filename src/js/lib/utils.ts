@@ -481,6 +481,34 @@ export type SpeechGenerationConfig = GenerationConfig & {
   maxlenratio?: number;
   /** Probability threshold for stopping decoding; when output probability exceeds this, generation stops. */
   threshold?: number;
+  /** Language selector used by speech backends (for example: en-us, english). */
+  language?: string;
+  /** Speech speed multiplier used by Kokoro. */
+  speed?: number;
+  /** Maximum phoneme sequence length per Kokoro preprocessing chunk. */
+  max_phoneme_length?: Uint;
+  /** Optional OpenVINO fallback phonemizer model directory for Kokoro G2P fallback. */
+  phonemize_fallback_model_dir?: string;
+  /** Predefined speaker name for Qwen3-TTS CustomVoice variants. */
+  speaker?: string;
+  /** Optional instruction text to control speaking style (Qwen3-TTS). */
+  instruct?: string;
+  /** Qwen3-TTS prompt assembly mode. True = non-streaming, false = streaming-style. */
+  non_streaming_mode?: boolean;
+  /** Whether to sample residual code groups with Qwen3 subtalker. */
+  subtalker_dosample?: boolean;
+  /** Top-k parameter for Qwen3 subtalker sampling. */
+  subtalker_top_k?: Uint;
+  /** Top-p parameter for Qwen3 subtalker sampling. */
+  subtalker_top_p?: number;
+  /** Temperature parameter for Qwen3 subtalker sampling. */
+  subtalker_temperature?: number;
+  /** Qwen3 Base voice-clone reference transcript for ICL mode. */
+  ref_text?: string;
+  /** Qwen3 Base voice-clone reference audio tensor ([T], [1,T], or [1,1,T], float32, 24kHz). */
+  ref_audio?: Tensor;
+  /** Qwen3 Base voice-clone reference codec ids tensor ([T,G] or [1,T,G]). */
+  ref_codec_ids?: Tensor;
 };
 
 export type SchedulerConfig = {

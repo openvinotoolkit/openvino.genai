@@ -1,0 +1,30 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { Text2SpeechPipeline } from 'openvino-genai-node';
+import { readWavAsTensor, writeFloatWav } from './wav_utils.js';
+
+const pipeline = await Text2SpeechPipeline('./qwen3_tts_base_ov', 'CPU');
+
+// 1) Build cloning prompt from reference audio (24 kHz) + transcript.
+const first = await pipeline.generate('Hello from Qwen3 Base.', {
+  generationConfig: {
+    ref_audio: await readWavAsTensor('clone.wav', 24000),
+    ref_text: 'Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.',
+  },
+});
+
+await writeFloatWav('first.wav', first.speeches[0].data, Number(first.outputSampleRate));
+
+// 2) Reuse extracted artifacts for follow-up prompts.
+const second = await pipeline.generate('Hello again, without re-reading reference audio.', {
+  speakerEmbedding: first.speakerEmbedding,
+  generationConfig: {
+    ref_codec_ids: first.refCodecIds,
+    ref_text: 'Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.',
+  },
+});
+
+await writeFloatWav('second.wav', second.speeches[0].data, Number(second.outputSampleRate));
+`}
+</CodeBlock>
