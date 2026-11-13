@@ -877,6 +877,7 @@ std::vector<int64_t> Qwen3TTSCodecEngine::generate_codec_groups(const ov::Tensor
     predictor_config.top_k = generation_config.subtalker_top_k;
     predictor_config.top_p = generation_config.subtalker_top_p;
     predictor_config.temperature = generation_config.subtalker_temperature;
+    predictor_config.min_new_tokens = 0;
     predictor_config.repetition_penalty = 1.0f;
 
     std::vector<int64_t> groups;
@@ -1030,6 +1031,7 @@ std::vector<std::vector<int64_t>> Qwen3TTSCodecEngine::generate_codec_groups_bat
         predictor_config.top_k = item.generation_config->subtalker_top_k;
         predictor_config.top_p = item.generation_config->subtalker_top_p;
         predictor_config.temperature = item.generation_config->subtalker_temperature;
+        predictor_config.min_new_tokens = 0;
         predictor_config.repetition_penalty = 1.0f;
         predictor_configs.push_back(std::move(predictor_config));
 
