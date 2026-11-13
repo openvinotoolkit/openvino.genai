@@ -39,6 +39,8 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "audio_modality_scale", config.audio_modality_scale);
     read_anymap_param(properties, "audio_guidance_rescale", config.audio_guidance_rescale);
     read_anymap_param(properties, "spatio_temporal_guidance_blocks", config.spatio_temporal_guidance_blocks);
+    read_anymap_param(properties, "vae_tile_sample_min_num_frames", config.vae_tile_sample_min_num_frames);
+    read_anymap_param(properties, "vae_tile_sample_stride_num_frames", config.vae_tile_sample_stride_num_frames);
     read_anymap_param(properties, "num_videos_per_prompt", config.num_videos_per_prompt);
 
     read_anymap_param(properties, "negative_prompt", config.negative_prompt);

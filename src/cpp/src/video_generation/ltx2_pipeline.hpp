@@ -177,6 +177,8 @@ class LTX2Pipeline : public VideoPipeline {
         OPENVINO_ASSERT(!generation_config.taylorseer_config,
                         "TaylorSeer is not supported for LTX2 pipelines");
         OPENVINO_ASSERT(!generation_config.adapters, "LoRA adapters are not supported for LTX2 pipelines");
+        OPENVINO_ASSERT(generation_config.vae_tile_sample_min_num_frames == 0,
+                        "'vae_tile_sample_min_num_frames' is not supported for LTX2 pipelines");
     }
 
     size_t audio_num_frames_for(const VideoGenerationConfig& generation_config) const {
