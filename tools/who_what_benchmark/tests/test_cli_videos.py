@@ -1,3 +1,4 @@
+import subprocess  # nosec B404
 import sys
 import pytest
 from test_cli_image import get_similarity
@@ -231,6 +232,90 @@ def test_image2video_model_genai(model_id, model_type, tmp_path):
             "9",
         ]
     )
+
+
+def read_video_frames(path):
+    import cv2
+    import numpy as np
+
+    cap = cv2.VideoCapture(str(path))
+    frames = []
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+    cap.release()
+    return np.stack(frames)
+
+
+@pytest.mark.xfail(sys.platform == "darwin", reason="Not enough memory on macOS CI runners. Ticket CVS-179749")
+@pytest.mark.xfail(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows. Ticket CVS-179750")
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [("optimum-intel-internal-testing/tiny-random-ltx2", "text-to-video")],
+)
+def test_video_model_genai_with_vae_tiling(model_id, model_type, tmp_path):
+    import numpy as np
+
+    GT_FILE = tmp_path / "gt.csv"
+    MODEL_PATH = convert_model(model_id)
+    # 25 frames are 4 latent frames, more than one chunk of 16 frames, so the decode is tiled
+    common_args = [
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+        "--num-inference-steps",
+        "2",
+        "--video-frames-num",
+        "25",
+    ]
+
+    # Reference: GenAI without tiling
+    run_wwb(["--base-model", MODEL_PATH, *common_args])
+    assert GT_FILE.exists()
+    assert (tmp_path / "reference").exists()
+
+    # Target: the same model with tiling
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            *common_args,
+            "--output",
+            tmp_path,
+            "--vae-tiling-config",
+            '{"tile_sample_min_num_frames": 16, "tile_sample_stride_num_frames": 8}',
+        ]
+    )
+
+    assert "Metrics for model" in output
+    assert "VAE tiling config:" in output
+    # The model has random weights, so there is no similarity level to expect. Tiling changes only the VAE decode:
+    # the video has the same shape and different frames.
+    reference = read_video_frames(tmp_path / "reference" / "video_0.mp4")
+    target = read_video_frames(tmp_path / "target" / "video_0.mp4")
+    assert target.shape == reference.shape
+    assert not np.array_equal(target, reference)
+
+    # An invalid config is rejected before the model is loaded
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        run_wwb(
+            [
+                "--target-model",
+                MODEL_PATH,
+                *common_args,
+                "--vae-tiling-config",
+                '{"tile_sample_min_num_frames": "16"}',
+            ]
+        )
+    assert "must be a non-negative integer" in error.value.output
 
 
 def run_test_with_lora(model_id, model_type, tmp_path, *, genai_threshold):
