@@ -21,6 +21,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
+#include "openvino/genai/classification/classification_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -478,6 +479,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj);
     } else if (py::isinstance<ov::genai::TextEmbeddingPipeline::Config>(py_obj)) {
         return py::cast<ov::genai::TextEmbeddingPipeline::Config>(py_obj);
+    } else if (py::isinstance<ov::genai::ClassificationActivation>(py_obj)) {
+        return py::cast<ov::genai::ClassificationActivation>(py_obj);
     } else if (py::isinstance<ov::genai::StopCriteria>(py_obj)) {
         return py::cast<ov::genai::StopCriteria>(py_obj);
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {

@@ -1,0 +1,32 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import numpy as np
+import openvino as ov
+import openvino_genai
+from PIL import Image
+
+models_path = "MiniCPM-OCR-Jev"
+pipeline = openvino_genai.ClassificationPipeline(models_path, "${props.device || 'CPU'}")
+ocr_text = "Candidate OCR text"
+
+image_tag = "<|vision_start|><|image_pad|><|vision_end|>"
+instruction = (
+    "第一张图是原图，第二张图是上述 OCR 文本渲染得到的图片。\\n"
+    "请判断该 OCR 文本及其对应渲染图是否与原图内容一致。\\n"
+    "这是一个二分类任务：一致标为 1，不一致标为 0。"
+)
+prompt = (
+    f"<|im_start|>user\\n{image_tag}\\n"
+    f"OCR文本：\\n{ocr_text}\\n{image_tag}\\n"
+    f"{instruction}<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n"
+)
+
+images = []
+for path in ("original.png", "rendered.png"):
+    with Image.open(path) as image:
+        images.append(ov.Tensor(np.array(image.convert("RGB"))))
+result = pipeline.classify(prompt, images=images)
+print(f"OCR consistency probability: {result.scores[0][1]:.4f}")
+`}
+</CodeBlock>

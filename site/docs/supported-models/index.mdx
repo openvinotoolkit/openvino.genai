@@ -6,6 +6,7 @@ import SpeechRecognitionModelsTable from './_components/speech-recognition-model
 import EmbeddingModelsTable from './_components/embedding-models-table';
 import SpeechGenerationModelsTable from './_components/speech-generation-models-table';
 import TextRerankModelsTable from './_components/text-rerank-models-table';
+import ClassificationModelsTable from './_components/classification-models-table';
 
 # Supported Models
 
@@ -240,6 +241,18 @@ Text rerank pipeline does **not** support LoRA adapters.
 
 :::warning Text Rerank Models Notes
 Text Rerank models require appropriate `--task` provided during the conversion with `optimum-cli`. Task can be found in the table above.
+:::
+
+## Classification Models
+
+:::info LoRA Support
+The classification pipeline does **not** support LoRA adapters.
+:::
+
+<ClassificationModelsTable />
+
+:::warning Classification Models Notes
+Classification models require `--task text-classification` during the conversion with `optimum-cli`.
 :::
 
 ___

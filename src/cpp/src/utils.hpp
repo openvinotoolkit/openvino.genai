@@ -159,6 +159,12 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
+/// [batch, seq_len, hidden] -> [batch, hidden]: the last non-padded token of each sequence.
+/// With left padding the last position is taken directly; otherwise the token at sum(attention_mask) - 1.
+std::shared_ptr<ov::Node> last_token_pooling(const ov::Output<ov::Node>& hidden_states,
+                                             const ov::Output<ov::Node>& attention_mask,
+                                             bool left_padding);
+
 void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
 std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared_ptr<ov::Model>& model);

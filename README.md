@@ -75,6 +75,7 @@ OpenVINO™ GenAI library provides very lightweight C++, Python, and Node.js API
  - [Speech generation using SpeechT5](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-generation/) - Convert text to speech using SpeechT5 TTS models
  - [Semantic search using Text Embedding](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-embedding) - Compute embeddings for documents and queries to enable efficient retrieval in RAG workflows
  - [Text Rerank for Retrieval-Augmented Generation (RAG)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-rerank) - Analyze the relevance and accuracy of documents and queries for your RAG workflows
+ - [Classification](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/classification) - Score text prompts with optional images against a model's fixed labels
 
 Library efficiently supports LoRA adapters for Text, Image and Video generation scenarios:
 - Load multiple adapters per model

@@ -140,6 +140,18 @@
 - 'samples/python/rag/**/*'
 - 'tests/python_tests/samples/test_rag_sample.py'
 
+'category: classification':
+- 'src/cpp/include/openvino/genai/classification/**/*'
+- 'src/cpp/src/classification/**/*'
+- 'src/python/py_classification_pipeline.cpp'
+- 'tests/python_tests/test_classification_pipeline.py'
+- 'tests/python_tests/utils/classification.py'
+
+'category: classification samples':
+- 'samples/cpp/classification/**/*'
+- 'samples/python/classification/**/*'
+- 'tests/python_tests/samples/test_classification_sample.py'
+
 'category: structured output generation':
 - 'src/cpp/src/sampling/structured_output/*'
 - 'tests/python_tests/test_structured_output.py'
