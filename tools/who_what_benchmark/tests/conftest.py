@@ -69,7 +69,8 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "whisper-tiny": {
         "name": "openai/whisper-tiny",
-        "convert_args": ["--task", "automatic-speech-recognition", "--weight-format", "fp32"],
+        "cache_name": "whisper-tiny-v2",
+        "convert_args": ["--task", "automatic-speech-recognition-with-past", "--weight-format", "fp32"],
     },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
