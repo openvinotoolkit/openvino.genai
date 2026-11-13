@@ -423,6 +423,29 @@ TEST_F(CBForSDTest, mtp_rejection_pauses_draft_generation) {
     ASSERT_TRUE(m_pipeline.is_waiting(0));
 }
 
+// The draft request has not processed its tokens, as after a recompute preemption. It still waits while the main model
+// inserts no token, so it does not draft past candidates the main model has not validated.
+TEST_F(CBForSDTest, draft_waits_while_the_main_model_inserts_no_token__one_sequence) {
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> tokens = {0, 1, 2};
+    std::vector<float> log_probs = {0.1f, 0.2f, 0.3f};
+    ov::genai::GeneratedSequences candidate{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, true).inserted_tokens_cnt, 3);
+    ASSERT_FALSE(m_pipeline.is_waiting(0));
+
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, true).inserted_tokens_cnt, 0);
+    EXPECT_TRUE(m_pipeline.is_waiting(0));
+
+    tokens.push_back(3);
+    log_probs.push_back(0.4f);
+    ov::genai::GeneratedSequences candidate_1{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate_1, true).inserted_tokens_cnt, 1);
+    EXPECT_FALSE(m_pipeline.is_waiting(0));
+}
+
 // The main model did not run the window of the first candidates, so the candidates of the next draft round join them.
 TEST_F(CBForSDTest, main_model_keeps_the_candidates_it_has_not_validated__one_sequence) {
     m_pipeline.enable_validation_mode();

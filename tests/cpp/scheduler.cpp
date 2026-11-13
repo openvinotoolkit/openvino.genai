@@ -3745,3 +3745,69 @@ TEST(TestScheduler, validation_window_without_kv_blocks_keeps_its_candidates) {
 
     free_requests(scheduler, requests);
 }
+
+// The window of the first request takes the KV block of the second one. The second request then recomputes its tokens
+// up to the end of its sequence, so the row of the token the target sampled validates the first candidate.
+TEST(TestScheduler, recompute_of_a_validation_window_runs_its_base_token) {
+    constexpr size_t num_candidates = 3;
+    SchedulerConfig scheduler_config;
+    // the blocks of the two prompts
+    scheduler_config.num_kv_blocks = 2;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0), make_validating_request(1)};
+    start_validation_windows(scheduler, requests, num_candidates);
+
+    std::ignore = scheduler.schedule(requests);
+    ASSERT_EQ(requests[0]->get_num_scheduled_tokens(), num_candidates + 1);
+    ASSERT_EQ(requests[1]->get_num_processed_tokens(), 0u);
+    EXPECT_EQ(requests[1]->get_num_tokens_to_validate(), num_candidates);
+    requests[0]->finish_iteration();
+    free_requests(scheduler, {requests[0]});
+
+    std::vector<SequenceGroup::Ptr> preempted = {requests[1]};
+    std::ignore = scheduler.schedule(preempted);
+    // the prompt, the token the target sampled and the candidates
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), TEST_BLOCK_SIZE + 1 + num_candidates);
+    EXPECT_TRUE(requests[1]->requires_sampling());
+    requests[1]->finish_iteration();
+
+    free_requests(scheduler, requests);
+}
+
+// A draft request runs the tokens it took over from the main model and samples its next candidate after the last of
+// them. After a recompute preemption it still runs to the end of its sequence, so the candidate follows the last token.
+TEST(TestScheduler, recompute_of_a_draft_request_runs_the_tokens_it_took_over) {
+    constexpr size_t num_taken_over_tokens = 3;
+    SchedulerConfig scheduler_config;
+    // the blocks of the two prompts
+    scheduler_config.num_kv_blocks = 2;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config),
+                                          scheduler_config,
+                                          true,
+                                          1,
+                                          false);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0), make_validating_request(1)};
+    start_validation_windows(scheduler, requests, num_taken_over_tokens);
+
+    std::ignore = scheduler.schedule(requests);
+    ASSERT_EQ(requests[0]->get_num_scheduled_tokens(), num_taken_over_tokens + 1);
+    ASSERT_EQ(requests[1]->get_num_processed_tokens(), 0u);
+    requests[0]->finish_iteration();
+    free_requests(scheduler, {requests[0]});
+
+    std::vector<SequenceGroup::Ptr> preempted = {requests[1]};
+    std::ignore = scheduler.schedule(preempted);
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), TEST_BLOCK_SIZE + 1 + num_taken_over_tokens);
+    EXPECT_TRUE(requests[1]->requires_sampling());
+    requests[1]->finish_iteration();
+
+    free_requests(scheduler, requests);
+}
