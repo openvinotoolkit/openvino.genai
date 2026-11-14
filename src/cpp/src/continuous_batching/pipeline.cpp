@@ -23,6 +23,7 @@
 #include "utils.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
+#include "openvino/genai/gguf.hpp"
 #include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/multimodal_inputs.hpp"
@@ -91,9 +92,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     // Reuse the frontend's tokenizer metadata instead of reopening the .gguf, as LLMPipeline does.
     const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.use_legacy_reader();
-    Tokenizer tokenizer = tokenizer_from_model
-                              ? make_gguf_tokenizer_from_model(model, models_path, tokenizer_properties)
-                              : Tokenizer(models_path, tokenizer_properties);
+    Tokenizer tokenizer =
+        tokenizer_from_model
+            ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), tokenizer_properties)
+            : Tokenizer(models_path, tokenizer_properties);
     erase_gguf_tokenizer_metadata(model);
     auto generation_config = utils::from_config_json_if_exists(models_path);
 

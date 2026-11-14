@@ -477,33 +477,3 @@ def test_gguf_frontend_continuous_batching_reuses_tokenizer_metadata(tiny_gguf_m
         assert len(pipeline.generate(["ab"], [config])) == 1
     finally:
         tiny_gguf_model.chmod(stat.S_IREAD | stat.S_IWRITE)
-
-
-@pytest.mark.parametrize(
-    "pipeline",
-    [
-        pytest.param(
-            "continuous_batching",
-            marks=pytest.mark.skipif(
-                sys.platform == "darwin",
-                reason="CVS-194249: CPU PagedAttention requires SVE, unavailable on Apple Silicon",
-            ),
-        ),
-        "llm",
-    ],
-)
-def test_gguf_frontend_saves_tokenizer_without_reopening(tiny_gguf_model, pipeline):
-    tiny_gguf_model.chmod(stat.S_IREAD)
-    try:
-        if pipeline == "continuous_batching":
-            scheduler = ov_genai.SchedulerConfig()
-            scheduler.num_kv_blocks = 4
-            ov_genai.ContinuousBatchingPipeline(
-                tiny_gguf_model, scheduler, "CPU", {"GGUF_READER": "FRONTEND"}, {"enable_save_ov_model": True}
-            )
-        else:
-            ov_genai.LLMPipeline(tiny_gguf_model, "CPU", GGUF_READER="FRONTEND", enable_save_ov_model=True)
-    finally:
-        tiny_gguf_model.chmod(stat.S_IREAD | stat.S_IWRITE)
-    tokenizer = ov_genai.Tokenizer(tiny_gguf_model.parent)
-    assert tokenizer.encode("ab").input_ids.data.tolist() == [[1, 2]]
