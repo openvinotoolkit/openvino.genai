@@ -13,7 +13,13 @@ import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 from llm_bench_utils.hook_forward import TTSHook
 import openvino as ov
+from task.text2speech_fns.qwen3_tts import (
+    run_qwen3_text_to_speech_generation_optimum,
+    run_qwen3_text_to_speech_generation_genai,
+    run_qwen3_text_to_speech_generation_pt,
+)
 from llm_bench_utils.tts_utils import (
+    _record_tts_iter,
     extract_audio_array,
     get_tts_sample_rate,
     kokoro_preprocess_once,
@@ -29,6 +35,21 @@ import llm_bench_utils.gen_output_data as gen_output_data
 from llm_bench_utils.prompt_utils import get_text_prompt
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
+
+
+def _merge_tts_prompt_overrides(input_text, args):
+    if not isinstance(input_text, dict):
+        return input_text, args
+
+    if "prompt" not in input_text or input_text["prompt"] == "":
+        raise RuntimeError("text_to_speech prompt entry must contain non-empty 'prompt'")
+
+    merged_args = dict(args)
+    for param in ["speech_language", "speech_voice", "speech_instruct", "speech_ref_audio", "speech_ref_text"]:
+        if param in input_text:
+            merged_args[param] = input_text[param]
+
+    return input_text["prompt"], merged_args
 
 
 def _build_tts_audio_metrics(out_size, sample_rate, generation_time):
@@ -265,54 +286,6 @@ def _save_omni_speech(waveform, args, prompt_index, num, bs_idx, proc_id, sample
     return audio_array, hashlib.md5(data.tobytes(), usedforsecurity=False).hexdigest()
 
 
-def _record_omni_iter(
-    num,
-    args,
-    iter_data_list,
-    md5_list,
-    prompt_index,
-    result_md5_list,
-    in_size,
-    out_size,
-    generation_time,
-    tokenization_kwargs,
-    memory_metrics,
-    sample_rate,
-):
-    iter_data = gen_output_data.gen_iterate_data(
-        iter_idx=num,
-        in_size=in_size,
-        out_size=out_size,
-        gen_time=generation_time,
-        res_md5=result_md5_list,
-        prompt_idx=prompt_index,
-        **tokenization_kwargs,
-        **memory_metrics,
-    )
-    tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
-    iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
-    iter_data["tts_sample_rate"] = tts_audio_metrics["sample_rate"]
-    iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
-    iter_data_list.append(iter_data)
-    metrics_print.print_metrics(
-        iter_num=num,
-        iter_data=iter_data,
-        warm_up=(num == 0),
-        **tokenization_kwargs,
-        batch_size=args["batch_size"],
-        prompt_idx=prompt_index,
-        tts_audio=tts_audio_metrics,
-    )
-    md5_list[num][prompt_index] = result_md5_list
-    if num > 0:
-        prev_md5 = md5_list[num - 1][prompt_index]
-        if result_md5_list != prev_md5:
-            log.warning(
-                f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                f"is different from md5 of the {num - 1} iteration {prev_md5}"
-            )
-
-
 def run_omni_text_to_speech_generation_optimum(
     input_text,
     num,
@@ -370,7 +343,7 @@ def run_omni_text_to_speech_generation_optimum(
 
     out_size = int(audio_array.size)
     tokenization_kwargs = {"tokenization_time": [tok_encode_time]}
-    _record_omni_iter(
+    _record_tts_iter(
         num,
         args,
         iter_data_list,
@@ -448,7 +421,7 @@ def run_omni_text_to_speech_generation_genai(
     tokenization_duration = perf_metrics.get_tokenization_duration().mean
     tokenization_kwargs = {"tokenization_time": [tokenization_duration]} if tokenization_duration > 0 else {}
 
-    _record_omni_iter(
+    _record_tts_iter(
         num,
         args,
         iter_data_list,
@@ -475,8 +448,10 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
     mem_consumption.update_marker("model")
     model, processor, vocoder, pretrain_time, use_genai = FW_UTILS[framework].create_text_2_speech_model(model_path, device, mem_consumption, **args)
     args["model_path"] = model_path
-    if (args.get("is_kokoro_model", False) or args.get("is_omni_model", False)) and args.get("batch_size", 1) != 1:
-        log.warning("Only batch size 1 available for benchmarking with kokoro / qwen3-omni models")
+    if (
+        args.get("is_kokoro_model", False) or args.get("is_omni_model", False) or args.get("is_qwen3_tts_model", False)
+    ) and args.get("batch_size", 1) != 1:
+        log.warning("Only batch size 1 available for benchmarking with kokoro / qwen3-omni / qwen3-tts models")
         args["batch_size"] = 1
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
@@ -499,14 +474,27 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
 
     tts_hook = None
     is_omni_model = args.get("is_omni_model", False)
-    if framework == "ov" and not use_genai and not args.get("is_kokoro_model", False) and not is_omni_model:
+    if (
+        framework == "ov"
+        and not use_genai
+        and not args.get("is_kokoro_model", False)
+        and not is_omni_model
+        and not args.get("is_qwen3_tts_model", False)
+    ):
         tts_hook = TTSHook()
         tts_hook.new_encoder(model)
         tts_hook.new_decoder(model)
         tts_hook.new_postnet(model)
         tts_hook.new_vocoder(model)
 
-    if is_omni_model:
+    if args.get("is_qwen3_tts_model", False):
+        if framework == "pt":
+            gen_fn = run_qwen3_text_to_speech_generation_pt
+        else:
+            gen_fn = (
+                run_qwen3_text_to_speech_generation_genai if use_genai else run_qwen3_text_to_speech_generation_optimum
+            )
+    elif is_omni_model:
         gen_fn = run_omni_text_to_speech_generation_genai if use_genai else run_omni_text_to_speech_generation_optimum
     elif use_genai:
         gen_fn = run_text_to_speech_generation_genai
@@ -522,11 +510,28 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
                 p_idx = prompt_idx_list[idx]
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
-                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
+                    metrics_print.print_unicode(
+                        f"[warm-up][P{p_idx}] Input text: {input_text}",
+                        f"[warm-up][P{p_idx}] Unable print input text",
+                        max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
+                    )
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                gen_fn(input_text, num, model, processor, vocoder, args, iter_data_list, md5_list,
-                       p_idx, tts_hook, model_precision, proc_id, mem_consumption)
+                cur_prompt, cur_args = _merge_tts_prompt_overrides(input_text, args)
+                gen_fn(
+                    cur_prompt,
+                    num,
+                    model,
+                    processor,
+                    vocoder,
+                    cur_args,
+                    iter_data_list,
+                    md5_list,
+                    p_idx,
+                    tts_hook,
+                    model_precision,
+                    proc_id,
+                    mem_consumption,
+                )
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
                 log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
@@ -536,11 +541,28 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
             for num in range(num_iters + 1):
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
-                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
+                    metrics_print.print_unicode(
+                        f"[warm-up][P{p_idx}] Input text: {input_text}",
+                        f"[warm-up][P{p_idx}] Unable print input text",
+                        max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
+                    )
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                gen_fn(input_text, num, model, processor, vocoder, args, iter_data_list, md5_list,
-                       prompt_idx_list[idx], tts_hook, model_precision, proc_id, mem_consumption)
+                cur_prompt, cur_args = _merge_tts_prompt_overrides(input_text, args)
+                gen_fn(
+                    cur_prompt,
+                    num,
+                    model,
+                    processor,
+                    vocoder,
+                    cur_args,
+                    iter_data_list,
+                    md5_list,
+                    prompt_idx_list[idx],
+                    tts_hook,
+                    model_precision,
+                    proc_id,
+                    mem_consumption,
+                )
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
                 log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")

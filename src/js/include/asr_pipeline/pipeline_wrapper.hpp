@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include <atomic>
 #include <napi.h>
 
+#include "include/base/pipeline_state.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
 class ASRPipelineWrapper : public Napi::ObjectWrap<ASRPipelineWrapper> {
@@ -20,6 +20,5 @@ public:
 
 private:
     std::shared_ptr<ov::genai::ASRPipeline> pipe = nullptr;
-    std::shared_ptr<std::atomic<bool>> is_initializing = std::make_shared<std::atomic<bool>>(false);
-    std::shared_ptr<std::atomic<bool>> is_generating = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<PipelineState> state = std::make_shared<PipelineState>();
 };

@@ -540,6 +540,15 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Lfm3ForCausalLM',
+    models: [
+      {
+        name: 'LFM3',
+        links: ['https://huggingface.co/LiquidAI/LFM3-1.7B'],
+      },
+    ],
+  },
+  {
     architecture: 'LlamaForCausalLM',
     models: [
       {

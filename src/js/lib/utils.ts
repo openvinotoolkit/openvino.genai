@@ -612,9 +612,16 @@ export type OmniTalkerSpeechConfig = {
   speaker?: string | Tensor;
   /**
    * Number of codec frames accumulated before streaming each audio chunk. Must be >= 1.
-   * Each frame is 80ms of audio at 24 kHz (1920 samples).
+   * For the standard Qwen3-Omni each frame is 80ms of audio at 24 kHz (1920 samples), and the
+   * first chunk is 555 samples shorter because the vocoder trims its warmup once per utterance.
    */
   audio_chunk_frames?: Uint;
+  /**
+   * Number of earlier codec frames the vocoder decodes together with each streamed chunk, so the
+   * chunk starts with the history a non-streamed decode would see. 0 decodes every chunk on its
+   * own. Larger values give smoother seams but cost more vocoder work. Must be <= 4096. Default 25.
+   */
+  audio_chunk_left_context_frames?: Uint;
   /** Cap on talker autoregressive steps. Independent of `textConfig.max_new_tokens`. */
   max_new_tokens?: Uint;
   /** RNG seed for talker + CodePredictor sampling. */

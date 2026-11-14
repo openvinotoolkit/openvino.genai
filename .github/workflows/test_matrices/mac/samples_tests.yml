@@ -33,8 +33,9 @@
 
 - name: Speech generation (Qwen3 TTS)
   extra_cmd: |
-    python -m pip install transformers==4.57.3
-    python -m pip install qwen-tts
+    python -m pip install transformers==4.57.3 accelerate==1.12.0 librosa torchaudio soundfile sox onnxruntime einops
+    # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
+    python -m pip install --no-deps qwen-tts==0.1.1 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
   marker: speech_generation and qwen3_tts
   cmd: tests/python_tests/samples
   components:

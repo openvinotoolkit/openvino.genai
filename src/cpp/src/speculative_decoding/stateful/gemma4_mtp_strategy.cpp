@@ -254,7 +254,7 @@ StatefulGemma4MTPLLMPipeline::StatefulGemma4MTPLLMPipeline(const ModelDesc& targ
     OPENVINO_ASSERT(target_model_desc.device != "NPU" && draft_model_desc.device != "NPU",
                     "Gemma4 MTP stateful speculative decoding currently supports CPU/GPU only.");
     
-    utils::patch_chat_template_multiline_strings(m_tokenizer);
+    set_chat_template_patcher(m_tokenizer, utils::patch_chat_template_multiline_strings);
 
     if ((!m_generation_config.num_assistant_tokens.has_value() || m_generation_config.num_assistant_tokens.value() == 0) &&
         draft_model_desc.generation_config.num_assistant_tokens.has_value() &&

@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <iostream>
+#include <streambuf>
 #include <string>
 
 namespace {
@@ -14,6 +16,38 @@ namespace {
 void expect_contains(const std::string& haystack, const std::string& needle) {
     EXPECT_NE(haystack.find(needle), std::string::npos);
 }
+
+class RejectingStreambuf : public std::streambuf {
+protected:
+    int_type overflow(int_type) override {
+        return traits_type::eof();
+    }
+};
+
+// Makes every write to the stream fail until destroyed. With badbit in the exception mask the write throws
+// std::ios_base::failure, otherwise it only sets badbit.
+class RejectingStream {
+public:
+    RejectingStream(std::ostream& stream, std::ios::iostate exceptions)
+        : m_stream{stream},
+          m_old_buf{stream.rdbuf(&m_buf)},
+          m_old_exceptions{stream.exceptions()} {
+        m_stream.exceptions(exceptions);
+    }
+
+    ~RejectingStream() {
+        m_stream.exceptions(std::ios::goodbit);
+        m_stream.rdbuf(m_old_buf);
+        m_stream.clear();
+        m_stream.exceptions(m_old_exceptions);
+    }
+
+private:
+    RejectingStreambuf m_buf;
+    std::ostream& m_stream;
+    std::streambuf* m_old_buf;
+    std::ios::iostate m_old_exceptions;
+};
 
 class LoggerTests : public ::testing::Test {
 protected:
@@ -25,6 +59,8 @@ protected:
         ov::genai::Logger::get_instance().set_log_level(ov::log::Level::NO);
     }
 };
+
+class LoggerFailedWriteTests : public LoggerTests, public ::testing::WithParamInterface<std::ios::iostate> {};
 
 }  // namespace
 
@@ -56,6 +92,29 @@ TEST_F(LoggerTests, ValidFormatDoesNotThrow) {
     EXPECT_NO_THROW(GENAI_INFO("Hex: 0x%X", 255));
     EXPECT_NO_THROW(GENAI_INFO("Pointer %p", static_cast<const void*>(this)));
 }
+
+TEST_P(LoggerFailedWriteTests, FailedWriteFallsBackToStderr) {
+    testing::internal::CaptureStderr();
+    {
+        RejectingStream rejecting_cout{std::cout, GetParam()};
+        RejectingStream rejecting_cerr{std::cerr, GetParam()};
+        EXPECT_NO_THROW(GENAI_ERR("plain error"));
+        EXPECT_NO_THROW(GENAI_ERR("formatted error %d", 7));
+        EXPECT_NO_THROW(GENAI_INFO(std::string{"string info"}));
+    }
+    std::string error_output = testing::internal::GetCapturedStderr();
+
+    expect_contains(error_output, "plain error");
+    expect_contains(error_output, "formatted error 7");
+    expect_contains(error_output, "string info");
+}
+
+INSTANTIATE_TEST_SUITE_P(ExceptionMasks,
+                         LoggerFailedWriteTests,
+                         ::testing::Values(std::ios::goodbit, std::ios::badbit),
+                         [](const ::testing::TestParamInfo<std::ios::iostate>& info) {
+                             return info.param == std::ios::badbit ? "Throwing" : "Silent";
+                         });
 
 TEST_F(LoggerTests, NoOutputWhenLevelIsNo) {
     ov::genai::Logger::get_instance().set_log_level(ov::log::Level::NO);
