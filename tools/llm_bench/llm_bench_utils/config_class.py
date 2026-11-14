@@ -204,6 +204,7 @@ USE_CASES = {
                 "smolvlm",
                 "qwen3-vl",
                 "qwen3-5",
+                "qwen4-exp",
                 "videochat-flash-qwen",
                 "gemma4",
                 "mistral3",
@@ -212,7 +213,7 @@ USE_CASES = {
         UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "speech_to_text": [
-        UseCaseSpeech2Text(["whisper", "qwen3-asr", "fun-asr"]),
+        UseCaseSpeech2Text(["whisper", "qwen3-asr", "fun-asr", "sense-voice"]),
         UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "image_cls": [UseCaseImageCls(["vit"])],

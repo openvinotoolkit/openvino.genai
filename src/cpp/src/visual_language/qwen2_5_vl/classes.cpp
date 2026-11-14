@@ -134,6 +134,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
+    apply_vision_adapters(vision_embeddings_merger);
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
     if (m_with_cu_seqlens_input) {
         ov::Tensor cu_seq_lens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw, reordered_videos_grid_thw);

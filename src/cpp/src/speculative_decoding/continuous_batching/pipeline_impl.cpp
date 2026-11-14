@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "pipeline_impl.hpp"
+#include <algorithm>
+#include <chrono>
 #include <numeric>
 #include <optional>
 
+#include "sampling/candidates_validation.hpp"
 #include "sequence_group.hpp"
 
 namespace ov::genai {
@@ -25,6 +28,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     }
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
+    m_sampler->set_collect_draft_proposals(!is_validation_mode_enabled);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
@@ -95,8 +99,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
             if (is_tree_search) {
                 tree_metadata_snapshot = std::make_shared<const TreeMetaData>(sequence->get_tree_metadata());
             }
-            // Only Eagle3 main model (validation stage) reports processed token count for draft alignment.
-            if (!(eagle_mode_enabled && m_is_validation_mode_enabled)) {
+            // Only Eagle3 and DFlash main models (validation stage) report processed token count for draft alignment.
+            if (!((eagle_mode_enabled || dflash_mode_enabled) && m_is_validation_mode_enabled)) {
                 num_processed_tokens = 0;
             }
             // Publish an initialized empty tensor for unscheduled sequences.
@@ -106,7 +110,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
                                         sequence->get_generated_log_probs(),
                                         num_processed_tokens,
                                         hidden_state ? hidden_state : ov::Tensor(ov::element::f32, ov::Shape{0, 1, 0}),
-                                        std::move(tree_metadata_snapshot)}}});
+                                        std::move(tree_metadata_snapshot),
+                                        sequence->get_draft_proposals()}}});
         }
     }
     return result;
@@ -180,6 +185,34 @@ detail::MtpDraftUpdatePlan detail::make_mtp_draft_update_plan(size_t main_hidden
     // unprocessed tokens; one validation token tells the draft sampler to consume both and
     // sample only after the bonus token.
     return {main_hidden_state_len - 2, 2, 0, 1};
+}
+
+detail::DFlashDraftWindow detail::make_dflash_draft_window(const SequenceGroup& request,
+                                                           size_t target_processed_tokens,
+                                                           size_t candidate_position_offset) {
+    const auto running_sequences = request.get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1, "DFlash draft supports one sequence per request.");
+    DFlashDraftWindow window;
+    window.committed_rows = request.get_num_processed_tokens();
+    // The draft KV below the committed rows stays valid while the target recomputes preempted tokens.
+    window.context_rows =
+        target_processed_tokens > window.committed_rows ? target_processed_tokens - window.committed_rows : 0;
+
+    // A block follows once the context reaches the token before the seed (the last generated token), and only
+    // after the prompt rows: without dynamic split fuse a step runs either prompt or generation windows, not both.
+    // Near max_new_tokens only the candidates the target can still validate are sampled.
+    const size_t num_assistant_tokens = request.get_sampling_parameters().num_assistant_tokens.value_or(0);
+    const size_t generated_len = running_sequences.front()->get_generated_len();
+    const size_t max_new_tokens = request.get_max_new_tokens();
+    const size_t remaining_tokens = max_new_tokens > generated_len ? max_new_tokens - generated_len : 0;
+    const bool starts_after_prompt = window.committed_rows >= request.get_prompt_len();
+    const bool reaches_seed = generated_len > 0 && window.committed_rows + window.context_rows ==
+                                                       request.get_prompt_len() + generated_len - 1;
+    if (num_assistant_tokens > 0 && starts_after_prompt && reaches_seed && remaining_tokens > 1) {
+        window.block_rows = num_assistant_tokens + candidate_position_offset;
+        window.candidate_rows = std::min(num_assistant_tokens, remaining_tokens - 1);
+    }
+    return window;
 }
 
 // Look up a candidate for the given running sequence.
@@ -263,16 +296,27 @@ remove_tokens_from_sequence(Sequence::Ptr& sequence,
     return (sequence_generated_len - min_generated_tokens);
 }
 
+void attach_draft_proposal(Sequence::Ptr& sequence, const DraftProposalPtr& proposal) {
+    if (proposal && !proposal->empty()) {
+        detail::validate_draft_proposal(*proposal);
+        sequence->set_draft_proposal(sequence->get_generated_len() - 1, proposal);
+    }
+}
+
 size_t
 insert_tokens_to_sequence(Sequence::Ptr& sequence,
                           const std::vector<int64_t>& token_ids,
                           const std::vector<float>& token_log_probs,
                           LogitProcessor& logit_proccessor,
-                          bool is_update_sampler) {
+                          bool is_update_sampler,
+                          const std::vector<DraftProposalPtr>& draft_proposals) {
     size_t generated_len = sequence->get_generated_len(), candidate_len = token_ids.size();
     OPENVINO_ASSERT(generated_len <= candidate_len);
     for (size_t i = generated_len; i < candidate_len; ++i) {
         sequence->append_token(token_ids[i], token_log_probs[i]);
+        if (!draft_proposals.empty()) {
+            attach_draft_proposal(sequence, draft_proposals[i]);
+        }
         if (is_update_sampler) {
             logit_proccessor.register_new_generated_token(token_ids[i]);
         }
@@ -324,6 +368,9 @@ init_request(
 
         for (size_t i = 0; i < min_candidate_len; ++i) {
             sequence->append_token(token_ids[i], log_probs[i]);
+            if (!candidate_sequence.second.draft_proposals.empty()) {
+                attach_draft_proposal(sequence, candidate_sequence.second.draft_proposals[i]);
+            }
             if (is_update_logit_processor) {
                 logit_processor.register_new_generated_token(token_ids[i]);
                 logit_processor.update_generated_len(sequence->get_generated_len());
@@ -357,6 +404,90 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::init_r
 }
 
 UpdateRequestResult
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update_dflash_draft_request(
+    const SequenceGroup::Ptr& request,
+    const GeneratedSequences& candidates,
+    bool is_update_logit_processor) {
+    UpdateRequestResult result{0, 0};
+    const uint64_t request_id = request->get_request_id();
+    std::vector<Sequence::Ptr> running_sequences = request->get_running_sequences();
+    if (candidates.empty() || running_sequences.empty()) {
+        return result;
+    }
+    OPENVINO_ASSERT(running_sequences.size() == 1 && candidates.size() == 1,
+                    "DFlash draft supports one sequence per request.");
+    Sequence::Ptr sequence = running_sequences.front();
+    const GeneratedSequence& target = candidates.begin()->second;
+
+    // Sync tokens: drop the rejected candidates and append the target's tokens.
+    m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
+    auto& logit_processor = m_sampler->get_logit_processor(request_id);
+    const size_t common_len = get_prefix_len(running_sequences, candidates).first;
+    result.removed_tokens_cnt = remove_tokens_from_sequence(sequence, common_len, logit_processor);
+    result.inserted_tokens_cnt = insert_tokens_to_sequence(sequence,
+                                                           target.token_ids,
+                                                           target.log_probs,
+                                                           logit_processor,
+                                                           is_update_logit_processor,
+                                                           {});
+    if (is_update_logit_processor) {
+        logit_processor.update_generated_len(sequence->get_generated_len());
+    }
+
+    // Plan the window. The target's rows end at its processed length, and their last removed_tokens_cnt
+    // rows belong to rejected candidates.
+    const detail::DFlashDraftWindow window =
+        detail::make_dflash_draft_window(*request, target.num_processed_tokens, m_dflash_candidate_position_offset);
+    const size_t hidden_rows = target.hidden_states ? target.hidden_states.get_shape()[0] : 0;
+    // The per-request runner and scheduler inputs are always overwritten, so no earlier request with the
+    // same id leaves them behind.
+    m_model_runner->set_initial_hidden_state(request_id, ov::Tensor{});
+    if (m_scheduler) {
+        m_scheduler->clear_expected_num_scheduled_tokens(request_id);
+    }
+    request->set_num_validated_tokens(0);
+    if (hidden_rows < result.removed_tokens_cnt + window.context_rows) {
+        // The rows no longer reach the committed positions because an earlier window did not run, and the
+        // draft cannot rebuild them. The draft request stops; the speculative step removes it, and the target
+        // continues the request without speculation.
+        GENAI_WARN("Request %llu: the DFlash draft could not run its window; continuing without speculative decoding.",
+                   static_cast<unsigned long long>(request_id));
+        request->set_generation_status(GenerationStatus::STOP);
+        return result;
+    }
+
+    // Schedule the window: its target rows, the mask placeholders, and the processed length.
+    if (window.context_rows > 0) {
+        const size_t rows_end = hidden_rows - result.removed_tokens_cnt;
+        auto [roi_begin, roi_end] =
+            utils::make_roi(target.hidden_states.get_shape(), 0, rows_end - window.context_rows, rows_end);
+        // The view is read by the next draft forward, before the next target inference overwrites it.
+        m_model_runner->set_initial_hidden_state(request_id,
+                                                 ov::Tensor(target.hidden_states, roi_begin, roi_end));
+    }
+    for (size_t i = 1; i < window.block_rows; ++i) {
+        sequence->append_token(m_dflash_mask_token_id, 0.0f);
+    }
+    const size_t window_rows = window.context_rows + window.block_rows;
+    if (window_rows > 0) {
+        // The committed rows are the only draft KV the window builds on. The rows past what the request
+        // offers by itself are asked for as extra rows, as the Eagle3 and fast-draft updates do.
+        request->update_processed_tokens_num(window.committed_rows);
+        const size_t base_rows = request->get_num_available_tokens_for_batching();
+        if (window_rows > base_rows) {
+            request->set_num_validated_tokens(window_rows - base_rows);
+        } else if (m_scheduler && window_rows < base_rows) {
+            // A prefill chunk: the request offers the rest of its prompt, but the target exported rows only for
+            // this chunk.
+            m_scheduler->set_expected_num_scheduled_tokens(request_id, window_rows);
+        }
+        m_dflash_draft_windows[sequence->get_id()] = window;
+    }
+    request->pause_generation(window_rows == 0);
+    return result;
+}
+
+UpdateRequestResult
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update_request(uint64_t request_id,
                                                                                          const GeneratedSequences& candidates,
                                                                                          bool is_update_logit_processor) {
@@ -364,6 +495,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
     for (auto& request : m_requests) {
         if (request_id != request->get_request_id()) {
             continue;
+        }
+        if (dflash_mode_enabled && !m_is_validation_mode_enabled) {
+            return update_dflash_draft_request(request, candidates, is_update_logit_processor);
         }
 
         std::vector<Sequence::Ptr> running_sequences = request->get_running_sequences();
@@ -430,12 +564,17 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
 
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
 
-                auto candidate_sequence = *candidate_ptr;
+                const auto& candidate_sequence = *candidate_ptr;
                 std::vector<int64_t> candidate_token_ids = candidate_sequence.token_ids;
                 std::vector<float> candidate_token_log_probs = candidate_sequence.log_probs;
                 candidate_token_ids.resize(min_candidate_len);
                 candidate_token_log_probs.resize(min_candidate_len);
-                result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
+                result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence,
+                                                                       candidate_token_ids,
+                                                                       candidate_token_log_probs,
+                                                                       logit_processor,
+                                                                       is_update_logit_processor,
+                                                                       candidate_sequence.draft_proposals);
                 // handle hidden states for eagle mode
                 if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
                     // Eagle mode hidden state management currently supports only single sequence
@@ -504,6 +643,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     TreeMetaData merged = *candidate_sequence.tree_metadata;
                     merged.validated_indices = running_sequence->get_tree_metadata().validated_indices;
                     running_sequence->set_tree_metadata(std::move(merged));
+                }
+                if (is_update_logit_processor) {
+                    // Main-model synchronization commits every retained draft
+                    // token; proposal distributions are only needed until then.
+                    running_sequence->clear_draft_proposals();
                 }
             }
             // we should update a logit processor just for draft model to generate the same tokens
@@ -689,7 +833,76 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_a
     m_awaiting_requests.clear();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::dflash_draft_multistep() {
+    bool ran_forward = false;
+    float step_duration = 0.0f;
+    // step() frees the requests that run out of KV cache, so their per-request inputs are cleared by id.
+    std::vector<uint64_t> request_ids;
+    request_ids.reserve(m_requests.size());
+    for (const auto& request : m_requests) {
+        request_ids.push_back(request->get_request_id());
+    }
+    if (!m_dflash_draft_windows.empty()) {
+        const auto step_start = std::chrono::steady_clock::now();
+        step();
+        step_duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+        // A step that schedules nothing returns before the forward and keeps the previous inference_duration.
+        ran_forward = get_metrics().scheduled_requests > 0;
+    }
+    for (const uint64_t request_id : request_ids) {
+        m_scheduler->clear_expected_num_scheduled_tokens(request_id);
+        m_model_runner->set_initial_hidden_state(request_id, ov::Tensor{});
+    }
+
+    size_t num_candidates = 0;
+    for (auto& request : m_requests) {
+        request->pause_generation(true);
+        const auto running_sequences = request->get_running_sequences();
+        if (running_sequences.empty()) {
+            continue;
+        }
+        const auto window_it = m_dflash_draft_windows.find(running_sequences.front()->get_id());
+        if (window_it == m_dflash_draft_windows.end()) {
+            continue;
+        }
+        const detail::DFlashDraftWindow& window = window_it->second;
+        const size_t processed_tokens = request->get_num_processed_tokens();
+        const size_t forwarded_rows =
+            processed_tokens > window.committed_rows ? processed_tokens - window.committed_rows : 0;
+        const size_t first_candidate_row = window.context_rows + m_dflash_candidate_position_offset;
+        if (forwarded_rows > first_candidate_row) {
+            // The forward reached candidate rows, so the sampler removed every placeholder and appended the
+            // candidates it sampled after the seed. A row source can end a block before its last candidate row.
+            const size_t seed_generated_len =
+                window.committed_rows + window.context_rows + 1 - request->get_prompt_len();
+            num_candidates += running_sequences.front()->get_generated_len() - seed_generated_len;
+        } else if (window.block_rows > 0) {
+            // The sampler did not run, so the mask placeholders are still in the sequence.
+            running_sequences.front()->remove_last_tokens(window.block_rows - 1);
+        }
+        // The next window starts at the seed: only the forwarded context rows keep their KV, and the block is
+        // rewritten. The next update stops drafting if the target's rows no longer reach the committed rows.
+        request->update_processed_tokens_num(std::min(processed_tokens, window.committed_rows + window.context_rows));
+    }
+    m_dflash_draft_windows.clear();
+    // Candidates need embeddings before the next update can remove the rejected ones.
+    sync_generated_embeddings();
+
+    const float markov_head_duration =
+        m_dflash_candidate_selector ? m_dflash_candidate_selector->take_inference_duration() : 0.0f;
+    if (ran_forward) {
+        raw_perf_metrics.m_durations.emplace_back(step_duration);
+        raw_perf_metrics.m_inference_durations[0] +=
+            MicroSeconds(get_metrics().inference_duration + markov_head_duration);
+        raw_perf_metrics.m_batch_sizes.emplace_back(num_candidates);
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::multistep() {
+    if (dflash_mode_enabled && !m_is_validation_mode_enabled) {
+        dflash_draft_multistep();
+        return;
+    }
     bool to_generate = true;
     size_t generated_tokens_cnt = 0;
 
@@ -831,4 +1044,5 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl::collec
         }
     }
 }
+
 }
