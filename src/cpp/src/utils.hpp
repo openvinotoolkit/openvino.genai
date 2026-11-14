@@ -2,27 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-#include <cstdint>
-#include <filesystem>
+#include <type_traits>
 #include <optional>
 #include <set>
 #include <stdexcept>
-#include <tuple>
-#include <type_traits>
 #include <utility>
+#include <tuple>
+#include <cstdint>
 
-#include "openvino/genai/extensions.hpp"
-#include "openvino/genai/generation_config.hpp"
-#include "openvino/genai/generation_handle.hpp"
-#include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/extensions.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
+#include "openvino/runtime/core.hpp"
+
+#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/generation_config.hpp"
+
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
-#include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/runtime/core.hpp"
 
 namespace ov {
 namespace genai {
@@ -440,9 +441,7 @@ void log_attention_backend(const std::string& attention_backend);
 // followed by a DEBUG message with the original exception details.
 void log_paged_attention_fallback(const ov::Exception& exception);
 
-void save_openvino_model(const std::shared_ptr<ov::Model>& model,
-                         const std::filesystem::path& save_path,
-                         bool compress_to_fp16);
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
 

@@ -355,8 +355,8 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
             ov_detokenizer->set_rt_info(m_bos_token, "bos_token");
             ov_detokenizer->set_rt_info(m_eos_token, "eos_token");
 
-            ov::genai::utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path, false);
-            ov::genai::utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path, false);
+            ov::genai::utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
+            ov::genai::utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
         }
 
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);

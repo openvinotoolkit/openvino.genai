@@ -9,14 +9,13 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <string>
 #include <unordered_map>
 #include <variant>
 
-#include "gguf_metadata.hpp"
 #include "openvino/openvino.hpp"
+#include "gguf_metadata.hpp"
 
 extern "C" {
 #include <gguflib.h>
@@ -52,4 +51,4 @@ load_gguf(const std::string& file);
 GGUFLoad get_gguf_data(const std::string& file);
 
 // Load only GGUF metadata KV pairs, skipping weight tensors.
-std::unordered_map<std::string, GGUFMetaData> get_gguf_metadata(const std::filesystem::path& file);
+std::unordered_map<std::string, GGUFMetaData> get_gguf_metadata(const std::string& file);

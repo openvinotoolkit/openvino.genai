@@ -484,17 +484,14 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
     return {properties, enable_save_ov_model};
 }
 
-void save_openvino_model(const std::shared_ptr<ov::Model>& model,
-                         const std::filesystem::path& save_path,
-                         bool compress_to_fp16) {
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
     try {
         auto serialize_start_time = std::chrono::high_resolution_clock::now();
         ov::save_model(model, save_path, compress_to_fp16);
         auto serialize_finish_time = std::chrono::high_resolution_clock::now();
         auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
         std::stringstream ss;
-        ss << "Save generated OpenVINO model to: " << save_path.u8string() << " done. Time: " << serialize_duration
-           << " ms";
+        ss << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms";
         ov::genai::utils::print_gguf_debug_info(ss.str());
     }
     catch (const ov::Exception& e) {
