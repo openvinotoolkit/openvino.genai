@@ -11,6 +11,7 @@
 #include <cassert>
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <openvino/core/except.hpp>
@@ -372,7 +373,7 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
             workers[iw] = std::thread(log_mel_spectrogram_worker_thread,
                                       iw + 1,
                                       std::cref(hann),
-                                      padded_raw_speech,
+                                      std::cref(padded_raw_speech),
                                       raw_speech.size() + reflect_pad_size,
                                       n_fft,
                                       hop_length,
