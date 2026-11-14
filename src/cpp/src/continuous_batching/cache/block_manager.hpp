@@ -85,6 +85,14 @@ using BlocksPerLayer = std::vector<CacheBlock::Ptr>;
 class OverwritableBlocksHashStore {
     std::map<size_t, BlocksPerLayer> m_blocks;
     size_t m_num_layers;
+    // First block index of every chunk of a chunked KV cache, ascending. Empty for a contiguous cache.
+    std::vector<size_t> m_chunk_first_block;
+
+    size_t chunk_of(const BlocksPerLayer& blocks_for_all_layers) const {
+        const auto it = std::upper_bound(m_chunk_first_block.begin(), m_chunk_first_block.end(),
+                                         static_cast<size_t>(blocks_for_all_layers[0]->get_index()));
+        return it == m_chunk_first_block.begin() ? 0 : static_cast<size_t>(it - m_chunk_first_block.begin()) - 1;
+    }
     public:
     /**
      * Constructs the BlockHashStore.
@@ -135,16 +143,23 @@ class OverwritableBlocksHashStore {
     }
 
     /**
-     * Pops the least recently used blocks from the store to be used and overwritten by another sequence.
+     * Pops the next blocks from the store to be used and overwritten by another sequence.
      * Returned blocks will have reference counters equal to 1.
-     * @return A vector of KV cache blocks (one for each decoder layer) that has least recently been added to the store
-     * based on the timestamp.
+     * @return A vector of KV cache blocks (one for each decoder layer): the one that has least recently been added to
+     * the store based on the timestamp or, when chunk boundaries are set, the least recently added one among those in
+     * the highest chunk, so that the tail chunk empties first.
      */
     BlocksPerLayer get_lru_block_to_overwrite() {
         if (m_blocks.empty()) {
             return {};
         }
-        auto hash_and_blocks_for_all_layers = std::min_element(std::begin(m_blocks), std::end(m_blocks), [](const auto& lhs, const auto& rhs) -> bool { return lhs.second[0]->get_timestamp() < rhs.second[0]->get_timestamp(); });
+        auto hash_and_blocks_for_all_layers = std::min_element(std::begin(m_blocks), std::end(m_blocks), [this](const auto& lhs, const auto& rhs) -> bool {
+            const size_t lhs_chunk = chunk_of(lhs.second), rhs_chunk = chunk_of(rhs.second);
+            if (lhs_chunk != rhs_chunk) {
+                return lhs_chunk > rhs_chunk;
+            }
+            return lhs.second[0]->get_timestamp() < rhs.second[0]->get_timestamp();
+        });
         auto blocks_for_all_layers = hash_and_blocks_for_all_layers->second;
         auto timestamp = std::chrono::steady_clock::now();
         for (auto& block_ptr : blocks_for_all_layers) {
@@ -153,6 +168,14 @@ class OverwritableBlocksHashStore {
         }
         m_blocks.erase(hash_and_blocks_for_all_layers->first);
         return blocks_for_all_layers;
+    }
+
+    /**
+     * Makes eviction prefer blocks in the highest chunk of a chunked KV cache.
+     * @param chunk_first_block First block index of each chunk, ascending. Empty restores plain LRU eviction.
+     */
+    void set_chunk_boundaries(std::vector<size_t> chunk_first_block) {
+        m_chunk_first_block = std::move(chunk_first_block);
     }
 
     /**
@@ -194,10 +217,48 @@ class OverwritableBlocksHashStore {
 class CacheStateDumper;
 
 /**
+ * @brief Free blocks of one layer. FIFO by default. With `lowest_index_first` the lowest block index is handed out
+ * first, which keeps the highest block indices (the tail chunk of a chunked KV cache) free for as long as possible.
+ */
+class FreeBlockList {
+    bool m_lowest_index_first;
+    std::list<CacheBlock::Ptr> m_fifo;
+    std::map<int, CacheBlock::Ptr> m_by_index;
+
+public:
+    explicit FreeBlockList(bool lowest_index_first = false) : m_lowest_index_first(lowest_index_first) {}
+
+    void push_back(const CacheBlock::Ptr& block) {
+        if (m_lowest_index_first) {
+            OPENVINO_ASSERT(m_by_index.emplace(block->get_index(), block).second, "block ", block->get_index(), " is already in the free list");
+        } else {
+            m_fifo.push_back(block);
+        }
+    }
+
+    CacheBlock::Ptr front() const {
+        return m_lowest_index_first ? m_by_index.begin()->second : m_fifo.front();
+    }
+
+    void pop_front() {
+        if (m_lowest_index_first) {
+            m_by_index.erase(m_by_index.begin());
+        } else {
+            m_fifo.pop_front();
+        }
+    }
+
+    void clear() {
+        m_fifo.clear();
+        m_by_index.clear();
+    }
+};
+
+/**
  * @brief Maintains a layered pool of cache block descriptors, freeing or allocating them as requested.
  */
 class BlockAllocator {
-    std::vector<std::list<CacheBlock::Ptr>> m_free_blocks;
+    std::vector<FreeBlockList> m_free_blocks;
     // We keep m_free_blocks_num instead of m_free_blocks[X].size() to WA old CXX library implementation issue for std::list::size()
     // see https://stackoverflow.com/questions/13157164/why-isnt-stdlist-size-constant-time
     std::vector<size_t> m_free_blocks_num;
@@ -244,13 +305,15 @@ public:
      * See also the equivalent parameter in ov::genai::ContinuousBatchingPipeline
      * @param num_layers The number of separate block-table layers associated with the allocator.
      * Blocks returned will be vectors with this size, each vector entry to be associated with a separate cache layer.
+     * @param lowest_block_first Whether free blocks are handed out in ascending block index order instead of the order
+     * in which they were freed. Used with a chunked KV cache so that the highest chunk stays unused as long as possible.
      */
-    BlockAllocator(size_t num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
+    BlockAllocator(size_t num_blocks, bool enable_prefix_caching, size_t num_layers = 1, bool lowest_block_first = false) :
             m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
         OPENVINO_ASSERT(num_blocks <= static_cast<size_t>(std::numeric_limits<int>::max()),
                         "num_blocks ", num_blocks, " exceeds the maximum allowed block index (", std::numeric_limits<int>::max(), ")");
-        m_free_blocks.resize(m_num_layers);
+        m_free_blocks.assign(m_num_layers, FreeBlockList(lowest_block_first));
         if (num_blocks > 0) {
             m_free_blocks_num = std::vector<size_t>(num_layers, num_blocks);
             for (auto& per_layer_block_list : m_free_blocks) {
@@ -605,6 +668,15 @@ public:
             per_layer_block_list.clear();
         }
         m_overwriteable_blocks.clear();
+        m_overwriteable_blocks.set_chunk_boundaries({});
+    }
+
+    /**
+     * Tells the allocator where the chunks of a chunked KV cache start, so that prefix-cache eviction can empty the
+     * highest chunk first. An empty vector means a contiguous cache.
+     */
+    void set_chunk_boundaries(std::vector<size_t> chunk_first_block) {
+        m_overwriteable_blocks.set_chunk_boundaries(std::move(chunk_first_block));
     }
 };
 
@@ -659,10 +731,13 @@ public:
      *        When 0 (default), blocks grow with context length.
      * @param restore_latest_prefix_block_only When true, prefix-cache restore keeps only the latest matching
      *        block and tracks its logical block-table offset. Used for linear-attention state cache.
+     * @param lowest_block_first When true, free blocks are allocated in ascending block index order (see BlockAllocator).
+     *        Used for a chunked KV cache.
      */
     BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size, size_t num_layers = 1,
-                 size_t fixed_blocks_per_sequence = 0, bool restore_latest_prefix_block_only = false)
-        : m_allocator(num_blocks, enable_prefix_caching, num_layers), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size),
+                 size_t fixed_blocks_per_sequence = 0, bool restore_latest_prefix_block_only = false,
+                 bool lowest_block_first = false)
+        : m_allocator(num_blocks, enable_prefix_caching, num_layers, lowest_block_first), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size),
         m_num_layers(num_layers), m_fixed_blocks_per_sequence(fixed_blocks_per_sequence),
         m_restore_latest_prefix_block_only(restore_latest_prefix_block_only) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
@@ -679,6 +754,14 @@ public:
                       leaked_tables,
                       static_cast<unsigned long long>(first_leaked_seq_id));
         }
+    }
+
+    /**
+     * Tells the block manager where the chunks of a chunked KV cache start (first block index of each chunk,
+     * ascending), so that prefix-cache eviction empties the highest chunk first. Empty means a contiguous cache.
+     */
+    void set_chunk_boundaries(std::vector<size_t> chunk_first_block) {
+        m_allocator.set_chunk_boundaries(std::move(chunk_first_block));
     }
 
     /**

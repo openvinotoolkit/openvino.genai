@@ -122,7 +122,9 @@ public:
 
     void allocate_cache_if_needed() {
         for (auto& [type, block_mgr] : m_block_managers) {
-            m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_block_count());
+            auto& cache_mgr = m_cache_managers.at(type);
+            cache_mgr->allocate_cache_if_needed(block_mgr->get_total_block_count());
+            block_mgr->set_chunk_boundaries(cache_mgr->get_chunk_first_blocks());
         }
         for (auto& [type, block_indices] : m_pending_zero_blocks) {
             m_cache_managers.at(type)->zero_blocks(block_indices);
@@ -785,7 +787,7 @@ private:
 
         std::unique_ptr<KVCacheManager> kv_manager;
         if (KVCacheManager::has_cache_inputs(compiled_model)) {
-            kv_manager = std::make_unique<KVCacheManager>(infer_request, config.use_chunked_kv_cache, config.kv_cache_chunk_size_blocks);
+            kv_manager = std::make_unique<KVCacheManager>(infer_request, config.use_chunked_kv_cache);
         }
 
         std::unique_ptr<LinearAttentionCacheManager> la_manager;
@@ -930,7 +932,10 @@ private:
             config.num_kv_blocks,
             config.enable_prefix_caching,
             kv_manager->get_block_size(),
-            num_block_table_layers);
+            num_block_table_layers,
+            /* fixed_blocks_per_sequence = */ 0,
+            /* restore_latest_prefix_block_only = */ false,
+            /* lowest_block_first = */ config.use_chunked_kv_cache);
 
         register_cache_type(CacheType::KV_CACHE, std::move(kv_manager), std::move(block_manager),
                             per_layer_control);

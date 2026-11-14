@@ -28,6 +28,62 @@ TEST_P(TestBlockAllocatorWithNumLayers, AllocatesBlocksAccordingToNumLayers) {
 
 INSTANTIATE_TEST_SUITE_P(VariousNumLayers, TestBlockAllocatorWithNumLayers, ::testing::Values(1, 2, 15, 23, 42));
 
+TEST(TestBlockAllocator, DefaultAllocationOrderIsFifo) {
+    auto allocator = ov::genai::BlockAllocator(6, false, 1);
+    auto b0 = allocator.allocate_block(0);
+    auto b1 = allocator.allocate_block(0);
+    auto b2 = allocator.allocate_block(0);
+    EXPECT_EQ(b0->get_index(), 0);
+    EXPECT_EQ(b1->get_index(), 1);
+    EXPECT_EQ(b2->get_index(), 2);
+    allocator.free(b1, 0);
+    allocator.free(b0, 0);
+
+    // Freed blocks go to the back of the queue.
+    auto b3 = allocator.allocate_block(0);
+    EXPECT_EQ(b3->get_index(), 3);
+    allocator.free(b2, 0);
+    allocator.free(b3, 0);
+}
+
+TEST(TestBlockAllocator, LowestBlockFirstReusesLowestFreedIndex) {
+    auto allocator = ov::genai::BlockAllocator(6, false, 1, /* lowest_block_first = */ true);
+    auto b0 = allocator.allocate_block(0);
+    auto b1 = allocator.allocate_block(0);
+    auto b2 = allocator.allocate_block(0);
+    EXPECT_EQ(b2->get_index(), 2);
+    allocator.free(b1, 0);
+    allocator.free(b0, 0);
+
+    auto n0 = allocator.allocate_block(0);
+    auto n1 = allocator.allocate_block(0);
+    auto n2 = allocator.allocate_block(0);
+    EXPECT_EQ(n0->get_index(), 0);
+    EXPECT_EQ(n1->get_index(), 1);
+    EXPECT_EQ(n2->get_index(), 3);
+    EXPECT_EQ(allocator.num_free_blocks(0), 2);
+    allocator.free(b2, 0);
+    allocator.free(n0, 0);
+    allocator.free(n1, 0);
+    allocator.free(n2, 0);
+}
+
+TEST(TestBlockAllocator, LowestBlockFirstAppliesToGrownPool) {
+    auto allocator = ov::genai::BlockAllocator(2, false, 1, /* lowest_block_first = */ true);
+    auto b0 = allocator.allocate_block(0);
+    auto b1 = allocator.allocate_block(0);
+    allocator.increase_block_count(4);
+    allocator.free(b1, 0);
+
+    auto n0 = allocator.allocate_block(0);
+    EXPECT_EQ(n0->get_index(), 1);
+    auto n1 = allocator.allocate_block(0);
+    EXPECT_EQ(n1->get_index(), 2);
+    allocator.free(b0, 0);
+    allocator.free(n0, 0);
+    allocator.free(n1, 0);
+}
+
 TEST(TestBlockAllocator, AllocatesBlocksIndependentlyToLayers) {
     size_t num_layers = 3;
     size_t initial_num_free_blocks = 10;

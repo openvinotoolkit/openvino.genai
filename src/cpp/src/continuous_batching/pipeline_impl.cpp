@@ -79,7 +79,7 @@ void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
     const bool allow_score_aggregation = true;
     const bool allow_adaptive_rkv = scheduler_config.use_cache_eviction &&
                                     scheduler_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV;
-    const bool allow_chunked_kv_cache = scheduler_config.use_chunked_kv_cache;
+    const bool allow_kv_chunk_table = scheduler_config.use_chunked_kv_cache;
 
     ov::pass::SDPAToPagedAttention(need_per_layer_kv_cache_control,
                                    need_per_layer_kv_cache_control,
@@ -89,9 +89,7 @@ void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
                                    allow_adaptive_rkv,
                                    /* allow_qq_bias = */ false,
                                    /* is_draft_model = */ false,
-                                   allow_chunked_kv_cache,
-                                   scheduler_config.kv_cache_chunk_size_blocks,
-                                   /* kv_cache_chunk_tables = */ true)
+                                   allow_kv_chunk_table)
         .run_on_model(model);
     model->validate_nodes_and_infer_types();
     utils::apply_gather_before_matmul_transformation(model);
@@ -754,14 +752,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     generate_timer.end();
 
     const auto& scheduler_config = m_scheduler->get_config();
-    // Clear cache in case of dynamic cache allocation and no prefix caching. Skipped for chunked KV
-    // cache: KVCacheManager::clear() destroys the chunk tensors without unbinding the chunk_base_ptrs.N
-    // input (which still holds now-dangling USM pointers) from the compiled model's infer request --
-    // an untested path for chunked mode (its shrink/cleanup story isn't implemented yet)
-    // that was found to crash. Chunked caches simply keep their (small, incremental) allocation
-    // around between generate() calls instead.
+    // Clear cache in case of dynamic cache allocation and no prefix caching.
     if (!scheduler_config.enable_prefix_caching && scheduler_config.cache_size == 0 &&
-        scheduler_config.num_kv_blocks == 0 && !scheduler_config.use_chunked_kv_cache) {
+        scheduler_config.num_kv_blocks == 0) {
         m_scheduler->clear_cache();
     }
     return results;

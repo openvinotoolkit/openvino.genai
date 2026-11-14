@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace ov::genai {
 
@@ -64,6 +65,9 @@ public:
 
     /// @return Number of blocks currently allocated in physical storage.
     virtual size_t get_num_allocated_blocks() const = 0;
+
+    /// @return First block index of each physical chunk, ascending. Empty when the storage is a single contiguous allocation.
+    virtual std::vector<size_t> get_chunk_first_blocks() const { return {}; }
 };
 
 }  // namespace ov::genai

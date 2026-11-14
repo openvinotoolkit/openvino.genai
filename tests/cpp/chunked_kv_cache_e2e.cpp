@@ -34,12 +34,6 @@ SchedulerConfig make_scheduler_config(bool use_chunked_kv_cache) {
     config.max_num_seqs = 2;
     config.dynamic_split_fuse = false;
     config.use_chunked_kv_cache = use_chunked_kv_cache;
-    if (use_chunked_kv_cache) {
-        // Deliberately small relative to num_kv_blocks so the ~200-token prompt plus 40 generated
-        // tokens spans several chunk boundaries per layer, exercising the cross-chunk read/write
-        // addressing logic rather than just a single chunk.
-        config.kv_cache_chunk_size_blocks = 2;
-    }
     return config;
 }
 

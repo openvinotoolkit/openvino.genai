@@ -25,6 +25,11 @@ class KVCacheManager : public ICacheManager {
     // A growth step adds at least 1/kGrowthFloorDivisor of the blocks already allocated, which bounds the chunk count
     // to O(log capacity) at the cost of at most ~6% over-allocation.
     static constexpr size_t kGrowthFloorDivisor = 16;
+    // Capacity of the chunk table, fixed for the lifetime of the manager so the table tensor is sized and bound once:
+    // at most kMaxChunks chunks and kMaxGranules granules in total. The growth floor above keeps the chunk count
+    // logarithmic in the capacity, and 16384 granules of 4 blocks address 65536 blocks with a 64 KiB directory.
+    static constexpr size_t kMaxChunks = 128;
+    static constexpr size_t kMaxGranules = size_t{1} << 14;
 
     size_t m_num_layers = 0;
     std::string m_device;
@@ -36,27 +41,19 @@ class KVCacheManager : public ICacheManager {
     ov::InferRequest m_request;
     ov::RemoteContext m_context;
 
-    // When enabled, key/value cache storage is grown in chunks
-    // (each chunk a separate device allocation) instead of one growing tensor per layer, and the
-    // corresponding `paged_attention` primitive reads/writes through the `chunk_base_ptrs.N` model
-    // input instead of `key_cache.N`/`value_cache.N`. Mutually exclusive with cache eviction/rotation
-    // and prefix caching (see SchedulerConfig::validate()) since those address cache
-    // blocks via the single-tensor accessors below, which have not been made chunk-aware.
+    // When enabled, key/value cache storage is grown in chunks (each chunk a separate USM device allocation) instead of
+    // one growing tensor per layer. `key_cache.N` / `value_cache.N` are bound once to the chunk-0 tensors (they carry
+    // the dtype and block shape), and the global `kv_chunk_table` model input, updated in place, tells the kernels where
+    // every chunk lives (see kv_chunk_table.hpp). Mutually exclusive with cache eviction/rotation (see
+    // SchedulerConfig::validate()) since that addresses cache blocks via the single-tensor accessors below, which have
+    // not been made chunk-aware. Prefix caching is supported.
     bool m_chunked_kv_cache = false;
-    // Table mode (the default for chunked caches): `key_cache.N` / `value_cache.N` themselves are bound to i64 tensors
-    // holding one device pointer per chunk, and the model has no `chunk_base_ptrs.N` input. When false, the legacy
-    // 29th-input mode is used.
-    bool m_chunk_tables = false;
-    // Uniform chunk size of the legacy chunk_base_ptrs mode only; table mode sizes each chunk from the shortfall.
     // m_granule_shift: chunk sizes are rounded up to 2^m_granule_shift blocks.
-    size_t m_blocks_per_chunk = 0;
     uint32_t m_granule_shift = 0;
-    uint32_t m_chunk_generation = 0;
     std::vector<size_t> m_chunk_blocks;       // blocks in each chunk, in allocation order
     std::vector<size_t> m_chunk_first_block;  // first block id of each chunk (prefix sums of m_chunk_blocks)
     std::vector<std::vector<ov::Tensor>> m_key_chunks, m_value_chunks;  // [layer][chunk_id]
-    std::vector<ov::Tensor> m_chunk_base_ptrs;                         // [layer], i64 [2 * num_chunks] (legacy mode)
-    std::vector<ov::Tensor> m_key_tables, m_value_tables;              // [layer], i64 chunk table (table mode)
+    kv_chunk_table::GlobalChunkTable m_chunk_table;
 
     static ov::Shape set_kv_blocks(ov::PartialShape pshape, size_t num_kv_blocks) {
         pshape[0] = num_kv_blocks;
@@ -130,7 +127,7 @@ class KVCacheManager : public ICacheManager {
         return block_bytes;
     }
 
-    static int64_t usm_pointer_of(const ov::Tensor& chunk_tensor) {
+    static uint64_t usm_pointer_of(const ov::Tensor& chunk_tensor) {
         // Avoids depending on openvino/runtime/intel_gpu/ocl/ocl.hpp's USMTensor helper, which pulls in
         // the OpenCL C++ headers (CL/cl2.hpp) that aren't on this project's include path; mem_handle is
         // just a property name (see remote_properties.hpp), readable off any ov::RemoteTensor directly.
@@ -138,136 +135,80 @@ class KVCacheManager : public ICacheManager {
         auto params = remote_tensor.get_params();
         void* ptr = params.at(ov::intel_gpu::mem_handle.name()).as<ov::intel_gpu::gpu_handle_param>();
         OPENVINO_ASSERT(ptr != nullptr, "Chunked KV cache chunk did not provide a valid USM device pointer");
-        return reinterpret_cast<int64_t>(ptr);
+        return reinterpret_cast<uint64_t>(ptr);
     }
 
-    // The `key_cache.N`/`value_cache.N` model inputs stay declared (the kernel still takes them as
-    // fixed arguments, see pa_kv_cache_update_ref.cl/paged_attention_opt.cl), but are dead in chunked
-    // mode: nothing reads or writes them. Bind the smallest legal (1-block) dummy allocation once.
-    void bind_dummy_legacy_cache_tensor(size_t decoder_layer_id) {
+    void bind_chunk0_cache_tensors(size_t decoder_layer_id) {
+        m_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_key_chunks[decoder_layer_id][0]);
+        m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_value_chunks[decoder_layer_id][0]);
+    }
+
+    // Binds the smallest legal (1-block) allocation to key_cache.N / value_cache.N so the request stops referencing
+    // the chunk-0 tensors (see clear()); nothing reads them until the next allocation rebinds chunk 0.
+    void bind_placeholder_cache_tensors(size_t decoder_layer_id) {
         ov::Shape key_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], 1);
         ov::Shape value_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], 1);
-        ov::Tensor key_dummy = m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_shape);
-        ov::Tensor value_dummy = m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_shape);
-        m_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), key_dummy);
-        m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), value_dummy);
+        m_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id),
+                             m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_shape));
+        m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id),
+                             m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_shape));
     }
 
-    // Rebuilds the full `chunk_base_ptrs.N` table (key chunk pointers followed by value chunk
-    // pointers, see PagedAttentionExtension::has_chunk_base_ptrs). The tensor is the plugin's own (USM host) one, bound
-    // once and only reshaped/refilled on growth: a user host tensor would be copied to the device on every inference.
-    void refresh_chunk_base_ptrs_tensor(size_t decoder_layer_id) {
-        const size_t num_chunks = m_key_chunks[decoder_layer_id].size();
-        const ov::Shape required_shape{2 * num_chunks};
-        if (!m_chunk_base_ptrs[decoder_layer_id]) {
-            m_chunk_base_ptrs[decoder_layer_id] = m_request.get_tensor(std::string("chunk_base_ptrs.") + std::to_string(decoder_layer_id));
-        }
-        if (m_chunk_base_ptrs[decoder_layer_id].get_shape() != required_shape) {
-            m_chunk_base_ptrs[decoder_layer_id].set_shape(required_shape);
-        }
-        auto* data = m_chunk_base_ptrs[decoder_layer_id].data<int64_t>();
-        for (size_t i = 0; i < num_chunks; ++i) {
-            data[i] = usm_pointer_of(m_key_chunks[decoder_layer_id][i]);
-            data[num_chunks + i] = usm_pointer_of(m_value_chunks[decoder_layer_id][i]);
-        }
-    }
-
-    // Table mode: rebuilds the per-chunk pointer tables and binds them as the `key_cache.N` / `value_cache.N` inputs.
-    // The plugin treats these ports specially (see the `kv_cache_chunk_table` rt_info flag), so the i64 tensors do not
-    // have to match the declared cache type/shape. Cheap: only pointers are written, never KV data.
-    void refresh_chunk_tables(size_t decoder_layer_id) {
-        const size_t num_chunks = m_key_chunks[decoder_layer_id].size();
-        std::vector<int64_t> key_ptrs(num_chunks), value_ptrs(num_chunks);
-        for (size_t i = 0; i < num_chunks; ++i) {
-            key_ptrs[i] = usm_pointer_of(m_key_chunks[decoder_layer_id][i]);
-            value_ptrs[i] = usm_pointer_of(m_value_chunks[decoder_layer_id][i]);
-        }
-        // USM host memory: the plugin binds it as is, whereas a plain host tensor is copied to the device on every
-        // inference and the kernel launcher then reads it back from the device to register the chunk pointers.
-        auto to_tensor = [this](const std::vector<int64_t>& words) {
-            ov::Tensor tensor = m_context.create_host_tensor(ov::element::i64, ov::Shape{words.size()});
-            std::memcpy(tensor.data<int64_t>(), words.data(), words.size() * sizeof(int64_t));
-            return tensor;
-        };
-        ov::Tensor key_table = to_tensor(kv_chunk_table::build(m_granule_shift, m_chunk_generation, key_ptrs, m_chunk_blocks));
-        ov::Tensor value_table = to_tensor(kv_chunk_table::build(m_granule_shift, m_chunk_generation, value_ptrs, m_chunk_blocks));
-        m_key_tables[decoder_layer_id] = key_table;
-        m_value_tables[decoder_layer_id] = value_table;
-        m_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), key_table);
-        m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), value_table);
-    }
-
-    // Only ever appends brand-new chunks; existing chunks (and the KV data already written into them)
-    // are never reallocated, copied, or moved. This is the actual point of chunking: growth no longer
-    // costs an O(existing_cache_size) copy.
+    // Only ever appends one brand-new chunk; existing chunks (and the KV data already written into them) are never
+    // reallocated, copied, or moved, and nothing is rebound: the table is updated in place. This is the actual point of
+    // chunking: growth no longer costs an O(existing_cache_size) copy.
     void allocate_chunked_cache_if_needed(size_t num_kv_blocks) {
         const size_t granule_blocks = size_t{1} << m_granule_shift;
         const size_t deficit = num_kv_blocks - m_num_allocated_kv_blocks;
-        std::vector<size_t> new_chunks;
-        size_t growth_floor = 0;
-        if (m_chunk_tables) {
-            // One chunk per growth step, sized from the shortfall; chunk sizes may differ. The floor keeps repeated small
-            // shortfalls from creating a long tail of tiny chunks (each one costs 2 * layers USM allocations).
-            growth_floor = m_num_allocated_kv_blocks / kGrowthFloorDivisor;
-            const size_t wanted = std::max(deficit, growth_floor);
-            new_chunks.push_back((wanted + granule_blocks - 1) / granule_blocks * granule_blocks);
-        } else {
-            // The legacy chunk_base_ptrs kernels divide by a compile-time chunk size, so chunks must be uniform.
-            new_chunks.assign((deficit + m_blocks_per_chunk - 1) / m_blocks_per_chunk, m_blocks_per_chunk);
-        }
-        size_t new_total_blocks = m_num_allocated_kv_blocks;
-        for (const size_t chunk_blocks : new_chunks) {
-            m_chunk_first_block.push_back(new_total_blocks);
-            m_chunk_blocks.push_back(chunk_blocks);
-            new_total_blocks += chunk_blocks;
-        }
-        ++m_chunk_generation;
-        std::string chunk_sizes = "[";
-        for (size_t i = 0; i < m_chunk_blocks.size(); ++i) {
-            chunk_sizes += (i ? "," : "") + std::to_string(m_chunk_blocks[i]);
-        }
-        chunk_sizes += "]";
-        const size_t added_blocks = new_total_blocks - m_num_allocated_kv_blocks;
+        // One chunk per growth step, sized from the shortfall. The floor keeps repeated small shortfalls from creating a
+        // long tail of tiny chunks (each one costs 2 * layers USM allocations).
+        const size_t growth_floor = m_num_allocated_kv_blocks / kGrowthFloorDivisor;
+        const size_t wanted = std::max(deficit, growth_floor);
+        const size_t chunk_blocks = (wanted + granule_blocks - 1) / granule_blocks * granule_blocks;
+        const size_t new_total_blocks = m_num_allocated_kv_blocks + chunk_blocks;
+        const size_t new_chunk_id = m_chunk_blocks.size();
         GENAI_INFO("[KV_TRACE] allocate_chunked_physical_cache requested_blocks=%zu deficit=%zu growth_floor=%zu granule_blocks=%zu | "
-                   "added_blocks=%zu (%.1f MiB) physical_blocks %zu->%zu (%.1f MiB) | chunks=%zu new_chunks=%zu sizes=%s | "
-                   "usm_allocations=%zu (layers=%zu x K,V x new_chunks) table_generation=%u",
+                   "added_blocks=%zu (%.1f MiB) physical_blocks %zu->%zu (%.1f MiB) | chunks=%zu new_chunk_id=%zu | "
+                   "usm_allocations=%zu (layers=%zu x K,V) table_generation=%zu",
                    num_kv_blocks,
                    deficit,
                    growth_floor,
                    granule_blocks,
-                   added_blocks,
-                   blocks_to_mib(added_blocks),
+                   chunk_blocks,
+                   blocks_to_mib(chunk_blocks),
                    m_num_allocated_kv_blocks,
                    new_total_blocks,
                    blocks_to_mib(new_total_blocks),
-                   m_chunk_blocks.size(),
-                   new_chunks.size(),
-                   chunk_sizes.c_str(),
-                   2 * m_num_layers * new_chunks.size(),
+                   new_chunk_id + 1,
+                   new_chunk_id,
+                   2 * m_num_layers,
                    m_num_layers,
-                   m_chunk_generation);
+                   new_chunk_id + 1);
         // Chunk tensors must be true USM device allocations (not the plugin's default cl_mem
         // buffer): usm_pointer_of() hands their address straight to a kernel as a raw pointer, and
         // a cl_mem handle is not a dereferenceable device address.
         const ov::AnyMap usm_device_params{{ov::intel_gpu::shared_mem_type.name(), ov::intel_gpu::SharedMemType::USM_DEVICE_BUFFER}};
+        std::vector<ov::Tensor> new_keys, new_values;
+        std::vector<uint64_t> key_ptrs, value_ptrs;
         for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
-            if (m_key_chunks[decoder_layer_id].empty() && !m_chunk_tables) {
-                bind_dummy_legacy_cache_tensor(decoder_layer_id);
-            }
-            for (const size_t chunk_blocks : new_chunks) {
-                ov::Shape key_chunk_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], chunk_blocks);
-                ov::Shape value_chunk_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], chunk_blocks);
-                m_key_chunks[decoder_layer_id].push_back(
-                    m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_chunk_shape, usm_device_params));
-                m_value_chunks[decoder_layer_id].push_back(
-                    m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_chunk_shape, usm_device_params));
-            }
-            if (m_chunk_tables) {
-                refresh_chunk_tables(decoder_layer_id);
-            } else {
-                refresh_chunk_base_ptrs_tensor(decoder_layer_id);
+            ov::Shape key_chunk_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], chunk_blocks);
+            ov::Shape value_chunk_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], chunk_blocks);
+            new_keys.push_back(m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_chunk_shape, usm_device_params));
+            new_values.push_back(m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_chunk_shape, usm_device_params));
+            key_ptrs.push_back(usm_pointer_of(new_keys.back()));
+            value_ptrs.push_back(usm_pointer_of(new_values.back()));
+        }
+        // Commit: allocation succeeded for every layer.
+        m_chunk_table.append_chunk(chunk_blocks, key_ptrs, value_ptrs);
+        for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
+            m_key_chunks[decoder_layer_id].push_back(std::move(new_keys[decoder_layer_id]));
+            m_value_chunks[decoder_layer_id].push_back(std::move(new_values[decoder_layer_id]));
+            if (new_chunk_id == 0) {
+                bind_chunk0_cache_tensors(decoder_layer_id);
             }
         }
+        m_chunk_first_block.push_back(m_num_allocated_kv_blocks);
+        m_chunk_blocks.push_back(chunk_blocks);
         m_num_allocated_kv_blocks = new_total_blocks;
     }
 
@@ -293,21 +234,18 @@ public:
     }
 
     /**
-     * @brief Check whether the compiled model was built with the chunked KV cache input
-     * (`chunk_base_ptrs.*`, see ov::pass::SDPAToPagedAttention's
-     * allow_chunked_kv_cache option).
+     * @brief Check whether the compiled model was built with the global chunked KV cache input `kv_chunk_table`
+     * (see ov::pass::SDPAToPagedAttention's allow_kv_chunk_table option).
      */
-    static bool has_chunk_base_ptrs_inputs(const ov::CompiledModel& compiled_model) {
+    static bool has_kv_chunk_table_input(const ov::CompiledModel& compiled_model) {
         for (const auto& input : compiled_model.inputs()) {
-            for (const auto& name : input.get_names()) {
-                if (name.find("chunk_base_ptrs.") == 0)
-                    return true;
-            }
+            if (input.get_names().count("kv_chunk_table") != 0)
+                return true;
         }
         return false;
     }
 
-    explicit KVCacheManager(ov::InferRequest request, bool use_chunked_kv_cache = false, size_t blocks_per_chunk = 0, size_t granule_blocks = kDefaultGranuleBlocks) :
+    explicit KVCacheManager(ov::InferRequest request, bool use_chunked_kv_cache = false, size_t granule_blocks = kDefaultGranuleBlocks) :
         m_request(request) {
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
@@ -367,14 +305,9 @@ public:
 
         if (use_chunked_kv_cache) {
             OPENVINO_ASSERT(m_context, "SchedulerConfig use_chunked_kv_cache requires a GPU device");
-            // A model produced with kv_cache_chunk_tables=false carries a `chunk_base_ptrs.*` input (legacy mode);
-            // otherwise the cache inputs themselves take the chunk pointer tables.
-            m_chunk_tables = !has_chunk_base_ptrs_inputs(compiled_model);
-            // Only the legacy mode needs a configured chunk size; table mode sizes chunks from the shortfall.
-            OPENVINO_ASSERT(m_chunk_tables || blocks_per_chunk > 0,
-                            "SchedulerConfig kv_cache_chunk_size_blocks must be greater than 0 for a model with chunk_base_ptrs inputs");
+            OPENVINO_ASSERT(has_kv_chunk_table_input(compiled_model),
+                            "SchedulerConfig use_chunked_kv_cache requires a model converted with a `kv_chunk_table` input");
             m_chunked_kv_cache = true;
-            m_blocks_per_chunk = blocks_per_chunk;
             OPENVINO_ASSERT(granule_blocks > 0 && (granule_blocks & (granule_blocks - 1)) == 0,
                             "KV cache granule must be a power of two, got ", granule_blocks);
             m_granule_shift = 0;
@@ -383,12 +316,14 @@ public:
             }
             m_key_chunks.resize(m_num_layers);
             m_value_chunks.resize(m_num_layers);
-            m_chunk_base_ptrs.resize(m_num_layers);
-            m_key_tables.resize(m_num_layers);
-            m_value_tables.resize(m_num_layers);
+            // The table tensor is the request's own (USM host) input tensor: size it once for the whole capacity so it
+            // can stay bound and be updated in place on every growth step.
+            ov::Tensor table = m_request.get_tensor("kv_chunk_table");
+            table.set_shape(ov::Shape{kv_chunk_table::GlobalChunkTable::tensor_elements(m_num_layers, kMaxChunks, kMaxGranules)});
+            m_chunk_table = kv_chunk_table::GlobalChunkTable(table, m_num_layers, kMaxChunks, kMaxGranules, m_granule_shift);
         }
 
-        GENAI_INFO("[KV_TRACE] physical_manager device=%s layers=%zu block_size=%zu block_bytes=%zu remote=%s chunked=%s mode=%s "
+        GENAI_INFO("[KV_TRACE] physical_manager device=%s layers=%zu block_size=%zu block_bytes=%zu remote=%s chunked=%s "
                    "granule_blocks=%zu (%.1f MiB) growth_floor=1/%zu of physical blocks",
                m_device.c_str(),
                m_num_layers,
@@ -396,7 +331,6 @@ public:
                m_block_size_in_bytes,
                m_context ? "true" : "false",
                m_chunked_kv_cache ? "true" : "false",
-               !m_chunked_kv_cache ? "contiguous" : (m_chunk_tables ? "chunk_tables" : "chunk_base_ptrs"),
                m_chunked_kv_cache ? size_t{1} << m_granule_shift : size_t{0},
                blocks_to_mib(m_chunked_kv_cache ? size_t{1} << m_granule_shift : size_t{0}),
                kGrowthFloorDivisor);
@@ -426,6 +360,10 @@ public:
 
     size_t get_num_allocated_blocks() const override {
         return m_num_allocated_kv_blocks;
+    }
+
+    std::vector<size_t> get_chunk_first_blocks() const override {
+        return m_chunk_first_block;
     }
 
     ov::element::Type get_key_cache_precision(size_t decoder_layer_id) const {
@@ -696,12 +634,17 @@ public:
                 m_value_cache[decoder_layer_id] = ov::Tensor();
             }
             if (m_chunked_kv_cache) {
+                const bool was_allocated = !m_key_chunks[decoder_layer_id].empty();
                 m_key_chunks[decoder_layer_id].clear();
                 m_value_chunks[decoder_layer_id].clear();
-                m_chunk_base_ptrs[decoder_layer_id] = ov::Tensor();
-                m_key_tables[decoder_layer_id] = ov::Tensor();
-                m_value_tables[decoder_layer_id] = ov::Tensor();
+                if (was_allocated) {
+                    // The request still references the chunk-0 tensors it was bound to.
+                    bind_placeholder_cache_tensors(decoder_layer_id);
+                }
             }
+        }
+        if (m_chunked_kv_cache) {
+            m_chunk_table.clear();
         }
         m_chunk_blocks.clear();
         m_chunk_first_block.clear();

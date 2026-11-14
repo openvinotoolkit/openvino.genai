@@ -45,7 +45,8 @@ def main():
     parser = argparse.ArgumentParser(description="Trigger dynamic KV cache growth from 64 blocks.")
     parser.add_argument("model_dir")
     parser.add_argument("--device", default="GPU")
-    parser.add_argument("--chunked", action="store_true", help="Use chunked KV cache with FP16 KV cache (GPU only).")
+    parser.add_argument("--chunked", action="store_true", help="Use chunked KV cache (GPU only).")
+    parser.add_argument("--f16", action="store_true", help="Force FP16 KV cache (default: the device's default KV cache precision).")
     args = parser.parse_args()
 
     # Matches KVCacheManager: 16 tokens per block on GPU (non-XAttention), 32 on CPU.
@@ -65,6 +66,7 @@ def main():
     pipeline_properties = {}
     if args.chunked:
         scheduler_config.use_chunked_kv_cache = True
+    if args.f16:
         pipeline_properties["KV_CACHE_PRECISION"] = ov.Type.f16
 
     pipe = ov_genai.ContinuousBatchingPipeline(args.model_dir, scheduler_config, args.device, pipeline_properties)

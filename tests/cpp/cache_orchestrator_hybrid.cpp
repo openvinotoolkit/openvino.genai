@@ -673,3 +673,73 @@ TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeVict
     orchestrator->free_sequence(victim_seq->get_id());
     orchestrator->free_sequence(target_seq->get_id());
 }
+
+namespace {
+
+/// Cache manager stub that reports fixed chunk boundaries and has no physical storage.
+class ChunkedStubCacheManager : public ICacheManager {
+public:
+    explicit ChunkedStubCacheManager(std::vector<size_t> chunk_first_blocks) : m_chunk_first_blocks(std::move(chunk_first_blocks)) {}
+
+    void allocate_cache_if_needed(size_t) override {}
+    void copy_blocks(const std::map<size_t, std::list<size_t>>&) override {}
+    void clear() override {}
+    size_t get_num_layers() const override { return 1; }
+    size_t get_num_cache_tensors() const override { return 2; }
+    size_t get_block_size() const override { return TEST_BLOCK_SIZE; }
+    std::string get_device() const override { return "STUB"; }
+    size_t get_block_size_in_bytes() const override { return 1; }
+    size_t get_num_allocated_blocks() const override { return 8; }
+    std::vector<size_t> get_chunk_first_blocks() const override { return m_chunk_first_blocks; }
+
+private:
+    std::vector<size_t> m_chunk_first_blocks;
+};
+
+SequenceGroup::Ptr create_prompt_group(uint64_t request_id, int64_t first_token, size_t num_tokens) {
+    std::vector<int64_t> tokens(num_tokens);
+    std::iota(tokens.begin(), tokens.end(), first_token);
+    return std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+}
+
+/// Fills all 8 blocks with a cached prompt, frees it, then lets another prompt evict 4 of them.
+/// @return Physical block indices that were overwritten by the second prompt.
+std::set<size_t> evict_four_blocks(std::vector<size_t> chunk_first_blocks, bool lowest_block_first) {
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    orchestrator->register_cache_type(
+        CacheType::KV_CACHE,
+        std::make_unique<ChunkedStubCacheManager>(std::move(chunk_first_blocks)),
+        std::make_unique<BlockManager>(8, true, TEST_BLOCK_SIZE, 1, 0, false, lowest_block_first));
+    orchestrator->allocate_cache_if_needed();
+
+    auto first = create_prompt_group(400, 0, 8 * TEST_BLOCK_SIZE);
+    auto first_seq = first->get_running_sequences()[0];
+    orchestrator->allocate_tokens(first_seq, first, first->get_prompt_len(), first->get_prompt_len());
+    orchestrator->free_sequence(first_seq->get_id());
+
+    auto second = create_prompt_group(401, 1000, 4 * TEST_BLOCK_SIZE);
+    auto second_seq = second->get_running_sequences()[0];
+    orchestrator->allocate_tokens(second_seq, second, second->get_prompt_len(), second->get_prompt_len());
+
+    std::set<size_t> evicted;
+    for (const auto& block : orchestrator->get_block_manager(CacheType::KV_CACHE).get_block_table(second_seq->get_id(), 0)) {
+        evicted.insert(block->get_index());
+    }
+    orchestrator->free_sequence(second_seq->get_id());
+    return evicted;
+}
+
+}  // namespace
+
+TEST(TestCacheOrchestratorChunked, ChunkBoundariesReachBlockManagerAndSteerEviction) {
+    // Chunks [0, 4) and [4, 8): the new prompt must overwrite cached blocks of the tail chunk only.
+    EXPECT_EQ(evict_four_blocks({0, 4}, /* lowest_block_first = */ true), (std::set<size_t>{4, 5, 6, 7}));
+}
+
+TEST(TestCacheOrchestratorChunked, WithoutBoundariesEvictionIsPlainLru) {
+    // Same scenario without chunk information: eviction follows the freeing order of the first prompt instead.
+    EXPECT_NE(evict_four_blocks({}, /* lowest_block_first = */ false), (std::set<size_t>{4, 5, 6, 7}));
+}
