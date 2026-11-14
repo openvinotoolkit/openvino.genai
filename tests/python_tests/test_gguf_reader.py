@@ -483,6 +483,12 @@ def test_gguf_frontend_continuous_batching_reuses_tokenizer_metadata(tiny_gguf_m
     sys.platform == "darwin",
     reason="CVS-194249: CPU PagedAttention requires SVE, unavailable on Apple Silicon",
 )
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    reason="CVS-199765: saving reopens the .gguf for writing, which conflicts with the frontend's mapping",
+    raises=RuntimeError,
+    strict=True,
+)
 def test_gguf_frontend_continuous_batching_saves_tokenizer_from_tokenizer_properties(tiny_gguf_model):
     scheduler = ov_genai.SchedulerConfig()
     scheduler.num_kv_blocks = 4
