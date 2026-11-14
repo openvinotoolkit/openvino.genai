@@ -350,6 +350,7 @@ TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3", "optimum-intel-intern
 # This maps model_id to the --task value used during export - CVS-183496
 FORCE_OPTIMUM_CLI_EXPORT_MODELS = {
     "optimum-intel-internal-testing/tiny-random-flux": "text-to-image",
+    "optimum-intel-internal-testing/tiny-random-ltx-video": "text-to-video",
     "optimum-intel-internal-testing/tiny-random-lfm2": "text-generation-with-past",
     "optimum-intel-internal-testing/tiny-random-qwen3-next": "text-generation-with-past",
 }

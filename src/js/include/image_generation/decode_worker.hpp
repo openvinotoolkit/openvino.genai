@@ -23,9 +23,11 @@ Napi::Value decode_image(const Napi::CallbackInfo& info,
                               [pipeline, latent = std::move(latent), operation = std::move(operation)]() mutable {
                                   // Resume generation after native decode, independently of JavaScript completion.
                                   const auto decode_operation = std::move(operation);
-                                  auto image = pipeline->decode(latent);
-                                  return [image = std::move(image)](Napi::Env env) {
-                                      return cpp_to_js<ov::Tensor, Napi::Value>(env, image);
+                                  // ov::Tensor for the image pipelines, ov::genai::VideoGenerationResult for
+                                  // Text2VideoPipeline.
+                                  auto result = pipeline->decode(latent);
+                                  return [result = std::move(result)](Napi::Env env) {
+                                      return cpp_to_js<std::decay_t<decltype(result)>, Napi::Value>(env, result);
                                   };
                               });
         return info.Env().Undefined();
