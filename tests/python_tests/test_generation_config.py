@@ -5,6 +5,7 @@ from openvino_genai import GenerationConfig, WhisperGenerationConfig, ASRGenerat
 import json
 import math
 import os
+import numpy as np
 import pytest
 
 
@@ -103,21 +104,53 @@ invalid_configs = [
     dict(max_new_tokens=1, do_sample=True, min_p=-0.1),  # min_p must be >= 0.0
     dict(max_new_tokens=1, do_sample=True, min_p=1.0),  # min_p must be < 1.0
     # beam search
-    dict(max_new_tokens=1, num_beams=2, num_return_sequences=3), # 'num_beams' must be >= 'num_return_sequences'
-    dict(max_new_tokens=1, num_beams=3, num_beam_groups=2), # 'num_beams' must be divisible by 'num_beam_groups'
-    dict(max_new_tokens=1, num_beams=3, do_sample=True), # 'beam sample is not supported
-    dict(max_new_tokens=1, num_beams=3, no_repeat_ngram_size=0), # invalid 'no_repeat_ngram_size'
-    dict(max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=0.0), # 'diversity_penalty' should not be a default value
-    dict(max_new_tokens=1, num_beams=4, diversity_penalty=1.0), # 'diversity_penalty' is used only for grouped beam search
-    dict(max_new_tokens=1, num_beams=2, frequency_penalty=1.0), # 'frequency_penalty' is not supported by beam search
-    dict(max_new_tokens=1, num_beams=2, presence_penalty=1.0), # 'presence_penalty' is not supported by beam search
-    dict(max_new_tokens=1, num_beams=2, repetition_penalty=0.0), # 'repetition_penalty' is not supported by beam search
+    dict(max_new_tokens=1, num_beams=2, num_return_sequences=3),  # 'num_beams' must be >= 'num_return_sequences'
+    dict(max_new_tokens=1, num_beams=3, num_beam_groups=2),  # 'num_beams' must be divisible by 'num_beam_groups'
+    dict(max_new_tokens=1, num_beams=2, num_beam_groups=0),  # 'num_beam_groups' must be greater than 0
+    dict(max_new_tokens=1, num_beams=3, do_sample=True),  # 'beam sample is not supported
+    dict(max_new_tokens=1, num_beams=3, no_repeat_ngram_size=0),  # invalid 'no_repeat_ngram_size'
+    dict(
+        max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=0.0
+    ),  # 'diversity_penalty' should not be a default value
+    dict(
+        max_new_tokens=1, num_beams=4, diversity_penalty=1.0
+    ),  # 'diversity_penalty' is used only for grouped beam search
+    dict(max_new_tokens=1, num_beams=2, frequency_penalty=1.0),  # 'frequency_penalty' is not supported by beam search
+    dict(max_new_tokens=1, num_beams=2, presence_penalty=1.0),  # 'presence_penalty' is not supported by beam search
+    dict(max_new_tokens=1, num_beams=2, repetition_penalty=0.0),  # 'repetition_penalty' is not supported by beam search
+    dict(max_new_tokens=1, num_beams=2, length_penalty=float("nan")),  # 'length_penalty' must be finite
+    dict(max_new_tokens=1, num_beams=2, length_penalty=float("inf")),  # 'length_penalty' must be finite
+    dict(
+        max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=float("nan")
+    ),  # 'diversity_penalty' must be finite
+    dict(
+        max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=float("inf")
+    ),  # 'diversity_penalty' must be finite
     # assistant generation
-    dict(max_new_tokens=1, num_assistant_tokens=2, do_sample=True, num_return_sequences=2), # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
-    dict(max_new_tokens=1, assistant_confidence_threshold=1.0, do_sample=True, num_return_sequences=2), # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
-    dict(max_new_tokens=1, num_assistant_tokens=2, num_beams=2), # beam search is not compatible with assistant generation
-    dict(max_new_tokens=1, assistant_confidence_threshold=1.0, num_assistant_tokens=2), # 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive
-    dict(max_new_tokens=1, max_ngram_size=1), # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=float("nan")
+    ),  # 'assistant_confidence_threshold' must be within [0, 1]
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=-0.5
+    ),  # 'assistant_confidence_threshold' must be within [0, 1]
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=1.5
+    ),  # 'assistant_confidence_threshold' must be within [0, 1]
+    dict(
+        max_new_tokens=1, num_assistant_tokens=2, do_sample=True, num_return_sequences=2
+    ),  # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=1.0, do_sample=True, num_return_sequences=2
+    ),  # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
+    dict(
+        max_new_tokens=1, num_assistant_tokens=2, num_beams=2
+    ),  # beam search is not compatible with assistant generation
+    dict(
+        max_new_tokens=1, assistant_confidence_threshold=1.0, num_assistant_tokens=2
+    ),  # 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive
+    dict(
+        max_new_tokens=1, max_ngram_size=1
+    ),  # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
     # TODO: add tests for invalid properties
 ]
 @pytest.mark.parametrize("generation_config_kwargs", invalid_configs)
@@ -129,6 +162,14 @@ def test_invalid_generation_configs_throws(generation_config_kwargs):
     config = GenerationConfig()
     config.update_generation_config(**generation_config_kwargs)
     with pytest.raises(RuntimeError):
+        config.validate()
+
+
+@pytest.mark.parametrize("num_beams", [2, 4])
+def test_zero_num_beam_groups_throws(num_beams):
+    # num_beam_groups is a divisor of num_beams, so 0 must be rejected before any division
+    config = GenerationConfig(max_new_tokens=1, num_beams=num_beams, num_beam_groups=0)
+    with pytest.raises(RuntimeError, match="'num_beam_groups' must be greater than 0"):
         config.validate()
 
 
@@ -272,6 +313,42 @@ def test_stop_strings_are_read_from_json(tmp_path, stop_strings):
     assert generation_config.stop_strings == expected
 
 
+@pytest.mark.parametrize("config_source", ["kwargs", "update"])
+@pytest.mark.parametrize(
+    "stop_strings, expected",
+    [
+        ({"<|end|>", "###"}, {"<|end|>", "###"}),
+        (["<|end|>", "###"], {"<|end|>", "###"}),
+        (["Observation: done"], {"Observation: done"}),
+        ("<|end|>", {"<|end|>"}),
+        (" the", {" the"}),
+        ("", set()),
+        # a string with spaces is a single stop string, it isn't split into words
+        ("Observation: done", {"Observation: done"}),
+    ],
+)
+def test_stop_strings_from_kwargs(config_source, stop_strings, expected):
+    if config_source == "kwargs":
+        config = GenerationConfig(max_new_tokens=1, stop_strings=stop_strings)
+    else:
+        config = GenerationConfig(max_new_tokens=1)
+        config.update_generation_config(stop_strings=stop_strings)
+
+    assert config.stop_strings == expected
+
+
+@pytest.mark.parametrize("config_source", ["kwargs", "update"])
+@pytest.mark.parametrize("stop_token_ids", [{2, 5}, [2, 5], [5, 2, 5]])
+def test_stop_token_ids_from_kwargs(config_source, stop_token_ids):
+    if config_source == "kwargs":
+        config = GenerationConfig(max_new_tokens=1, stop_token_ids=stop_token_ids)
+    else:
+        config = GenerationConfig(max_new_tokens=1)
+        config.update_generation_config(stop_token_ids=stop_token_ids)
+
+    assert config.stop_token_ids == {2, 5}
+
+
 @pytest.mark.parametrize("use_itn", [True, False])
 def test_asr_use_itn_read_from_json(tmp_path, use_itn):
     config_path = tmp_path / "generation_config.json"
@@ -281,3 +358,26 @@ def test_asr_use_itn_read_from_json(tmp_path, use_itn):
     config = ASRGenerationConfig(config_path)
 
     assert config.use_itn == use_itn
+
+
+@pytest.mark.parametrize("config_source", ["kwargs", "update"])
+@pytest.mark.parametrize(
+    "fields",
+    [
+        dict(max_new_tokens=np.int64(7)),
+        dict(max_new_tokens=np.int32(7), top_k=np.uint8(3)),
+        dict(do_sample=np.bool_(True), top_p=np.float64(0.5)),
+        dict(do_sample=np.bool_(False), ignore_eos=np.bool_(True)),
+        dict(do_sample=True, temperature=np.float32(0.5)),
+        dict(do_sample=True, temperature=np.float16(0.5)),
+    ],
+)
+def test_numpy_scalars_from_kwargs(config_source, fields):
+    if config_source == "kwargs":
+        config = GenerationConfig(**fields)
+    else:
+        config = GenerationConfig()
+        config.update_generation_config(**fields)
+
+    for key, value in fields.items():
+        assert getattr(config, key) == value, key

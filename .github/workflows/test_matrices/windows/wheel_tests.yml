@@ -2,7 +2,7 @@
 # Each entry runs when any of its `components` is affected (has `.test`).
 - name: ASR
   cmd: |-
-    python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5"
+    python -m pytest -s -v tests/python_tests/test_asr_pipeline.py -m "not transformers_lower_v5"
   timeout: 120
   components:
     - automatic_speech_recognition
@@ -19,7 +19,7 @@
 - name: ASR Transformers under 5.0
   cmd: |-
     python -m pip install transformers==4.57.6
-    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
+    python -m pytest -v ./tests/python_tests/test_asr_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
   timeout: 120
   components:
     - automatic_speech_recognition
@@ -28,9 +28,9 @@
 # - name: ASR (Qwen3-ASR)
 #   cmd: |-
 #     python -m pip install transformers==4.57.6 qwen-asr==0.0.6
-#     python -m pytest -v tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr" -m "not qwen3_asr_split_export"
+#     python -m pytest -v tests/python_tests/test_asr_pipeline.py -k "qwen3-asr" -m "not qwen3_asr_split_export"
 #     python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@d304fb56602d878547c3d416e875c02cfd5e5479"
-#     python -m pytest -v tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr" -m qwen3_asr_split_export
+#     python -m pytest -v tests/python_tests/test_asr_pipeline.py -k "qwen3-asr" -m qwen3_asr_split_export
 #     python -m pytest -v tests/python_tests/test_asr_forced_aligner.py
 #   timeout: 20
 #   components:
@@ -40,7 +40,7 @@
   cmd: |-
     python -m pip install transformers==4.57.6 funasr==1.4.1
     python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@0100bb36ea09fe8613008ee74cb796dc5e1c379d"
-    python -m pytest -v tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
+    python -m pytest -v tests/python_tests/test_asr_pipeline.py -k "fun-asr"
   timeout: 20
   components:
     - automatic_speech_recognition
@@ -50,7 +50,7 @@
     python -m pip install transformers==4.57.6 funasr==1.4.1
     python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@8ea11468f26fa491e8068d63548b31f4dfb6ac6f"
     $env:GENAI_REQUIRE_SENSEVOICE = "1"
-    python -m pytest -v tests/python_tests/test_whisper_pipeline.py -m sensevoice
+    python -m pytest -v tests/python_tests/test_asr_pipeline.py -m sensevoice
   timeout: 40
   components:
     - automatic_speech_recognition
@@ -182,6 +182,13 @@
   components:
     - tokenizers
 
+- name: genai-cli tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_genai_cli.py
+  timeout: 15
+  components:
+    - genai_cli
+
 # Test timed out on Windows. Ticket: 198295
 # - name: API tests
 #   cmd: |-
@@ -215,13 +222,13 @@
 #   components:
 #     - WWB
 
-- name: WWB ASR tests (FunASR, Qwen3-ASR)
+- name: WWB ASR tests (FunASR, Qwen3-ASR, whisper)
   cmd: |-
     python -m pip install transformers==4.57.6 "whowhatbench[funasr]"
     python -m pip install nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
     # TODO(CVS-198293): Drop manual dependencies and the commit pin when Qwen supports a Gradio release with Pillow 13.
     python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
-    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr or qwen3_asr"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr or qwen3_asr or whisper"
   timeout: 120
   components:
     - WWB
@@ -290,6 +297,28 @@
   components:
     - speculative_decoding
 
+- name: DFlash and DSpark speculative decoding tests
+  cmd: |-
+    # The DFlash and DSpark drafts need the export from optimum-intel main, which exports Qwen3.5 only with
+    # transformers>=5.15. The MiniCPM-V 4.7 pairs need transformers 5.18 and run in their own job.
+    python -m pip install transformers==5.15.1
+    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f09a56ace88149cd341233ddfa2bc018bff7c079"
+    python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "(dflash or deepspec or dspark) and not minicpmv47"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: DSpark speculative decoding tests (MiniCPM-V 4.7)
+  cmd: |-
+    # The MiniCPM-V 4.7 target needs transformers 5.18. The DSpark draft export needs optimum-intel f09a56ac, which
+    # declares transformers<5.16, so it is installed without dependencies.
+    python -m pip install "transformers==5.18.*"
+    python -m pip install -U --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f09a56ace88149cd341233ddfa2bc018bff7c079"
+    python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "minicpmv47"
+  timeout: 90
+  components:
+    - speculative_decoding
+
 - name: WWB tests (nanollava)
   cmd: |-
     # optimum intel commit compatible with transformers 4.48
@@ -350,6 +379,7 @@
 #     python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@ffc8870cae17baccf8d45e2e0891e2eb99a9ede3"
 #     $env:OPENVINO_LOG_LEVEL = "5"
 #     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5 or qwen35"
+#     python -m pytest -s -v tests/python_tests/test_vlm_lora.py --override-ini cache_dir=/mount/caches/pytest/
 #     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 #     python -m pytest -s -v tests/python_tests/test_vlm_chat_template_patching.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5"
 #   timeout: 60

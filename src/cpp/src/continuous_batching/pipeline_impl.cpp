@@ -60,6 +60,21 @@ size_t get_available_cpu_memory() {
     return std::numeric_limits<size_t>::max();
 }
 
+// Returns 0 when the model does not export intermediate hidden states.
+size_t get_hidden_state_bytes_per_token(const ov::CompiledModel& compiled_model) {
+    for (const auto& output : compiled_model.outputs()) {
+        if (output.get_names().count("intermediate_hidden_states") == 0) {
+            continue;
+        }
+        const ov::PartialShape& shape = output.get_partial_shape();
+        OPENVINO_ASSERT(shape.rank().is_static() && shape.size() > 0 && shape[shape.size() - 1].is_static(),
+                        "intermediate_hidden_states must have a static hidden size, got shape ",
+                        shape);
+        return static_cast<size_t>(shape[shape.size() - 1].get_length()) * output.get_element_type().size();
+    }
+    return 0;
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -115,16 +130,15 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config,
-    bool is_validation_mode_enabled)
-    : ContinuousBatchingImpl(model,
-                             tokenizer,
-                             scheduler_config,
-                             device,
-                             properties,
-                             generation_config,
-                             is_validation_mode_enabled) {
+    bool is_validation_mode_enabled) {
+    m_tokenizer = tokenizer;
+    m_generation_config = generation_config;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
     m_inputs_embedder = inputs_embedder;
-    
+
+    prepare_model_for_paged_attention(model, scheduler_config);
+    initialize_pipeline(model, scheduler_config, device, properties);
+
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
@@ -173,8 +187,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
-        m_adapter_controller =
-            AdapterController(model, *m_generation_config.adapters, device);  // TODO: Make the prefix name configurable
+        set_foreign_tensor_name_prefix(*m_generation_config.adapters,
+                                      m_inputs_embedder ? m_inputs_embedder->get_lora_tensor_prefix() : std::nullopt);
+        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
@@ -205,8 +220,21 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
         }
         return get_available_cpu_memory();
     };
-    auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory);
+    const size_t hidden_state_bytes_per_token =
+        normalized_config.enable_prefix_caching ? get_hidden_state_bytes_per_token(compiled_model) : 0;
+    auto cache_orchestrator =
+        CacheOrchestrator::create(infer_request, normalized_config, get_available_memory, hidden_state_bytes_per_token);
     m_num_decoder_layers = cache_orchestrator->get_num_kv_layers();
+
+    if (cache_orchestrator->has_kv_cache()) {
+        const auto& kv_cache_manager = static_cast<const KVCacheManager&>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
+        // Sparse attention selects KV blocks by logical index, so blocks can't be evicted or skipped.
+        OPENVINO_ASSERT(!kv_cache_manager.has_qsa_index_caches()
+            || (!normalized_config.use_cache_eviction && !normalized_config.use_sparse_attention),
+            "SchedulerConfig use_cache_eviction and use_sparse_attention must be false for models with sparse attention"
+            ", got use_cache_eviction=", normalized_config.use_cache_eviction,
+            ", use_sparse_attention=", normalized_config.use_sparse_attention);
+    }
 
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
@@ -250,6 +278,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                                        /* is_aggregate_attention_scores = */ false,
                                                        is_use_xattention,
                                                        /* is_use_adaptive_rkv = */ false);
+    }
+
+    if (hidden_state_bytes_per_token > 0) {
+        m_hidden_state_cache = std::make_unique<HiddenStateCache>([cache_orchestrator, kv_block_size] {
+            return cache_orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count() * kv_block_size;
+        });
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
@@ -485,6 +519,56 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_publish_completed_cach
             m_scheduler->publish_completed_blocks(sequence, processed_before, processed_after);
         }
     }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_cache_completed_hidden_state_blocks(
+    const ContinuousBatchingScheduler::Output& scheduler_output) {
+    if (!m_hidden_state_cache) {
+        return;
+    }
+    const size_t block_size = m_scheduler->get_block_size(CacheType::KV_CACHE);
+    for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
+        const size_t processed_after = sequence_group->get_num_processed_tokens();
+        for (const Sequence::Ptr& sequence : sequence_group->get_sequences()) {
+            const auto kv_data_it = scheduler_output.m_kv_paged_attention_data.find(sequence->get_id());
+            if (kv_data_it == scheduler_output.m_kv_paged_attention_data.end()) {
+                continue;
+            }
+            const std::vector<ov::Tensor>& hidden_states = sequence->get_all_intermediate_hidden_states();
+            // Blocks completed before this step are already cached or were restored from the cache.
+            const size_t first_block = kv_data_it->second.num_processed_tokens_before / block_size;
+            const size_t end_block =
+                std::min({processed_after, hidden_states.size(), sequence->get_prefix_identity_length()}) / block_size;
+            for (size_t block = first_block; block < end_block; ++block) {
+                const size_t block_end = (block + 1) * block_size;
+                m_hidden_state_cache->put(sequence->get_hash(block_end, block_size),
+                                          std::vector<ov::Tensor>(hidden_states.begin() + (block_end - block_size),
+                                                                  hidden_states.begin() + block_end));
+            }
+        }
+    }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_restore_prefix_with_hidden_states(
+    const SequenceGroup::Ptr& group) {
+    const size_t block_size = m_scheduler->get_block_size(CacheType::KV_CACHE);
+    const Sequence::Ptr& sequence = group->get_sequences().at(0);
+    std::vector<uint64_t> block_hashes;
+    for (size_t block_end = block_size; block_end <= group->get_prompt_len(); block_end += block_size) {
+        block_hashes.push_back(sequence->get_hash(block_end, block_size));
+    }
+    std::vector<ov::Tensor> hidden_states = m_hidden_state_cache->get_prefix(block_hashes);
+    // The talker indexes hidden states by absolute position, so KV must not be restored past them.
+    m_scheduler->restore_cached_blocks(group, hidden_states.size());
+    const size_t restored = group->get_num_processed_tokens();
+    OPENVINO_ASSERT(restored <= hidden_states.size(),
+                    "Restored ",
+                    restored,
+                    " prefix tokens but cached hidden states cover ",
+                    hidden_states.size());
+    hidden_states.resize(restored);
+    sequence->prefill_intermediate_hidden_states(std::move(hidden_states));
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(
@@ -750,6 +834,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     }
 
     _publish_completed_cache_blocks(scheduler_output);
+    _cache_completed_hidden_state_blocks(scheduler_output);
 
     // Promote the committed linear-attention state to the correct physical row for any
     // Commit after sampling rewinds the accepted prefix and before fork/free can release LA rows.

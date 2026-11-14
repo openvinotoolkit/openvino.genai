@@ -72,6 +72,7 @@ from utils.generation_config import (
 )
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
+from utils.export import export_with_genai_cli, native_genai_cli_model_type
 from utils.media_tags import ModalityType, get_media_inputs_kwargs, get_universal_tag
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 from utils.hugging_face import download_and_convert_model
@@ -149,12 +150,14 @@ MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
 MODEL_QWEN38_FLASH_NEXT = "optimum-intel-internal-testing/tiny-random-qwen38-flash-next"
 MODEL_MINICPMV4_6 = "optimum-intel-internal-testing/tiny-random-minicpmv4_6"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
+MODEL_MOLMO2 = "optimum-intel-internal-testing/tiny-random-molmo2"
 
 VIDEO_MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
     # qwen3_vl fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     VIDEO_MODEL_IDS = [
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         VIDEOCHAT_FLASH_QWEN_MODEL_ID,
@@ -172,6 +175,10 @@ else:
         "optimum-intel-internal-testing/tiny-random-minicpmv47",
         MODEL_QWEN38_FLASH_NEXT,
     ]
+# Models genai-cli exports natively: genai-cli provides the transformers version each of them needs (molmo2
+# remote code requires 4.57.x), so they are tested with any installed transformers.
+GENAI_CLI_NATIVE_MODEL_IDS = [MODEL_MOLMO2]
+VIDEO_MODEL_IDS.append(MODEL_MOLMO2)
 
 AUDIO_INPUT_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -185,7 +192,6 @@ if is_transformers_version("<", "5.0"):
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
-        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-internvl2",
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
@@ -204,6 +210,11 @@ else:
         "optimum-intel-internal-testing/tiny-random-mistral3",
         *VIDEO_MODEL_IDS,
     ]
+MODEL_IDS += [model_id for model_id in GENAI_CLI_NATIVE_MODEL_IDS if model_id not in MODEL_IDS]
+# optimum-intel cannot export these models yet, so there is no optimum-intel reference to compare with.
+OPTIMUM_INTEL_UNSUPPORTED_MODEL_IDS = {
+    MODEL_MOLMO2,  # huggingface/optimum-intel#1950
+}
 
 ADD_REQUEST_MODEL_IDS = [
     MODEL_IDS[0],
@@ -235,6 +246,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|image|>",
+    MODEL_MOLMO2: lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     MODEL_MINICPMV4_6: lambda idx: "<|image_pad|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
@@ -242,6 +254,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 
 VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
+    "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
@@ -255,6 +268,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|video|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv47": lambda idx: "<video>./</video>\n",
+    MODEL_MOLMO2: lambda idx: "<|video|>",
 }
 
 
@@ -466,6 +480,11 @@ def _get_ov_model(model_id: str) -> str:
 
     def convert_to_temp(temp_dir: Path) -> None:
         model_cached = retry_request(lambda: snapshot_download(model_id))
+        if native_genai_cli_model_type(model_cached) is not None:
+            # genai-cli converts the model natively (IRs, tokenizers and processor files) with the transformers
+            # version it pins, so the installed transformers and optimum-intel are not involved.
+            export_with_genai_cli(model_cached, temp_dir, ["--trust-remote-code"])
+            return
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -572,9 +591,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
-
-    if ov_model == MODEL_QWEN38_FLASH_NEXT and ov_backend == "PA":
-        pytest.xfail("Qwen3.8-Flash-Next model does not support PA backend")
 
     models_path = _get_ov_model(ov_model)
 
@@ -1306,6 +1322,41 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
         )
 
 
+@pytest.mark.skipif(
+    is_transformers_version(">=", "5.0"),
+    reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059",
+)
+@pytest.mark.transformers_dependent(reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059")
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", backend) for backend in ATTENTION_BACKEND],
+    ids=lambda item: f"{item[0]}/{item[1]}",
+    indirect=["ov_pipe_model"],
+)
+@pytest.mark.parametrize(
+    "query_num,error",
+    [
+        (0, "MiniCPM query_num must be positive, got 0"),
+        (128, "Unexpected MiniCPM video group feature size: expected 16384, got 8192"),
+    ],
+)
+def test_minicpm_invalid_query_num(ov_pipe_model: VlmModelInfo, query_num: int, error: str, tmp_path: Path):
+    model_path = tmp_path / "minicpm_invalid_query_num"
+    shutil.copytree(_get_ov_model(ov_pipe_model.model_id), model_path)
+    config_path = model_path / "config.json"
+    model_config = json.loads(config_path.read_text(encoding="utf-8"))
+    model_config["query_num"] = query_num
+    config_path.write_text(json.dumps(model_config), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match=error):
+        pipeline = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
+        pipeline.generate(
+            "Describe",
+            videos=[openvino.Tensor(np.zeros((1, 32, 32, 3), dtype=np.uint8))],
+            generation_config=GenerationConfig(max_new_tokens=1),
+        )
+
+
 @pytest.mark.parametrize(
     "ov_pipe_model",
     [
@@ -1371,6 +1422,24 @@ def test_vlm_pipeline_chat_history_multipart_content(
             f"answers_chat_history: {answer_1}\n"
             f"answers_chat_history_multipart_content: {answer_2}"
         )
+
+
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", backend) for backend in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+def test_vlm_pipeline_string_generate_after_chat_history(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+
+    expected = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    history = ChatHistory([{"role": "user", "content": PROMPTS[1]}])
+    ov_pipe.generate(history, images=[cat_tensor], generation_config=generation_config)
+    actual = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    assert actual.texts == expected.texts
 
 
 def finish_chat(ov_pipe_model: VlmModelInfo):
@@ -2040,7 +2109,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
-        (MODEL_QWEN38_FLASH_NEXT, "SDPA"),
+        (MODEL_QWEN38_FLASH_NEXT, "PA"),
         ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ]
 
@@ -2051,6 +2120,10 @@ if is_transformers_version("<", "5.0"):
     IMAGE_ID_IGNORANT_MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-internvl2", "PA"),
     ]
+# Molmo2 is not in TAG_INSERTED_BY_TEMPLATE: its Hugging Face processor (remote code) needs the transformers version
+# genai-cli exports it with. SDPA: PagedAttention restricts the bidirectional attention of image tokens to contiguous
+# runs of them (CVS-199398), which prompts with text between the media break.
+IMAGE_ID_IGNORANT_MODELS_TO_TAG.append((MODEL_MOLMO2, "SDPA"))
 
 
 MODELS_TO_TAG = [*IMAGE_ID_IGNORANT_MODELS_TO_TAG]
@@ -2058,6 +2131,7 @@ if is_transformers_version("<", "5.0"):
     # minicpmv architectures are deprecating support for transformers >= v5 by optimum-intel
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", "PA"),
     ]
 else:
     MODELS_TO_TAG += [
@@ -2699,6 +2773,8 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 # test-id's are of the form:
 # "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
+    # mistral3 text-only case
+    "*tiny-random-mistral3/PA/CPP/text-only": "CVS-199308",
     # muse glimmer
     "*tiny-random-muse-glimmer/*/CPP/image*": "CVS-192673",
     "*tiny-random-muse-glimmer/*/CPP/video*": "CVS-192673",
@@ -2787,7 +2863,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
     from fnmatch import fnmatch
 
     if models is None:
-        models = MODEL_IDS
+        models = [model_id for model_id in MODEL_IDS if model_id not in OPTIMUM_INTEL_UNSUPPORTED_MODEL_IDS]
 
     params = []
 
