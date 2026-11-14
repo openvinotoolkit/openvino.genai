@@ -64,10 +64,6 @@ public:
     void setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties);
 
-    void save_gguf_tokenizer_models(const std::shared_ptr<ov::Model>& ov_tokenizer,
-                                    const std::shared_ptr<ov::Model>& ov_detokenizer,
-                                    const std::filesystem::path& gguf_model_path);
-
     void read_config(const std::filesystem::path& tokenizer_path);
     void read_special_tokens_map(const std::filesystem::path& tokenizer_path);
     void read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizer_path);

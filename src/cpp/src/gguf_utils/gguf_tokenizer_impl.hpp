@@ -17,8 +17,7 @@ private:
     void finalize_gguf_tokenizer(const std::shared_ptr<ov::Model>& tokenizer,
                                  const std::shared_ptr<ov::Model>& detokenizer,
                                  const std::map<std::string, GGUFMetaData>& config,
-                                 const ov::AnyMap& properties,
-                                 const std::optional<std::filesystem::path>& save_from_path);
+                                 const ov::AnyMap& properties);
 };
 
 }  // namespace ov::genai

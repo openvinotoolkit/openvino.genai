@@ -278,22 +278,6 @@ void filter_properties(ov::AnyMap& properties) {
     }
 }
 
-void Tokenizer::TokenizerImpl::save_gguf_tokenizer_models(const std::shared_ptr<ov::Model>& ov_tokenizer,
-                                                         const std::shared_ptr<ov::Model>& ov_detokenizer,
-                                                         const std::filesystem::path& gguf_model_path) {
-    for (const auto& model : {ov_tokenizer, ov_detokenizer}) {
-        model->set_rt_info(m_pad_token_id, "pad_token_id");
-        model->set_rt_info(m_bos_token_id, "bos_token_id");
-        model->set_rt_info(m_eos_token_id, "eos_token_id");
-        model->set_rt_info(m_chat_template, "chat_template");
-        model->set_rt_info(m_pad_token, "pad_token");
-        model->set_rt_info(m_bos_token, "bos_token");
-        model->set_rt_info(m_eos_token, "eos_token");
-    }
-    ov::genai::utils::save_openvino_model(ov_tokenizer, (gguf_model_path.parent_path() / "openvino_tokenizer.xml").string(), false);
-    ov::genai::utils::save_openvino_model(ov_detokenizer, (gguf_model_path.parent_path() / "openvino_detokenizer.xml").string(), false);
-}
-
 void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
     ScopedVar env_manager(tokenizers_relative_to_genai());
     auto core = get_core_singleton();
@@ -351,8 +335,28 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
         ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
-        if (gguf_props.enable_save_ov_model) {
-            save_gguf_tokenizer_models(ov_tokenizer, ov_detokenizer, models_path);
+        if (gguf_props.enable_save_ov_model){
+            std::filesystem::path gguf_model_path(models_path);
+            std::filesystem::path save_ov_tokenizer_path = gguf_model_path.parent_path() / "openvino_tokenizer.xml";
+            std::filesystem::path save_ov_detokenizer_path = gguf_model_path.parent_path() / "openvino_detokenizer.xml";
+            ov_tokenizer->set_rt_info(m_pad_token_id, "pad_token_id");
+            ov_tokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
+            ov_tokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
+            ov_tokenizer->set_rt_info(m_chat_template, "chat_template");
+            ov_tokenizer->set_rt_info(m_pad_token, "pad_token");
+            ov_tokenizer->set_rt_info(m_bos_token, "bos_token");
+            ov_tokenizer->set_rt_info(m_eos_token, "eos_token");
+
+            ov_detokenizer->set_rt_info(m_pad_token_id, "pad_token_id");
+            ov_detokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
+            ov_detokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
+            ov_detokenizer->set_rt_info(m_chat_template, "chat_template");
+            ov_detokenizer->set_rt_info(m_pad_token, "pad_token");
+            ov_detokenizer->set_rt_info(m_bos_token, "bos_token");
+            ov_detokenizer->set_rt_info(m_eos_token, "eos_token");
+
+            ov::genai::utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
+            ov::genai::utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
         }
 
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
