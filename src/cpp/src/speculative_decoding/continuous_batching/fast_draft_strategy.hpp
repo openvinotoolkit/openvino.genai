@@ -112,6 +112,8 @@ std::vector<EncodedGenerationResult> generate_common(
     OPENVINO_ASSERT(self->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
     self->perf_metrics().draft_model_metrics.raw_metrics = self->draft_pipeline()->raw_perf_metrics;
+    self->perf_metrics().draft_markov_head_metrics.raw_metrics = self->draft_pipeline()->dflash_markov_head_perf_metrics;
+    self->perf_metrics().draft_sampling_metrics.raw_metrics = self->draft_pipeline()->dflash_sampling_perf_metrics;
     uint64_t generate_duration_us = strategy.stop_timer(t_start);
 
     std::vector<EncodedGenerationResult> results;
@@ -183,11 +185,28 @@ protected:
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
+    // The candidates of a request that the main model has not validated in full: the window counts in the acceptance
+    // metrics after the last of them is validated, also when the main request finished or the draft request ended.
+    struct ValidationWindow {
+        // Kept until the window counts, which can be after the main pipeline removed the request.
+        SequenceGroup::Ptr main_request;
+        size_t num_candidates = 0;
+        // The candidates that each main sequence, by grouped id, had accepted before the window. The window counts the
+        // ones the sampler accepted, which a matched stop string can remove from the generated tokens.
+        std::map<uint64_t, size_t> num_accepted_before;
+        // The sampler does not count the candidates of a tree; the main sequence keeps the path of the ones it accepted.
+        bool is_tree = false;
+    };
+    std::map<uint64_t, ValidationWindow> m_validation_windows;
+
+    // Adds the candidates that update_request() just put in the main request to the window of the request.
+    void add_to_validation_window(uint64_t request_id, size_t num_candidates);
+    // Counts the windows whose candidates the main model validated in this step in the acceptance metrics.
+    void count_validated_windows();
 
     void reset_generate_metrics() {
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-        m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
-        m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+        m_draft_pipeline->reset_draft_perf_metrics();
     }
 
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);

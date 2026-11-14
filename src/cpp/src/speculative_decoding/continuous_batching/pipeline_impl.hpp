@@ -36,10 +36,12 @@ struct DFlashDraftWindow {
 };
 
 // Plans the DFlash draft window of a request whose tokens match the target's. The draft request's processed
-// length is its committed rows, and the target has hidden states up to target_processed_tokens.
+// length is its committed rows, and the target has hidden states up to target_processed_tokens. With
+// block_may_follow_prompt_rows (dynamic split fuse), the window of the last prompt rows also carries the first block.
 DFlashDraftWindow make_dflash_draft_window(const SequenceGroup& request,
                                            size_t target_processed_tokens,
-                                           size_t candidate_position_offset);
+                                           size_t candidate_position_offset,
+                                           bool block_may_follow_prompt_rows = false);
 
 }  // namespace detail
 
@@ -78,6 +80,8 @@ public:
     UpdateRequestResult update_request(uint64_t request_id,
                                        const GeneratedSequences& candidates,
                                        bool is_update_logit_processor);
+    // Returns the request with the given id that the pipeline runs, or nullptr if there is none.
+    SequenceGroup::Ptr find_request(uint64_t request_id) const;
     void sync_generated_embeddings();
     bool is_requests_empty();
 
@@ -141,6 +145,18 @@ public:
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
     RawPerfMetrics raw_perf_metrics;
+    // Parts of the draft steps of a DFlash draft, one entry per step of raw_perf_metrics, which holds their backbone
+    // forwards. The Markov head ones are recorded only for a draft with a Markov head.
+    RawPerfMetrics dflash_markov_head_perf_metrics;
+    RawPerfMetrics dflash_sampling_perf_metrics;
+
+    void reset_draft_perf_metrics() {
+        for (RawPerfMetrics* metrics :
+             {&raw_perf_metrics, &dflash_markov_head_perf_metrics, &dflash_sampling_perf_metrics}) {
+            *metrics = RawPerfMetrics{};
+            metrics->m_inference_durations = {MicroSeconds(0.0f)};
+        }
+    }
 
     ov::Any get_model_property(const std::string& name) {
         OPENVINO_ASSERT(m_model_runner, "get_model_property('", name, "') called before model runner is initialized");
@@ -205,7 +221,9 @@ protected:
     bool dflash_mode_enabled = false;
     int64_t m_dflash_mask_token_id = -1;
     size_t m_dflash_candidate_position_offset = 1;
-    // the Markov head of a DSpark draft, which the sampler runs
+    // dynamic split fuse: the window of the last prompt rows carries the first block
+    bool m_dflash_block_may_follow_prompt_rows = false;
+    // the rows the draft sampler draws the candidates from, with the Markov head the sampler runs
     std::shared_ptr<dflash_cb::CandidateSelector> m_dflash_candidate_selector;
     // Windows planned by the DFlash draft update for the next draft forward, by sequence id.
     std::map<uint64_t, detail::DFlashDraftWindow> m_dflash_draft_windows;
@@ -471,14 +489,18 @@ protected:
         return true;
     }
 
-    // A candidate selector gives the rows the sampler drafts the candidates of a draft with a Markov head from.
+    // A candidate selector gives the rows the sampler drafts from.
     void enable_dflash_draft(int64_t mask_token_id,
                              size_t candidate_position_offset,
                              std::shared_ptr<dflash_cb::CandidateSelector> candidate_selector) {
         m_dflash_mask_token_id = mask_token_id;
         m_dflash_candidate_position_offset = candidate_position_offset;
         m_dflash_candidate_selector = candidate_selector;
+        m_dflash_block_may_follow_prompt_rows = m_scheduler->get_config().dynamic_split_fuse;
         m_model_runner->enable_dflash_draft(candidate_position_offset);
+        if (candidate_selector) {
+            candidate_selector->set_draft_request(m_model_runner->get_infer_request());
+        }
         m_sampler->set_block_sampling(candidate_position_offset, std::move(candidate_selector));
     }
 };

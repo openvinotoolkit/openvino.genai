@@ -623,6 +623,46 @@ private:
         }
     }
 
+    // The pending tokens of a request, the candidates of a validation window or the tokens a draft request takes over
+    // from the main model, are the last tokens of the sequence, and the forward that runs them samples after the last
+    // one, so it runs to the end of the sequence. After a recompute the group counts one row less: without pending
+    // tokens, the last generated token runs on its own in a later step.
+    size_t _get_num_available_tokens_for_batching(SequenceGroup::CPtr sequence_group) const {
+        const size_t num_available_tokens = sequence_group->get_num_available_tokens_for_batching();
+        if (sequence_group->get_num_tokens_to_validate() == 0) {
+            return num_available_tokens;
+        }
+        size_t sequence_len = 0;
+        for (const auto& sequence : sequence_group->get_running_sequences()) {
+            sequence_len = std::max(sequence_len, sequence_group->get_prompt_len() + sequence->get_generated_len());
+        }
+        const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+        return std::max(num_available_tokens, sequence_len > num_processed_tokens ? sequence_len - num_processed_tokens : 0);
+    }
+
+    // The sampler, the hidden-state sync of EAGLE3 and MTP drafts and the tree mask read all rows of a validation
+    // window, the base token and its candidates, from one forward. A forward runs the window whole or stops before
+    // its base token; the rows before it, of a prompt or a recompute, split like any others.
+    size_t _fit_validation_window(SequenceGroup::CPtr sequence_group,
+                                  size_t num_available_tokens,
+                                  size_t num_scheduled_tokens) const {
+        const size_t num_candidates = sequence_group->get_num_tokens_to_validate();
+        if (!m_is_validation_mode_enabled || num_candidates == 0 || num_scheduled_tokens >= num_available_tokens) {
+            return num_scheduled_tokens;
+        }
+        const size_t validation_window = num_candidates + 1;
+        OPENVINO_ASSERT(m_config.max_num_batched_tokens >= validation_window,
+                        "max_num_batched_tokens (", m_config.max_num_batched_tokens,
+                        ") is too small to ever schedule the speculative validation window of ", validation_window,
+                        " tokens (1 base + ", num_candidates, " candidates) for sequence group ",
+                        sequence_group->get_request_id(),
+                        "; increase max_num_batched_tokens to at least num_assistant_tokens + 1");
+        OPENVINO_ASSERT(num_available_tokens >= validation_window,
+                        "Sequence group ", sequence_group->get_request_id(), " has ", num_available_tokens,
+                        " tokens to schedule, fewer than its validation window of ", validation_window);
+        return std::min(num_scheduled_tokens, num_available_tokens - validation_window);
+    }
+
     void _schedule_prompt_phase_dynamic_split_fuse(
         std::vector<SequenceGroup::Ptr>& sequence_groups,
         Output& scheduler_output,
@@ -646,7 +686,7 @@ private:
                 uint64_t seq_id = sequence->get_id();
 
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
-                size_t num_available_tokens = sequence_group->get_num_available_tokens_for_batching();
+                size_t num_available_tokens = _get_num_available_tokens_for_batching(sequence_group);
 
                 // apply megabatch limitations
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
@@ -668,6 +708,7 @@ private:
                     }
                 }
                 num_scheduled_tokens = std::min(num_scheduled_tokens, m_cache_orchestrator->available_token_slots(sequence_group));
+                num_scheduled_tokens = _fit_validation_window(sequence_group, num_available_tokens, num_scheduled_tokens);
 
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
@@ -732,7 +773,7 @@ private:
 
                 // Note: current function can return more than 1 token even for generation phase in case of some tokens
                 // of current sequence group were evicted before
-                size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
+                size_t num_available_tokens_per_seq = _get_num_available_tokens_for_batching(sequence_group);
 
                 const std::optional<detail::LinearAttentionPagingMode> linear_attention_mode =
                     m_cache_orchestrator->has_linear_attention_cache()
@@ -772,7 +813,14 @@ private:
                     }
                 }
 
-                size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
+                size_t num_scheduled_tokens_per_seq = _fit_validation_window(
+                    sequence_group,
+                    num_available_tokens_per_seq,
+                    std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq));
+                if (!num_scheduled_tokens_per_seq) {
+                    // the validation window waits for a step with room for it
+                    continue;
+                }
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
                 while (!m_cache_orchestrator->can_append_slots(sequence_group)) {
@@ -785,7 +833,10 @@ private:
 
                 // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
                 if (!m_cache_orchestrator->can_append_slots(sequence_group)) {
+                    // the request runs nothing in this step and keeps its pending candidates
+                    const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
                     sequence_group->clear_scheduled_tokens();
+                    sequence_group->set_num_validated_tokens(num_tokens_to_validate);
                     if (linear_attention_group_reservation) {
                         linear_attention_reservations.release_group(*linear_attention_group_reservation);
                     }
@@ -863,7 +914,7 @@ private:
                 if (!m_config.enable_prefix_caching)
                     OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
                 size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
-                size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
+                size_t sequence_len = _get_num_available_tokens_for_batching(sequence_group);
 
                 // TODO: better handling
                 // e.g. return status that sequence is ignored and cannot be processed by current scheduling algorigthm

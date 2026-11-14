@@ -38,6 +38,7 @@ bool should_use_stateful_pipeline(bool is_npu_requested,
                                   const std::string& attention_backend,
                                   const std::shared_ptr<ov::Model>& main_model,
                                   const ov::AnyMap& properties) {
+    ov::genai::utils::dflash::reject_dflash_draft_on_npu(is_npu_requested, properties);
     if (is_npu_requested) {
         return true;
     }

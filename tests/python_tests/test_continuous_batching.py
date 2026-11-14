@@ -12,6 +12,7 @@ import numpy as np
 
 from pathlib import Path
 from shutil import rmtree
+from huggingface_hub import snapshot_download
 from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
@@ -26,6 +27,7 @@ from openvino_genai import (
     GenerationStatus,
     StreamingStatus,
     ChatHistory,
+    Tokenizer,
 )
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
@@ -886,7 +888,8 @@ def test_dynamic_split_fuse_doesnt_affect_generated_text():
     scheduler_config_ref = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
     cb_pipe_ref = create_ov_pipeline(models_path, scheduler_config=scheduler_config_ref, pipeline_type=pipeline_type)
 
-    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 5})
+    # The smallest budget for a validation window of num_assistant_tokens + 1 = 6 tokens; the prompt still splits.
+    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 6})
     cb_pipe_target = create_ov_pipeline(models_path, scheduler_config=scheduler_config_target, pipeline_type=pipeline_type)
 
     generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, eos_token_id=cb_pipe_ref.get_tokenizer().get_eos_token_id())
@@ -1698,6 +1701,83 @@ def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_d
     assert tree_accepted > 0
 
     del ov_pipe
+
+
+def _export_with_remote_code(model_id: str) -> Path:
+    model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(model_id)
+    AtomicDownloadManager(model_path).execute(
+        lambda temp_path: export_with_optimum_cli(
+            retry_request(lambda: snapshot_download(model_id)),
+            "text-generation-with-past",
+            temp_path,
+            trust_remote_code=True,
+        )
+    )
+    return model_path
+
+
+def test_eagle3_counts_the_tree_window_that_ends_a_request():
+    # The second token of the target stops each request, so the tree the target validates after the first token ends
+    # the request.
+    target_path = _export_with_remote_code("optimum-intel-internal-testing/tiny-random-qwen3-layer10")
+    draft_path = _export_with_remote_code("optimum-intel-internal-testing/tiny-random-qwen3-eagle3")
+    tokenizer = Tokenizer(target_path)
+    prompts = ["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada."]
+    input_ids = [tokenizer.encode(prompt).input_ids for prompt in prompts]
+    properties = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
+    main_only = ContinuousBatchingPipeline(target_path, SchedulerConfig(), "CPU", properties)
+    reference = [
+        result.m_generation_ids[0]
+        for result in main_only.generate(input_ids, [GenerationConfig(max_new_tokens=2)] * len(input_ids))
+    ]
+    configs = []
+    for tokens in reference:
+        config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=6, branching_factor=2, tree_depth=3)
+        config.stop_token_ids = {tokens[1]}
+        configs.append(config)
+    pipe = ContinuousBatchingPipeline(
+        target_path,
+        SchedulerConfig(),
+        "CPU",
+        {**properties, "draft_model": draft_model(draft_path, "CPU", **properties)},
+    )
+
+    results = pipe.generate(input_ids, configs)
+
+    assert [result.m_generation_ids[0] for result in results] == reference
+    metrics = results[0].extended_perf_metrics
+    assert metrics.get_num_draft_tokens() == len(input_ids) * 6
+    assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
+
+
+def test_speculative_decoding_counts_candidates_a_stop_string_removes():
+    # The target drafts for itself, so it accepts every candidate. A stop string in the first window removes the
+    # accepted candidates after it from the output, and its own tokens unless they are included; they count all the same.
+    target_path = download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3").models_path
+    properties = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
+    pipe = ContinuousBatchingPipeline(
+        target_path,
+        SchedulerConfig(),
+        "CPU",
+        {**properties, "draft_model": draft_model(target_path, "CPU", **properties)},
+    )
+    tokenizer = pipe.get_tokenizer()
+    input_ids = tokenizer.encode("What's OpenVINO?").input_ids
+    config = GenerationConfig(do_sample=False, max_new_tokens=30, ignore_eos=True, num_assistant_tokens=5)
+    generated_ids = pipe.generate([input_ids], [config])[0].m_generation_ids[0]
+    # the target generates the first token from the prompt, and the first window drafts the next ones
+    stop_string = tokenizer.decode(generated_ids[1:3])
+    assert stop_string.strip()
+
+    def counts(include_stop_str_in_output):
+        config.stop_strings = {stop_string}
+        config.include_stop_str_in_output = include_stop_str_in_output
+        metrics = pipe.generate([input_ids], [config])[0].extended_perf_metrics
+        return metrics.get_num_draft_tokens(), metrics.get_num_accepted_tokens()
+
+    num_drafted, num_accepted = counts(False)
+    assert num_accepted == num_drafted
+    assert counts(True) == (num_drafted, num_accepted)
 
 
 @pytest.fixture(scope="module")

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <future>
+#include <iterator>
 #include <numeric>
 #include <set>
 #include "openvino/runtime/core.hpp"
@@ -3674,4 +3675,223 @@ TEST(TestScheduler, dflash_draft_windows_are_scheduled_whole) {
             }
         }
     }
+}
+
+// With dynamic split fuse, the DFlash draft window of the last prompt rows also carries the first block as extra
+// rows: the prompt phase offers them with the rest of the prompt, so the window runs whole and is sampled.
+TEST(TestScheduler, dflash_draft_window_of_the_prompt_end_runs_its_block_with_dynamic_split_fuse) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<int64_t> prompt(16);
+    std::iota(prompt.begin(), prompt.end(), 0);
+    auto group = std::make_shared<SequenceGroup>(0,
+                                                 ov::Tensor(ov::element::i64, {prompt.size()}, prompt.data()),
+                                                 utils::get_greedy_config());
+    // the seed the target sampled, then 3 mask placeholders
+    for (int64_t token : {100, 99, 99, 99}) {
+        group->get_running_sequences().front()->append_token(token, 0.0f);
+    }
+    group->set_num_validated_tokens(4);
+    std::vector<SequenceGroup::Ptr> requests = {group};
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    auto out = scheduler.schedule(requests);
+
+    EXPECT_FALSE(group->can_generate_tokens());
+    EXPECT_EQ(group->get_num_scheduled_tokens(), 16 + 4);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 16 + 4);
+    EXPECT_TRUE(group->requires_sampling());
+
+    group->finish_iteration();
+    for (const auto& sequence : group->get_sequences()) {
+        scheduler.free_sequence(sequence->get_id());
+    }
+}
+
+namespace {
+SequenceGroup::Ptr make_validating_request(uint64_t request_id) {
+    std::vector<int64_t> prompt(TEST_BLOCK_SIZE);
+    std::iota(prompt.begin(), prompt.end(), 0);
+    return std::make_shared<SequenceGroup>(request_id, prompt, utils::get_greedy_config());
+}
+
+// Runs the prompts, then gives each request the token the target sampled after its prompt and num_candidates draft
+// candidates to validate.
+void start_validation_windows(ContinuousBatchingScheduler& scheduler,
+                              const std::vector<SequenceGroup::Ptr>& requests,
+                              size_t num_candidates) {
+    for (;;) {
+        std::vector<SequenceGroup::Ptr> prompts;
+        std::copy_if(requests.begin(), requests.end(), std::back_inserter(prompts), [](const SequenceGroup::Ptr& request) {
+            return request->get_num_processed_tokens() < request->get_prompt_len();
+        });
+        if (prompts.empty()) {
+            break;
+        }
+        std::ignore = scheduler.schedule(prompts);
+        for (const auto& request : prompts) {
+            request->finish_iteration();
+        }
+    }
+    for (const auto& request : requests) {
+        const Sequence::Ptr sequence = request->get_running_sequences().front();
+        for (size_t token = 0; token <= num_candidates; ++token) {
+            sequence->append_token(100 + static_cast<int64_t>(token), 0.0f);
+        }
+        request->update_processed_tokens_num(request->get_prompt_len());
+        request->set_num_validated_tokens(num_candidates);
+    }
+}
+
+void free_requests(ContinuousBatchingScheduler& scheduler, const std::vector<SequenceGroup::Ptr>& requests) {
+    for (const auto& request : requests) {
+        for (const auto& sequence : request->get_sequences()) {
+            if (scheduler.has_block_table(sequence->get_id())) {
+                scheduler.free_sequence(sequence->get_id());
+            }
+        }
+    }
+}
+}  // namespace
+
+// The token budget has room for one validation window: the window of the second request waits for the next step
+// instead of running in part.
+TEST(TestScheduler, validation_window_runs_whole_or_waits_for_a_later_step) {
+    constexpr size_t num_candidates = 3;
+    constexpr size_t window = num_candidates + 1;
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = window + window / 2;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0), make_validating_request(1)};
+    start_validation_windows(scheduler, requests, num_candidates);
+
+    auto out = scheduler.schedule(requests);
+    EXPECT_EQ(requests[0]->get_num_scheduled_tokens(), window);
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), 0u);
+    EXPECT_EQ(requests[1]->get_num_tokens_to_validate(), num_candidates);
+    EXPECT_EQ(out.m_scheduled_sequence_groups_ids, std::vector<uint64_t>({0}));
+    requests[0]->finish_iteration();
+
+    std::vector<SequenceGroup::Ptr> waiting = {requests[1]};
+    out = scheduler.schedule(waiting);
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), window);
+    EXPECT_TRUE(requests[1]->requires_sampling());
+    requests[1]->finish_iteration();
+
+    free_requests(scheduler, requests);
+}
+
+TEST(TestScheduler, validation_window_larger_than_the_token_budget_throws) {
+    constexpr size_t num_candidates = 4;
+    SchedulerConfig scheduler_config;
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.dynamic_split_fuse = true;
+    // one row less than the window
+    scheduler_config.max_num_batched_tokens = num_candidates;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0)};
+    start_validation_windows(scheduler, requests, num_candidates);
+
+    EXPECT_THROW(std::ignore = scheduler.schedule(requests), ov::Exception);
+
+    free_requests(scheduler, requests);
+}
+
+// With no KV block for the window and no request to preempt, the request runs nothing in this step and still has its
+// candidates to validate.
+TEST(TestScheduler, validation_window_without_kv_blocks_keeps_its_candidates) {
+    constexpr size_t num_candidates = 3;
+    SchedulerConfig scheduler_config;
+    // the block of the prompt
+    scheduler_config.num_kv_blocks = 1;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0)};
+    start_validation_windows(scheduler, requests, num_candidates);
+
+    auto out = scheduler.schedule(requests);
+    EXPECT_TRUE(out.m_scheduled_sequence_groups_ids.empty());
+    EXPECT_EQ(requests[0]->get_num_scheduled_tokens(), 0u);
+    EXPECT_EQ(requests[0]->get_num_tokens_to_validate(), num_candidates);
+
+    free_requests(scheduler, requests);
+}
+
+// The window of the first request takes the KV block of the second one. The second request then recomputes its tokens
+// up to the end of its sequence, so the row of the token the target sampled validates the first candidate.
+TEST(TestScheduler, recompute_of_a_validation_window_runs_its_base_token) {
+    constexpr size_t num_candidates = 3;
+    SchedulerConfig scheduler_config;
+    // the blocks of the two prompts
+    scheduler_config.num_kv_blocks = 2;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0), make_validating_request(1)};
+    start_validation_windows(scheduler, requests, num_candidates);
+
+    std::ignore = scheduler.schedule(requests);
+    ASSERT_EQ(requests[0]->get_num_scheduled_tokens(), num_candidates + 1);
+    ASSERT_EQ(requests[1]->get_num_processed_tokens(), 0u);
+    EXPECT_EQ(requests[1]->get_num_tokens_to_validate(), num_candidates);
+    requests[0]->finish_iteration();
+    free_requests(scheduler, {requests[0]});
+
+    std::vector<SequenceGroup::Ptr> preempted = {requests[1]};
+    std::ignore = scheduler.schedule(preempted);
+    // the prompt, the token the target sampled and the candidates
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), TEST_BLOCK_SIZE + 1 + num_candidates);
+    EXPECT_TRUE(requests[1]->requires_sampling());
+    requests[1]->finish_iteration();
+
+    free_requests(scheduler, requests);
+}
+
+// A draft request runs the tokens it took over from the main model and samples its next candidate after the last of
+// them. After a recompute preemption it still runs to the end of its sequence, so the candidate follows the last token.
+TEST(TestScheduler, recompute_of_a_draft_request_runs_the_tokens_it_took_over) {
+    constexpr size_t num_taken_over_tokens = 3;
+    SchedulerConfig scheduler_config;
+    // the blocks of the two prompts
+    scheduler_config.num_kv_blocks = 2;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_seqs = 4;
+
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config),
+                                          scheduler_config,
+                                          true,
+                                          1,
+                                          false);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0), make_validating_request(1)};
+    start_validation_windows(scheduler, requests, num_taken_over_tokens);
+
+    std::ignore = scheduler.schedule(requests);
+    ASSERT_EQ(requests[0]->get_num_scheduled_tokens(), num_taken_over_tokens + 1);
+    ASSERT_EQ(requests[1]->get_num_processed_tokens(), 0u);
+    requests[0]->finish_iteration();
+    free_requests(scheduler, {requests[0]});
+
+    std::vector<SequenceGroup::Ptr> preempted = {requests[1]};
+    std::ignore = scheduler.schedule(preempted);
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), TEST_BLOCK_SIZE + 1 + num_taken_over_tokens);
+    EXPECT_TRUE(requests[1]->requires_sampling());
+    requests[1]->finish_iteration();
+
+    free_requests(scheduler, requests);
 }
