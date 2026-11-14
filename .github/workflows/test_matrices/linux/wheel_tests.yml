@@ -301,6 +301,17 @@
   components:
     - speculative_decoding
 
+# TODO Enable test when OV ops are merged
+# - name: Qwen3.8 MTP speculative decoding tests
+#   cmd: |-
+#     # TODO Use upstream optimum-intel repo and commit from main branch after merge
+#     python -m pip install --no-deps "optimum-intel @ git+https://github.com/rkazants/optimum-intel.git@qwen38_flash_next"
+#     python -m pip install transformers==5.17.0
+#     python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py -k "qwen38_flash_next_mtp"
+#   timeout: 90
+#   components:
+#    - speculative_decoding
+
 - name: DFlash and DSpark speculative decoding tests
   cmd: |-
     # The DFlash and DSpark drafts need the export from optimum-intel main, which exports Qwen3.5 only with
