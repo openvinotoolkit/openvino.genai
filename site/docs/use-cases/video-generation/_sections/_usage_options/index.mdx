@@ -139,6 +139,44 @@ The pipeline picks its defaults from the converted model, so no configuration is
 - Enabling Spatio-Temporal Guidance with an empty `spatio_temporal_guidance_blocks` is an error: with no block to perturb, the extra pass would only cost time.
 :::
 
+#### LTX-2 VAE Temporal Tiling
+
+By default the video VAE decoder turns the whole latent video into frames in one inference, so its peak memory grows with the number of frames. With `vae_tile_sample_min_num_frames` set, the latent video is decoded in overlapping chunks of that many video frames, started every `vae_tile_sample_stride_num_frames` frames, and the overlapping frames are cross-faded. Peak memory of the decoder is then bounded by the chunk. Both values must be multiples of 8 (the temporal compression ratio of the VAE); `16` and `8` are the defaults of `diffusers`.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        result = pipe.generate(
+          prompt,
+          num_frames=161,
+          # highlight-start
+          vae_tile_sample_min_num_frames=16,
+          vae_tile_sample_stride_num_frames=8
+          # highlight-end
+        )
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        auto result = pipe.generate(
+            prompt,
+            ov::genai::num_frames(161),
+            // highlight-start
+            ov::genai::vae_tile_sample_min_num_frames(16),
+            ov::genai::vae_tile_sample_stride_num_frames(8)
+            // highlight-end
+        );
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+The same tiling is available on the model class: `AutoencoderKLLTX2Video.decode(latent, tile_sample_min_num_frames, tile_sample_stride_num_frames)`. In C++, `Text2VideoPipeline::decode(latent)` uses the values from the pipeline's generation config.
+
+:::note
+- Tiling is off by default (`vae_tile_sample_min_num_frames=0`). Frames near chunk borders differ slightly from an untiled decode, because a chunk does not see the latent frames outside of it.
+- It applies to the LTX-2 family only and needs a video VAE decoder with a dynamic number of frames, so it cannot be combined with `reshape()`. LTX-Video pipelines reject it. Audio decoding is not tiled.
+:::
+
 #### LTX-2 Export Compatibility and Component Inference
 
 LTX-2 transformers support both legacy exports with `video_coords` and

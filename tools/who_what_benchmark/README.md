@@ -192,6 +192,23 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai
 ```
 
+### Compare Text-to-video models with and without VAE tiling (LTX-2)
+
+`--vae-tiling-config` enables temporal tiling of the VAE decoder in GenAI LTX-2 pipelines: the video is decoded in overlapping chunks of frames, which bounds the memory of the decoder. It takes a JSON file or a JSON string with the keys `tile_sample_min_num_frames` (chunk length in video frames, `0` disables tiling) and `tile_sample_stride_num_frames` (distance between chunk starts in video frames). Both must be multiples of the VAE temporal compression ratio (8). The option requires `--genai` and works for `text-to-video` and `image-to-video`.
+
+Tiling changes only the VAE decode. With the same seed the denoising is the same, so the comparison below measures the effect of tiling alone.
+
+```sh
+# Export model to OpenVINO
+optimum-cli export openvino -m Lightricks/LTX-2 --weight-format fp32 ltx2-model
+# Collect the references with GenAI without tiling
+wwb --base-model ltx2-model --gt-data ltx2_tiling_test/gt.csv --model-type text-to-video --genai --video-frames-num 97
+# Compute the metric for the same model with tiling
+wwb --target-model ltx2-model --gt-data ltx2_tiling_test/gt.csv --model-type text-to-video --genai --video-frames-num 97 --vae-tiling-config '{"tile_sample_min_num_frames": 16, "tile_sample_stride_num_frames": 8}' --output ltx2_tiling
+```
+
+> **NOTE**: the similarity metrics for videos are computed on the first 32 frames of each video. A clip that fits into one chunk is decoded without tiling.
+
 ### Compare Text-to-video models with LoRA (LTX-Video)
 
 Community LoRA adapters for LTX-Video are available on [HuggingFace](https://huggingface.co/models?other=base_model:adapter:Lightricks/LTX-Video).

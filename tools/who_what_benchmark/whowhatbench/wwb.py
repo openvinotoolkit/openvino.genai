@@ -51,6 +51,37 @@ def _validate_sd_config_value(key, value, expected_type):
     return expected_type(value)
 
 
+# Supported keys for --vae-tiling-config. They are named as in diffusers and are set on the GenAI
+# VideoGenerationConfig with the "vae_" prefix.
+VAE_TILING_CONFIG_SUPPORTED_KEYS = ("tile_sample_min_num_frames", "tile_sample_stride_num_frames")
+
+
+def parse_vae_tiling_config(config: str) -> dict:
+    """Read --vae-tiling-config (a JSON file or a JSON string) and validate it."""
+    tiling_cfg = get_json_config(config)
+    if not isinstance(tiling_cfg, dict):
+        raise ValueError(f"--vae-tiling-config must be a JSON object, got {type(tiling_cfg).__name__}")
+    for key, value in tiling_cfg.items():
+        if key not in VAE_TILING_CONFIG_SUPPORTED_KEYS:
+            raise ValueError(
+                f"Key '{key}' in --vae-tiling-config is not supported, "
+                f"supported keys: {', '.join(VAE_TILING_CONFIG_SUPPORTED_KEYS)}"
+            )
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"'{key}' in --vae-tiling-config must be a non-negative integer, got {value!r}")
+    return tiling_cfg
+
+
+def set_vae_tiling_config(model, vae_tiling_config: dict) -> None:
+    """Set temporal VAE tiling on the generation config of a GenAI video generation pipeline."""
+    generation_config = model.get_generation_config()
+    for key, value in vae_tiling_config.items():
+        if not hasattr(generation_config, f"vae_{key}"):
+            raise ValueError(f"--vae-tiling-config is not supported by this openvino_genai: no 'vae_{key}'")
+        setattr(generation_config, f"vae_{key}", value)
+    model.set_generation_config(generation_config)
+
+
 def pruning_ratio_type(value: str) -> int:
     ivalue = int(value)
     if ivalue < 0 or ivalue > 100:
@@ -319,6 +350,17 @@ def parse_args():
         "Supported keys: 'cache_interval', 'disable_cache_before_step', 'disable_cache_after_step'. "
         "All keys are optional; defaults are used if not provided. "
         "If the pipeline enables caching by default, pass '{\"disable_cache_after_step\": 0}' to disable it.",
+    )
+    parser.add_argument(
+        "--vae-tiling-config",
+        type=str,
+        default=None,
+        help="Path to a JSON file/string with temporal VAE tiling configuration for GenAI text-to-video/"
+        "image-to-video pipelines (LTX-2). The video is decoded in overlapping chunks of frames to bound the memory "
+        "of the VAE decoder. Supported keys: 'tile_sample_min_num_frames' (chunk length in video frames, "
+        "0 disables tiling), 'tile_sample_stride_num_frames' (distance between chunk starts in video frames). "
+        "Both must be multiples of the VAE temporal compression ratio. "
+        "Example: '{\"tile_sample_min_num_frames\": 16, \"tile_sample_stride_num_frames\": 8}'.",
     )
     parser.add_argument(
         "--from-onnx",
@@ -593,6 +635,10 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.torch_dtype is not None and not args.hf:
         raise ValueError("--torch-dtype requires --hf")
+    if args.vae_tiling_config is not None and not (
+        args.genai and args.model_type in ("text-to-video", "image-to-video")
+    ):
+        raise ValueError("--vae-tiling-config requires --genai and --model-type text-to-video or image-to-video")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
     if args.gt_data is not None and os.path.isdir(args.gt_data):
@@ -1825,6 +1871,12 @@ def main():
         taylorseer_config.disable_cache_after_step = ts_cfg.get("disable_cache_after_step", -2)
         logger.info(f"TaylorSeer config: {taylorseer_config}")
 
+    # Temporal VAE tiling for text-to-video and image-to-video pipelines
+    vae_tiling_config = None
+    if args.vae_tiling_config is not None:
+        vae_tiling_config = parse_vae_tiling_config(args.vae_tiling_config)
+        logger.info(f"VAE tiling config: {vae_tiling_config}")
+
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
@@ -1852,6 +1904,9 @@ def main():
             generation_config = base_model.get_generation_config()
             generation_config.taylorseer_config = taylorseer_config
             base_model.set_generation_config(generation_config)
+
+        if vae_tiling_config is not None and base_model is not None:
+            set_vae_tiling_config(base_model, vae_tiling_config)
 
         evaluator = create_evaluator(base_model, args)
 
@@ -1891,6 +1946,9 @@ def main():
                 generation_config = target_model.get_generation_config()
                 generation_config.taylorseer_config = taylorseer_config
                 target_model.set_generation_config(generation_config)
+
+            if vae_tiling_config is not None and target_model is not None:
+                set_vae_tiling_config(target_model, vae_tiling_config)
 
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,

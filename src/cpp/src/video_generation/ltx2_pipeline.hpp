@@ -177,6 +177,18 @@ class LTX2Pipeline : public VideoPipeline {
         OPENVINO_ASSERT(!generation_config.taylorseer_config,
                         "TaylorSeer is not supported for LTX2 pipelines");
         OPENVINO_ASSERT(!generation_config.adapters, "LoRA adapters are not supported for LTX2 pipelines");
+        // Checked before denoising, which takes much longer than the decode that would reject it
+        const auto temporal_ratio = static_cast<size_t>(m_vae->get_config().temporal_compression_ratio);
+        OPENVINO_ASSERT(generation_config.vae_tile_sample_min_num_frames == 0 ||
+                            (generation_config.vae_tile_sample_min_num_frames % temporal_ratio == 0 &&
+                             generation_config.vae_tile_sample_stride_num_frames % temporal_ratio == 0),
+                        "'vae_tile_sample_min_num_frames' and 'vae_tile_sample_stride_num_frames' must be divisible "
+                        "by ",
+                        temporal_ratio,
+                        " but got ",
+                        generation_config.vae_tile_sample_min_num_frames,
+                        " and ",
+                        generation_config.vae_tile_sample_stride_num_frames);
     }
 
     size_t audio_num_frames_for(const VideoGenerationConfig& generation_config) const {
@@ -228,13 +240,15 @@ class LTX2Pipeline : public VideoPipeline {
         return connected;
     }
 
-    ov::Tensor decode_video(const ov::Tensor& latent) {
+    ov::Tensor decode_video(const ov::Tensor& latent, const VideoGenerationConfig& generation_config) {
         auto vae = m_vae;
         if (!m_deferred_vae_device.empty()) {
             vae = std::make_shared<AutoencoderKLLTX2Video>(m_vae->clone());
             vae->compile(m_deferred_vae_device, m_deferred_properties);
         }
-        return vae->decode(latent);
+        return vae->decode(latent,
+                           generation_config.vae_tile_sample_min_num_frames,
+                           generation_config.vae_tile_sample_stride_num_frames);
     }
 
     // Text conditioning for one transformer pass, all at batch N
@@ -796,7 +810,7 @@ public:
                         "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX2Video. Please, contact OpenVINO GenAI developers.");
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = decode_video(latent);
+        ov::Tensor video = decode_video(latent, merged_generation_config);
 
         denormalize_audio_latents(audio_latent);
         ov::Tensor audio_latent_unpacked =
@@ -834,7 +848,7 @@ public:
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = decode_video(postprocessed);
+        ov::Tensor video = decode_video(postprocessed, m_generation_config);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();

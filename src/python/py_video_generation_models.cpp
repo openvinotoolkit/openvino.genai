@@ -462,12 +462,23 @@ void init_autoencoder_kl_ltx2_video(py::module_& m) {
                 width (int): Video width.
             )")
         .def("decode",
-             &ov::genai::AutoencoderKLLTX2Video::decode,
-             py::call_guard<py::gil_scoped_release>(),
+             [](ov::genai::AutoencoderKLLTX2Video& self,
+                const ov::Tensor& latent,
+                size_t tile_sample_min_num_frames,
+                size_t tile_sample_stride_num_frames) {
+                 py::gil_scoped_release release;
+                 return self.decode(latent, tile_sample_min_num_frames, tile_sample_stride_num_frames);
+             },
              py::arg("latent"),
+             py::arg("tile_sample_min_num_frames") = 0,
+             py::arg("tile_sample_stride_num_frames") = 8,
              R"(
                 Decodes latent video to pixel space.
                 latent (ov.Tensor): Latent video tensor.
+                tile_sample_min_num_frames (int): Chunk length in video frames for temporal tiling: the latent
+                    video is decoded in overlapping chunks which are cross-faded, so peak memory is bounded by
+                    the chunk instead of the whole clip. 0 disables tiling.
+                tile_sample_stride_num_frames (int): Distance between chunk starts in video frames.
                 Returns: Decoded video tensor.
             )");
 }
