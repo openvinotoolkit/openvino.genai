@@ -9,15 +9,44 @@
 #include "utils.hpp"
 
 #ifdef ENABLE_GGUF
+#include "cgraph_to_ov.hpp"
 #include "gguf_modeling.hpp"
+#include "llama_cpp_to_stateful.h"
+#include "openvino/frontend/gguf/adapt_to_genai.hpp"
+#include "openvino/pass/manager.hpp"
 #endif
 
 namespace ov::genai {
 
 const std::string FRONTEND_GGUF_READER = "FRONTEND";
 const std::string LEGACY_GGUF_READER = "LEGACY";
+const std::string LLAMA_CPP_GGUF_READER = "llama_cpp";
 
 namespace gguf_utils {
+
+namespace {
+
+void save_converted_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path) {
+    constexpr auto resources_key = "llama_cpp_resources";
+    auto& rt_info = model->get_rt_info();
+    const auto resources = rt_info.find(resources_key);
+    if (resources == rt_info.end()) {
+        utils::save_openvino_model(model, save_path, true);
+        return;
+    }
+
+    const ov::Any retained_resources = resources->second;
+    rt_info.erase(resources);
+    try {
+        utils::save_openvino_model(model, save_path, true);
+    } catch (...) {
+        model->set_rt_info(retained_resources, resources_key);
+        throw;
+    }
+    model->set_rt_info(retained_resources, resources_key);
+}
+
+}  // namespace
 
 GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
     GGUFProperties result;
@@ -28,15 +57,18 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
     auto reader_it = result.rest.find(ov::genai::gguf_reader.name());
     if (reader_it != result.rest.end()) {
         const auto reader = reader_it->second.as<std::string>();
-        OPENVINO_ASSERT(reader == FRONTEND_GGUF_READER || reader == LEGACY_GGUF_READER,
+        OPENVINO_ASSERT(reader == FRONTEND_GGUF_READER || reader == LEGACY_GGUF_READER ||
+                            reader == LLAMA_CPP_GGUF_READER,
                         "GGUF reader must be either '",
                         FRONTEND_GGUF_READER,
                         "' or '",
                         LEGACY_GGUF_READER,
+                        "' or '",
+                        LLAMA_CPP_GGUF_READER,
                         "', got '",
                         reader,
                         "'");
-        result.legacy_reader = reader == LEGACY_GGUF_READER;
+        result.reader = reader;
         result.rest.erase(reader_it);
     }
 
@@ -47,9 +79,25 @@ std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_pa
                                          const GGUFProperties& properties) {
 #ifdef ENABLE_GGUF
     try {
+        if (properties.use_llama_cpp_reader()) {
+            auto model = convert_gguf_with_llama_cpp(model_path.string());
+            ov::pass::Manager stateful_manager;
+            stateful_manager.register_pass<LlamaCppToStateful>();
+            stateful_manager.run_passes(model);
+
+            ov::frontend::gguf::pass::AdaptToGenAI adapt_to_genai;
+            OPENVINO_ASSERT(adapt_to_genai.run_on_model(model),
+                            "llama.cpp GGUF conversion did not produce a model adaptable to the GenAI pipeline");
+
+            if (properties.enable_save_ov_model) {
+                const auto save_path = model_path.parent_path() / "openvino_model.xml";
+                save_converted_model(model, save_path.string());
+            }
+            return model;
+        }
         return create_from_gguf(model_path.string(), properties.enable_save_ov_model, properties.use_legacy_reader());
     } catch (const std::exception& error) {
-        if (!properties.legacy_reader.has_value()) {
+        if (!properties.reader.has_value()) {
             OPENVINO_THROW(error.what(),
                            "\nThe default legacy GGUF reader failed to load this model. "
                            "Try GGUF_READER=\"FRONTEND\" (Python) or "

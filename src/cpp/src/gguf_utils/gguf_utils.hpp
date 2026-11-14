@@ -15,16 +15,25 @@ namespace ov::genai {
 
 extern const std::string FRONTEND_GGUF_READER;
 extern const std::string LEGACY_GGUF_READER;
+extern const std::string LLAMA_CPP_GGUF_READER;
 
 namespace gguf_utils {
 
 struct GGUFProperties {
     ov::AnyMap rest;
     bool enable_save_ov_model = false;
-    std::optional<bool> legacy_reader;
+    std::optional<std::string> reader;
 
     bool use_legacy_reader() const {
-        return legacy_reader.value_or(true);
+        return reader.value_or(LEGACY_GGUF_READER) == LEGACY_GGUF_READER;
+    }
+
+    bool use_frontend_reader() const {
+        return reader.value_or(LEGACY_GGUF_READER) == FRONTEND_GGUF_READER;
+    }
+
+    bool use_llama_cpp_reader() const {
+        return reader.value_or(LEGACY_GGUF_READER) == LLAMA_CPP_GGUF_READER;
     }
 };
 
