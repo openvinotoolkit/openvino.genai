@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <optional>
 #include <thread>
 
 #include "openvino/genai/text_streamer.hpp"
@@ -225,6 +226,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
         // generate candidates by draft model
         const auto draft_start = std::chrono::steady_clock::now();
+        const size_t num_recorded_draft_steps = m_draft_pipeline->raw_perf_metrics.m_durations.size();
         m_draft_pipeline->multistep();
         const auto draft_end = std::chrono::steady_clock::now();
         m_sd_metrics.draft_duration += PerfMetrics::get_microsec(draft_end - draft_start) / 1e6;
@@ -234,11 +236,25 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         std::map<int64_t, UpdateRequestResult> update_sequence_info;
         // put candidates to model KV cache
         auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
+        size_t num_submitted_candidates = 0;
         for (const auto& candidate : draft_generated_requests) {
             auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
+            num_submitted_candidates += update_result.inserted_tokens_cnt;
+            if (update_result.inserted_tokens_cnt > 0) {
+                add_to_validation_window(candidate.first, update_result.inserted_tokens_cnt);
+            }
             update_sequence_info.insert({{candidate.first, update_result}});
         }
         m_main_pipeline->sync_generated_embeddings();
+        // only steps the draft pipeline recorded, so that the parts a DFlash draft records line up with its steps
+        if (m_draft_pipeline->raw_perf_metrics.m_durations.size() > num_recorded_draft_steps) {
+            const MicroSeconds draft_step_duration(
+                PerfMetrics::get_microsec(std::chrono::steady_clock::now() - draft_start));
+            auto& draft_step_raw_metrics = m_perf_metrics.draft_step_metrics.raw_metrics;
+            draft_step_raw_metrics.m_durations.push_back(draft_step_duration);
+            draft_step_raw_metrics.m_batch_sizes.push_back(num_submitted_candidates);
+            draft_step_raw_metrics.m_inference_durations[0] += draft_step_duration;
+        }
 
         // to ensure extras steps, if any, are finished before main model generation
         if (m_sync_future.valid()) {
@@ -254,16 +270,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
         auto main_generated_requests = m_main_pipeline->get_generated_requests();
         for (const auto& checked_sequence : main_generated_requests) {
-            auto update_result =
-                m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
-            const bool is_tree_validation =
-                std::any_of(checked_sequence.second.begin(), checked_sequence.second.end(), [](const auto& sequence) {
-                    return sequence.second.tree_metadata != nullptr;
-                });
-            if (is_tree_validation && update_result.removed_tokens_cnt > 0) {
-                --update_result.removed_tokens_cnt;
-            }
-            update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
+            m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         }
         m_draft_pipeline->sync_generated_embeddings();
 
@@ -297,23 +304,8 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
             }
             auto updated_seq_info = update_sequence_info[request_id];
             m_sd_metrics.update_draft_generated_len(request_id, updated_seq_info.inserted_tokens_cnt);
-
-            // Prompt phase or draft-only update without main-model validation.
-            if (updated_seq_info.inserted_tokens_cnt == 0 || !main_generated_requests.count(request_id)) {
-                continue;
-            }
-            OPENVINO_ASSERT(updated_seq_info.inserted_tokens_cnt >= updated_seq_info.removed_tokens_cnt,
-                            "Speculative decoding removed more draft tokens than were inserted.");
-            m_perf_metrics.num_draft_tokens += updated_seq_info.inserted_tokens_cnt;
-            m_perf_metrics.num_accepted_tokens +=
-                updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt;
-            float acceptance_rate =
-                1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
-            m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
-            m_sd_metrics.update_draft_accepted_tokens(
-                request_id,
-                (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
         }
+        count_validated_windows();
 
         const auto step_end = std::chrono::steady_clock::now();
         const auto step_microsec_duration = PerfMetrics::get_microsec(step_end - step_start);
@@ -349,7 +341,71 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_main_pipeline->fail_pipeline(error);
         m_draft_pipeline->fail_pipeline(error);
         m_draft_generations.clear();
+        m_validation_windows.clear();
         std::rethrow_exception(error);
+    }
+}
+
+void ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_to_validation_window(uint64_t request_id,
+                                                                                   size_t num_candidates) {
+    const SequenceGroup::Ptr main_request = m_main_pipeline->find_request(request_id);
+    OPENVINO_ASSERT(main_request, "Request ", request_id, " got candidates while the main model does not run it.");
+    ValidationWindow& window = m_validation_windows[request_id];
+    // A window of an earlier request with the same id is dropped.
+    if (window.main_request != main_request) {
+        window = ValidationWindow{};
+        window.main_request = main_request;
+        window.is_tree = main_request->get_sampling_parameters().is_tree_search();
+        for (const auto& sequence : main_request->get_running_sequences()) {
+            window.num_accepted_before[sequence->get_grouped_id()] = sequence->get_num_accepted_candidates();
+        }
+    }
+    window.num_candidates += num_candidates;
+}
+
+void ContinuousBatchingPipeline::SpeculativeDecodingImpl::count_validated_windows() {
+    for (auto window_it = m_validation_windows.begin(); window_it != m_validation_windows.end();) {
+        const uint64_t request_id = window_it->first;
+        ValidationWindow& window = window_it->second;
+        const SequenceGroup::Ptr& main_request = window.main_request;
+        const bool is_main_running = m_main_pipeline->find_request(request_id) == main_request;
+        // A step that does not schedule the request validates none of the candidates.
+        if (is_main_running && main_request->get_num_tokens_to_validate() > 0) {
+            ++window_it;
+            continue;
+        }
+        const auto& main_sequences = main_request->get_sequences();
+        const bool is_main_out_of_memory =
+            std::any_of(main_sequences.begin(), main_sequences.end(), [](const Sequence::Ptr& sequence) {
+                return sequence->out_of_memory();
+            });
+        std::optional<size_t> num_accepted;
+        if (is_main_running || !(is_main_out_of_memory || main_request->handle_stopped() ||
+                                 main_request->handle_cancelled())) {
+            // A finished request validated the rest of its candidates; a stopped one or one out of memory did not.
+            num_accepted = window.num_candidates;
+            for (const auto& sequence : main_sequences) {
+                if (window.is_tree) {
+                    // The path starts at the root, the token before the candidates.
+                    const size_t path_len = sequence->get_tree_metadata().validated_indices.size();
+                    num_accepted = std::min(*num_accepted, path_len > 0 ? path_len - 1 : 0);
+                    continue;
+                }
+                const auto before_it = window.num_accepted_before.find(sequence->get_grouped_id());
+                if (before_it == window.num_accepted_before.end()) {
+                    continue;
+                }
+                num_accepted = std::min(*num_accepted, sequence->get_num_accepted_candidates() - before_it->second);
+            }
+        }
+        if (num_accepted.has_value()) {
+            m_perf_metrics.num_draft_tokens += window.num_candidates;
+            m_perf_metrics.num_accepted_tokens += *num_accepted;
+            m_sd_metrics.update_acceptance_rate(request_id,
+                                                100.f * static_cast<float>(*num_accepted) / window.num_candidates);
+            m_sd_metrics.update_draft_accepted_tokens(request_id, *num_accepted);
+        }
+        window_it = m_validation_windows.erase(window_it);
     }
 }
 

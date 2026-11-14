@@ -65,6 +65,10 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
         if (generated_len_after.count(request.first)) {
             auto present_req_len = generated_len_after.at(request.first).first;
             auto prev_full_req_len = request.second.first;
+            if (present_req_len <= prev_full_req_len) {
+                // the validation window waits for a later step
+                continue;
+            }
 
             num_matches = (present_req_len - prev_full_req_len - 1);
             acceptance_rate = static_cast<float>(num_matches) / static_cast<float>(prev_validation_len);

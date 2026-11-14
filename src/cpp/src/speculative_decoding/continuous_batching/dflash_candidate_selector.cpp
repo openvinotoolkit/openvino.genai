@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <utility>
@@ -55,9 +56,13 @@ ov::Tensor packed_rows(const ov::Tensor& rows, const std::vector<SampledBlock>& 
 
 CandidateSelector::CandidateSelector(const utils::dflash::DFlashRTInfo& rt_info,
                                      const std::string& device,
-                                     const ov::AnyMap& properties) {
+                                     const ov::AnyMap& properties)
+    : m_output_multiplier(rt_info.output_multiplier),
+      m_final_logit_softcapping(rt_info.final_logit_softcapping) {
     const auto& markov_head = rt_info.markov_head_computation;
-    OPENVINO_ASSERT(markov_head, "The DFlash candidate selector requires a draft with a Markov head.");
+    if (!markov_head) {
+        return;
+    }
     // A draft without properties takes the target's, which can carry a MODEL_PROPERTIES overlay and the GenAI-only
     // sampler_num_threads that LLMPipeline adds. The head compiles with the language model's properties, as the
     // backbone does.
@@ -68,6 +73,7 @@ CandidateSelector::CandidateSelector(const utils::dflash::DFlashRTInfo& rt_info,
     if (utils::dflash::is_markov_step(markov_head)) {
         m_markov_step = std::move(request);
     } else {
+        m_reads_hidden_states = utils::has_input(markov_head, "draft_hidden_states");
         m_candidate_scorer = std::move(request);
     }
 }
@@ -107,6 +113,11 @@ void CandidateSelector::score_candidates() {
 
     auto& scorer = *m_candidate_scorer;
     scorer.set_tensor("draft_logits", packed_rows(m_logits, m_blocks, num_rows));
+    if (m_reads_hidden_states) {
+        OPENVINO_ASSERT(m_draft_request, "A gated Markov head needs the draft request's last_hidden_state.");
+        scorer.set_tensor("draft_hidden_states",
+                          packed_rows(m_draft_request->get_tensor("last_hidden_state"), m_blocks, num_rows));
+    }
     scorer.set_tensor("anchor_token_ids", anchor_token_ids);
     scorer.set_tensor("subsequence_begins", subsequence_begins);
     infer(scorer);
@@ -136,16 +147,38 @@ void CandidateSelector::step(size_t, const std::vector<size_t>& blocks, const st
     }
 }
 
-std::optional<std::vector<BlockToken>> CandidateSelector::draw(size_t block, const GenerationConfig& config) const {
-    if (!m_candidate_scorer || !logit_processors_keep_argmax(config)) {
+std::optional<std::vector<BlockToken>> CandidateSelector::draw(size_t block,
+                                                               const GenerationConfig& config,
+                                                               std::mt19937& rng) const {
+    const size_t num_candidates = m_blocks[block].num_candidates;
+    if (m_candidate_scorer) {
+        if (config.is_multinomial()) {
+            return sample_candidate_path(m_edge_scores,
+                                         m_candidate_ids,
+                                         m_lattice_begins[block],
+                                         num_candidates,
+                                         config.temperature,
+                                         rng);
+        }
+        if (!logit_processors_keep_argmax(config)) {
+            return std::nullopt;
+        }
+        std::vector<BlockToken> tokens;
+        for (const int64_t token :
+             greedy_candidate_path(m_edge_scores, m_candidate_ids, m_lattice_begins[block], num_candidates)) {
+            tokens.push_back({token, 0.0f, nullptr});
+        }
+        return tokens;
+    }
+    if (m_markov_step || !logit_processors_keep_argmax(config)) {
         return std::nullopt;
     }
+    // output_multiplier > 0 and the soft cap keep the argmax of the backbone logits
     std::vector<BlockToken> tokens;
-    for (const int64_t token : greedy_candidate_path(m_edge_scores,
-                                                     m_candidate_ids,
-                                                     m_lattice_begins[block],
-                                                     m_blocks[block].num_candidates)) {
-        tokens.push_back({token, 0.0f});
+    for (size_t position = 0; position < num_candidates; ++position) {
+        const float* logits = backbone_logits(block, position);
+        tokens.push_back(
+            {static_cast<int64_t>(std::max_element(logits, logits + m_vocab_size) - logits), 0.0f, nullptr});
     }
     return tokens;
 }
@@ -162,23 +195,18 @@ std::optional<BlockToken> CandidateSelector::draw_token(size_t block,
     int64_t token = 0;
     float best = -std::numeric_limits<float>::infinity();
     for (size_t idx = 0; idx < m_vocab_size; ++idx) {
-        const float value = logits[idx] + bias[idx];
+        const float value = scaled_logit(logits[idx]) + bias[idx];
         if (value > best) {
             best = value;
             token = static_cast<int64_t>(idx);
         }
     }
-    return BlockToken{token, 0.0f};
+    return BlockToken{token, 0.0f, nullptr};
 }
 
 bool CandidateSelector::fill_row(size_t block, size_t position, int64_t previous_token, float* row) const {
-    const float* logits = backbone_logits(block, position);
-    if (m_markov_step) {
-        std::transform(logits, logits + m_vocab_size, markov_bias(block), row, std::plus<float>());
-        return true;
-    }
     size_t previous_index = 0;
-    if (position > 0) {
+    if (m_candidate_scorer && position > 0) {
         // the lattice has no row after a token outside the candidates
         const auto index = find_candidate(m_candidate_ids, m_lattice_begins[block] + position - 1, previous_token);
         if (!index) {
@@ -186,18 +214,33 @@ bool CandidateSelector::fill_row(size_t block, size_t position, int64_t previous
         }
         previous_index = *index;
     }
-    fill_candidate_row(logits,
-                       m_vocab_size,
-                       m_edge_scores,
-                       m_candidate_ids,
-                       m_lattice_begins[block] + position,
-                       previous_index,
-                       row);
+    const float* logits = backbone_logits(block, position);
+    std::transform(logits, logits + m_vocab_size, row, [this](float logit) {
+        return scaled_logit(logit);
+    });
+    if (m_candidate_scorer) {
+        fill_candidate_row(row,
+                           m_vocab_size,
+                           m_edge_scores,
+                           m_candidate_ids,
+                           m_lattice_begins[block] + position,
+                           previous_index,
+                           row);
+    } else if (m_markov_step) {
+        const float* bias = markov_bias(block);
+        std::transform(row, row + m_vocab_size, bias, row, std::plus<float>());
+    }
     return true;
 }
 
 const float* CandidateSelector::backbone_logits(size_t block, size_t position) const {
     return m_logits.data<const float>() + (m_blocks[block].first_row + position) * m_vocab_size;
+}
+
+float CandidateSelector::scaled_logit(float logit) const {
+    const float value = logit * m_output_multiplier;
+    return m_final_logit_softcapping > 0.0f ? std::tanh(value / m_final_logit_softcapping) * m_final_logit_softcapping
+                                            : value;
 }
 
 const float* CandidateSelector::markov_bias(size_t block) const {

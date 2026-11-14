@@ -5,11 +5,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <random>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -36,7 +39,9 @@
 #include "openvino/op/util/variable.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
 #include "openvino/runtime/core.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "model_desc.hpp"
+#include "sampling/candidates_validation.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
 #include "speculative_decoding/continuous_batching/dflash_candidate_lattice.hpp"
@@ -54,6 +59,7 @@ std::shared_ptr<ov::Model> make_annotated_stateful_sdpa_model() {
     input_ids->output(0).set_names({"input_ids"});
     auto embedding_weights =
         ov::op::v0::Constant::create(ov::element::f32, ov::Shape{16, 4}, std::vector<float>(16 * 4, 1.0f));
+    embedding_weights->set_friendly_name("model.embed_tokens.weight");
     auto embeddings =
         std::make_shared<ov::op::v8::Gather>(embedding_weights,
                                              input_ids,
@@ -311,9 +317,9 @@ std::shared_ptr<ov::op::v0::Parameter> make_draft_hidden_states(size_t width) {
 }
 
 // f16 [4, in_width] weights behind a Convert, as an exported compressed FC with transpose_b.
-std::shared_ptr<ov::op::v0::Convert> make_fc_weights(size_t in_width) {
+std::shared_ptr<ov::op::v0::Convert> make_fc_weights(size_t in_width, float first_value = -16.0f) {
     std::vector<float> values(4 * in_width);
-    std::iota(values.begin(), values.end(), -16.0f);
+    std::iota(values.begin(), values.end(), first_value);
     auto weights = ov::op::v0::Constant::create(ov::element::f16, ov::Shape{4, in_width}, values);
     return std::make_shared<ov::op::v0::Convert>(weights, ov::element::f32);
 }
@@ -372,6 +378,40 @@ TEST(DFlashModelTransforms, MovesTheDraftFCToTheTargetAndKeepsTheDraftOutputs) {
             }
         }
     }
+}
+
+TEST(DFlashModelTransforms, KeysTheCachedTargetOnTheMovedFCWeights) {
+    // GenAI compiles the target with ov::cache_model_path, which leaves weight values out of the model cache key.
+    const auto cache_dir =
+        std::filesystem::temp_directory_path() /
+        ("dflash_fc_cache_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(cache_dir);
+    ov::Core core;
+    const ov::AnyMap properties{{ov::hint::inference_precision.name(), ov::element::f32},
+                                {ov::cache_dir.name(), cache_dir.string()},
+                                {ov::cache_model_path.name(), cache_dir}};
+    std::vector<std::vector<float>> outputs;
+    for (const float first_weight : {-16.0f, 3.0f}) {
+        auto target_model = make_fc_move_target_model();
+        auto draft_model = make_fc_move_draft_model(make_draft_hidden_states(8), make_fc_weights(8, first_weight));
+        ov::genai::utils::dflash::move_fc_from_draft_to_main(draft_model, target_model);
+        auto request = core.compile_model(target_model, "CPU", properties).create_infer_request();
+        ov::Tensor input(ov::element::f32, {1, 1, 4});
+        std::iota(input.data<float>(), input.data<float>() + input.get_size(), -2.0f);
+        request.set_tensor("target_input", input);
+        request.infer();
+        const auto hidden = request.get_tensor("last_hidden_state");
+        outputs.emplace_back(hidden.data<const float>(), hidden.data<const float>() + hidden.get_size());
+    }
+    const auto blobs = std::count_if(std::filesystem::directory_iterator(cache_dir),
+                                     std::filesystem::directory_iterator(),
+                                     [](const auto& entry) {
+                                         return entry.path().extension() == ".blob";
+                                     });
+    std::filesystem::remove_all(cache_dir);
+
+    EXPECT_EQ(blobs, 2);
+    EXPECT_NE(outputs[0], outputs[1]);
 }
 
 TEST(DFlashModelTransforms, RejectsADraftWhoseHiddenStatesDoNotFeedOnlyAMatchingFC) {
@@ -457,6 +497,8 @@ protected:
     public:
         explicit DraftInstance(size_t candidate_position_offset = 1) {
             m_sampler = std::make_shared<ov::genai::Sampler>();
+            m_sampler->set_collect_draft_proposals(true);
+            m_sampler->set_block_sampling(candidate_position_offset);
             dflash_mode_enabled = true;
             m_dflash_mask_token_id = MASK_TOKEN;
             m_dflash_candidate_position_offset = candidate_position_offset;
@@ -466,6 +508,10 @@ protected:
             m_model_runner->enable_dflash_draft(candidate_position_offset);
         }
 
+        void use_dynamic_split_fuse() {
+            m_dflash_block_may_follow_prompt_rows = true;
+        }
+
         ov::genai::SequenceGroup::Ptr add(uint64_t request_id,
                                           const std::vector<int64_t>& prompt,
                                           size_t num_assistant_tokens,
@@ -473,6 +519,12 @@ protected:
             auto config = ov::genai::utils::get_greedy_config();
             config.num_assistant_tokens = num_assistant_tokens;
             config.max_new_tokens = max_new_tokens;
+            return add(request_id, prompt, config);
+        }
+
+        ov::genai::SequenceGroup::Ptr add(uint64_t request_id,
+                                          const std::vector<int64_t>& prompt,
+                                          const ov::genai::GenerationConfig& config) {
             auto group = std::make_shared<ov::genai::SequenceGroup>(request_id, prompt, config);
             group->pause_generation(true);
             m_requests.push_back(group);
@@ -512,6 +564,17 @@ protected:
             m_dflash_draft_windows.clear();
         }
 
+        // Runs the request's whole window, whose gathered candidate rows are `logits`, through the block sampler and
+        // leaves the request as the draft multistep does.
+        void draft_window(const ov::genai::SequenceGroup::Ptr& group, const ov::Tensor& logits) {
+            const auto planned = window(group);
+            group->schedule_tokens(planned.context_rows + planned.block_rows);
+            group->set_output_seq_len(logits.get_shape()[0]);
+            m_sampler->sample({group}, logits, false, false);
+            group->update_processed_tokens_num(planned.committed_rows + planned.context_rows);
+            m_dflash_draft_windows.clear();
+        }
+
         // Leaves the request as the draft multistep does after the scheduler ran only `forwarded_rows` of its window,
         // stopping before the first candidate row.
         void drop_window(const ov::genai::SequenceGroup::Ptr& group, size_t forwarded_rows = 0) {
@@ -535,11 +598,50 @@ protected:
     // Prompt of 8 tokens processed by the target in one chunk; the target sampled 7, and the draft forwarded the
     // prompt rows. The target then generated seed 17 alone and exported the row of 7, so the first block follows.
     ov::genai::SequenceGroup::Ptr start_with_block(DraftInstance& draft, size_t num_assistant_tokens = 3) {
-        auto group = draft.add(0, {0, 1, 2, 3, 4, 5, 6, 7}, num_assistant_tokens);
+        auto config = ov::genai::utils::get_greedy_config();
+        config.num_assistant_tokens = num_assistant_tokens;
+        config.max_new_tokens = 100;
+        return start_with_block(draft, config);
+    }
+
+    ov::genai::SequenceGroup::Ptr start_with_block(DraftInstance& draft, const ov::genai::GenerationConfig& config) {
+        auto group = draft.add(0, {0, 1, 2, 3, 4, 5, 6, 7}, config);
         draft.update_request(0, target_step({7}, 8, make_hidden_rows(8, 0.0f)), true);
         draft.finish_window(group, {});
         draft.update_request(0, target_step({7, 17}, 9, make_hidden_rows(1, 50.0f)), true);
         return group;
+    }
+
+    // Logits whose row r has value v at token t for every (t, v) in rows[r], and 0 elsewhere.
+    static ov::Tensor make_scored_logits(const std::vector<std::vector<std::pair<int64_t, float>>>& rows,
+                                         size_t vocab_size = 128) {
+        ov::Tensor logits(ov::element::f32, {rows.size(), 1, vocab_size});
+        std::fill_n(logits.data<float>(), logits.get_size(), 0.0f);
+        for (size_t row = 0; row < rows.size(); ++row) {
+            for (const auto& [token, value] : rows[row]) {
+                logits.data<float>()[row * vocab_size + token] = value;
+            }
+        }
+        return logits;
+    }
+
+    static ov::genai::GenerationConfig sampled_config(size_t num_assistant_tokens) {
+        ov::genai::GenerationConfig config;
+        config.do_sample = true;
+        config.temperature = 0.8f;
+        config.top_k = 4;
+        config.rng_seed = 3;
+        config.num_assistant_tokens = num_assistant_tokens;
+        config.max_new_tokens = 100;
+        return config;
+    }
+
+    static ov::genai::GenerationConfig penalized_config(size_t num_assistant_tokens) {
+        auto config = ov::genai::utils::get_greedy_config();
+        config.num_assistant_tokens = num_assistant_tokens;
+        config.max_new_tokens = 100;
+        config.repetition_penalty = 2.0f;
+        return config;
     }
 
     static std::vector<int64_t> generated(const ov::genai::SequenceGroup::Ptr& group) {
@@ -589,6 +691,26 @@ TEST_F(DFlashCBPipelineTest, FirstBlockFollowsThePromptRows) {
     // the row of 7 + seed + 3 masks
     ASSERT_EQ(group->get_num_available_tokens_for_batching(), 1 + 4);
     ASSERT_FALSE(group->requires_sampling());
+}
+
+TEST_F(DFlashCBPipelineTest, DynamicSplitFuseDraftsTheFirstBlockWithTheLastPromptRows) {
+    DraftInstance draft;
+    draft.use_dynamic_split_fuse();
+    auto group = draft.add(0, {0, 1, 2, 3, 4, 5, 6, 7}, 3);
+    // the target ran the first prompt chunk, which has no block
+    draft.update_request(0, target_step({}, 4, make_hidden_rows(4, 0.0f)), true);
+    ASSERT_EQ(draft.window(group).block_rows, 0);
+    draft.finish_window(group, {});
+
+    // the second chunk ended the prompt and the target sampled 7
+    draft.update_request(0, target_step({7}, 8, make_hidden_rows(4, 4.0f)), true);
+
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, MASK_TOKEN, MASK_TOKEN, MASK_TOKEN}));
+    ASSERT_EQ(draft.window(group).committed_rows, 4);
+    ASSERT_EQ(draft.window(group).context_rows, 4);
+    ASSERT_EQ(draft.window(group).block_rows, 4);
+    // the 4 remaining prompt rows, then seed 7 and 3 masks
+    ASSERT_EQ(group->get_num_available_tokens_for_batching(), 4 + 4);
 }
 
 TEST_F(DFlashCBPipelineTest, DeepSpecBlockStartsCandidatesAtTheSeed) {
@@ -688,6 +810,19 @@ TEST_F(DFlashCBPipelineTest, MissedWindowLeavesTheRequestToTheTarget) {
     ASSERT_EQ(group->get_generation_stream()->get_status(), ov::genai::GenerationStatus::STOP);
 }
 
+TEST_F(DFlashCBPipelineTest, MissedWindowRunsWithTheRowsOfADeferredTarget) {
+    DraftInstance draft;
+    auto group = start_with_block(draft);
+    draft.drop_window(group);
+
+    // the target did not run the request either, and still publishes the rows of its last forward
+    draft.update_request(0, target_step({7, 17}, 9, make_hidden_rows(1, 50.0f)), true);
+
+    ASSERT_EQ(group->get_generation_stream()->get_status(), ov::genai::GenerationStatus::RUNNING);
+    ASSERT_EQ(draft.window(group).committed_rows, 8);
+    ASSERT_EQ(draft.window(group).context_rows, 1);
+}
+
 TEST_F(DFlashCBPipelineTest, WindowCutAtTheSeedKeepsDrafting) {
     DraftInstance draft;
     auto group = start_with_block(draft);
@@ -754,16 +889,74 @@ TEST_F(DFlashCBPipelineTest, ReusedRequestIdStartsFromAFreshWindow) {
     ASSERT_EQ(draft.window(second).block_rows, 0);
 }
 
+TEST_F(DFlashCBPipelineTest, SampledCandidatesCarryTheirProposals) {
+    DraftInstance draft;
+    auto group = start_with_block(draft, sampled_config(3));
+    draft.draft_window(group, make_scored_logits({{{20, 1.0f}}, {{21, 1.0f}}, {{22, 1.0f}}}));
+
+    const auto sequence = group->get_running_sequences().front();
+    const auto tokens = sequence->get_generated_ids();
+    ASSERT_EQ(tokens.size(), 5);
+    const auto& proposals = sequence->get_draft_proposals();
+    ASSERT_EQ(proposals.size(), 5);
+    // 7 and 17 are the target's tokens
+    ASSERT_FALSE(proposals[0]);
+    ASSERT_FALSE(proposals[1]);
+    for (size_t i = 2; i < tokens.size(); ++i) {
+        ASSERT_TRUE(proposals[i]);
+        ASSERT_NO_THROW(ov::genai::detail::validate_draft_proposal(*proposals[i]));
+        // top_k = 4 keeps four tokens
+        ASSERT_EQ(proposals[i]->token_ids.size(), 4);
+        ASSERT_GT(ov::genai::detail::proposal_probability(*proposals[i], tokens[i]), 0.0f);
+    }
+
+    // the target accepted the first candidate and corrected the second: the proposals are not sent again
+    draft.update_request(0, target_step({7, 17, tokens[2], 200}, 11, make_hidden_rows(4, 100.0f)), true);
+    ASSERT_EQ(generated(group)[3], 200);
+    ASSERT_TRUE(sequence->get_draft_proposals().empty());
+}
+
+TEST_F(DFlashCBPipelineTest, RepetitionPenaltyCountsTheTargetTokens) {
+    DraftInstance draft;
+    auto group = start_with_block(draft, penalized_config(3));
+
+    // the target's seed 17 is penalized below 51 in the first row
+    draft.draft_window(group, make_scored_logits({{{17, 1.0f}, {51, 0.9f}}, {{21, 1.0f}}, {{22, 1.0f}}}));
+
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 51, 21, 22}));
+}
+
+TEST_F(DFlashCBPipelineTest, RejectedCandidatesLeaveThePenaltyHistory) {
+    DraftInstance draft;
+    auto group = start_with_block(draft, penalized_config(3));
+    draft.draft_window(group, make_scored_logits({{{20, 1.0f}}, {{21, 1.0f}}, {{22, 1.0f}}}));
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 20, 21, 22}));
+
+    // the target rejected all three candidates and sampled 30
+    draft.update_request(0, target_step({7, 17, 30}, 10, make_hidden_rows(4, 100.0f)), true);
+    draft.draft_window(group,
+                       make_scored_logits({{{20, 1.0f}, {23, 0.9f}}, {{21, 1.0f}, {24, 0.9f}}, {{30, 1.0f}, {25, 0.9f}}}));
+
+    // 20 and 21 are no longer generated tokens; 30 is
+    ASSERT_EQ(generated(group), (std::vector<int64_t>{7, 17, 30, 20, 21, 25}));
+}
+
 class DFlashStrategyTest : public testing::Test, public ov::genai::ContinuousBatchingPipeline {
 protected:
     class StrategyInstance : public DFlashDecodingImpl {
     public:
+        explicit StrategyInstance(ov::genai::ModelInputType input_type = ov::genai::ModelInputType::TOKENS) {
+            m_model_input_type = input_type;
+        }
         using DFlashDecodingImpl::make_draft_generation_config;
+        using DFlashDecodingImpl::validate_request_config;
     };
 
-    static void expect_rejected(const ov::genai::GenerationConfig& config, const std::string& expected_message) {
+    static void expect_rejected(const ov::genai::GenerationConfig& config,
+                                const std::string& expected_message,
+                                ov::genai::ModelInputType input_type = ov::genai::ModelInputType::TOKENS) {
         // Unsupported configurations must be rejected before add_request touches the pipelines.
-        StrategyInstance strategy;
+        StrategyInstance strategy(input_type);
         try {
             strategy.add_request(0, ov::Tensor{}, config);
             FAIL() << "Expected the DFlash request to be rejected";
@@ -775,7 +968,13 @@ protected:
 
 TEST_F(DFlashStrategyTest, RejectsUnsupportedRequests) {
     const std::vector<std::pair<std::function<void(ov::genai::GenerationConfig&)>, std::string>> cases = {
-        {[](ov::genai::GenerationConfig& config) { config.do_sample = true; }, "greedy decoding only"},
+        {[](ov::genai::GenerationConfig& config) { config = ov::genai::utils::get_beam_search_config(); },
+         "greedy and multinomial decoding only"},
+        {[](ov::genai::GenerationConfig& config) {
+             config.do_sample = true;
+             config.num_return_sequences = 2;
+         },
+         "one sequence per request"},
         {[](ov::genai::GenerationConfig& config) { config.assistant_confidence_threshold = 0.5f; },
          "assistant_confidence_threshold must be 0.f"},
         {[](ov::genai::GenerationConfig& config) { config.adapters = ov::genai::AdapterConfig{}; },
@@ -789,6 +988,18 @@ TEST_F(DFlashStrategyTest, RejectsUnsupportedRequests) {
     }
 }
 
+TEST_F(DFlashStrategyTest, ValidatesVlmRequests) {
+    // The target runs these modes as it does without a draft.
+    auto config = ov::genai::utils::get_greedy_config();
+    config.pruning_ratio = 1;
+    config.echo = true;
+    config.logprobs = 1;
+    EXPECT_NO_THROW(StrategyInstance(ov::genai::ModelInputType::EMBEDDINGS).validate_request_config(config));
+
+    config.return_omni_outputs = true;
+    expect_rejected(config, "Omni intermediate outputs", ov::genai::ModelInputType::EMBEDDINGS);
+}
+
 TEST_F(DFlashStrategyTest, DraftConfigOnlyProposesCandidates) {
     ov::genai::GenerationConfig config;
     config.num_assistant_tokens = 3;
@@ -796,15 +1007,25 @@ TEST_F(DFlashStrategyTest, DraftConfigOnlyProposesCandidates) {
     config.stop_token_ids = {5};
     // an explicit EOS that may differ from the pipeline default
     config.set_eos_token_id(7);
+    config.min_new_tokens = 2;
     config.echo = true;
+    config.do_sample = true;
+    config.repetition_penalty = 1.2f;
+    config.rng_seed = 7;
 
     const auto draft_config = StrategyInstance::make_draft_generation_config(config);
 
     EXPECT_TRUE(draft_config.ignore_eos);
     EXPECT_TRUE(draft_config.stop_strings.empty());
     EXPECT_EQ(draft_config.stop_token_ids, (std::set<int64_t>{5, 7}));
+    // the draft suppresses the stop tokens as the target does
+    EXPECT_EQ(draft_config.min_new_tokens, 2);
     EXPECT_FALSE(draft_config.echo);
     EXPECT_EQ(draft_config.max_new_tokens, SIZE_MAX - 1);
+    // the draft samples like the target, from draws independent of the target's
+    EXPECT_TRUE(draft_config.is_multinomial());
+    EXPECT_EQ(draft_config.repetition_penalty, 1.2f);
+    EXPECT_EQ(draft_config.rng_seed, ov::genai::detail::proposal_rng_seed(7));
     EXPECT_NO_THROW(draft_config.validate());
 }
 
@@ -827,6 +1048,34 @@ TEST_F(DFlashStrategyTest, RejectsADraftWithoutTokenTypeIds) {
         FAIL() << "Expected the stateful DFlash draft to be rejected";
     } catch (const ov::Exception& exception) {
         EXPECT_NE(std::string(exception.what()).find("re-export the draft"), std::string::npos) << exception.what();
+    }
+}
+
+TEST_F(DFlashStrategyTest, RejectsScalingValuesThatAreNotFinite) {
+    using ov::genai::utils::dflash::DFlashRTInfo;
+    const std::vector<std::pair<std::function<void(DFlashRTInfo&)>, std::string>> cases = {
+        {[](DFlashRTInfo& rt_info) { rt_info.input_embedding_scale = std::numeric_limits<float>::infinity(); },
+         "input_embedding_scale must be positive and finite"},
+        {[](DFlashRTInfo& rt_info) { rt_info.output_multiplier = std::numeric_limits<float>::infinity(); },
+         "output_multiplier must be positive and finite"},
+        {[](DFlashRTInfo& rt_info) { rt_info.final_logit_softcapping = std::numeric_limits<float>::infinity(); },
+         "final_logit_softcapping must be finite"},
+        {[](DFlashRTInfo& rt_info) { rt_info.final_logit_softcapping = std::numeric_limits<float>::quiet_NaN(); },
+         "final_logit_softcapping must be finite"},
+    };
+    for (const auto& [make_invalid, expected_message] : cases) {
+        SCOPED_TRACE(expected_message);
+        DFlashRTInfo rt_info;
+        rt_info.dflash_mode = true;
+        rt_info.mask_token_id = MASK_TOKEN;
+        rt_info.target_layer_ids = {0};
+        make_invalid(rt_info);
+        try {
+            DFlashDecodingImpl strategy(ov::genai::ModelDesc{}, ov::genai::ModelDesc{}, rt_info);
+            FAIL() << "Expected the DFlash scaling value to be rejected";
+        } catch (const ov::Exception& exception) {
+            EXPECT_NE(std::string(exception.what()).find(expected_message), std::string::npos) << exception.what();
+        }
     }
 }
 
@@ -901,6 +1150,57 @@ std::shared_ptr<ov::Model> make_dspark_markov_head_model(const std::string& omit
     return model;
 }
 
+constexpr size_t DFLASH2_TEST_HIDDEN_SIZE = 4;
+
+// The DFlash-2 selector is a gated Markov head: its candidate scorer also reads the draft hidden states, and it has no
+// dense step. Here the hidden state of a position adds the sum of its values to every edge score of that position.
+std::shared_ptr<ov::Model> make_dflash2_markov_head_model() {
+    auto draft_logits =
+        std::make_shared<ov::op::v0::Parameter>(ov::element::f32,
+                                                ov::PartialShape{-1, static_cast<int64_t>(DSPARK_TEST_VOCAB_SIZE)});
+    draft_logits->output(0).set_names({"draft_logits"});
+    auto draft_hidden_states =
+        std::make_shared<ov::op::v0::Parameter>(ov::element::f32,
+                                                ov::PartialShape{-1, static_cast<int64_t>(DFLASH2_TEST_HIDDEN_SIZE)});
+    draft_hidden_states->output(0).set_names({"draft_hidden_states"});
+    auto anchor_token_ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+    anchor_token_ids->output(0).set_names({"anchor_token_ids"});
+    auto subsequence_begins = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+    subsequence_begins->output(0).set_names({"subsequence_begins"});
+    auto top_k = std::make_shared<ov::op::v11::TopK>(
+        draft_logits,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {DSPARK_TEST_TOP_K}),
+        -1,
+        ov::op::v11::TopK::Mode::MAX,
+        ov::op::v11::TopK::SortType::SORT_VALUES);
+    auto candidate_ids = std::make_shared<ov::op::v0::Convert>(top_k->output(1), ov::element::i64);
+    auto predecessor_logits =
+        std::make_shared<ov::op::v0::Unsqueeze>(top_k->output(0),
+                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {2}));
+    auto successor_logits =
+        std::make_shared<ov::op::v0::Unsqueeze>(top_k->output(0),
+                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {1}));
+    auto unary_scores = std::make_shared<ov::op::v1::Add>(predecessor_logits, successor_logits);
+    auto hidden_sum = std::make_shared<ov::op::v0::MatMul>(
+        draft_hidden_states,
+        ov::op::v0::Constant::create(ov::element::f32, ov::Shape{DFLASH2_TEST_HIDDEN_SIZE, 1}, {1.0f}));
+    auto gate =
+        std::make_shared<ov::op::v0::Unsqueeze>(hidden_sum,
+                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {2}));
+    auto edge_scores = std::make_shared<ov::op::v1::Add>(unary_scores, gate);
+    auto edge_scores_result = std::make_shared<ov::op::v0::Result>(edge_scores);
+    edge_scores_result->output(0).set_names({"edge_scores"});
+    auto candidate_ids_result = std::make_shared<ov::op::v0::Result>(candidate_ids);
+    candidate_ids_result->output(0).set_names({"candidate_ids"});
+
+    auto model = std::make_shared<ov::Model>(
+        ov::ResultVector{edge_scores_result, candidate_ids_result},
+        ov::ParameterVector{draft_logits, draft_hidden_states, anchor_token_ids, subsequence_begins});
+    set_dspark_markov_head_rt_info(model);
+    model->set_rt_info(std::string("dflash2"), {"dflash", "markov_head_type"});
+    return model;
+}
+
 ov::AnyMap select_markov_computation(std::optional<int64_t> top_k,
                                      const std::shared_ptr<ov::Model>& markov_head_model) {
     ov::AnyMap properties;
@@ -958,6 +1258,25 @@ ov::AnyMap make_dspark_draft_properties(size_t markov_rank, const std::string& h
     properties["dflash_candidate_position_offset"] = size_t{0};
     properties["dflash_markov_rank"] = markov_rank;
     properties["dflash_markov_head_type"] = head_type;
+    return properties;
+}
+
+std::shared_ptr<ov::Model> make_dflash2_candidate_scorer() {
+    return selected_computation(select_markov_computation(std::nullopt, make_dflash2_markov_head_model()));
+}
+
+ov::genai::utils::dflash::DFlashRTInfo make_dflash2_backbone_info() {
+    ov::genai::utils::dflash::DFlashRTInfo info;
+    info.dflash_version = 2;
+    info.markov_rank = DSPARK_TEST_MARKOV_RANK;
+    info.markov_head_type = "dflash2";
+    return info;
+}
+
+ov::AnyMap make_dflash2_draft_properties(size_t markov_rank, const std::string& head_type) {
+    auto properties = make_dspark_draft_properties(markov_rank, head_type);
+    properties["dflash_version"] = int64_t{2};
+    properties["dflash_gpu_min_activations_scale_factor"] = 32.0f;
     return properties;
 }
 
@@ -1075,21 +1394,28 @@ TEST(DSparkModelTransforms, RejectsInconsistentDraftProperties) {
     const auto vanilla = [](size_t markov_rank) {
         return make_dspark_draft_properties(markov_rank, "vanilla");
     };
+    auto unsupported_version = vanilla(0);
+    unsupported_version["dflash_version"] = int64_t{3};
     auto gated_candidate_scorer = make_dspark_candidate_scorer();
     gated_candidate_scorer->set_rt_info(std::string("gated"), {"dflash", "markov_head_type"});
     auto top_k_for_a_draft_model = vanilla(0);
     top_k_for_a_draft_model["markov_head_top_k"] = int64_t{8};
     const std::vector<std::pair<std::string, ov::AnyMap>> cases = {
+        {"unsupported draft version", unsupported_version},
         {"Markov head without its computation", vanilla(DSPARK_TEST_MARKOV_RANK)},
         {"gated Markov head type",
          with_computation(make_dspark_draft_properties(DSPARK_TEST_MARKOV_RANK, "gated"), make_dspark_markov_step())},
-        {"DFlash-2 Markov head type",
-         with_computation(make_dspark_draft_properties(DSPARK_TEST_MARKOV_RANK, "dflash2"),
-                          make_dspark_candidate_scorer())},
         {"computation of another head type",
          with_computation(vanilla(DSPARK_TEST_MARKOV_RANK), gated_candidate_scorer)},
         {"computation of another rank", with_computation(vanilla(8), make_dspark_candidate_scorer())},
         {"markov_head_top_k without draft_model(<draft folder>)", top_k_for_a_draft_model},
+        {"DFlash v2 draft without a Markov head", make_dflash2_draft_properties(0, "dflash2")},
+        {"DFlash v2 draft with a vanilla Markov head",
+         with_computation(make_dflash2_draft_properties(DSPARK_TEST_MARKOV_RANK, "vanilla"),
+                          make_dspark_candidate_scorer())},
+        {"DFlash v1 draft with a gated Markov head",
+         with_computation(make_dspark_draft_properties(DSPARK_TEST_MARKOV_RANK, "dflash2"),
+                          make_dflash2_candidate_scorer())},
     };
     for (auto [name, properties] : cases) {
         SCOPED_TRACE(name);
@@ -1266,12 +1592,209 @@ TEST(DSparkModelTransforms, RejectsCandidateScorerThatDoesNotMatchTheBackbone) {
     }
 }
 
+TEST(DFlash2ModelTransforms, AppliesAndExtractsDraftRtInfo) {
+    auto model = make_annotated_stateful_sdpa_model();
+    model->set_rt_info(true, "dflash_mode");
+    model->set_rt_info(std::string("151669"), {"dflash", "mask_token_id"});
+    model->set_rt_info(std::string("1,12,23,34,45"), {"dflash", "target_layer_ids"});
+    model->set_rt_info(std::string("2"), {"dflash", "version"});
+    model->set_rt_info(std::string("32.0"), {"dflash", "gpu_min_activations_scale_factor"});
+    model->set_rt_info(std::string("1.25"), {"dflash", "input_embedding_scale"});
+    model->set_rt_info(std::string("0.75"), {"dflash", "output_multiplier"});
+    model->set_rt_info(std::string("8.0"), {"dflash", "final_logit_softcapping"});
+    model->set_rt_info(std::to_string(DSPARK_TEST_MARKOV_RANK), {"dflash", "markov_rank"});
+    model->set_rt_info(std::string("dflash2"), {"dflash", "markov_head_type"});
+    const auto candidate_scorer = make_dflash2_candidate_scorer();
+
+    ov::AnyMap properties;
+    ov::genai::utils::dflash::apply_dflash_rt_info(model, properties);
+    ASSERT_FLOAT_EQ(properties.at("dflash_gpu_min_activations_scale_factor").as<float>(), 32.0f);
+    ASSERT_EQ(properties.at("dflash_markov_head_type").as<std::string>(), "dflash2");
+
+    set_markov_head_computation(properties, candidate_scorer);
+    auto rt_info = ov::genai::utils::dflash::extract_dflash_info_from_config(properties);
+    ASSERT_EQ(rt_info.dflash_version, 2);
+    ASSERT_EQ(rt_info.mask_token_id, 151669);
+    ASSERT_FLOAT_EQ(rt_info.gpu_min_activations_scale_factor, 32.0f);
+    ASSERT_FLOAT_EQ(rt_info.input_embedding_scale, 1.25f);
+    ASSERT_FLOAT_EQ(rt_info.output_multiplier, 0.75f);
+    ASSERT_FLOAT_EQ(rt_info.final_logit_softcapping, 8.0f);
+    ASSERT_EQ(rt_info.markov_rank, DSPARK_TEST_MARKOV_RANK);
+    ASSERT_EQ(rt_info.markov_head_type, "dflash2");
+    ASSERT_EQ(rt_info.markov_head_computation, candidate_scorer);
+    ASSERT_TRUE(properties.empty());
+}
+
+TEST(DFlash2ModelTransforms, ValidatesAndPromotesGpuActivationScale) {
+    ov::AnyMap without_scale;
+    without_scale["dflash_mode"] = true;
+    without_scale["dflash_version"] = int64_t{2};
+    without_scale["dflash_mask_token_id"] = int64_t{151669};
+    without_scale["dflash_target_layer_ids"] = std::vector<int32_t>{0};
+    EXPECT_THROW(ov::genai::utils::dflash::extract_dflash_info_from_config(without_scale), ov::Exception);
+
+    // A DFlash v1 config may carry the scale too; the internal key never reaches the compile properties.
+    ov::AnyMap v1_with_scale;
+    v1_with_scale["dflash_mode"] = true;
+    v1_with_scale["dflash_version"] = int64_t{1};
+    v1_with_scale["dflash_mask_token_id"] = int64_t{151669};
+    v1_with_scale["dflash_target_layer_ids"] = std::vector<int32_t>{0};
+    v1_with_scale["dflash_gpu_min_activations_scale_factor"] = 32.0f;
+    ov::genai::utils::dflash::extract_dflash_info_from_config(v1_with_scale);
+    EXPECT_TRUE(v1_with_scale.empty());
+
+    auto model = make_annotated_stateful_sdpa_model();
+    model->set_rt_info(true, "dflash_mode");
+    model->set_rt_info(std::string("2"), {"dflash", "version"});
+    model->set_rt_info(std::string("151669"), {"dflash", "mask_token_id"});
+    model->set_rt_info(std::string("0"), {"dflash", "target_layer_ids"});
+    model->set_rt_info(std::string("0"), {"dflash", "gpu_min_activations_scale_factor"});
+    ov::AnyMap zero_scale;
+    EXPECT_THROW(ov::genai::utils::dflash::apply_dflash_rt_info(model, zero_scale), ov::Exception);
+
+    // At compile time on GPU, the scale is the exported one unless a larger one is requested.
+    ov::genai::utils::dflash::DFlashRTInfo info;
+    info.dflash_mode = true;
+    info.dflash_version = 2;
+    info.gpu_min_activations_scale_factor = 32.0f;
+
+    ov::AnyMap properties;
+    ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU", false, properties);
+    ASSERT_FLOAT_EQ(properties.at(ov::hint::activations_scale_factor.name()).as<float>(), 32.0f);
+
+    properties[ov::hint::activations_scale_factor.name()] = 64.0f;
+    ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU.0", false, properties);
+    ASSERT_FLOAT_EQ(properties.at(ov::hint::activations_scale_factor.name()).as<float>(), 64.0f);
+
+    // A smaller draft scale is rejected; a smaller target scale, which a draft without properties inherits, is raised.
+    properties[ov::hint::activations_scale_factor.name()] = 8.0f;
+    EXPECT_THROW(ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU", false, properties),
+                 ov::Exception);
+    ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU", true, properties);
+    ASSERT_FLOAT_EQ(properties.at(ov::hint::activations_scale_factor.name()).as<float>(), 32.0f);
+
+    // A scale in DEVICE_PROPERTIES[device] or MODEL_PROPERTIES["language_model"], which overrides the top level when
+    // the language model compiles, is checked and raised the same way.
+    const ov::AnyMap small_scale{{ov::hint::activations_scale_factor.name(), 8.0f}};
+    for (const auto& overlay : {ov::AnyMap{{ov::device::properties.name(), ov::AnyMap{{"GPU", small_scale}}}},
+                                ov::AnyMap{{"MODEL_PROPERTIES", ov::AnyMap{{"language_model", small_scale}}}}}) {
+        ov::AnyMap nested = overlay;
+        nested[ov::hint::activations_scale_factor.name()] = 64.0f;
+        EXPECT_THROW(ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU", false, nested),
+                     ov::Exception);
+        nested = overlay;
+        ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU", true, nested);
+        const auto compiled = ov::genai::utils::get_model_properties(nested, "language_model", "GPU");
+        ASSERT_FLOAT_EQ(compiled.at(ov::hint::activations_scale_factor.name()).as<float>(), 32.0f);
+    }
+}
+
+TEST(DFlash2ModelTransforms, GathersTheLastHiddenStateRowsOfTheLogits) {
+    auto target = make_annotated_stateful_sdpa_model();
+    auto draft = make_dflash_export_backbone_model();
+    ov::genai::utils::dflash::attach_target_lm_head_to_draft(target, draft, true);
+    EXPECT_THROW(ov::genai::utils::dflash::gather_last_hidden_state_with_logits(draft), ov::Exception);
+
+    ov::genai::utils::apply_gather_before_matmul_transformation(draft);
+    ov::genai::utils::dflash::gather_last_hidden_state_with_logits(draft);
+
+    auto request = ov::genai::utils::singleton_core().compile_model(draft, "CPU").create_infer_request();
+    std::vector<float> inputs_embeds(3 * 4);
+    std::iota(inputs_embeds.begin(), inputs_embeds.end(), 0.0f);
+    std::vector<int64_t> sampled_rows{2, 0};
+    request.set_tensor("inputs_embeds", ov::Tensor(ov::element::f32, ov::Shape{1, 3, 4}, inputs_embeds.data()));
+    request.set_tensor("sampled_tokens_indices", ov::Tensor(ov::element::i64, ov::Shape{2}, sampled_rows.data()));
+    request.infer();
+
+    const auto hidden_state = request.get_tensor("last_hidden_state");
+    ASSERT_EQ(hidden_state.get_shape(), ov::Shape({1, 2, 4}));
+    EXPECT_EQ(tensor_values(hidden_state), (std::vector<float>{8.0f, 9.0f, 10.0f, 11.0f, 0.0f, 1.0f, 2.0f, 3.0f}));
+    EXPECT_EQ(request.get_tensor("logits").get_shape(), ov::Shape({1, 2, 8}));
+}
+
+TEST(DFlash2ModelTransforms, AppliesDraftEmbeddingScale) {
+    const auto has_embedding_scale = [](const std::shared_ptr<ov::Model>& draft) {
+        const auto ordered_ops = draft->get_ordered_ops();
+        return std::any_of(ordered_ops.begin(), ordered_ops.end(), [](const std::shared_ptr<ov::Node>& node) {
+            return node->get_friendly_name() == "dflash_draft_embedding_scale";
+        });
+    };
+
+    // a text target's embedding is grafted into the draft
+    auto draft = make_dflash_export_backbone_model();
+    ov::genai::utils::dflash::attach_target_embedding_to_draft(make_annotated_stateful_sdpa_model(), draft, 1.25f);
+    ASSERT_TRUE(ov::genai::utils::has_input(draft, "input_ids"));
+    ASSERT_FALSE(ov::genai::utils::has_input(draft, "inputs_embeds"));
+    ASSERT_TRUE(has_embedding_scale(draft));
+
+    // the draft of a VLM target keeps its external inputs_embeds
+    auto vlm_draft = make_dflash_export_backbone_model();
+    ov::genai::utils::dflash::scale_draft_inputs_embeds(vlm_draft, 1.25f);
+    ASSERT_TRUE(ov::genai::utils::has_input(vlm_draft, "inputs_embeds"));
+    ASSERT_TRUE(has_embedding_scale(vlm_draft));
+}
+
+TEST(DFlash2ModelTransforms, KeepsTheDraftHiddenStatesOfTheGatedCandidateScorer) {
+    const auto info = make_dflash2_backbone_info();
+    const auto markov_head_model = make_dflash2_markov_head_model();
+    auto& core = ov::genai::utils::singleton_core();
+
+    constexpr size_t num_positions = 2;
+    std::vector<float> draft_logits(num_positions * DSPARK_TEST_VOCAB_SIZE);
+    std::iota(draft_logits.begin(), draft_logits.end(), 0.0f);
+    std::vector<float> draft_hidden_states(num_positions * DFLASH2_TEST_HIDDEN_SIZE, 1.0f);
+    std::fill_n(draft_hidden_states.begin() + DFLASH2_TEST_HIDDEN_SIZE, DFLASH2_TEST_HIDDEN_SIZE, -1.0f);
+    int64_t anchor_token = 0;
+    int64_t subsequence_begins[] = {0, static_cast<int64_t>(num_positions)};
+    for (const auto& [top_k, expected_top_k] :
+         std::vector<std::pair<std::optional<int64_t>, size_t>>{{std::nullopt, DSPARK_TEST_TOP_K}, {int64_t{3}, 3}}) {
+        SCOPED_TRACE(expected_top_k);
+        const auto candidate_scorer = selected_computation(select_markov_computation(top_k, markov_head_model));
+        ASSERT_EQ(candidate_scorer->inputs().size(), 4);
+        EXPECT_NO_THROW(ov::genai::utils::dflash::validate_candidate_scorer(candidate_scorer, info));
+
+        auto request = core.compile_model(candidate_scorer, "CPU").create_infer_request();
+        request.set_tensor(
+            "draft_logits",
+            ov::Tensor(ov::element::f32, ov::Shape{num_positions, DSPARK_TEST_VOCAB_SIZE}, draft_logits.data()));
+        request.set_tensor("draft_hidden_states",
+                           ov::Tensor(ov::element::f32,
+                                      ov::Shape{num_positions, DFLASH2_TEST_HIDDEN_SIZE},
+                                      draft_hidden_states.data()));
+        request.set_tensor("anchor_token_ids", ov::Tensor(ov::element::i64, ov::Shape{1}, &anchor_token));
+        request.set_tensor("subsequence_begins", ov::Tensor(ov::element::i64, ov::Shape{2}, subsequence_begins));
+        request.infer();
+        const auto edge_scores = tensor_values(request.get_tensor("edge_scores"));
+        ASSERT_EQ(edge_scores.size(), num_positions * expected_top_k * expected_top_k);
+        // The best pair of a position is its top logit twice, gated by the sum of the position's hidden state.
+        EXPECT_FLOAT_EQ(edge_scores[0], 2 * 15.0f + 4.0f);
+        EXPECT_FLOAT_EQ(edge_scores[expected_top_k * expected_top_k], 2 * 31.0f - 4.0f);
+    }
+
+    // Without the hidden states input the scorer is not the one of a gated Markov head.
+    auto vanilla_scorer = make_dspark_candidate_scorer();
+    vanilla_scorer->set_rt_info(std::string("dflash2"), {"dflash", "markov_head_type"});
+    EXPECT_THROW(ov::genai::utils::dflash::validate_candidate_scorer(vanilla_scorer, info), ov::Exception);
+}
+
+TEST(DFlash2ModelTransforms, RejectsTheDenseMarkovWalkOfTheGatedMarkovHead) {
+    const auto markov_head_model = make_dflash2_markov_head_model();
+    EXPECT_THROW(select_markov_computation(ov::genai::utils::dflash::TOP_K_FOR_MARKOV_STEP, markov_head_model),
+                 ov::Exception);
+
+    const TemporaryDirectory temporary_directory("genai_dflash2_markov_");
+    ov::save_model(markov_head_model, temporary_directory.path() / "openvino_markov_head_model.xml");
+    ov::AnyMap dense_walk{{"dflash_markov_rank", DSPARK_TEST_MARKOV_RANK}, {"markov_head_top_k", 0}};
+    EXPECT_THROW(ov::genai::utils::dflash::read_markov_head(temporary_directory.path(), dense_walk), ov::Exception);
+}
+
 namespace {
 
 using ov::genai::dflash_cb::CandidateSelector;
 
 constexpr size_t SELECTOR_VOCAB_SIZE = 32;
 constexpr int64_t SELECTOR_MASK_TOKEN = 31;
+constexpr size_t SELECTOR_TOP_K = 2;
 
 // [rows, 1, vocab] logits whose row r has the value values[r] (1 by default) at argmax_tokens[r] and 0 elsewhere.
 ov::Tensor make_argmax_logits(const std::vector<int64_t>& argmax_tokens, const std::vector<float>& values = {}) {
@@ -1327,16 +1850,31 @@ std::shared_ptr<ov::op::v0::Parameter> add_named_input(ov::ParameterVector& para
     return parameter;
 }
 
-// A candidate scorer that scores any rows with the given lattice.
-std::shared_ptr<ov::Model> make_fixed_candidate_scorer(const ov::Tensor& edge_scores, const ov::Tensor& candidate_ids) {
+// A candidate scorer that scores any rows with the given lattice. A gated one adds the draft hidden state of row s,
+// [rows, K], to the scores of the candidates at row s.
+std::shared_ptr<ov::Model> make_fixed_candidate_scorer(const ov::Tensor& edge_scores,
+                                                       const ov::Tensor& candidate_ids,
+                                                       bool gated = false) {
     ov::ParameterVector params;
     add_named_input(params,
                     "draft_logits",
                     ov::element::f32,
                     ov::PartialShape{-1, static_cast<int64_t>(SELECTOR_VOCAB_SIZE)});
+    const auto hidden_states = gated ? add_named_input(params,
+                                                       "draft_hidden_states",
+                                                       ov::element::f32,
+                                                       ov::PartialShape{-1, static_cast<int64_t>(SELECTOR_TOP_K)})
+                                     : nullptr;
     add_named_input(params, "anchor_token_ids", ov::element::i64, ov::PartialShape{-1});
     add_named_input(params, "subsequence_begins", ov::element::i64, ov::PartialShape{-1});
-    auto scores_result = std::make_shared<ov::op::v0::Result>(std::make_shared<ov::op::v0::Constant>(edge_scores));
+    ov::Output<ov::Node> scores = std::make_shared<ov::op::v0::Constant>(edge_scores);
+    if (gated) {
+        scores = std::make_shared<ov::op::v1::Add>(
+            scores,
+            std::make_shared<ov::op::v0::Unsqueeze>(hidden_states,
+                                                    ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {1})));
+    }
+    auto scores_result = std::make_shared<ov::op::v0::Result>(scores);
     scores_result->output(0).set_names({"edge_scores"});
     auto ids_result = std::make_shared<ov::op::v0::Result>(std::make_shared<ov::op::v0::Constant>(candidate_ids));
     ids_result->output(0).set_names({"candidate_ids"});
@@ -1361,9 +1899,34 @@ std::shared_ptr<ov::Model> make_successor_markov_step() {
     return std::make_shared<ov::Model>(ov::ResultVector{result}, params);
 }
 
-std::shared_ptr<CandidateSelector> make_selector(const std::shared_ptr<ov::Model>& markov_head) {
+// A draft infer request whose last_hidden_state holds the rows [rows, 1, K] of `values`.
+ov::InferRequest make_draft_request_with_hidden_states(const std::vector<float>& values) {
+    ov::ParameterVector params;
+    const auto hidden = add_named_input(params,
+                                        "hidden",
+                                        ov::element::f32,
+                                        ov::PartialShape{-1, 1, static_cast<int64_t>(SELECTOR_TOP_K)});
+    auto identity =
+        std::make_shared<ov::op::v1::Add>(hidden, ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {0.0f}));
+    auto result = std::make_shared<ov::op::v0::Result>(identity);
+    result->output(0).set_names({"last_hidden_state"});
+    auto request = ov::genai::utils::singleton_core()
+                       .compile_model(std::make_shared<ov::Model>(ov::ResultVector{result}, params), "CPU")
+                       .create_infer_request();
+    ov::Tensor rows(ov::element::f32, {values.size() / SELECTOR_TOP_K, 1, SELECTOR_TOP_K});
+    std::copy(values.begin(), values.end(), rows.data<float>());
+    request.set_tensor("hidden", rows);
+    request.infer();
+    return request;
+}
+
+std::shared_ptr<CandidateSelector> make_selector(const std::shared_ptr<ov::Model>& markov_head,
+                                                 float output_multiplier = 1.0f,
+                                                 float final_logit_softcapping = 0.0f) {
     ov::genai::utils::dflash::DFlashRTInfo rt_info;
     rt_info.markov_head_computation = markov_head;
+    rt_info.output_multiplier = output_multiplier;
+    rt_info.final_logit_softcapping = final_logit_softcapping;
     return std::make_shared<CandidateSelector>(rt_info, "CPU", ov::AnyMap{});
 }
 
@@ -1395,6 +1958,7 @@ void draft_blocks(const std::shared_ptr<ov::genai::BlockRowSource>& source,
                   const std::vector<ov::genai::SequenceGroup::Ptr>& requests,
                   const ov::Tensor& logits) {
     ov::genai::Sampler sampler(2);
+    sampler.set_collect_draft_proposals(true);
     sampler.set_block_sampling(1, source);
     sampler.sample(requests, logits, false, false);
 }
@@ -1434,8 +1998,37 @@ std::vector<int64_t> drafted(const ov::genai::SequenceGroup::Ptr& request) {
 
 }  // namespace
 
-TEST(DFlashCBCandidateSelection, RequiresAMarkovHead) {
-    EXPECT_THROW(make_selector(nullptr), ov::Exception);
+TEST(DFlashCBCandidateSelection, BackboneRowsDraftAsTheSamplerDoesWithoutARowSource) {
+    // Without a Markov head, output multiplier or soft cap, the selector's rows are the backbone logits.
+    ov::Tensor logits(ov::element::f32, {3, 1, SELECTOR_VOCAB_SIZE});
+    for (size_t i = 0; i < logits.get_size(); ++i) {
+        logits.data<float>()[i] = std::sin(0.7f * static_cast<float>(i));
+    }
+    auto sampled = block_config();
+    sampled.do_sample = true;
+    sampled.temperature = 0.8f;
+    sampled.top_k = 8;
+    sampled.rng_seed = 5;
+    auto penalized = block_config();
+    penalized.repetition_penalty = 2.0f;
+    for (const auto& config : {block_config(), sampled, penalized}) {
+        auto with_selector = make_block_request(0, 7, 3, config);
+        auto without_row_source = make_block_request(0, 7, 3, config);
+        draft_blocks(make_selector(nullptr), {with_selector}, logits);
+        draft_blocks(nullptr, {without_row_source}, logits);
+
+        EXPECT_EQ(drafted(with_selector), drafted(without_row_source));
+        const auto& proposals = with_selector->get_running_sequences().front()->get_draft_proposals();
+        const auto& expected = without_row_source->get_running_sequences().front()->get_draft_proposals();
+        ASSERT_EQ(proposals.size(), expected.size());
+        for (size_t i = 0; i < proposals.size(); ++i) {
+            ASSERT_EQ(static_cast<bool>(proposals[i]), static_cast<bool>(expected[i]));
+            if (proposals[i]) {
+                EXPECT_EQ(proposals[i]->token_ids, expected[i]->token_ids);
+                EXPECT_EQ(proposals[i]->probabilities, expected[i]->probabilities);
+            }
+        }
+    }
 }
 
 TEST(DFlashCBCandidateSelection, RejectsBlockRowsPastTheOutput) {
@@ -1453,6 +2046,55 @@ TEST(DFlashCBCandidateSelection, RejectsDraftOutputsWithEmptyRows) {
     EXPECT_THROW(selector->prepare({ov::genai::SampledBlock{7, 0, 3, 3}}, logits), ov::Exception);
 }
 
+TEST(DFlashCBCandidateSelection, ScaledBackboneDraftsTheArgmaxOfEveryRowForAGreedyRequest) {
+    // rows 0-2 belong to the first block, rows 3-5 to the last, which validates two candidates near max_new_tokens
+    const auto logits = make_argmax_logits({10, 11, 12, 20, 21, 22});
+    auto first = make_block_request(0, 7, 3, block_config());
+    auto last = make_block_request(1, 8, 3, block_config(4));
+
+    draft_blocks(make_selector(nullptr, 2.0f, 5.0f), {first, last}, logits);
+
+    EXPECT_EQ(drafted(first), (std::vector<int64_t>{10, 11, 12}));
+    EXPECT_EQ(drafted(last), (std::vector<int64_t>{20, 21}));
+}
+
+TEST(DFlashCBCandidateSelection, SamplerDrawsFromTheScaledAndSoftCappedBackboneLogits) {
+    const float output_multiplier = 0.5f;
+    const float softcap = 3.0f;
+    ov::Tensor logits(ov::element::f32, {2, 1, SELECTOR_VOCAB_SIZE});
+    for (size_t idx = 0; idx < logits.get_size(); ++idx) {
+        logits.data<float>()[idx] = static_cast<float>(idx % 7) * 1.5f - 4.0f;
+    }
+    auto config = block_config();
+    config.do_sample = true;
+    config.rng_seed = 5;
+    auto request = make_block_request(0, 7, 2, config);
+
+    draft_blocks(make_selector(nullptr, output_multiplier, softcap), {request}, logits);
+
+    const auto sequence = request->get_running_sequences().front();
+    ASSERT_EQ(sequence->get_generated_len(), 3);
+    for (size_t row = 0; row < 2; ++row) {
+        const float* values = logits.data<const float>() + row * SELECTOR_VOCAB_SIZE;
+        std::vector<float> capped(SELECTOR_VOCAB_SIZE);
+        std::transform(values, values + SELECTOR_VOCAB_SIZE, capped.begin(), [&](float logit) {
+            return std::tanh(logit * output_multiplier / softcap) * softcap;
+        });
+        const float max_logit = *std::max_element(capped.begin(), capped.end());
+        float sum = 0.0f;
+        for (const float logit : capped) {
+            sum += std::exp(logit - max_logit);
+        }
+        const auto& proposal = sequence->get_draft_proposal(row + 1);
+        ASSERT_FALSE(proposal.empty());
+        for (size_t token = 0; token < SELECTOR_VOCAB_SIZE; ++token) {
+            EXPECT_NEAR(ov::genai::detail::proposal_probability(proposal, static_cast<int64_t>(token)),
+                        std::exp(capped[token] - max_logit) / sum,
+                        1e-5f);
+        }
+    }
+}
+
 TEST(DFlashCBCandidateSelection, CandidateScorerDraftsTheGreedyLatticePathOfEveryBlock) {
     const auto [edge_scores, candidate_ids] = make_two_block_lattice();
     auto first = make_block_request(0, 7, 2, block_config());
@@ -1464,6 +2106,7 @@ TEST(DFlashCBCandidateSelection, CandidateScorerDraftsTheGreedyLatticePathOfEver
 
     EXPECT_EQ(drafted(first), (std::vector<int64_t>{11, 13}));
     EXPECT_EQ(drafted(second), (std::vector<int64_t>{20, 22}));
+    EXPECT_TRUE(first->get_running_sequences().front()->get_draft_proposal(1).empty());
 }
 
 TEST(DFlashCBCandidateSelection, CandidateScorerSkipsARequestWithoutCandidatesLeft) {
@@ -1481,6 +2124,35 @@ TEST(DFlashCBCandidateSelection, CandidateScorerSkipsARequestWithoutCandidatesLe
     EXPECT_EQ(drafted(first), (std::vector<int64_t>{11, 13}));
     EXPECT_TRUE(drafted(done).empty());
     EXPECT_EQ(drafted(second), (std::vector<int64_t>{20, 22}));
+}
+
+TEST(DFlashCBCandidateSelection, SampledRequestsDrawFromTheCandidatesOfEveryLatticeRow) {
+    const auto [edge_scores, candidate_ids] = make_two_block_lattice();
+    auto config = block_config();
+    config.do_sample = true;
+    config.temperature = 0.5f;
+    config.rng_seed = 3;
+    auto first = make_block_request(0, 7, 2, config);
+    auto second = make_block_request(1, 8, 2, config);
+
+    draft_blocks(make_selector(make_fixed_candidate_scorer(edge_scores, candidate_ids)),
+                 {first, second},
+                 make_zero_logits(4));
+
+    // every request draws with the generator its sampler seeds from rng_seed
+    for (const auto& [request, first_row] : {std::make_pair(first, size_t{0}), std::make_pair(second, size_t{2})}) {
+        std::mt19937 rng(3);
+        const auto expected =
+            ov::genai::dflash_cb::sample_candidate_path(edge_scores, candidate_ids, first_row, 2, 0.5f, rng);
+        const auto sequence = request->get_running_sequences().front();
+        ASSERT_EQ(drafted(request), (std::vector<int64_t>{expected[0].token, expected[1].token}));
+        for (size_t position = 0; position < 2; ++position) {
+            const auto& proposal = sequence->get_draft_proposal(position + 1);
+            EXPECT_EQ(proposal.token_ids, expected[position].proposal->token_ids);
+            EXPECT_EQ(proposal.probabilities, expected[position].proposal->probabilities);
+            EXPECT_FLOAT_EQ(sequence->get_generated_log_probs()[position + 1], expected[position].log_prob);
+        }
+    }
 }
 
 TEST(DFlashCBCandidateSelection, DraftSamplerAppliesTheRequestLogitProcessorsToTheLatticeRows) {
@@ -1539,6 +2211,25 @@ TEST(DFlashCBCandidateSelection, TokenOutsideTheCandidatesEndsTheBlock) {
     EXPECT_EQ(drafted(request), (std::vector<int64_t>{3}));
 }
 
+TEST(DFlashCBCandidateSelection, GatedCandidateScorerScoresTheHiddenStatesOfTheBlockRows) {
+    const auto [edge_scores, candidate_ids] = make_two_block_lattice();
+    const auto selector = make_selector(make_fixed_candidate_scorer(edge_scores, candidate_ids, /*gated=*/true));
+    ASSERT_TRUE(selector->reads_hidden_states());
+    // Rows 0-1 and 3-4 hold the blocks; row 2 belongs to a request that has no candidate left to draft, so the scorer
+    // reads the hidden states of rows 0, 1, 3 and 4. They move row 0 to candidate 0 and row 3 to candidate 1.
+    selector->set_draft_request(
+        make_draft_request_with_hidden_states({5.0f, 0.0f, 0.0f, 0.0f, 100.0f, 100.0f, 0.0f, 5.0f, 0.0f, 0.0f}));
+    auto first = make_block_request(0, 7, 2, block_config());
+    auto done = make_block_request(1, 9, 1, block_config(2));
+    auto second = make_block_request(2, 8, 2, block_config());
+
+    draft_blocks(selector, {first, done, second}, make_zero_logits(5));
+
+    EXPECT_EQ(drafted(first), (std::vector<int64_t>{10, 12}));
+    EXPECT_TRUE(drafted(done).empty());
+    EXPECT_EQ(drafted(second), (std::vector<int64_t>{21, 22}));
+}
+
 TEST(DFlashCBCandidateSelection, DenseMarkovStepBiasesEveryPositionByTheTokenDraftedBefore) {
     // The backbone's best token is 30 at every row; the Markov bias after token p prefers p + 1.
     const auto logits = make_argmax_logits({30, 30, 30, 30, 30});
@@ -1554,14 +2245,17 @@ TEST(DFlashCBCandidateSelection, DenseMarkovStepBiasesEveryPositionByTheTokenDra
 }
 
 TEST(DFlashCBCandidateSelection, DenseMarkovStepDraftsAGreedyBlockAsTheSamplerDrawsItsRows) {
-    // The backbone's best token beats the Markov bias of 10 at rows 0 and 2 and loses to it at rows 1 and 3.
-    const auto logits = make_argmax_logits({20, 3, 29, 12}, {15.0f, 5.0f, 15.0f, 5.0f});
-    const auto selector = make_selector(make_successor_markov_step());
+    // Scaled by 2 and soft-capped at 30, the backbone's best token beats the Markov bias of 10 at rows 0 and 2 (11.4).
+    // At rows 1 and 3 the scaled 10.2 would beat it as well, but the soft cap brings it to 9.8.
+    const auto logits = make_argmax_logits({20, 3, 29, 12}, {6.0f, 5.1f, 6.0f, 5.1f});
+    const auto selector = make_selector(make_successor_markov_step(), 2.0f, 30.0f);
     auto drawn = make_block_request(0, 7, 4, block_config());
     auto sampled = make_block_request(0, 7, 4, block_config());
 
     draft_blocks(selector, {drawn}, logits);
-    draft_blocks(std::make_shared<SelectorRows>(make_selector(make_successor_markov_step())), {sampled}, logits);
+    draft_blocks(std::make_shared<SelectorRows>(make_selector(make_successor_markov_step(), 2.0f, 30.0f)),
+                 {sampled},
+                 logits);
 
     EXPECT_EQ(drafted(drawn), (std::vector<int64_t>{20, 21, 29, 30}));
     EXPECT_EQ(drafted(drawn), drafted(sampled));
@@ -1579,6 +2273,60 @@ TEST(DFlashCBCandidateSelection, GreedyPathWalksEachBlockFromItsAnchor) {
     ASSERT_EQ(greedy_candidate_path(edge_scores, candidate_ids, 0, 2), (std::vector<int64_t>{11, 13}));
     ASSERT_EQ(greedy_candidate_path(edge_scores, candidate_ids, 2, 2), (std::vector<int64_t>{20, 22}));
     ASSERT_EQ(greedy_candidate_path(edge_scores, candidate_ids, 2, 1), (std::vector<int64_t>{20}));
+}
+
+TEST(DFlashCBCandidateSelection, SampledLatticePathProposesTheSoftmaxOfEveryRow) {
+    const auto [edge_scores, candidate_ids] = make_two_block_lattice();
+    const float temperature = 0.5f;
+    std::mt19937 rng(3);
+    const auto candidates =
+        ov::genai::dflash_cb::sample_candidate_path(edge_scores, candidate_ids, 0, 2, temperature, rng);
+
+    ASSERT_EQ(candidates.size(), 2);
+    const auto* scores = edge_scores.data<const float>();
+    const auto* ids = candidate_ids.data<const int64_t>();
+    size_t previous_index = 0;
+    for (size_t position = 0; position < 2; ++position) {
+        const auto& candidate = candidates[position];
+        ASSERT_TRUE(candidate.proposal);
+        ASSERT_EQ(candidate.proposal->token_ids, std::vector<int64_t>(ids + position * 2, ids + position * 2 + 2));
+        // the row after the candidate drafted before it
+        const float* row = scores + (position * 2 + previous_index) * 2;
+        const float first = 1.0f / (1.0f + std::exp((row[1] - row[0]) / temperature));
+        ASSERT_NEAR(candidate.proposal->probabilities[0], first, 1e-6f);
+        ASSERT_NEAR(candidate.proposal->probabilities[1], 1.0f - first, 1e-6f);
+        ASSERT_NO_THROW(ov::genai::detail::validate_draft_proposal(*candidate.proposal));
+        const auto index = ov::genai::dflash_cb::find_candidate(candidate_ids, position, candidate.token);
+        ASSERT_TRUE(index);
+        ASSERT_NEAR(candidate.log_prob, std::log(candidate.proposal->probabilities[*index]), 1e-6f);
+        previous_index = *index;
+    }
+
+    std::mt19937 same_seed(3);
+    const auto repeated =
+        ov::genai::dflash_cb::sample_candidate_path(edge_scores, candidate_ids, 0, 2, temperature, same_seed);
+    ASSERT_EQ(repeated[0].token, candidates[0].token);
+    ASSERT_EQ(repeated[1].token, candidates[1].token);
+    ASSERT_THROW(ov::genai::dflash_cb::sample_candidate_path(edge_scores, candidate_ids, 0, 2, 0.0f, rng),
+                 ov::Exception);
+}
+
+TEST(DFlashCBCandidateSelection, SampledLatticeProposalSumsToOneOverALongTail) {
+    // Every tail weight, exp(-17), is below half a float ulp of the leading 1.
+    constexpr size_t top_k = 2048;
+    ov::Tensor edge_scores(ov::element::f32, {1, top_k, top_k});
+    std::fill_n(edge_scores.data<float>(), edge_scores.get_size(), -17.0f);
+    edge_scores.data<float>()[0] = 0.0f;
+    ov::Tensor candidate_ids(ov::element::i64, {1, top_k});
+    std::iota(candidate_ids.data<int64_t>(), candidate_ids.data<int64_t>() + top_k, int64_t{0});
+    std::mt19937 rng(3);
+
+    const auto candidates = ov::genai::dflash_cb::sample_candidate_path(edge_scores, candidate_ids, 0, 1, 1.0f, rng);
+
+    ASSERT_EQ(candidates.size(), 1);
+    const auto& probabilities = candidates[0].proposal->probabilities;
+    ASSERT_NEAR(std::accumulate(probabilities.begin(), probabilities.end(), 0.0), 1.0, 1e-6);
+    ASSERT_NO_THROW(ov::genai::detail::validate_draft_proposal(*candidates[0].proposal));
 }
 
 TEST(DFlashCBCandidateSelection, LogitProcessorsKeepTheArgmaxOnlyWithoutHistoryOrSampling) {

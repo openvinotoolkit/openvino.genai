@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import shutil
+from pathlib import Path
+from xml.etree import ElementTree
 
+import numpy as np
 import pytest
 from openvino_genai import (
     ChatHistory,
@@ -18,12 +21,15 @@ from test_speculative_decoding import (
     MINICPMV47_DSPARK,
     MINICPMV47_DSPARK_MARKOV_STEP,
     PARITY_PROPERTIES,
+    PROMPTS_4,
     QWEN3_DEEPSPEC,
     QWEN3_DFLASH,
     QWEN3_DSPARK,
     QWEN35_DFLASH,
     SCORE_SKIP,
     VLM_TARGET_PAIRS,
+    _greedy_config,
+    _target_ids,
     model_pair,  # noqa: F401
 )
 from test_vlm_pipeline import (
@@ -107,6 +113,71 @@ def test_vlm_prefix_caching_without_explicit_assistant_tokens(model_pair, cat_te
     )
 
     assert run(pipe) == reference
+
+
+@pytest.mark.parametrize("model_pair", [QWEN35_DFLASH], indirect=True)
+def test_vlm_sampling_on_linear_attention_target_rejects_prefix_caching(model_pair, cat_tensor):
+    # With prefix caching, a target with linear-attention state verifies greedy requests only.
+    prefix_config = SchedulerConfig()
+    prefix_config.enable_prefix_caching = True
+    ov_pipe = VLMPipeline(
+        model_pair.target_path,
+        "CPU",
+        draft_model=draft_model(model_pair.draft_path, "CPU"),
+        scheduler_config=prefix_config,
+    )
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=8, do_sample=True)
+    generation_config.num_assistant_tokens = 3
+
+    with pytest.raises(RuntimeError, match="set enable_prefix_caching to false"):
+        ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_draft_runs_on_paged_attention_only(model_pair):
+    config = _greedy_config()
+    prompts = PROMPTS_4[:1]
+    reference = _target_ids(model_pair, prompts, config)
+
+    def pipeline(attention_backend: str):
+        draft = draft_model(model_pair.draft_path, "CPU", ATTENTION_BACKEND=attention_backend, **PARITY_PROPERTIES)
+        return ContinuousBatchingPipeline(
+            model_pair.target_path, SchedulerConfig(), "CPU", {**PARITY_PROPERTIES, "draft_model": draft}
+        )
+
+    assert [pipeline("PA").generate(prompts, [config])[0].m_generation_ids] == reference
+    with pytest.raises(RuntimeError, match="PagedAttention only"):
+        pipeline("SDPA")
+
+
+def _negated_weights_copy(model_path: Path, copy_path: Path) -> Path:
+    # The graph of the model with other weights: every floating-point constant of more than one value changes sign.
+    shutil.copytree(model_path, copy_path)
+    weights = np.fromfile(model_path / "openvino_model.bin", dtype=np.uint8)
+    dtypes = {"f16": np.float16, "f32": np.float32}
+    for data in ElementTree.parse(model_path / "openvino_model.xml").iter("data"):
+        dtype = dtypes.get(data.get("element_type"))
+        if dtype is not None and "offset" in data.attrib and int(data.get("size")) > np.dtype(dtype).itemsize:
+            begin = int(data.get("offset"))
+            weights[begin : begin + int(data.get("size"))].view(dtype)[:] *= -1
+    weights.tofile(copy_path / "openvino_model.bin")
+    return copy_path
+
+
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_drafts_without_properties_do_not_share_cached_blobs(model_pair, tmp_path):
+    # A draft without properties takes the target's, whose model path keys the cached target in place of its weights.
+    other_draft_path = _negated_weights_copy(model_pair.draft_path, tmp_path / "draft")
+    cache_dir = tmp_path / "cache"
+    properties = {**PARITY_PROPERTIES, "CACHE_DIR": str(cache_dir)}
+
+    for path in (model_pair.draft_path, other_draft_path):
+        ContinuousBatchingPipeline(
+            model_pair.target_path, SchedulerConfig(), "CPU", {**properties, "draft_model": draft_model(path, "CPU")}
+        )
+
+    # each pipeline compiles a draft and a target, which takes the FC weights of its draft
+    assert len(list(cache_dir.glob("*.blob"))) == 4
 
 
 @pytest.mark.parametrize("model_pair", [QWEN3_DSPARK, MINICPMV47_DSPARK], indirect=True)

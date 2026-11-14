@@ -6,10 +6,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <random>
 #include <vector>
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "sampling/draft_proposal.hpp"
 
 namespace ov::genai {
 
@@ -27,11 +29,14 @@ struct SampledBlock {
 struct BlockToken {
     int64_t token = 0;
     float log_prob = 0.0f;
+    // the distribution a sampled token was drawn from, which the target verifies it against
+    DraftProposalPtr proposal;
 };
 
-// Gives block sampling the logits row each token of a block is drawn from, so that a draft can make every token
-// depend on the token drawn before it (a Markov head). The sampler calls prepare() once per step with the blocks of
-// all requests, so the source can run a model once for all of them, and then draws the tokens of each block in order:
+// Gives block sampling the logits row each token of a block is drawn from, so that a draft can rescale its logits or
+// make every token depend on the token drawn before it (a Markov head). The sampler calls prepare() once per step
+// with the blocks of all requests, so the source can run a model once for all of them, and then draws the tokens of
+// each block in order:
 // - by request: draw(), or fill_row() for one position after another, in parallel across blocks;
 // - by position when is_position_major(): step() for the blocks that draw a token at the position, then draw_token(),
 //   or fill_row(), for each of them in parallel.
@@ -54,7 +59,9 @@ public:
 
     // Request-major only: the tokens of a whole block when the request's config allows a faster draw than one row
     // after another; nullopt draws the block with fill_row().
-    virtual std::optional<std::vector<BlockToken>> draw(size_t block, const GenerationConfig& config) const {
+    virtual std::optional<std::vector<BlockToken>> draw(size_t block,
+                                                        const GenerationConfig& config,
+                                                        std::mt19937& rng) const {
         return std::nullopt;
     }
 

@@ -189,7 +189,7 @@ class Sampler {
                                                         bool notify_handle);
 
     // Block sampling of one request: samples one token from each gathered row, in row order, in place of the
-    // request's trailing placeholder tokens.
+    // request's trailing placeholder tokens. A sampled token carries its proposal when proposals are collected.
     SequenceGroupSamplingInfo _sample_block_from_sequence_group(const SequenceGroup::Ptr& sequence_group,
                                                                 const ov::Tensor& sequence_group_logits,
                                                                 RequestSamplerContext& context);

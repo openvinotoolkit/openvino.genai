@@ -299,10 +299,11 @@
 
 - name: DFlash and DSpark speculative decoding tests
   cmd: |-
-    # The DFlash and DSpark drafts need the export from optimum-intel main, which exports Qwen3.5 only with
-    # transformers>=5.15. The MiniCPM-V 4.7 pairs need transformers 5.18 and run in their own job.
+    # The DFlash v2 drafts need the export from https://github.com/huggingface/optimum-intel/pull/2098, here its head
+    # commit, which builds on optimum-intel main and exports Qwen3.5 only with transformers>=5.15. The MiniCPM-V 4.7
+    # pairs need transformers 5.18 and run in their own job.
     python -m pip install transformers==5.15.1
-    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f09a56ace88149cd341233ddfa2bc018bff7c079"
+    python -m pip install -U "optimum-intel @ git+https://github.com/imargulis/optimum-intel.git@e7bf1aecafe53706858f5e8c2893048b99f093d8"
     python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "(dflash or deepspec or dspark) and not minicpmv47"
   timeout: 90
   components:
