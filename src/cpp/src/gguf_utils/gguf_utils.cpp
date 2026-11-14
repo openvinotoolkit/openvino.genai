@@ -25,6 +25,11 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
     result.rest = std::move(rest);
     result.enable_save_ov_model = enable_save_ov_model;
 
+    if (auto it = result.rest.find(GGUF_SOURCE_PATH_ARG_NAME); it != result.rest.end()) {
+        result.source_path = it->second.as<std::filesystem::path>();
+        result.rest.erase(it);
+    }
+
     auto reader_it = result.rest.find(ov::genai::gguf_reader.name());
     if (reader_it != result.rest.end()) {
         const auto reader = reader_it->second.as<std::string>();

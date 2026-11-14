@@ -18,9 +18,14 @@ extern const std::string LEGACY_GGUF_READER;
 
 namespace gguf_utils {
 
+// Internal property: the .gguf a tokenizer built from frontend metadata came from, used only as the
+// directory for enable_save_ov_model so the file is not reopened.
+inline const std::string GGUF_SOURCE_PATH_ARG_NAME = "gguf_source_path";
+
 struct GGUFProperties {
     ov::AnyMap rest;
     bool enable_save_ov_model = false;
+    std::optional<std::filesystem::path> source_path;
     std::optional<bool> legacy_reader;
 
     bool use_legacy_reader() const {

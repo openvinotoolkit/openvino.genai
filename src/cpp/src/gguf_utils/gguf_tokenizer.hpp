@@ -12,6 +12,7 @@
 #include "gguf_metadata.hpp"
 #include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
+#include "openvino/genai/tokenizer.hpp"
 
 using FactoryCreateType = ov::OutputVector (*)(const std::string& op_type,
                                                const ov::OutputVector& inputs,
@@ -49,6 +50,12 @@ ov::AnyMap take_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model)
 /// \brief Drop that metadata without reading it, for callers that build the Tokenizer some other
 ///        way. No-op if absent.
 void erase_gguf_tokenizer_metadata(const std::shared_ptr<ov::Model>& model);
+
+/// \brief Build a Tokenizer from the metadata the frontend attached to a model read from
+///        gguf_path, without reopening it; enable_save_ov_model writes the IRs next to gguf_path.
+Tokenizer make_gguf_tokenizer_from_model(const std::shared_ptr<ov::Model>& model,
+                                         const std::filesystem::path& gguf_path,
+                                         const ov::AnyMap& properties);
 
 std::shared_ptr<void> load_shared_object(const std::filesystem::path& path);
 

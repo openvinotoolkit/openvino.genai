@@ -90,14 +90,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto properties_without_draft_model_without_gguf = gguf_properties.rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     // Reuse the frontend's tokenizer metadata instead of reopening the .gguf, as LLMPipeline does.
-    const bool save_ov_model = gguf_properties.enable_save_ov_model ||
-                               gguf_utils::extract_gguf_properties(tokenizer_properties).enable_save_ov_model;
-    const bool tokenizer_from_model =
-        is_gguf_model(models_path) && !save_ov_model && !gguf_properties.use_legacy_reader();
-    Tokenizer tokenizer =
-        tokenizer_from_model
-            ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), tokenizer_properties)
-            : Tokenizer(models_path, tokenizer_properties);
+    const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.use_legacy_reader();
+    Tokenizer tokenizer = tokenizer_from_model
+                              ? make_gguf_tokenizer_from_model(model, models_path, tokenizer_properties)
+                              : Tokenizer(models_path, tokenizer_properties);
     erase_gguf_tokenizer_metadata(model);
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
