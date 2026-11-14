@@ -53,6 +53,10 @@ The sample writes the video with the native `@u4/opencv4nodejs` addon, which has
 node video_generation/text2video.js ltx_video_ov/INT8 "A woman with long brown hair smiles at another woman with long blonde hair" 25
 ```
 
+For exact comparisons across bindings, compare `video.data` before encoding, or use matching OpenCV versions and `VideoWriter` backends. The Python and C++ samples select OpenCV's built-in MJPEG writer; to select it in Node.js, set `OPENCV_VIDEOIO_PRIORITY_LIST=CV_MJPEG` before starting the process. The default backend can be FFmpeg, which encodes the same RGB frames differently.
+
+Matching only the backend is not sufficient with older OpenCV versions: OpenCV 4.6's built-in MJPEG writer can truncate the last bytes of a frame, as described in [opencv#24209](https://github.com/opencv/opencv/pull/24209). Use a version containing that fix when comparing encoded videos.
+
 The optional last argument is the number of frames to generate (161 by default). The video is saved as `genai_video.avi`. For models that generate audio (LTX-2 family), the sample also writes `genai_audio.wav`. To combine both into one file:
 
 ```bash
