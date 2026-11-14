@@ -1672,6 +1672,21 @@ TEST(DFlash2ModelTransforms, ValidatesAndPromotesGpuActivationScale) {
                  ov::Exception);
     ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU", true, properties);
     ASSERT_FLOAT_EQ(properties.at(ov::hint::activations_scale_factor.name()).as<float>(), 32.0f);
+
+    // A scale in DEVICE_PROPERTIES[device] or MODEL_PROPERTIES["language_model"], which overrides the top level when
+    // the language model compiles, is checked and raised the same way.
+    const ov::AnyMap small_scale{{ov::hint::activations_scale_factor.name(), 8.0f}};
+    for (const auto& overlay : {ov::AnyMap{{ov::device::properties.name(), ov::AnyMap{{"GPU", small_scale}}}},
+                                ov::AnyMap{{"MODEL_PROPERTIES", ov::AnyMap{{"language_model", small_scale}}}}}) {
+        ov::AnyMap nested = overlay;
+        nested[ov::hint::activations_scale_factor.name()] = 64.0f;
+        EXPECT_THROW(ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU", false, nested),
+                     ov::Exception);
+        nested = overlay;
+        ov::genai::utils::dflash::apply_dflash_gpu_compile_properties(info, "GPU", true, nested);
+        const auto compiled = ov::genai::utils::get_model_properties(nested, "language_model", "GPU");
+        ASSERT_FLOAT_EQ(compiled.at(ov::hint::activations_scale_factor.name()).as<float>(), 32.0f);
+    }
 }
 
 TEST(DFlash2ModelTransforms, GathersTheLastHiddenStateRowsOfTheLogits) {

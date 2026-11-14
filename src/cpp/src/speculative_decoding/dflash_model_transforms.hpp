@@ -76,6 +76,8 @@ void reject_dflash_draft_on_npu(bool is_npu_requested, const ov::AnyMap& propert
  * the draft. A requested value above the minimum is preserved. A lower value set for the draft is
  * rejected, but one from the target's properties, which a draft without properties of its own
  * compiles with (inherits_target_properties), is raised to the minimum: it may be meant for the target.
+ * The requested value is the one the language model compiles with, so compile_properties are resolved for it, with
+ * DEVICE_PROPERTIES[device] and MODEL_PROPERTIES["language_model"] applied.
  */
 void apply_dflash_gpu_compile_properties(const DFlashRTInfo& info,
                                          const std::string& device,
