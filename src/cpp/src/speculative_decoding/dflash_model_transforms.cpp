@@ -632,6 +632,10 @@ void apply_dflash_gpu_compile_properties(const DFlashRTInfo& info,
         return;
     }
 
+    // The draft compiles with the properties of its language model, in which DEVICE_PROPERTIES[device] and
+    // MODEL_PROPERTIES["language_model"] override the top level. Resolving them here checks the scale it compiles
+    // with, and keeps them from overriding the scale set below.
+    compile_properties = utils::get_model_properties(compile_properties, "language_model", device);
     const auto property_name = ov::hint::activations_scale_factor.name();
     float requested_scale_factor = info.gpu_min_activations_scale_factor;
     if (auto requested_it = compile_properties.find(property_name); requested_it != compile_properties.end()) {
