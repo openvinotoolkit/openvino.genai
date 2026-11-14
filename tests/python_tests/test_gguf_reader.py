@@ -463,7 +463,7 @@ def tiny_gguf_model(tmp_path):
 
 @pytest.mark.skipif(
     sys.platform == "darwin",
-    reason="CPU PagedAttention requires SVE, unavailable on Apple Silicon",
+    reason="CVS-194249: CPU PagedAttention requires SVE, unavailable on Apple Silicon",
 )
 def test_gguf_frontend_continuous_batching_reuses_tokenizer_metadata(tiny_gguf_model):
     scheduler = ov_genai.SchedulerConfig()
@@ -477,3 +477,17 @@ def test_gguf_frontend_continuous_batching_reuses_tokenizer_metadata(tiny_gguf_m
         assert len(pipeline.generate(["ab"], [config])) == 1
     finally:
         tiny_gguf_model.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="CVS-194249: CPU PagedAttention requires SVE, unavailable on Apple Silicon",
+)
+def test_gguf_frontend_continuous_batching_saves_tokenizer_from_tokenizer_properties(tiny_gguf_model):
+    scheduler = ov_genai.SchedulerConfig()
+    scheduler.num_kv_blocks = 4
+    ov_genai.ContinuousBatchingPipeline(
+        tiny_gguf_model, scheduler, "CPU", {"GGUF_READER": "FRONTEND"}, {"enable_save_ov_model": True}
+    )
+    assert (tiny_gguf_model.parent / "openvino_tokenizer.xml").exists()
+    assert (tiny_gguf_model.parent / "openvino_detokenizer.xml").exists()
