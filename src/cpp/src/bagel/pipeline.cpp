@@ -14,6 +14,7 @@
 #include <numeric>
 #include <random>
 #include <set>
+#include <tuple>
 
 #include "bagel/npu/npu_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -387,15 +388,15 @@ public:
     }
 
     std::string generate_text(const std::string& prompt,
-                              const std::optional<ov::Tensor>& image,
+                              const std::vector<ov::Tensor>& images,
                               size_t max_new_tokens,
                               const std::string& system_prompt) {
         reset();
         if (!system_prompt.empty()) {
             prefill_text(system_prompt);
         }
-        if (image) {
-            prefill_image(to_clip_image(*image));
+        for (const auto& image : images) {
+            prefill_image(to_clip_image(image));
         }
         prefill_text(prompt);
 
@@ -440,17 +441,20 @@ public:
         return diffuse(side, side, main, cfg_text, std::nullopt, config, {0.4f, 1.0f});
     }
 
-    ov::Tensor edit_image(const ov::Tensor& image,
+    // As BAGEL's interleaved inference: each image adds a VAE and a ViT block, the output takes the last image's size
+    ov::Tensor edit_image(const std::vector<ov::Tensor>& images,
                           const std::string& prompt,
                           const BagelImageGenerationConfig& config) {
+        OPENVINO_ASSERT(!images.empty(), "edit_image needs at least one image");
         validate(config);
-        // as BagelImageProcessor, the ViT sees the image after the VAE resize
-        const auto vae_image = m_vae_transform.resize(to_clip_image(image));
-        const auto [vae_ctx, hw] = vae_prefill(vae_image, Context{empty_kv(), 0, 0});
-
         reset();
-        m_ctx = vae_ctx;
-        prefill_image(vae_image);
+        std::pair<size_t, size_t> hw;
+        for (const auto& image : images) {
+            // as BagelImageProcessor, the ViT sees the image after the VAE resize
+            const auto vae_image = m_vae_transform.resize(to_clip_image(image));
+            std::tie(m_ctx, hw) = vae_prefill(vae_image, m_ctx);
+            prefill_image(vae_image);
+        }
         const Context img_ctx = m_ctx;
         prefill_text(prompt);
         const Context main = m_ctx;
@@ -869,7 +873,17 @@ std::string BagelPipeline::generate_text(const std::string& prompt,
                                          const std::optional<ov::Tensor>& image,
                                          size_t max_new_tokens,
                                          const std::string& system_prompt) {
-    return m_impl->generate_text(prompt, image, max_new_tokens, system_prompt);
+    return generate_text(prompt,
+                         image ? std::vector<ov::Tensor>{*image} : std::vector<ov::Tensor>{},
+                         max_new_tokens,
+                         system_prompt);
+}
+
+std::string BagelPipeline::generate_text(const std::string& prompt,
+                                         const std::vector<ov::Tensor>& images,
+                                         size_t max_new_tokens,
+                                         const std::string& system_prompt) {
+    return m_impl->generate_text(prompt, images, max_new_tokens, system_prompt);
 }
 
 ov::Tensor BagelPipeline::generate_image(const std::string& prompt,
@@ -880,7 +894,13 @@ ov::Tensor BagelPipeline::generate_image(const std::string& prompt,
 ov::Tensor BagelPipeline::edit_image(const ov::Tensor& image,
                                      const std::string& prompt,
                                      const std::optional<BagelImageGenerationConfig>& config) {
-    return m_impl->edit_image(image, prompt, config.value_or(BagelImageGenerationConfig{}));
+    return m_impl->edit_image({image}, prompt, config.value_or(BagelImageGenerationConfig{}));
+}
+
+ov::Tensor BagelPipeline::edit_image(const std::vector<ov::Tensor>& images,
+                                     const std::string& prompt,
+                                     const std::optional<BagelImageGenerationConfig>& config) {
+    return m_impl->edit_image(images, prompt, config.value_or(BagelImageGenerationConfig{}));
 }
 
 BagelPerfMetrics BagelPipeline::get_perf_metrics() const {

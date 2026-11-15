@@ -45,6 +45,10 @@ python bagel.py BAGEL-7B-MoT-ov-int4 CPU t2i "A red bicycle leaning against a bl
 
 # image editing, writes image.bmp at the VAE resolution of the input image
 python bagel.py BAGEL-7B-MoT-ov-int4 CPU edit "Make the bicycle green" bicycle.png
+
+# several images, in the order the prompt refers to them; editing outputs the size of the last image
+python bagel.py BAGEL-7B-MoT-ov-int4 CPU vqa "What do these images have in common?" cats.jpg dog.jpg bird.jpg
+python bagel.py BAGEL-7B-MoT-ov-int4 CPU edit "Put the cat from the first image on the sofa of the second" cat.jpg sofa.jpg
 ```
 
 On NPU the language, vision and VAE models run through NPUW (`NPUW_BAGEL`), which compiles a static variant of a model

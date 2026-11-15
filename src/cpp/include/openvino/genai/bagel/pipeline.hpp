@@ -77,6 +77,19 @@ public:
                               const std::string& system_prompt = {});
 
     /**
+     * @brief Greedy text generation about several images
+     * @param prompt user prompt
+     * @param images u8 RGB images, prefilled in order before the prompt
+     * @param max_new_tokens maximum number of generated tokens
+     * @param system_prompt optional system prompt prefilled before the images and the prompt
+     * @return generated text
+     */
+    std::string generate_text(const std::string& prompt,
+                              const std::vector<ov::Tensor>& images,
+                              size_t max_new_tokens = 256,
+                              const std::string& system_prompt = {});
+
+    /**
      * @brief Text-to-image generation
      * @param prompt image description
      * @param config generation parameters; defaults if not set
@@ -93,6 +106,17 @@ public:
      * @return u8 [1, H, W, 3] RGB image at the VAE resolution of the input image
      */
     ov::Tensor edit_image(const ov::Tensor& image,
+                          const std::string& prompt,
+                          const std::optional<BagelImageGenerationConfig>& config = std::nullopt);
+
+    /**
+     * @brief Image editing or composition from several images
+     * @param images u8 RGB input images, in the order the prompt refers to them
+     * @param prompt edit instruction
+     * @param config generation parameters, `size` is ignored; defaults if not set
+     * @return u8 [1, H, W, 3] RGB image at the VAE resolution of the last input image
+     */
+    ov::Tensor edit_image(const std::vector<ov::Tensor>& images,
                           const std::string& prompt,
                           const std::optional<BagelImageGenerationConfig>& config = std::nullopt);
 

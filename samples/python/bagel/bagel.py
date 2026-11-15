@@ -16,18 +16,18 @@ def main():
     parser.add_argument("device", help="Device to run the model on (e.g. CPU, GPU, NPU)")
     parser.add_argument("task", choices=["vqa", "t2i", "edit"])
     parser.add_argument("prompt")
-    parser.add_argument("image", nargs="?", help="Input image (vqa, required for edit)")
+    parser.add_argument("images", nargs="*", help="Input images (vqa, at least one for edit)")
     args = parser.parse_args()
-    if args.task == "edit" and not args.image:
+    if args.task == "edit" and not args.images:
         parser.error("edit requires an image")
 
     pipe = openvino_genai.BagelPipeline(args.model_dir, args.device)
-    image = Tensor(np.array(Image.open(args.image).convert("RGB"))[None]) if args.image else None
+    images = [Tensor(np.array(Image.open(path).convert("RGB"))[None]) for path in args.images]
 
     if args.task == "vqa":
-        print(pipe.generate_text(args.prompt, image))
+        print(pipe.generate_text(args.prompt, images))
         return
-    result = pipe.generate_image(args.prompt) if args.task == "t2i" else pipe.edit_image(image, args.prompt)
+    result = pipe.generate_image(args.prompt) if args.task == "t2i" else pipe.edit_image(images, args.prompt)
     Image.fromarray(result.data[0]).save("image.bmp")
 
 

@@ -61,10 +61,26 @@ def image() -> np.ndarray:
     return rng.integers(0, 256, (48, 64, 3), dtype=np.uint8)
 
 
+@pytest.fixture(scope="module")
+def images() -> list[np.ndarray]:
+    rng = np.random.default_rng(1)
+    # the last image is smaller, so the edited image (the VAE size of the last input) differs from the others
+    return [rng.integers(0, 256, shape, dtype=np.uint8) for shape in ((48, 64, 3), (64, 48, 3), (20, 20, 3))]
+
+
 def to_uint8(image: torch.Tensor) -> np.ndarray:
     """[1, 3, H, W] in [-1, 1] -> [H, W, 3] u8, as BagelPipeline converts the VAE output."""
     pixels = ((image[0].permute(1, 2, 0).numpy() + 1.0) / 2.0).clip(0.0, 1.0)
     return (pixels * 255.0).astype(np.uint8)
+
+
+def optimum_text(optimum_model, processor, inputs, max_new_tokens: int) -> str:
+    output = optimum_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    tokens = output[0, inputs["input_ids"].shape[1] :].tolist()
+    eos = optimum_model.generation_config.eos_token_id
+    if eos in tokens:
+        tokens = tokens[: tokens.index(eos)]
+    return processor.tokenizer.decode(tokens, skip_special_tokens=False)
 
 
 def test_text_matches_optimum(genai_pipe, optimum_model, processor):
@@ -72,12 +88,17 @@ def test_text_matches_optimum(genai_pipe, optimum_model, processor):
     genai_text = genai_pipe.generate_text(PROMPT, max_new_tokens=max_new_tokens)
 
     inputs = optimum_model.preprocess_inputs(text=PROMPT, processor=processor)
-    output = optimum_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    tokens = output[0, inputs["input_ids"].shape[1] :].tolist()
-    eos = optimum_model.generation_config.eos_token_id
-    if eos in tokens:
-        tokens = tokens[: tokens.index(eos)]
-    assert genai_text == processor.tokenizer.decode(tokens, skip_special_tokens=False)
+    assert genai_text == optimum_text(optimum_model, processor, inputs, max_new_tokens)
+
+
+def test_multi_image_text_matches_optimum(genai_pipe, optimum_model, processor, images):
+    max_new_tokens = 8
+    genai_text = genai_pipe.generate_text(PROMPT, [ov.Tensor(i[None]) for i in images], max_new_tokens=max_new_tokens)
+
+    content = [{"type": "image"}] * len(images) + [{"type": "text", "text": PROMPT}]
+    prompt = processor.apply_chat_template([{"role": "user", "content": content}], add_generation_prompt=True)
+    inputs = processor(text=prompt, images=[Image.fromarray(i) for i in images], return_tensors="pt")
+    assert genai_text == optimum_text(optimum_model, processor, inputs, max_new_tokens)
 
 
 def test_text_to_image_matches_optimum(genai_pipe, optimum_model, processor):
@@ -140,6 +161,50 @@ def test_edit_image_matches_optimum(genai_pipe, optimum_model, processor, image)
         assert diff.max() <= 1, f"cfg_img_scale={cfg_img_scale}: max abs pixel diff {diff.max()}"
         edits[cfg_img_scale] = genai_image
     assert not np.array_equal(edits[1.0], edits[2.0]), "cfg_img_scale has no effect"
+
+
+def test_multi_image_edit_matches_reference(genai_pipe, optimum_model, processor, images, monkeypatch):
+    """optimum-intel edits one image. The reference keeps its guidance loop and adds, as the interleaved inference of
+    the original BAGEL, a VAE and a ViT block per image to the contexts that hold the input image."""
+    seed = 5
+    config = ov_genai.BagelImageGenerationConfig()
+    config.num_inference_steps = NUM_STEPS
+    config.seed = seed
+    genai_image = genai_pipe.edit_image([ov.Tensor(i[None]) for i in images], EDIT_PROMPT, config).data[0]
+
+    per_image = [
+        processor(text=EDIT_PROMPT, images=[Image.fromarray(i)], generation_mode="image", return_tensors="pt")
+        for i in images
+    ]
+    add_vae_image, add_vit_image = optimum_model._add_vae_image, optimum_model._add_vit_image
+
+    def add_images(context, _):
+        for inputs in per_image:
+            add_vae_image(context, inputs["vae_pixel_values"])
+            add_vit_image(context, inputs["pixel_values"], inputs["image_position_ids"])
+
+    monkeypatch.setattr(optimum_model, "_add_vae_image", add_images)
+    monkeypatch.setattr(optimum_model, "_add_vit_image", lambda *args: None)
+    last = per_image[-1]
+    height, width = last["vae_pixel_values"].shape[-2:]
+    num_tokens = (height // optimum_model.latent_downsample) * (width // optimum_model.latent_downsample)
+    latents = torch.from_numpy(
+        np.random.RandomState(seed).randn(num_tokens, optimum_model._patch_dim).astype(np.float32)
+    )
+    optimum_image = optimum_model.generate(
+        **last,
+        generation_mode="image",
+        num_inference_steps=NUM_STEPS,
+        guidance_scale=config.cfg_text_scale,
+        image_guidance_scale=config.cfg_img_scale,
+        cfg_interval=(0.0, 1.0),
+        latents=latents,
+    )
+
+    assert (height, width) != tuple(per_image[0]["vae_pixel_values"].shape[-2:])
+    assert genai_image.shape == (height, width, 3)
+    diff = np.abs(genai_image.astype(np.int32) - to_uint8(optimum_image).astype(np.int32))
+    assert diff.max() <= 1, f"max abs pixel diff {diff.max()}"
 
 
 def test_image_inputs(genai_pipe, image):

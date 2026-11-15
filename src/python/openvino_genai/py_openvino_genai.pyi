@@ -1130,17 +1130,29 @@ class BagelPipeline:
                         models_path if None.
                     kwargs: Properties applied on top of the default per-model configuration.
         """
+    @typing.overload
     def edit_image(self, image: openvino._pyopenvino.Tensor, prompt: str, config: openvino_genai.py_openvino_genai.BagelImageGenerationConfig | None = None) -> openvino._pyopenvino.Tensor:
         """
         Edits a u8 RGB image; returns a u8 [1, H, W, 3] RGB tensor. Default config if None.
+        """
+    @typing.overload
+    def edit_image(self, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], prompt: str, config: openvino_genai.py_openvino_genai.BagelImageGenerationConfig | None = None) -> openvino._pyopenvino.Tensor:
+        """
+        Edits or composes several u8 RGB images; the output has the VAE resolution of the last one.
         """
     def generate_image(self, prompt: str, config: openvino_genai.py_openvino_genai.BagelImageGenerationConfig | None = None) -> openvino._pyopenvino.Tensor:
         """
         Text-to-image; returns a u8 [1, H, W, 3] RGB tensor. Default config if None.
         """
+    @typing.overload
     def generate_text(self, prompt: str, image: openvino._pyopenvino.Tensor | None = None, max_new_tokens: typing.SupportsInt = 256, system_prompt: str = '') -> str:
         """
         Answers the prompt, optionally about a u8 RGB image with [1, H, W, 3] or [H, W, 3] layout.
+        """
+    @typing.overload
+    def generate_text(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], max_new_tokens: typing.SupportsInt = 256, system_prompt: str = '') -> str:
+        """
+        Answers the prompt about several u8 RGB images, prefilled in order before the prompt.
         """
     def get_perf_metrics(self) -> BagelPerfMetrics:
         """

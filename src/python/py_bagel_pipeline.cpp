@@ -89,6 +89,25 @@ void init_bagel_pipeline(py::module_& m) {
             py::arg("max_new_tokens") = 256,
             py::arg("system_prompt") = "",
             "Answers the prompt, optionally about a u8 RGB image with [1, H, W, 3] or [H, W, 3] layout.")
+        .def(
+            "generate_text",
+            [](BagelPipeline& pipe,
+               const std::string& prompt,
+               const std::vector<ov::Tensor>& images,
+               size_t max_new_tokens,
+               const std::string& system_prompt) {
+                std::string text;
+                {
+                    py::gil_scoped_release rel;
+                    text = pipe.generate_text(prompt, images, max_new_tokens, system_prompt);
+                }
+                return pyutils::handle_utf8(text);
+            },
+            py::arg("prompt"),
+            py::arg("images"),
+            py::arg("max_new_tokens") = 256,
+            py::arg("system_prompt") = "",
+            "Answers the prompt about several u8 RGB images, prefilled in order before the prompt.")
         .def("generate_image",
              &BagelPipeline::generate_image,
              py::call_guard<py::gil_scoped_release>(),
@@ -96,12 +115,22 @@ void init_bagel_pipeline(py::module_& m) {
              py::arg("config") = py::none(),
              "Text-to-image; returns a u8 [1, H, W, 3] RGB tensor. Default config if None.")
         .def("edit_image",
-             &BagelPipeline::edit_image,
+             py::overload_cast<const ov::Tensor&, const std::string&, const std::optional<BagelImageGenerationConfig>&>(
+                 &BagelPipeline::edit_image),
              py::call_guard<py::gil_scoped_release>(),
              py::arg("image"),
              py::arg("prompt"),
              py::arg("config") = py::none(),
              "Edits a u8 RGB image; returns a u8 [1, H, W, 3] RGB tensor. Default config if None.")
+        .def("edit_image",
+             py::overload_cast<const std::vector<ov::Tensor>&,
+                               const std::string&,
+                               const std::optional<BagelImageGenerationConfig>&>(&BagelPipeline::edit_image),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("images"),
+             py::arg("prompt"),
+             py::arg("config") = py::none(),
+             "Edits or composes several u8 RGB images; the output has the VAE resolution of the last one.")
         .def("get_perf_metrics", &BagelPipeline::get_perf_metrics, "Snapshot of the timings; safe during generation.")
         .def("reset_perf_metrics", &BagelPipeline::reset_perf_metrics);
 }

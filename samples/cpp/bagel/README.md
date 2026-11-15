@@ -37,5 +37,12 @@ to build the samples. Input images can be JPEG / PNG / BMP; generated images are
 ./bagel BAGEL-7B-MoT-ov-int4 CPU edit "Make the bicycle green" bicycle.png
 ```
 
+`vqa` and `edit` take several images, in the order the prompt refers to them; editing outputs the size of the last image:
+
+```sh
+./bagel BAGEL-7B-MoT-ov-int4 CPU vqa "What do these images have in common?" cats.jpg dog.jpg bird.jpg
+./bagel BAGEL-7B-MoT-ov-int4 CPU edit "Put the cat from the first image on the sofa of the second" cat.jpg sofa.jpg
+```
+
 On NPU the language, vision and VAE models run through NPUW (`NPUW_BAGEL`), which compiles a static variant of a model
 the first time an input size is used, so the first run is slower than the next ones.

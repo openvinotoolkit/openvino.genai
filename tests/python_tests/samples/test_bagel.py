@@ -26,26 +26,32 @@ def input_image(tmp_path_factory: pytest.TempPathFactory) -> str:
     return str(path)
 
 
-def bagel_command(sample: str, model_dir: str, task: str, prompt: str, image: str | None) -> list[str]:
+def bagel_command(sample: str, model_dir: str, task: str, prompt: str, images: list[str]) -> list[str]:
     if sample == "cpp":
         command = [str(SAMPLES_CPP_DIR / "bagel"), model_dir, "CPU", task, prompt]
     else:
         command = [sys.executable, str(SAMPLES_PY_DIR / "bagel/bagel.py"), model_dir, "CPU", task, prompt]
-    return command + ([image] if image else [])
+    return command + images
 
 
 @pytest.mark.bagel
 @pytest.mark.samples
 @pytest.mark.parametrize("sample", ["cpp", "py"])
 @pytest.mark.parametrize(
-    "task, prompt, with_image",
-    [("vqa", "Describe the image.", True), ("t2i", "A red bicycle", False), ("edit", "Make it green", True)],
+    "task, prompt, num_images",
+    [
+        ("vqa", "Describe the image.", 1),
+        ("vqa", "Compare the images.", 3),
+        ("t2i", "A red bicycle", 0),
+        ("edit", "Make it green", 1),
+        ("edit", "Combine the images", 3),
+    ],
 )
 def test_sample_bagel(
-    bagel_ov_path: str, input_image: str, sample: str, task: str, prompt: str, with_image: bool, tmp_path: Path
+    bagel_ov_path: str, input_image: str, sample: str, task: str, prompt: str, num_images: int, tmp_path: Path
 ):
     result = run_sample(
-        bagel_command(sample, bagel_ov_path, task, prompt, input_image if with_image else None), cwd=str(tmp_path)
+        bagel_command(sample, bagel_ov_path, task, prompt, [input_image] * num_images), cwd=str(tmp_path)
     )
     # a random tiny model may answer with an empty string, so VQA is only checked to run
     if task != "vqa":
