@@ -96,7 +96,11 @@ public:
     }
 
     bool has_mrope_position_ids() const {
-        return m_model_runner->has_mrope_position_ids();
+        bool has_mrope_position_ids = false;
+        if (m_model_runner) {
+            has_mrope_position_ids = m_model_runner->has_mrope_position_ids();
+        }
+        return has_mrope_position_ids;
     }
 
     // Returns the awaiting request with the given id, or nullptr if there is none.

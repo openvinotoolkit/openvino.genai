@@ -179,8 +179,7 @@ TEST(MtpModelTransforms, ExtractTiedLmHeadWeight) {
 }
 
 TEST(MtpModelTransforms, ExposeLastHiddenUsesLLMHeadWithoutAnnotation) {
-    std::vector<float> weights_data(VOCAB * HIDDEN, 0.1f);
-    auto main_model = make_main_model(weights_data);
+    auto main_model = make_hyper_connection_main_model();
     expose_last_hidden_state(main_model);
     EXPECT_EQ(main_model->get_results().size(), 2u);
 
