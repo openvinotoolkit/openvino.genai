@@ -19,6 +19,13 @@ optimum-cli export openvino -m BAGEL-7B-MoT-hf --task image-text-to-text --weigh
     --ratio 1.0 --backup-precision int8_sym --group-size-fallback adjust BAGEL-7B-MoT-ov-int4
 ```
 
+`genai-cli` (`pip install openvino-genai[export]`) exports the converted checkpoint natively, without optimum-intel,
+and defaults to the same INT4 settings:
+
+```sh
+genai-cli export -m BAGEL-7B-MoT-hf --weight-format int4 BAGEL-7B-MoT-ov-int4
+```
+
 ## Run
 
 Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html)

@@ -21,6 +21,11 @@ class NativeExporter:
         self.args = args
 
     @classmethod
+    def transformers_requirement(cls) -> str:
+        """The transformers requirement the export runs with; a direct URL for a version not released yet."""
+        return f"transformers=={cls.TRANSFORMERS_VERSION}"
+
+    @classmethod
     def validate_args(cls, args: Namespace) -> None:
         """Raises ValueError for options this exporter does not support. Runs before any overlay is created."""
         if args.task not in ("auto", *cls.TASKS):

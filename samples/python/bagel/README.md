@@ -21,6 +21,13 @@ optimum-cli export openvino -m BAGEL-7B-MoT-hf --task image-text-to-text --weigh
 
 `--weight-format int4` compresses the language model only; use `--weight-format fp16` for an uncompressed model.
 
+`genai-cli` (`pip install openvino-genai[export]`) exports the converted checkpoint natively, without optimum-intel,
+and defaults to the same INT4 settings:
+
+```sh
+genai-cli export -m BAGEL-7B-MoT-hf --weight-format int4 BAGEL-7B-MoT-ov-int4
+```
+
 ## Run
 
 Install the runtime dependencies:

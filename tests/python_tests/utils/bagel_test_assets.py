@@ -10,6 +10,7 @@ import torch
 from huggingface_hub import snapshot_download
 
 from .atomic_download import AtomicDownloadManager
+from .export import export_with_genai_cli
 from .network import retry_request
 
 logger = logging.getLogger(__name__)
@@ -116,4 +117,13 @@ def prepare_tiny_bagel_ov_path(converted_models_dir: Path) -> Path:
     AtomicDownloadManager(model_path).execute(generate_tiny_bagel_model)
     ov_path = Path(converted_models_dir) / "tiny-random-bagel-ov"
     AtomicDownloadManager(ov_path).execute(lambda temp_path: export_bagel_model_to_openvino(model_path, temp_path))
+    return ov_path
+
+
+def prepare_tiny_bagel_genai_cli_path(converted_models_dir: Path) -> Path:
+    """Prepare the tiny random BAGEL checkpoint exported with the native genai-cli exporter and return its path."""
+    model_path = Path(converted_models_dir) / "tiny-random-bagel"
+    AtomicDownloadManager(model_path).execute(generate_tiny_bagel_model)
+    ov_path = Path(converted_models_dir) / "tiny-random-bagel-genai-cli"
+    AtomicDownloadManager(ov_path).execute(lambda temp_path: export_with_genai_cli(model_path, temp_path))
     return ov_path

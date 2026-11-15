@@ -61,8 +61,10 @@
 - 'src/cpp/include/openvino/genai/bagel/**/*'
 - 'src/cpp/src/bagel/**/*'
 - 'src/python/py_bagel_pipeline.cpp'
+- 'src/python/openvino_genai/_cli/exporters/bagel/**/*'
 - 'tests/python_tests/test_bagel_pipeline.py'
 - 'tests/python_tests/utils/bagel_test_assets.py'
+- 'tests/python_tests/samples/test_bagel.py'
 - 'samples/cpp/bagel/**/*'
 - 'samples/python/bagel/**/*'
 

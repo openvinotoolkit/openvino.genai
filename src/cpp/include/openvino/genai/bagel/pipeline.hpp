@@ -24,7 +24,7 @@ struct BagelImageGenerationConfig {
     size_t num_inference_steps = 50;
     float timestep_shift = 3.0f;
     float cfg_text_scale = 4.0f;
-    // Image editing only
+    // Image editing only; applied on top of text guidance, so it needs cfg_text_scale > 1
     float cfg_img_scale = 2.0f;
     // Guidance is applied for timesteps t with low < t <= high; defaults to (0.4, 1.0] for text-to-image and
     // (0.0, 1.0] for image editing
@@ -96,8 +96,9 @@ public:
                           const std::string& prompt,
                           const std::optional<BagelImageGenerationConfig>& config = std::nullopt);
 
-    /// @brief Compile and inference timings accumulated since construction or the last reset_perf_metrics()
-    const BagelPerfMetrics& get_perf_metrics() const;
+    /// @brief Snapshot of compile and inference timings since construction or the last reset_perf_metrics();
+    /// safe to call while another thread generates
+    BagelPerfMetrics get_perf_metrics() const;
     void reset_perf_metrics();
 
 private:

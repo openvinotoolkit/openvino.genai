@@ -27,7 +27,9 @@ void init_bagel_pipeline(py::module_& m) {
         .def_readwrite("num_inference_steps", &BagelImageGenerationConfig::num_inference_steps)
         .def_readwrite("timestep_shift", &BagelImageGenerationConfig::timestep_shift)
         .def_readwrite("cfg_text_scale", &BagelImageGenerationConfig::cfg_text_scale)
-        .def_readwrite("cfg_img_scale", &BagelImageGenerationConfig::cfg_img_scale, "Image editing only.")
+        .def_readwrite("cfg_img_scale",
+                       &BagelImageGenerationConfig::cfg_img_scale,
+                       "Image editing only; applied on top of text guidance, so it needs cfg_text_scale > 1.")
         .def_readwrite("cfg_interval",
                        &BagelImageGenerationConfig::cfg_interval,
                        "Guidance is applied for timesteps t with low < t <= high; defaults to (0.4, 1.0] for "
@@ -100,6 +102,6 @@ void init_bagel_pipeline(py::module_& m) {
              py::arg("prompt"),
              py::arg("config") = py::none(),
              "Edits a u8 RGB image; returns a u8 [1, H, W, 3] RGB tensor. Default config if None.")
-        .def("get_perf_metrics", &BagelPipeline::get_perf_metrics, py::return_value_policy::copy)
+        .def("get_perf_metrics", &BagelPipeline::get_perf_metrics, "Snapshot of the timings; safe during generation.")
         .def("reset_perf_metrics", &BagelPipeline::reset_perf_metrics);
 }

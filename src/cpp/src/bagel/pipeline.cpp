@@ -9,6 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <random>
@@ -108,7 +109,12 @@ clip_image_u8 to_clip_image(const ov::Tensor& image) {
     const int h = static_cast<int>(shape[shape.size() - 3]);
     const int w = static_cast<int>(shape[shape.size() - 2]);
     OPENVINO_ASSERT(h > 0 && w > 0, "BAGEL expects a non-empty image");
-    return {w, h, {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}};
+    ov::Tensor dense = image;
+    if (!image.is_continuous()) {
+        dense = ov::Tensor(image.get_element_type(), shape);
+        image.copy_to(dense);
+    }
+    return {w, h, {dense.data<uint8_t>(), dense.data<uint8_t>() + dense.get_size()}};
 }
 
 // [3, H, W] f32 in [-1, 1]
@@ -362,7 +368,7 @@ public:
         const auto compile = [&](const std::string& name, const std::string& dev, const ov::AnyMap& config) {
             const auto t0 = Clock::now();
             auto compiled = core.compile_model((models_dir / model_file(models_dir, name)).string(), dev, config);
-            m_perf.compile_ms.emplace_back("compile_model " + name.substr(0, name.find("_model.xml")), ms_since(t0));
+            add_compile_ms("compile_model " + name.substr(0, name.find("_model.xml")), ms_since(t0));
             return compiled.create_infer_request();
         };
         // the text embedding lookup stays on CPU on NPU, like in the GenAI VLMs
@@ -453,7 +459,7 @@ public:
         if (config.cfg_text_scale > 1.0f) {
             cfg_text = img_ctx;
         }
-        if (config.cfg_img_scale > 1.0f) {
+        if (config.cfg_text_scale > 1.0f && config.cfg_img_scale > 1.0f) {
             reset();
             prefill_text(prompt);
             cfg_img = m_ctx;
@@ -461,7 +467,15 @@ public:
         return diffuse(hw.first, hw.second, main, cfg_text, cfg_img, config, {0.0f, 1.0f});
     }
 
-    BagelPerfMetrics m_perf;
+    BagelPerfMetrics perf_metrics() const {
+        std::lock_guard<std::mutex> lock(m_perf_mutex);
+        return m_perf;
+    }
+
+    void reset_perf_metrics() {
+        std::lock_guard<std::mutex> lock(m_perf_mutex);
+        m_perf = {};
+    }
 
 private:
     // [layer * 2 + {0: key, 1: value}], each [1, kv_heads, len, head_dim]; tensors are never written after creation
@@ -492,7 +506,18 @@ private:
     }
 
     void record(const std::string& stage, Clock::time_point t0) {
-        m_perf.infer_ms.emplace_back(stage, ms_since(t0));
+        add_infer_ms(stage, ms_since(t0));
+    }
+
+    // Generation runs without the GIL in Python, so metrics can be read or reset concurrently
+    void add_compile_ms(const std::string& name, float ms) {
+        std::lock_guard<std::mutex> lock(m_perf_mutex);
+        m_perf.compile_ms.emplace_back(name, ms);
+    }
+
+    void add_infer_ms(const std::string& stage, float ms) {
+        std::lock_guard<std::mutex> lock(m_perf_mutex);
+        m_perf.infer_ms.emplace_back(stage, ms);
     }
 
     // A not-yet-compiled NPU variant runs twice so compile and inference times split
@@ -502,10 +527,12 @@ private:
             auto t0 = Clock::now();
             fn();
             const float first = ms_since(t0);
-            m_perf.first_call_ms += first;
+            m_first_call_total_ms += first;
             t0 = Clock::now();
             fn();
             const float infer = ms_since(t0);
+            std::lock_guard<std::mutex> lock(m_perf_mutex);
+            m_perf.first_call_ms += first;
             m_perf.compile_ms.emplace_back(variant, first - infer);
             m_perf.infer_ms.emplace_back(stage, infer);
             return;
@@ -741,22 +768,23 @@ private:
 
         for (size_t i = 0; i + 1 < steps; ++i) {
             const auto t0 = Clock::now();
-            const float first0 = m_perf.first_call_ms;
+            const float first0 = m_first_call_total_ms;
             const float t = ts[i];
             const bool use_cfg = interval.first < t && t <= interval.second;
             auto v = velocity(x, t, main, vae_pos);
             if (use_cfg) {
                 auto v_ = v;
+                // as BAGEL, image guidance only refines text guidance
                 if (cfg_text && config.cfg_text_scale > 1.0f) {
                     const auto vt = velocity(x, t, *cfg_text, vae_pos);
                     for (size_t k = 0; k < v.size(); ++k) {
                         v_[k] = vt[k] + config.cfg_text_scale * (v[k] - vt[k]);
                     }
-                }
-                if (cfg_img && config.cfg_img_scale > 1.0f) {
-                    const auto vi = velocity(x, t, *cfg_img, vae_pos);
-                    for (size_t k = 0; k < v.size(); ++k) {
-                        v_[k] = vi[k] + config.cfg_img_scale * (v_[k] - vi[k]);
+                    if (cfg_img && config.cfg_img_scale > 1.0f) {
+                        const auto vi = velocity(x, t, *cfg_img, vae_pos);
+                        for (size_t k = 0; k < v.size(); ++k) {
+                            v_[k] = vi[k] + config.cfg_img_scale * (v_[k] - vi[k]);
+                        }
                     }
                 }
                 const float scale = std::max(std::min(l2_norm(v) / (l2_norm(v_) + 1e-8f), 1.0f), config.cfg_renorm_min);
@@ -768,8 +796,7 @@ private:
             for (size_t k = 0; k < v.size(); ++k) {
                 xd[k] = xd[k] - v[k] * dt;
             }
-            m_perf.infer_ms.emplace_back(use_cfg ? "step.cfg" : "step.nocfg",
-                                         ms_since(t0) - (m_perf.first_call_ms - first0));
+            add_infer_ms(use_cfg ? "step.cfg" : "step.nocfg", ms_since(t0) - (m_first_call_total_ms - first0));
         }
         return decode(x, h, w);
     }
@@ -823,6 +850,11 @@ private:
     size_t m_latent_channel = 0, m_latent_patch = 0, m_latent_downsample = 0;
     size_t m_vit_patch = 0, m_vit_max_side = 0, m_max_latent = 0;
     int64_t m_bos = 0, m_eos = 0, m_soi = 0, m_eoi = 0;
+
+    mutable std::mutex m_perf_mutex;
+    BagelPerfMetrics m_perf;
+    // Not reset with the metrics, so a step can subtract first-call time across a concurrent reset
+    float m_first_call_total_ms = 0.0f;
 };
 
 BagelPipeline::BagelPipeline(const std::filesystem::path& models_path,
@@ -851,12 +883,12 @@ ov::Tensor BagelPipeline::edit_image(const ov::Tensor& image,
     return m_impl->edit_image(image, prompt, config.value_or(BagelImageGenerationConfig{}));
 }
 
-const BagelPerfMetrics& BagelPipeline::get_perf_metrics() const {
-    return m_impl->m_perf;
+BagelPerfMetrics BagelPipeline::get_perf_metrics() const {
+    return m_impl->perf_metrics();
 }
 
 void BagelPipeline::reset_perf_metrics() {
-    m_impl->m_perf = {};
+    m_impl->reset_perf_metrics();
 }
 
 }  // namespace ov::genai

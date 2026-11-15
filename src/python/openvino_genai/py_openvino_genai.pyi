@@ -1045,7 +1045,7 @@ class BagelImageGenerationConfig:
     @property
     def cfg_img_scale(self) -> float:
         """
-        Image editing only.
+        Image editing only; applied on top of text guidance, so it needs cfg_text_scale > 1.
         """
     @cfg_img_scale.setter
     def cfg_img_scale(self, arg0: typing.SupportsFloat) -> None:
@@ -1143,7 +1143,9 @@ class BagelPipeline:
         Answers the prompt, optionally about a u8 RGB image with [1, H, W, 3] or [H, W, 3] layout.
         """
     def get_perf_metrics(self) -> BagelPerfMetrics:
-        ...
+        """
+        Snapshot of the timings; safe during generation.
+        """
     def reset_perf_metrics(self) -> None:
         ...
 class CLIPTextModel:

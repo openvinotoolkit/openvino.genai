@@ -107,7 +107,7 @@ def _export_openvino(parser: ArgumentParser, args, argv: list[str], export_argv:
         exporter_cls.validate_args(args)
     except ValueError as error:
         parser.error(str(error))
-    transformers_requirement = f"transformers=={exporter_cls.TRANSFORMERS_VERSION}"
+    transformers_requirement = exporter_cls.transformers_requirement()
     if not is_satisfied(transformers_requirement):
         logger.info(
             f"`{model_type}` is exported with {transformers_requirement}, "

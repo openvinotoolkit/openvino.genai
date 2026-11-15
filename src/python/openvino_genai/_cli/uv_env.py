@@ -64,10 +64,14 @@ def installed_requirement(distribution: str) -> str | None:
 
 
 def is_satisfied(requirement: str) -> bool:
-    """Whether the current environment satisfies a requirement specifier such as ``transformers==4.57.6``."""
+    """Whether the current environment satisfies a requirement specifier such as ``transformers==4.57.6``; a direct URL
+    requirement (``name @ url``) is satisfied only by an installation from the same URL."""
     from packaging.requirements import Requirement
 
     req = Requirement(requirement)
+    if req.url:
+        installed = installed_requirement(req.name)
+        return installed is not None and Requirement(installed).url == req.url
     version = installed_version(req.name)
     return version is not None and req.specifier.contains(version, prereleases=True)
 

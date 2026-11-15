@@ -5,10 +5,12 @@
 Tests for BagelPipeline: visual question answering, text-to-image generation and image editing.
 
 A tiny random BAGEL model is generated locally and exported with optimum-cli. The GenAI outputs are compared with
-optimum-intel's OVModelForVisualCausalLM, which is tested against transformers in optimum-intel.
+optimum-intel's OVModelForVisualCausalLM, which is tested against transformers in optimum-intel. The native genai-cli
+export of the same checkpoint is checked against the optimum-cli one.
 """
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -16,14 +18,16 @@ import openvino as ov
 import pytest
 import torch
 from optimum.intel import OVModelForVisualCausalLM
+from PIL import Image
 from transformers import AutoProcessor
 
 import openvino_genai as ov_genai
-from utils.bagel_test_assets import prepare_tiny_bagel_ov_path
+from utils.bagel_test_assets import prepare_tiny_bagel_genai_cli_path, prepare_tiny_bagel_ov_path
 from utils.constants import get_ov_cache_converted_models_dir
 
 PROMPT = "What is shown in this image?"
 IMAGE_PROMPT = "A red bicycle leaning against a blue wall"
+EDIT_PROMPT = "Make it green"
 IMAGE_SIZE = 32
 NUM_STEPS = 4
 
@@ -104,6 +108,40 @@ def test_text_to_image_matches_optimum(genai_pipe, optimum_model, processor):
     assert diff.max() <= 1, f"max abs pixel diff {diff.max()}"
 
 
+def test_edit_image_matches_optimum(genai_pipe, optimum_model, processor, image):
+    seed = 3
+    inputs = processor(text=EDIT_PROMPT, images=[Image.fromarray(image)], generation_mode="image", return_tensors="pt")
+    height, width = inputs["vae_pixel_values"].shape[-2:]
+    num_tokens = (height // optimum_model.latent_downsample) * (width // optimum_model.latent_downsample)
+    latents = torch.from_numpy(
+        np.random.RandomState(seed).randn(num_tokens, optimum_model._patch_dim).astype(np.float32)
+    )
+
+    edits = {}
+    for cfg_img_scale in (1.0, 2.0):
+        config = ov_genai.BagelImageGenerationConfig()
+        config.num_inference_steps = NUM_STEPS
+        config.cfg_img_scale = cfg_img_scale
+        config.seed = seed
+        genai_image = genai_pipe.edit_image(ov.Tensor(image[None]), EDIT_PROMPT, config).data[0]
+
+        optimum_image = optimum_model.generate(
+            **inputs,
+            generation_mode="image",
+            num_inference_steps=NUM_STEPS,
+            guidance_scale=config.cfg_text_scale,
+            image_guidance_scale=cfg_img_scale,
+            cfg_interval=(0.0, 1.0),
+            latents=latents,
+        )
+
+        assert genai_image.shape == (height, width, 3)
+        diff = np.abs(genai_image.astype(np.int32) - to_uint8(optimum_image).astype(np.int32))
+        assert diff.max() <= 1, f"cfg_img_scale={cfg_img_scale}: max abs pixel diff {diff.max()}"
+        edits[cfg_img_scale] = genai_image
+    assert not np.array_equal(edits[1.0], edits[2.0]), "cfg_img_scale has no effect"
+
+
 def test_image_inputs(genai_pipe, image):
     tensor = ov.Tensor(image[None])
     assert isinstance(genai_pipe.generate_text(PROMPT, tensor, max_new_tokens=4), str)
@@ -120,6 +158,54 @@ def test_image_inputs(genai_pipe, image):
     assert {"vit", "vae_enc", "vae_dec"} <= stages
     genai_pipe.reset_perf_metrics()
     assert not genai_pipe.get_perf_metrics().infer_ms
+
+
+def test_strided_image_matches_packed(genai_pipe, image):
+    height, width = image.shape[:2]
+    wide = np.zeros((1, height, width + 16, 3), np.uint8)
+    wide[0, :, 8 : 8 + width] = image
+    roi = ov.Tensor(ov.Tensor(wide), ov.Coordinate([0, 0, 8, 0]), ov.Coordinate([1, height, 8 + width, 3]))
+    assert not roi.is_continuous()
+
+    config = ov_genai.BagelImageGenerationConfig()
+    config.num_inference_steps = NUM_STEPS
+    packed = genai_pipe.edit_image(ov.Tensor(image[None]), EDIT_PROMPT, config).data
+    np.testing.assert_array_equal(genai_pipe.edit_image(roi, EDIT_PROMPT, config).data, packed)
+
+
+def test_perf_metrics_during_generation(genai_pipe):
+    config = ov_genai.BagelImageGenerationConfig()
+    config.size = IMAGE_SIZE
+    config.num_inference_steps = NUM_STEPS
+    with ThreadPoolExecutor(1) as executor:
+        future = executor.submit(genai_pipe.generate_image, IMAGE_PROMPT, config)
+        while not future.done():
+            genai_pipe.get_perf_metrics()
+            genai_pipe.reset_perf_metrics()
+        future.result()
+    genai_pipe.reset_perf_metrics()
+    genai_pipe.generate_image(IMAGE_PROMPT, config)
+    assert {"vae_dec"} <= {stage for stage, _ in genai_pipe.get_perf_metrics().infer_ms}
+
+
+def test_genai_cli_export_matches_optimum_export(genai_pipe, image):
+    cli_pipe = ov_genai.BagelPipeline(
+        prepare_tiny_bagel_genai_cli_path(get_ov_cache_converted_models_dir()), "CPU", INFERENCE_PRECISION_HINT="f32"
+    )
+    tensor = ov.Tensor(image[None])
+    assert cli_pipe.generate_text(PROMPT, tensor, max_new_tokens=8) == genai_pipe.generate_text(
+        PROMPT, tensor, max_new_tokens=8
+    )
+
+    config = ov_genai.BagelImageGenerationConfig()
+    config.size = IMAGE_SIZE
+    config.num_inference_steps = NUM_STEPS
+    for run in (
+        lambda pipe: pipe.generate_image(IMAGE_PROMPT, config),
+        lambda pipe: pipe.edit_image(tensor, EDIT_PROMPT, config),
+    ):
+        diff = np.abs(run(cli_pipe).data.astype(np.int32) - run(genai_pipe).data.astype(np.int32))
+        assert diff.max() <= 1, f"max abs pixel diff {diff.max()}"
 
 
 def test_rejects_other_models(tmp_path: Path, bagel_ov_path: Path):
