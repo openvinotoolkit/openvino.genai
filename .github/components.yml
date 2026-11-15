@@ -38,6 +38,7 @@ samples_dependencies:
     - VLM_samples
     - RAG_samples
     - Speech_generation_samples
+    - BAGEL_samples
     - WWB
     - llm_bench
 
@@ -108,7 +109,8 @@ omni:
     - VLM_samples
 
 bagel:
-  revalidate: []
+  revalidate:
+    - BAGEL_samples
 
 automatic_speech_recognition:
   revalidate:
@@ -188,6 +190,9 @@ Speech_generation_samples:
   revalidate: []
 
 Video_generation_samples:
+  revalidate: []
+
+BAGEL_samples:
   revalidate: []
 
 GGUF:

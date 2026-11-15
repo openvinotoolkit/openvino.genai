@@ -18,11 +18,12 @@ file(DOWNLOAD
     ${CMAKE_BINARY_DIR}/stb_image_resize2.h
     EXPECTED_HASH MD5=9293a158ddf9e44dd186c446372784d8)
 
-add_executable(bagel bagel.cpp ../visual_language_chat/load_image.cpp)
+add_executable(bagel bagel.cpp ../visual_language_chat/load_image.cpp ../image_generation/imwrite.cpp)
 
 target_include_directories(bagel PRIVATE
     ${CMAKE_BINARY_DIR}
-    "${CMAKE_CURRENT_SOURCE_DIR}/../visual_language_chat")
+    "${CMAKE_CURRENT_SOURCE_DIR}/../visual_language_chat"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation")
 target_link_libraries(bagel PRIVATE openvino::genai)
 
 set_target_properties(bagel PROPERTIES

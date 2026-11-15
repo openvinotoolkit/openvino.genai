@@ -1053,7 +1053,7 @@ class BagelImageGenerationConfig:
     @property
     def cfg_interval(self) -> tuple[float, float] | None:
         """
-        Defaults to (0.4, 1.0) for text-to-image and (0.0, 1.0) for image editing.
+        Guidance is applied for timesteps t with low < t <= high; defaults to (0.4, 1.0] for text-to-image and (0.0, 1.0] for image editing.
         """
     @cfg_interval.setter
     def cfg_interval(self, arg0: tuple[typing.SupportsFloat, typing.SupportsFloat] | None) -> None:
@@ -1087,7 +1087,7 @@ class BagelImageGenerationConfig:
     @property
     def size(self) -> int:
         """
-        Text-to-image output side.
+        Text-to-image output side; 0 selects 512 capped to the largest side the model supports.
         """
     @size.setter
     def size(self, arg0: typing.SupportsInt) -> None:
@@ -1130,13 +1130,13 @@ class BagelPipeline:
                         models_path if None.
                     kwargs: Properties applied on top of the default per-model configuration.
         """
-    def edit_image(self, image: openvino._pyopenvino.Tensor, prompt: str, config: BagelImageGenerationConfig = ...) -> openvino._pyopenvino.Tensor:
+    def edit_image(self, image: openvino._pyopenvino.Tensor, prompt: str, config: openvino_genai.py_openvino_genai.BagelImageGenerationConfig | None = None) -> openvino._pyopenvino.Tensor:
         """
-        Edits a u8 RGB image; returns a u8 [1, H, W, 3] RGB tensor.
+        Edits a u8 RGB image; returns a u8 [1, H, W, 3] RGB tensor. Default config if None.
         """
-    def generate_image(self, prompt: str, config: BagelImageGenerationConfig = ...) -> openvino._pyopenvino.Tensor:
+    def generate_image(self, prompt: str, config: openvino_genai.py_openvino_genai.BagelImageGenerationConfig | None = None) -> openvino._pyopenvino.Tensor:
         """
-        Text-to-image; returns a u8 [1, H, W, 3] RGB tensor.
+        Text-to-image; returns a u8 [1, H, W, 3] RGB tensor. Default config if None.
         """
     def generate_text(self, prompt: str, image: openvino._pyopenvino.Tensor | None = None, max_new_tokens: typing.SupportsInt = 256, system_prompt: str = '') -> str:
         """

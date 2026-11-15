@@ -240,6 +240,31 @@ void read_image_processor(const std::filesystem::path& models_dir, BagelConfig& 
                        max_pixels};
 }
 
+// Image generation parameters are checked before any model call
+void validate(const BagelImageGenerationConfig& config) {
+    OPENVINO_ASSERT(config.num_inference_steps >= 2, "num_inference_steps must be at least 2");
+    OPENVINO_ASSERT(std::isfinite(config.timestep_shift) && config.timestep_shift > 0.0f,
+                    "timestep_shift must be finite and positive, got ",
+                    config.timestep_shift);
+    if (config.cfg_interval) {
+        const auto [low, high] = *config.cfg_interval;
+        OPENVINO_ASSERT(low <= high, "cfg_interval must be (low, high), got (", low, ", ", high, ")");
+    }
+}
+
+// Sizes from the model files are used as divisors, strides and allocation sizes
+void validate(const BagelConfig& c) {
+    OPENVINO_ASSERT(c.hidden > 0 && c.layers > 0 && c.kv_heads > 0 && c.head_dim > 0,
+                    "BAGEL language model sizes must be positive");
+    OPENVINO_ASSERT(c.latent_channel > 0 && c.latent_patch > 0 && c.latent_downsample > 0 && c.max_latent > 0,
+                    "BAGEL latent sizes must be positive");
+    OPENVINO_ASSERT(c.vit_patch > 0 && c.vit_max_side > 0, "BAGEL vision sizes must be positive");
+    for (const auto* t : {&c.vit_transform, &c.vae_transform}) {
+        OPENVINO_ASSERT(t->stride > 0 && t->min_size > 0 && t->max_size >= t->min_size && t->max_pixels > 0,
+                        "BAGEL image processor sizes must be positive, with max_size >= min_size");
+    }
+}
+
 // bagel_ov_config.json of the original IR set, or the Hugging Face config.json of an optimum-intel export
 BagelConfig read_bagel_config(const std::filesystem::path& models_dir) {
     BagelConfig c;
@@ -260,6 +285,7 @@ BagelConfig read_bagel_config(const std::filesystem::path& models_dir) {
              ids.at("eos_token_id").get<int64_t>(),
              ids.at("start_of_image").get<int64_t>(),
              ids.at("end_of_image").get<int64_t>()};
+        validate(c);
         return c;
     }
     const auto cfg = read_json(models_dir / "config.json");
@@ -272,11 +298,14 @@ BagelConfig read_bagel_config(const std::filesystem::path& models_dir) {
     const auto& vision = cfg.at("vision_config");
     const auto& vae = cfg.at("vae_config");
     const auto hidden = text.at("hidden_size").get<size_t>();
-    const auto head_dim = text.contains("head_dim") && !text.at("head_dim").is_null()
-                              ? text.at("head_dim").get<size_t>()
-                              : hidden / text.at("num_attention_heads").get<size_t>();
+    const bool has_head_dim = text.contains("head_dim") && !text.at("head_dim").is_null();
+    const auto num_heads = has_head_dim ? size_t{1} : text.at("num_attention_heads").get<size_t>();
+    OPENVINO_ASSERT(num_heads > 0, "text_config.num_attention_heads must be positive");
+    const auto head_dim = has_head_dim ? text.at("head_dim").get<size_t>() : hidden / num_heads;
     const auto latent_patch = cfg.at("latent_patch_size").get<size_t>();
-    const size_t vae_downsample = size_t{1} << (vae.at("channel_multiplier").size() - 1);
+    const auto num_resolutions = vae.at("channel_multiplier").size();
+    OPENVINO_ASSERT(num_resolutions > 0 && num_resolutions < 16, "vae_config.channel_multiplier must not be empty");
+    const size_t vae_downsample = size_t{1} << (num_resolutions - 1);
     // <|im_start|> / <|im_end|> wrap every prompt; the converted checkpoint stores them as bos / eos
     const auto generation = read_json(models_dir / "generation_config.json");
     c = {hidden,
@@ -294,6 +323,7 @@ BagelConfig read_bagel_config(const std::filesystem::path& models_dir) {
          cfg.at("start_of_image_token_id").get<int64_t>(),
          cfg.at("end_of_image_token_id").get<int64_t>()};
     read_image_processor(models_dir, c);
+    validate(c);
     return c;
 }
 
@@ -381,6 +411,19 @@ public:
     }
 
     ov::Tensor generate_image(const std::string& prompt, const BagelImageGenerationConfig& config) {
+        validate(config);
+        const size_t size =
+            config.size ? config.size : std::min<size_t>(512 / m_latent_downsample, m_max_latent) * m_latent_downsample;
+        const size_t side = size / m_latent_downsample;
+        OPENVINO_ASSERT(side > 0 && size % m_latent_downsample == 0 && side <= m_max_latent,
+                        "size must be a multiple of ",
+                        m_latent_downsample,
+                        " in [",
+                        m_latent_downsample,
+                        ", ",
+                        m_latent_downsample * m_max_latent,
+                        "], got ",
+                        size);
         reset();
         prefill_text(prompt);
         const Context main = m_ctx;
@@ -388,14 +431,13 @@ public:
         if (config.cfg_text_scale > 1.0f) {
             cfg_text = Context{empty_kv(), 0, 0};
         }
-        const size_t side = config.size / m_latent_downsample;
-        OPENVINO_ASSERT(side > 0, "size must be at least ", m_latent_downsample);
         return diffuse(side, side, main, cfg_text, std::nullopt, config, {0.4f, 1.0f});
     }
 
     ov::Tensor edit_image(const ov::Tensor& image,
                           const std::string& prompt,
                           const BagelImageGenerationConfig& config) {
+        validate(config);
         // as BagelImageProcessor, the ViT sees the image after the VAE resize
         const auto vae_image = m_vae_transform.resize(to_clip_image(image));
         const auto [vae_ctx, hw] = vae_prefill(vae_image, Context{empty_kv(), 0, 0});
@@ -679,12 +721,6 @@ private:
         const size_t dim = latent_dim();
         const auto vae_pos = vae_position_ids(h, w);
         const auto interval = config.cfg_interval.value_or(default_interval);
-        OPENVINO_ASSERT(interval.first <= interval.second,
-                        "cfg_interval must be (low, high), got (",
-                        interval.first,
-                        ", ",
-                        interval.second,
-                        ")");
         load_soi_eoi();
 
         ov::Tensor x(ov::element::f32, {n, dim});
@@ -696,7 +732,6 @@ private:
 
         // np.linspace(1, 0, steps, dtype=float32) with the timestep shift applied in f32
         const size_t steps = config.num_inference_steps;
-        OPENVINO_ASSERT(steps >= 2, "num_inference_steps must be at least 2");
         std::vector<float> ts(steps);
         for (size_t i = 0; i < steps; ++i) {
             ts[i] = i + 1 == steps ? 0.0f : static_cast<float>(i * (-1.0 / (steps - 1)) + 1.0);
@@ -790,11 +825,11 @@ private:
     int64_t m_bos = 0, m_eos = 0, m_soi = 0, m_eoi = 0;
 };
 
-BagelPipeline::BagelPipeline(const std::filesystem::path& models_dir,
+BagelPipeline::BagelPipeline(const std::filesystem::path& models_path,
                              const std::string& device,
-                             const std::filesystem::path& tokenizer_dir,
+                             const std::filesystem::path& tokenizer_path,
                              const ov::AnyMap& properties)
-    : m_impl(std::make_unique<Impl>(models_dir, device, tokenizer_dir, properties)) {}
+    : m_impl(std::make_unique<Impl>(models_path, device, tokenizer_path, properties)) {}
 
 BagelPipeline::~BagelPipeline() = default;
 
@@ -805,14 +840,15 @@ std::string BagelPipeline::generate_text(const std::string& prompt,
     return m_impl->generate_text(prompt, image, max_new_tokens, system_prompt);
 }
 
-ov::Tensor BagelPipeline::generate_image(const std::string& prompt, const BagelImageGenerationConfig& config) {
-    return m_impl->generate_image(prompt, config);
+ov::Tensor BagelPipeline::generate_image(const std::string& prompt,
+                                         const std::optional<BagelImageGenerationConfig>& config) {
+    return m_impl->generate_image(prompt, config.value_or(BagelImageGenerationConfig{}));
 }
 
 ov::Tensor BagelPipeline::edit_image(const ov::Tensor& image,
                                      const std::string& prompt,
-                                     const BagelImageGenerationConfig& config) {
-    return m_impl->edit_image(image, prompt, config);
+                                     const std::optional<BagelImageGenerationConfig>& config) {
+    return m_impl->edit_image(image, prompt, config.value_or(BagelImageGenerationConfig{}));
 }
 
 const BagelPerfMetrics& BagelPipeline::get_perf_metrics() const {

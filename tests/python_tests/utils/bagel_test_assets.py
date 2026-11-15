@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from huggingface_hub import snapshot_download
 
 from .atomic_download import AtomicDownloadManager
 from .network import retry_request
@@ -17,6 +18,7 @@ BAGEL_TINY_MODEL_SEED = 0
 BAGEL_EXPORT_TIMEOUT_SECONDS = 600
 # Qwen2 tokenizer with the <|im_start|>, <|vision_start|> and <|image_pad|> special tokens BAGEL uses
 BAGEL_TOKENIZER_ID = "optimum-intel-internal-testing/tiny-random-qwen2vl"
+BAGEL_TOKENIZER_REVISION = "b38a6a1a877f151950f70ac146f2edcf5f335a29"
 
 
 def generate_tiny_bagel_model(output_dir: Path) -> Path:
@@ -37,7 +39,8 @@ def generate_tiny_bagel_model(output_dir: Path) -> Path:
     except ImportError as error:
         pytest.skip(f"transformers with BAGEL support is required: {error}")
 
-    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(BAGEL_TOKENIZER_ID))
+    tokenizer_path = retry_request(lambda: snapshot_download(BAGEL_TOKENIZER_ID, revision=BAGEL_TOKENIZER_REVISION))
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
     tokenizer.chat_template = CHAT_TEMPLATE
     image_processor = BagelImageProcessor(
         size={"longest_edge": 56, "shortest_edge": 28},

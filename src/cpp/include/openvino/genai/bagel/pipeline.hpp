@@ -18,14 +18,16 @@
 namespace ov::genai {
 
 struct BagelImageGenerationConfig {
-    // Output side for text-to-image; image editing keeps the VAE resolution of the input image
-    size_t size = 512;
+    // Output side for text-to-image; 0 selects 512 capped to the largest side the model supports.
+    // Image editing keeps the VAE resolution of the input image
+    size_t size = 0;
     size_t num_inference_steps = 50;
     float timestep_shift = 3.0f;
     float cfg_text_scale = 4.0f;
     // Image editing only
     float cfg_img_scale = 2.0f;
-    // Defaults to (0.4, 1.0] for text-to-image and (0.0, 1.0] for image editing
+    // Guidance is applied for timesteps t with low < t <= high; defaults to (0.4, 1.0] for text-to-image and
+    // (0.0, 1.0] for image editing
     std::optional<std::pair<float, float>> cfg_interval;
     float cfg_renorm_min = 0.0f;
     // Initial noise matches numpy.random.RandomState(seed).randn
@@ -49,15 +51,15 @@ struct BagelPerfMetrics {
 class OPENVINO_GENAI_EXPORTS BagelPipeline {
 public:
     /**
-     * @param models_dir directory with the BAGEL IRs and bagel_ov_config.json, or an optimum-intel export
-     *                   (openvino_*_model.xml with config.json)
+     * @param models_path directory with the BAGEL IRs and bagel_ov_config.json, or an optimum-intel export
+     *                    (openvino_*_model.xml with config.json)
      * @param device inference device
-     * @param tokenizer_dir directory with openvino_tokenizer.xml / openvino_detokenizer.xml; models_dir if empty
+     * @param tokenizer_path directory with openvino_tokenizer.xml / openvino_detokenizer.xml; models_path if empty
      * @param properties applied on top of the default per-model configuration
      */
-    BagelPipeline(const std::filesystem::path& models_dir,
+    BagelPipeline(const std::filesystem::path& models_path,
                   const std::string& device,
-                  const std::filesystem::path& tokenizer_dir = {},
+                  const std::filesystem::path& tokenizer_path = {},
                   const ov::AnyMap& properties = {});
     ~BagelPipeline();
 
@@ -77,21 +79,22 @@ public:
     /**
      * @brief Text-to-image generation
      * @param prompt image description
-     * @param config generation parameters
+     * @param config generation parameters; defaults if not set
      * @return u8 [1, size, size, 3] RGB image
      */
-    ov::Tensor generate_image(const std::string& prompt, const BagelImageGenerationConfig& config = {});
+    ov::Tensor generate_image(const std::string& prompt,
+                              const std::optional<BagelImageGenerationConfig>& config = std::nullopt);
 
     /**
      * @brief Image editing
      * @param image u8 RGB image to edit
      * @param prompt edit instruction
-     * @param config generation parameters, `size` is ignored
+     * @param config generation parameters, `size` is ignored; defaults if not set
      * @return u8 [1, H, W, 3] RGB image at the VAE resolution of the input image
      */
     ov::Tensor edit_image(const ov::Tensor& image,
                           const std::string& prompt,
-                          const BagelImageGenerationConfig& config = {});
+                          const std::optional<BagelImageGenerationConfig>& config = std::nullopt);
 
     /// @brief Compile and inference timings accumulated since construction or the last reset_perf_metrics()
     const BagelPerfMetrics& get_perf_metrics() const;

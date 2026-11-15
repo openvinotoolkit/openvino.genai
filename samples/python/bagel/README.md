@@ -5,11 +5,14 @@ visual question answering (`vqa`), text-to-image generation (`t2i`) and image ed
 
 ## Download and convert the model
 
-BAGEL is exported with optimum-intel from its transformers checkpoint. Install the export dependencies, then convert
-the original checkpoint and export it:
+BAGEL is exported with optimum-intel from its transformers checkpoint. Until BAGEL support is merged in
+transformers and optimum-intel ([huggingface/optimum-intel#2126](https://github.com/huggingface/optimum-intel/pull/2126)),
+install them from these commits:
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install "transformers @ git+https://github.com/padatta/transformers.git@38b3e74123a005abfd071d2709bbbb017a7919e1"
+pip install --no-deps "optimum-intel @ git+https://github.com/padatta/optimum-intel.git@b13d14169be2f04a06a5251931cba624170849d4"
 huggingface-cli download ByteDance-Seed/BAGEL-7B-MoT --local-dir BAGEL-7B-MoT
 python -m transformers.models.bagel.convert_bagel_weights_to_hf --input_dir BAGEL-7B-MoT --output_dir BAGEL-7B-MoT-hf
 optimum-cli export openvino -m BAGEL-7B-MoT-hf --task image-text-to-text --weight-format int4 --sym --group-size 128 \
@@ -17,9 +20,6 @@ optimum-cli export openvino -m BAGEL-7B-MoT-hf --task image-text-to-text --weigh
 ```
 
 `--weight-format int4` compresses the language model only; use `--weight-format fp16` for an uncompressed model.
-
-> [!NOTE]
-> BAGEL needs transformers and optimum-intel versions that include it (huggingface/optimum-intel#TBD).
 
 ## Run
 
@@ -29,24 +29,16 @@ Install the runtime dependencies:
 pip install -r ../../deployment-requirements.txt
 ```
 
-The tokenizer is exported next to the models, so the model directory is passed for both arguments:
-
 ```sh
 # visual question answering
-python bagel.py BAGEL-7B-MoT-ov-int4 BAGEL-7B-MoT-ov-int4 CPU vqa "Describe this image in one sentence." --image cats.jpg
+python bagel.py BAGEL-7B-MoT-ov-int4 CPU vqa "Describe this image in one sentence." cats.jpg
 
-# text-to-image, 512x512
-python bagel.py BAGEL-7B-MoT-ov-int4 BAGEL-7B-MoT-ov-int4 GPU t2i "A red bicycle leaning against a blue wall, photo" \
-    --steps 25 --out bicycle.png
+# text-to-image, writes image.bmp
+python bagel.py BAGEL-7B-MoT-ov-int4 CPU t2i "A red bicycle leaning against a blue wall, photo"
 
-# image editing, the output keeps the VAE resolution of the input image
-python bagel.py BAGEL-7B-MoT-ov-int4 BAGEL-7B-MoT-ov-int4 NPU edit "Make the bicycle green" --image bicycle.png \
-    --steps 25 --out bicycle_green.png
+# image editing, writes image.bmp at the VAE resolution of the input image
+python bagel.py BAGEL-7B-MoT-ov-int4 CPU edit "Make the bicycle green" bicycle.png
 ```
-
-Options: `--steps` denoising steps (default 50), `--size` text-to-image side (default 512), `--cfg-text` / `--cfg-img`
-guidance scales, `--seed` noise seed, `--max-new-tokens` answer length, `--repeat` to time repeated runs, `--props
-"K=V;..."` extra compile properties. The sample prints the compile and per-stage inference times.
 
 On NPU the language, vision and VAE models run through NPUW (`NPUW_BAGEL`), which compiles a static variant of a model
 the first time an input size is used, so the first run is slower than the next ones.
