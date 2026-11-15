@@ -71,6 +71,8 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // True if chat mode is activated to save conversation
     // history between generate() calls.
     bool m_is_chat_conversation = false;
+    // True if generate(ChatHistory) put m_inputs_embedder into chat mode and finish_chat() hasn't reset it.
+    bool m_embedder_has_chat_history = false;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     // Component for applying sampling to lm outputs
@@ -375,6 +377,10 @@ public:
         if (!m_is_chat_conversation) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            if (m_embedder_has_chat_history) {
+                m_inputs_embedder->finish_chat();
+                m_embedder_has_chat_history = false;
+            }
         }
 
         setup_generation_config(generation_config);
@@ -625,6 +631,15 @@ public:
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
 
+        // ChatHistory carries the conversation, so a later string generate() must not continue it.
+        const bool was_chat_conversation = m_is_chat_conversation;
+        struct ChatModeGuard {
+            bool& flag;
+            const bool saved;
+            ~ChatModeGuard() {
+                flag = saved;
+            }
+        } chat_mode_guard{m_is_chat_conversation, was_chat_conversation};
         m_is_chat_conversation = true;
 
         setup_generation_config(generation_config);
@@ -676,6 +691,7 @@ public:
             m_language.get_tensor("attention_mask").set_shape({1, 0});
             m_inputs_embedder->get_cache_state().reset_state();
             m_inputs_embedder->start_chat("");
+            m_embedder_has_chat_history = true;
         }
 
         const auto template_start = std::chrono::steady_clock::now();
@@ -824,6 +840,7 @@ public:
         m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
+        m_embedder_has_chat_history = false;
         m_history.clear();
         m_encoded_images.clear();
         m_encoded_videos.clear();
