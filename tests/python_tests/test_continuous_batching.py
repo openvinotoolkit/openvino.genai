@@ -460,6 +460,9 @@ def test_logprob_token_ids_encoded_results(model_facebook_opt_125m: OVConvertedM
     )
     assert len(raw_cb_results) == 1
     assert raw_cb_results[0].m_generation_ids[0] == stateful.tokens[0]
+    # The zipped comparison below passes vacuously on an empty field, so pin the outer lengths first.
+    assert raw_cb_results[0].requested_token_logprobs
+    assert len(raw_cb_results[0].requested_token_logprobs) == len(stateful.requested_token_logprobs)
     for raw_seq, sf_seq in zip(raw_cb_results[0].requested_token_logprobs, stateful.requested_token_logprobs):
         assert len(raw_seq) == len(sf_seq)
         for raw_row, sf_row in zip(raw_seq, sf_seq):
@@ -561,6 +564,63 @@ def test_logprob_token_ids_rejected(model_facebook_opt_125m: OVConvertedModelSch
             ),
         )
     assert not pl_pipe.has_non_finished_requests()
+
+
+def test_logprob_token_ids_rejected_batch_speculative_recovers(model_facebook_opt_125m: OVConvertedModelSchema):
+    # A batch whose second request is rejected mid-enqueue must roll the whole batch back.
+    # SpeculativeDecodingImpl::add_request enqueues the draft request (and registers its handle)
+    # before the main pipeline rejects logprob_token_ids, so without a rollback both pipelines
+    # keep dirty awaiting queues with restored block tables and stale draft handles, and the
+    # next generate() would fail with "already in running state".
+    model_path = model_facebook_opt_125m.models_path
+    id_a, id_b = 100, 200
+    prompt_ids = model_facebook_opt_125m.hf_tokenizer("The Sun is", add_special_tokens=True)["input_ids"]
+    prompt_tensor = ov.Tensor(np.array([prompt_ids], dtype=np.int64))
+
+    sd_pipe = ContinuousBatchingPipeline(
+        model_path, SchedulerConfig(), "CPU", properties={"draft_model": draft_model(model_path)}
+    )
+    with pytest.raises(Exception, match="not supported with speculative decoding"):
+        sd_pipe.generate(
+            [prompt_tensor, prompt_tensor],
+            [
+                GenerationConfig(max_new_tokens=2),
+                GenerationConfig(max_new_tokens=1, logprob_token_ids=[id_a, id_b]),
+            ],
+        )
+    assert not sd_pipe.has_non_finished_requests()
+
+    # The rollback must not poison the pipelines: a follow-up speculative generate completes.
+    follow_up = sd_pipe.generate([prompt_tensor], [GenerationConfig(max_new_tokens=2, num_assistant_tokens=5)])
+    assert follow_up and follow_up[0].m_generation_ids[0]
+
+
+def test_logprob_token_ids_rejected_batch_prompt_lookup_recovers(model_facebook_opt_125m: OVConvertedModelSchema):
+    # Same rollback on the prompt-lookup path: the second config carries both the prompt-lookup
+    # fields and logprob_token_ids, which validate() rejects after the first, valid request of
+    # the batch is already enqueued into the pipeline's awaiting queue.
+    model_path = model_facebook_opt_125m.models_path
+    id_a, id_b = 100, 200
+    prompt_ids = model_facebook_opt_125m.hf_tokenizer("The Sun is", add_special_tokens=True)["input_ids"]
+    prompt_tensor = ov.Tensor(np.array([prompt_ids], dtype=np.int64))
+
+    pl_pipe = ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU", properties={"prompt_lookup": True})
+    with pytest.raises(Exception, match="logprob_token_ids"):
+        pl_pipe.generate(
+            [prompt_tensor, prompt_tensor],
+            [
+                GenerationConfig(max_new_tokens=2, num_assistant_tokens=5, max_ngram_size=3),
+                GenerationConfig(
+                    max_new_tokens=1, num_assistant_tokens=5, max_ngram_size=3, logprob_token_ids=[id_a, id_b]
+                ),
+            ],
+        )
+    assert not pl_pipe.has_non_finished_requests()
+
+    follow_up = pl_pipe.generate(
+        [prompt_tensor], [GenerationConfig(max_new_tokens=2, num_assistant_tokens=5, max_ngram_size=3)]
+    )
+    assert follow_up and follow_up[0].m_generation_ids[0]
 
 
 @pytest.mark.transformers_dependent(

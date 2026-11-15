@@ -124,19 +124,27 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
 
     std::vector<GenerationHandle> generations;
-    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
-        OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
+    try {
+        for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+            OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+            OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
 
-        bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
-        bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
-        generations.push_back(m_pipeline->add_request(
-            request_id,
-            input_ids[request_id],
-            sampling_params[request_id],
-            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
-        ));
+            bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
+            bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+            generations.push_back(m_pipeline->add_request(
+                request_id,
+                input_ids[request_id],
+                sampling_params[request_id],
+                has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
+            ));
+        }
+    } catch (...) {
+        // A request rejected by add_request mid-loop leaves the earlier requests of this batch in
+        // the pipeline's awaiting queue (with restored block tables); the step loop has not
+        // started, so drop_requests() would not touch them. Roll the batch back before rethrowing.
+        m_pipeline->rollback_awaiting_requests();
+        std::rethrow_exception(std::current_exception());
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 

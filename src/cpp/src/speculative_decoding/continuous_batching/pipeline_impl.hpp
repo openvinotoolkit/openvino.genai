@@ -111,6 +111,12 @@ public:
         return found == m_awaiting_requests.end() ? nullptr : *found;
     }
 
+    // Rolls back a batch whose enqueue was rejected mid-loop before the step loop started:
+    // releases the restored block tables and clears this pipeline's awaiting queue.
+    void rollback_awaiting_requests() {
+        ContinuousBatchingImpl::rollback_awaiting_requests();
+    }
+
     void discard_awaiting_request(uint64_t request_id) {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {

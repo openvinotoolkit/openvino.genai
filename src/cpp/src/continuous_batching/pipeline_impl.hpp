@@ -141,6 +141,11 @@ protected:
 
     virtual void drop_requests();
 
+    // Releases the scheduler block tables restored by add_request and clears m_awaiting_requests.
+    // Used to roll back a batch whose enqueue was rejected mid-loop, so the next generate() does
+    // not fail with "already in running state". Safe before the step loop has started.
+    void rollback_awaiting_requests();
+
 public:
     ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
                            const Tokenizer& tokenizer,

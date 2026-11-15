@@ -1036,15 +1036,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         // non-finished requests on entry, so everything in the queue was enqueued by this call:
         // roll it back, releasing the prefix-cache block tables that add_request may have restored
         // (the next generate() reuses the same request ids).
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        for (const auto& sequence_group : m_awaiting_requests) {
-            for (const auto& sequence : sequence_group->get_sequences()) {
-                if (m_scheduler->has_block_table(sequence->get_id())) {
-                    m_scheduler->free_sequence(sequence->get_id());
-                }
-            }
-        }
-        m_awaiting_requests.clear();
+        rollback_awaiting_requests();
         std::rethrow_exception(std::current_exception());
     }
 
@@ -1245,6 +1237,19 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
         m_sampler->clear_request_info(request->get_request_id());
     }
     m_requests.clear();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::rollback_awaiting_requests() {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    for (const auto& sequence_group : m_awaiting_requests) {
+        for (const auto& sequence : sequence_group->get_sequences()) {
+            if (m_scheduler->has_block_table(sequence->get_id())) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+        }
+        m_sampler->clear_request_info(sequence_group->get_request_id());
+    }
+    m_awaiting_requests.clear();
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_throw_if_failed() const {
