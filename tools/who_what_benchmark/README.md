@@ -114,7 +114,7 @@ wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-im
 
 ### Compare Multiple-image-to-image models
 
-Use `--model-type multi-image-to-image` for models such as Qwen-Image 2.1 that condition generation on several ordered images. The default dataset is [OmniGen2/OmniContext](https://huggingface.co/datasets/OmniGen2/OmniContext) (Apache-2.0); WWB streams its `train` split, keeps only records with exactly two `input_images`, and evaluates 3 samples by default.
+Use `--model-type multi-image-to-image` for models such as Qwen-Image 2.1 that generate one image from multiple ones. The default dataset is [OmniGen2/OmniContext](https://huggingface.co/datasets/OmniGen2/OmniContext) (Apache-2.0). By default we evaluate 7 records with two or three input_images. Also we use different sizes, guidance scales and negative prompts to cover the wider range of parameters.
 
 ```sh
 # Export an INT4 OpenVINO model for the GenAI run
@@ -126,11 +126,6 @@ wwb --base-model Qwen/Qwen-Image-2.1 --gt-data multi_i2i_test/gt.csv --model-typ
 # Evaluate the converted OpenVINO GenAI model
 wwb --target-model qwen-image-2.1-ov --gt-data multi_i2i_test/gt.csv --model-type multi-image-to-image --genai
 ```
-
-Qwen-Image 2.1 requires a Diffusers version that provides `QwenImage21Pipeline`.
-
-Multi-image-to-image generation defaults to `256 x 256`. Pass `--image-size <N>` to override it and generate
-`N x N` images.
 
 To use local images, pass a JSON or JSONL manifest through `--dataset` and their directory through `--image-dir`:
 
@@ -151,7 +146,7 @@ wwb --base-model Qwen/Qwen-Image-2.1 --gt-data multi_i2i_test/gt.csv --model-typ
 wwb --target-model qwen-image-2.1-ov --gt-data multi_i2i_test/gt.csv --model-type multi-image-to-image --dataset manifest.json --image-dir path/to/images --genai
 ```
 
-The manifest may use `input_images`, `images`, or `image` for the conditioning-image field. Image order is preserved and determines the model's Picture 1, Picture 2, ... numbering.
+The manifest may use `input_images`, `images`, or `image` for the conditioning-image field. Image order is preserved and determines the model's Picture 1, Picture 2, ... numbering. Each record may also set `width`, `height`, `guidance_scale` and `negative_prompt`; classifier-free guidance is applied only when `guidance_scale > 1` and a negative prompt (possibly empty) is given.
 
 ### Compare Text-to-image models with LoRA
 ```sh

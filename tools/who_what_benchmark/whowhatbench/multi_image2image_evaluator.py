@@ -9,7 +9,17 @@ from .registry import register_evaluator
 
 @register_evaluator("multi-image-to-image")
 class MultiImage2ImageEvaluator(Image2ImageEvaluator):
-    DEFAULT_NUM_INFERENCE_STEPS = 2
+    DEFAULT_NUM_INFERENCE_STEPS = 4
+    DEFAULT_IMAGE_SIZE = 256
+    DEFAULT_GENERATION_SETTINGS = [
+        {"width": 128, "height": 128, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 128, "height": 128, "guidance_scale": 2.0, "negative_prompt": ""},
+        {"width": 128, "height": 128, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 128, "height": 128, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 256, "height": 256, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 256, "height": 128, "guidance_scale": 4.0, "negative_prompt": "blurry, low quality, distorted"},
+        {"width": 128, "height": 128, "guidance_scale": 1.0, "negative_prompt": None},
+    ]
 
     def _prepare_default_data(self):
         default_dataset = datasets.load_dataset(
@@ -18,14 +28,16 @@ class MultiImage2ImageEvaluator(Image2ImageEvaluator):
             split="train",
             streaming=True,
         )
-        default_dataset = default_dataset.filter(lambda example: len(example["input_images"]) == 2).take(
-            3 if self.num_samples is None else self.num_samples
+        default_dataset = default_dataset.filter(lambda example: 2 <= len(example["input_images"]) <= 3).take(
+            7 if self.num_samples is None else self.num_samples
         )
         return default_dataset.map(
-            lambda example: {
+            lambda example, index: {
                 "prompts": example["instruction"],
                 "images": example["input_images"],
+                **self.DEFAULT_GENERATION_SETTINGS[index % len(self.DEFAULT_GENERATION_SETTINGS)],
             },
+            with_indices=True,
             remove_columns=default_dataset.column_names,
         )
 

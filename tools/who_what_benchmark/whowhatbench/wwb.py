@@ -37,8 +37,6 @@ SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
     "tree_depth": int,
 }
 
-DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE = 256
-
 
 def _validate_sd_config_value(key, value, expected_type):
     """Validate a value from --sd-generation-config. Reject bool/str for numeric keys."""
@@ -303,7 +301,8 @@ def parse_args():
         type=positive_integer,
         default=None,
         help="Defines a square image resolution for text-to-image and multi-image-to-image. "
-        f"For multi-image-to-image, the default is {DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE}.",
+        "For multi-image-to-image, it overrides the per-sample width and height; samples without them use "
+        f"{EVALUATOR_REGISTRY['multi-image-to-image'].DEFAULT_IMAGE_SIZE}.",
     )
     parser.add_argument(
         "--num-inference-steps",
@@ -710,7 +709,15 @@ def load_prompts(args):
             )
         if args.num_samples is not None:
             data = data.select(range(min(args.num_samples, len(data))))
-        prompts = {"prompts": list(data[prompt_field]), "images": list(data[image_field])}
+        prompts = {
+            "prompts": list(data[prompt_field]),
+            "images": list(data[image_field]),
+            **{
+                key: list(data[key])
+                for key in ("negative_prompt", "guidance_scale", "width", "height")
+                if key in column_names
+            },
+        }
         logger.info(
             "Prompts source path %s split %s: prompt field %s, image field %s, count=%d",
             path,
@@ -1002,7 +1009,7 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_ad
     return Image.fromarray(image_tensor.data[0])
 
 
-def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
+def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None, **generation_kwargs):
     multiple_images = isinstance(image, (list, tuple))
     images = list(image) if multiple_images else [image]
     image_data = [ov.Tensor(np.array(item)[None]) for item in images]
@@ -1010,13 +1017,10 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
         "image": image_data if multiple_images else image_data[0],
         "num_inference_steps": num_inference_steps,
         "generator": generator,
+        **generation_kwargs,
     }
     if not multiple_images:
         kwargs["strength"] = 0.8
-    resolution = getattr(model, "resolution", None)
-    if resolution is not None and resolution[0] is not None:
-        kwargs["width"] = resolution[1]
-        kwargs["height"] = resolution[0]
     image_tensor = model.generate(prompt, **kwargs)
     return Image.fromarray(image_tensor.data[0])
 
@@ -1463,9 +1467,8 @@ def create_evaluator(base_model, args):
             )
         elif task in ("image-to-image", "multi-image-to-image"):
             resolution = None
-            if task == "multi-image-to-image":
-                image_size = args.image_size if args.image_size is not None else DEFAULT_MULTI_IMAGE_TO_IMAGE_SIZE
-                resolution = (image_size, image_size)
+            if task == "multi-image-to-image" and args.image_size is not None:
+                resolution = (args.image_size, args.image_size)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,

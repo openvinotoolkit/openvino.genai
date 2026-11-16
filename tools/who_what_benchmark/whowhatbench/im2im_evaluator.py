@@ -41,6 +41,8 @@ def prepare_default_data(num_samples=None):
 
 @register_evaluator("image-to-image")
 class Image2ImageEvaluator(Text2ImageEvaluator):
+    DEFAULT_IMAGE_SIZE = None
+
     def __init__(
         self,
         base_model: Any = None,
@@ -77,7 +79,6 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         self.image_dir = image_dir
 
         if base_model:
-            base_model.resolution = self.resolution
             self.gt_data = self._generate_data(
                 base_model, gen_image_fn, os.path.join(self.gt_dir, "reference")
             )
@@ -85,7 +86,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        def default_gen_image_fn(model, prompt, image, num_inference_steps, generator=None):
+        def default_gen_image_fn(model, prompt, image, num_inference_steps, generator=None, **generation_kwargs):
             kwargs = {
                 "prompt": prompt,
                 "image": image,
@@ -93,13 +94,13 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                 "output_type": "pil",
                 "strength": 0.8,
                 "generator": generator,
+                **generation_kwargs,
             }
             if model.__class__.__name__ in ("QwenImage21Pipeline", "OVQwenImage21Img2ImgPipeline"):
                 # Qwen Image 2.1 conditions on image tokens and does not support the img2img strength argument.
                 kwargs.pop("strength")
-            if self.resolution is not None and self.resolution[0] is not None:
-                kwargs["width"] = self.resolution[1]
-                kwargs["height"] = self.resolution[0]
+                if "guidance_scale" in kwargs:
+                    kwargs["true_cfg_scale"] = kwargs.pop("guidance_scale")
             with torch.no_grad():
                 output = model(**kwargs)
             return output.images[0]
@@ -121,32 +122,39 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
 
         if self.num_samples is not None:
             data = data.iloc[: self.num_samples]
-        prompts = data["prompts"]
-        images = data["images"]
         output_images = []
         rng = torch.Generator(device="cpu")
 
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
 
-        for i, (prompt, image) in tqdm(
-            enumerate(zip(prompts, images)), total=min(len(prompts), len(images)), desc="Evaluate pipeline"
-        ):
+        for i, row in tqdm(enumerate(data.to_dict("records")), total=len(data), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
-            image = self._resolve_conditioning_images(image)
+            generation_kwargs = {
+                key: row[key]
+                for key in ("negative_prompt", "guidance_scale", "width", "height")
+                if key in row and pd.notna(row[key])
+            }
+            if self.resolution is not None:
+                generation_kwargs["height"], generation_kwargs["width"] = self.resolution
+            for key in ("width", "height"):
+                size = generation_kwargs.get(key, self.DEFAULT_IMAGE_SIZE)
+                if size is not None:
+                    generation_kwargs[key] = int(size)
             output = generation_fn(
                 model,
-                prompt,
-                image=image,
+                row["prompts"],
+                image=self._resolve_conditioning_images(row["images"]),
                 num_inference_steps=self.num_inference_steps,
-                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng
+                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
+                **generation_kwargs,
             )
             image_path = os.path.join(image_dir, f"{i}.png")
             output.save(image_path)
             output_images.append(image_path)
 
-        res_data = {"prompts": list(prompts), "images": output_images}
+        res_data = {"prompts": list(data["prompts"]), "images": output_images}
         df = pd.DataFrame(res_data)
 
         return df
