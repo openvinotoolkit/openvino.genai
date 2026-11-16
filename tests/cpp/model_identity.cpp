@@ -145,6 +145,19 @@ TEST(TestModelIdentity, SameConstantsWithADifferentOperatorGiveADifferentDigest)
               compute_model_identity(make_model_with_subtract({1.f, 2.f, 3.f, 4.f}, {2, 2})));
 }
 
+TEST(TestModelIdentity, StringConstantsAreHashedByTheirValues) {
+    const auto make_string_model = [](const std::vector<std::string>& values) {
+        auto constant = ov::op::v0::Constant::create(ov::element::string, ov::Shape{values.size()}, values);
+        auto result = std::make_shared<ov::op::v0::Result>(constant);
+        return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{});
+    };
+
+    EXPECT_EQ(compute_model_identity(make_string_model({"ab", "c"})), compute_model_identity(make_string_model({"ab", "c"})));
+    EXPECT_NE(compute_model_identity(make_string_model({"ab", "c"})), compute_model_identity(make_string_model({"ab", "d"})));
+    // The split between the strings counts, not only the characters.
+    EXPECT_NE(compute_model_identity(make_string_model({"ab", "c"})), compute_model_identity(make_string_model({"a", "bc"})));
+}
+
 TEST(TestModelIdentity, SameLoopGivesTheSameDigest) {
     EXPECT_EQ(compute_model_identity(make_loop_model(/*subtract=*/false)),
               compute_model_identity(make_loop_model(/*subtract=*/false)));

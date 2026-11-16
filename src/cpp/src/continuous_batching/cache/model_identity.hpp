@@ -54,7 +54,13 @@ public:
                 description << constant->get_element_type() << ' ' << constant->get_shape();
                 const std::string text = description.str();
                 mix_bytes(text.data(), text.size());
-                if (constant->get_element_type() != ov::element::string) {
+                if (constant->get_element_type() == ov::element::string) {
+                    for (const std::string& item : constant->get_vector<std::string>()) {
+                        const size_t size = item.size();
+                        mix_bytes(&size, sizeof(size));
+                        mix_bytes(item.data(), size);
+                    }
+                } else {
                     mix_bytes(constant->get_data_ptr(), constant->get_byte_size());
                 }
                 // Constant has no other attributes worth visiting; its identity is the bytes above.
