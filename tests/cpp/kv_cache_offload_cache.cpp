@@ -21,6 +21,7 @@
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/kv_cache_offload_manager.hpp"
+#include "continuous_batching/scheduler.hpp"
 #include "helper.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/runtime/core.hpp"
@@ -1146,6 +1147,38 @@ TEST(TestKVCacheOffloadCache, PrefixWarmUpWaitsForTheExecutionMutexBeforeItAlloc
     ASSERT_EQ(restoring.wait_for(std::chrono::seconds(30)), std::future_status::ready);
     restoring.get();
     EXPECT_GT(num_allocated(), 0u);
+}
+
+TEST(TestKVCacheOffloadCache, DynamicCacheSizingOfARestoreWaitsForTheExecutionMutex) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, NUM_DECODER_LAYERS)).create_infer_request();
+    SchedulerConfig config;
+    config.enable_prefix_caching = true;
+    config.use_cache_offload = true;
+    config.cache_offload_config.capacity_bytes = 1 << 20;
+    auto orchestrator = CacheOrchestrator::create(request, config, [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    });
+    ContinuousBatchingScheduler scheduler(orchestrator, config);
+    std::recursive_mutex execution_mutex;
+    orchestrator->set_execution_mutex(&execution_mutex);
+    ASSERT_FALSE(orchestrator->has_token_capacity());
+
+    std::vector<int64_t> tokens(40);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto group = make_group(tokens, /*request_id=*/35);
+
+    execution_mutex.lock();
+    auto restoring = std::async(std::launch::async, [&] { scheduler.restore_cached_blocks(group); });
+    EXPECT_EQ(restoring.wait_for(std::chrono::milliseconds(300)), std::future_status::timeout);
+    EXPECT_FALSE(orchestrator->has_token_capacity()) << "the cache is not sized while a step holds the execution mutex";
+
+    execution_mutex.unlock();
+    ASSERT_EQ(restoring.wait_for(std::chrono::seconds(30)), std::future_status::ready);
+    restoring.get();
+    EXPECT_TRUE(orchestrator->has_token_capacity());
 }
 
 TEST(TestKVCacheOffloadCache, WarmPrefixCacheProbesTheWholeChainOnceBeforeReading) {

@@ -489,6 +489,8 @@ public:
         if (m_config.use_cache_offload && m_config.num_kv_blocks == 0 && m_config.cache_size == 0) {
             // Blocks are read back into free cache blocks, which a dynamically sized cache only has once schedule()
             // has sized it, so a request arriving first has to size it here and keep it growing afterwards.
+            // schedule() runs under the execution mutex, which sizing the cache and the flag have to be too.
+            const auto execution_lock = m_cache_orchestrator->lock_execution();
             m_cache_orchestrator->ensure_sequence_token_capacity({{sequence_group->get_prompt_len(), 1}});
             m_cache_orchestrator->ensure_sequence_capacity(sequence_group);
             m_dynamic_memory_allocation = true;

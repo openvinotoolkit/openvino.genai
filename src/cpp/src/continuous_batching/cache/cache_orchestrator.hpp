@@ -170,6 +170,12 @@ public:
         m_execution_mutex = execution_mutex;
     }
 
+    /// @return The lock on the execution mutex of the pipeline, or no lock when none is set.
+    std::unique_lock<std::recursive_mutex> lock_execution() const {
+        return m_execution_mutex != nullptr ? std::unique_lock<std::recursive_mutex>(*m_execution_mutex)
+                                            : std::unique_lock<std::recursive_mutex>();
+    }
+
     /**
      * @brief Detect model cache types, create managers and block managers, normalize config,
      *        and return a fully populated CacheOrchestrator.
@@ -492,10 +498,7 @@ public:
             // Warming writes into physical blocks, which a pipeline that has not scheduled anything yet has not
             // allocated. Allocating rebinds the cache tensors, so it must not overlap a step of the pipeline.
             const DevicePhaseGuard begin_device_phase = [this] {
-                std::unique_lock<std::recursive_mutex> execution_lock;
-                if (m_execution_mutex != nullptr) {
-                    execution_lock = std::unique_lock<std::recursive_mutex>(*m_execution_mutex);
-                }
+                auto execution_lock = lock_execution();
                 allocate_cache_if_needed();
                 return execution_lock;
             };
