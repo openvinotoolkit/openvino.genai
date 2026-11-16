@@ -790,7 +790,9 @@ class MemorySampler(dict, SamplerTiming):
         ave = self[marker][metric, "mass"] / cnt
         ems2 = self[marker][metric, "mass2"] / cnt
         if self.metrics[metric]["cv"] and ave > 0:
-            cv = 100.0 * math.sqrt(ems2 - ave**2) / ave
+            # E[x^2] - E[x]^2 of near-constant byte counts (~1e20 when squared)
+            # can come out slightly negative from float cancellation: clamp it.
+            cv = 100.0 * math.sqrt(max(ems2 - ave**2, 0.0)) / ave
         elif self.metrics[metric]["cv"] and ave == 0:
             cv = 0.0
         else:
@@ -823,7 +825,7 @@ class MemorySampler(dict, SamplerTiming):
             mti = self.get_real_interval_for_marker(marker, count)
             outstr += f"\treal interval: {mti}\n"
             if count == 0:
-                return outstr
+                continue
             for metric in self.metrics:
                 outstr += self.repr_metric(marker, metric)
         return outstr
@@ -1525,6 +1527,11 @@ class MemoryMarkerHandler:
         cooldown = args.memory_consumption_cooldown
         interval = args.memory_consumption_interval
         report_path = args.memory_consumption_dir
+        if not report_path:
+            # Process mode writes all of its data (samples, summary) to disk,
+            # so it cannot run without a directory: fall back to a default one.
+            report_path = str(Path.cwd() / "memory_consumption")
+            log.info(f"MemoryMonitor: --memory_consumption_dir not set, saving data to {report_path}")
         sampler_type = getattr(args, "memory_sampler", "base")
 
         # Fail fast, in the main process, when win-gpu is explicitly requested
@@ -1605,7 +1612,9 @@ class MemoryMarkerHandler:
             print("Error in background worker:", file=sys.stderr)
             traceback.print_exc()
             sys.stderr.flush()
-            s_event.set()
+            # Leave s_event unset: wait_for_background_process() then sees the
+            # process die and fails the run, rather than benchmarking on with
+            # no memory data collected.
             return  # prevent UnboundLocalError below if MemoryMarkerMonitor.__init__ raises
 
         metadata = {
@@ -1631,7 +1640,11 @@ class MemoryMarkerHandler:
             s_event.set()
 
     def update_marker(self, marker):
-        if not self.background_process or not self.background_process.is_alive():
+        if self.background_process is None:
+            # Stopped on purpose by stop(), e.g. after warm-up in mode 3:
+            # later markers are expected and dropped silently.
+            return False
+        if not self.background_process.is_alive():
             print(f"Warning: Cannot send marker '{marker}' - process not alive")
             return False
 
