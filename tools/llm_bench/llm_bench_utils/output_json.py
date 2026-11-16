@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
-from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput
+from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput, get_latency_samples
 from llm_bench_utils.memory_monitor import MemoryUnit, MemThreadHandler
 
 
@@ -112,13 +112,16 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             res_data["second_token_throughput"] = second_token_throughput
         result.append(res_data)
 
-    keys_to_average = [
-        "generation_time",
-        "latency",
+    latency_keys = (
         "first_latency",
         "second_avg_latency",
         "first_infer_latency",
         "second_infer_avg_latency",
+    )
+    keys_to_average = [
+        "generation_time",
+        "latency",
+        *latency_keys,
         "tokenization_time",
         "detokenization_time",
         "tts_output_duration",
@@ -134,6 +137,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             if value != "" and value is not None:
                 values.append(value)
         if len(values) > 0:
+            if key in latency_keys:
+                values = get_latency_samples(values) or values
             results_averaged[key] = round(sum(values) / len(values), 5)
 
     if "second_avg_latency" in results_averaged:
