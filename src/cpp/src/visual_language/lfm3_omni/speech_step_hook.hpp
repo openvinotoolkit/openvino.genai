@@ -4,7 +4,6 @@
 #pragma once
 
 #include <exception>
-#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -21,8 +20,7 @@ namespace ov::genai {
 /// embedding. Requests that were not announced with expect_request() are left to the regular sampler.
 class LFM3SpeechStepHook : public IStepHook {
 public:
-    /// @param make_models Builds the speech models; called on the first speech request.
-    explicit LFM3SpeechStepHook(std::function<std::unique_ptr<LFM3SpeechModels>()> make_models);
+    explicit LFM3SpeechStepHook(std::unique_ptr<LFM3SpeechModels> models);
 
     /// @brief Announces the speech settings of the next request added to the pipeline.
     /// @param speech_streamer Optional; must outlive the request.
@@ -49,7 +47,7 @@ public:
         m_pending_request.reset();
     }
 
-    /// @brief Speech settings of the model; valid after the first expect_request().
+    /// @brief Speech settings of the model.
     const LFM3SpeechModelConfig& config() const {
         return m_models->config();
     }
@@ -77,7 +75,6 @@ private:
         std::vector<int64_t> codes;
     };
 
-    std::function<std::unique_ptr<LFM3SpeechModels>()> m_make_models;
     std::unique_ptr<LFM3SpeechModels> m_models;
     std::optional<PendingRequest> m_pending_request;
     std::map<uint64_t, LFM3SpeechState> m_states;

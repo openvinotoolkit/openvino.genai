@@ -9,6 +9,7 @@
 
 #include "json_utils.hpp"
 #include "utils.hpp"
+#include "visual_language/lfm3_omni/speech_core.hpp"
 #include "visual_language/vlm_utils.hpp"
 
 namespace ov::genai {
@@ -96,26 +97,21 @@ ov::Tensor AudioEncoderLFM3::encode(const ov::Tensor& audio) {
 
 namespace {
 
-// The VLM text decode cannot switch to speech. Like generate(generation_mode="text") in modeling_lfm3_omni.py, it
-// masks the speech mode markers and the media placeholders.
+// The VLM text decode masks the speech mode markers and the media placeholders, so it cannot switch to speech. The
+// same ids are masked by generate(generation_mode="text") in modeling_lfm3_omni.py.
 std::set<int64_t> read_suppressed_token_ids(const std::filesystem::path& config_dir_path) {
     const auto path = config_dir_path / "config.json";
     std::ifstream stream(path);
     OPENVINO_ASSERT(stream.is_open(), "LFM3-Omni requires '", path.string(), "'");
     const auto parsed = nlohmann::json::parse(stream);
-    std::set<int64_t> token_ids;
-    for (const char* name : {"audio_token_id",
-                             "audio_out_token_id",
-                             "image_token_id",
-                             "video_token_id",
-                             "audio_start_token_id",
-                             "mixed_start_token_id"}) {
-        int64_t token_id = -1;
-        utils::read_json_param(parsed, name, token_id);
-        OPENVINO_ASSERT(token_id >= 0, "LFM3-Omni config.json has no ", name);
-        token_ids.insert(token_id);
-    }
-    return token_ids;
+    const std::vector<int64_t> token_ids = read_lfm3_omni_token_ids(parsed,
+                                                                    {"audio_token_id",
+                                                                     "audio_out_token_id",
+                                                                     "image_token_id",
+                                                                     "video_token_id",
+                                                                     "audio_start_token_id",
+                                                                     "mixed_start_token_id"});
+    return {token_ids.begin(), token_ids.end()};
 }
 
 }  // namespace
@@ -126,14 +122,15 @@ InputsEmbedderLFM3Omni::InputsEmbedderLFM3Omni(const VLMConfig& vlm_config,
                                                const std::string& device,
                                                const ov::AnyMap device_config)
     : InputsEmbedderLFM3VL(vlm_config, model_dir, tokenizer, device, device_config),
-      m_make_audio_encoder([model_dir, device, device_config] {
-          return std::make_unique<AudioEncoderLFM3>(
-              utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
-              model_dir,
-              device,
-              device_config);
-      }),
-      m_suppressed_token_ids(read_suppressed_token_ids(model_dir)) {}
+      m_suppressed_token_ids(read_suppressed_token_ids(model_dir)) {
+    const auto audio_encoder_path = model_dir / "openvino_audio_encoder_model.xml";
+    if (std::filesystem::exists(audio_encoder_path)) {
+        m_audio_encoder = std::make_unique<AudioEncoderLFM3>(utils::singleton_core().read_model(audio_encoder_path),
+                                                             model_dir,
+                                                             device,
+                                                             device_config);
+    }
+}
 
 InputsEmbedderLFM3Omni::InputsEmbedderLFM3Omni(const VLMConfig& vlm_config,
                                                const ModelsMap& models_map,
@@ -143,14 +140,13 @@ InputsEmbedderLFM3Omni::InputsEmbedderLFM3Omni(const VLMConfig& vlm_config,
                                                const ov::AnyMap device_config)
     : InputsEmbedderLFM3VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
       m_suppressed_token_ids(read_suppressed_token_ids(config_dir_path)) {
-    const ModelsMap audio_encoder_map = utils::select_models(models_map, {"audio_encoder"});
-    m_make_audio_encoder = [audio_encoder_map, config_dir_path, device, device_config] {
-        const auto& [model, weights] = utils::get_model_weights_pair(audio_encoder_map, "audio_encoder");
-        return std::make_unique<AudioEncoderLFM3>(utils::singleton_core().read_model(model, weights),
-                                                  config_dir_path,
-                                                  device,
-                                                  device_config);
-    };
+    if (models_map.count("audio_encoder")) {
+        const auto& [model, weights] = utils::get_model_weights_pair(models_map, "audio_encoder");
+        m_audio_encoder = std::make_unique<AudioEncoderLFM3>(utils::singleton_core().read_model(model, weights),
+                                                             config_dir_path,
+                                                             device,
+                                                             device_config);
+    }
 }
 
 const std::set<int64_t>& InputsEmbedderLFM3Omni::get_suppressed_token_ids() const {
@@ -166,9 +162,7 @@ std::vector<EncodedAudio> InputsEmbedderLFM3Omni::encode_audios(const std::vecto
             encoded_audios.push_back({ov::Tensor(), 0});
             continue;
         }
-        if (!m_audio_encoder) {
-            m_audio_encoder = m_make_audio_encoder();
-        }
+        OPENVINO_ASSERT(m_audio_encoder, "LFM3-Omni audio input needs openvino_audio_encoder_model");
         ov::Tensor features = m_audio_encoder->encode(audio);
         const size_t num_audio_tokens = features.get_shape()[0];
         encoded_audios.push_back({std::move(features), num_audio_tokens});

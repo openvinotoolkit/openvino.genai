@@ -38,16 +38,12 @@ ov::Tensor append_row(const ov::Tensor& source, const ov::Tensor& row) {
 
 }  // namespace
 
-LFM3SpeechStepHook::LFM3SpeechStepHook(std::function<std::unique_ptr<LFM3SpeechModels>()> make_models)
-    : m_make_models(std::move(make_models)) {}
+LFM3SpeechStepHook::LFM3SpeechStepHook(std::unique_ptr<LFM3SpeechModels> models) : m_models(std::move(models)) {}
 
 void LFM3SpeechStepHook::expect_request(const LFM3SpeechRequest& request,
                                         const OmniSpeechStreamerVariant& speech_streamer,
                                         std::shared_ptr<StreamerBase> text_streamer) {
     OPENVINO_ASSERT(!m_pending_request && m_states.empty(), "LFM3-Omni decodes one speech request at a time");
-    if (!m_models) {
-        m_models = m_make_models();
-    }
     m_pending_request = PendingRequest{request, &speech_streamer, std::move(text_streamer)};
     m_result.reset();
     m_streamer_error = nullptr;

@@ -4,6 +4,7 @@
 #include "visual_language/lfm3_omni/speech_core.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -17,6 +18,8 @@
 namespace ov::genai {
 
 namespace {
+
+constexpr std::array<const char*, 3> LFM3_SPEECH_MODELS{"depth_decoder", "audio_out_embeddings", "audio_decoder"};
 
 // One request per submodel: speech is decoded on one thread, one step at a time.
 ov::InferRequest compile(const std::shared_ptr<ov::Model>& model,
@@ -68,6 +71,36 @@ const ov::AnyMap AUDIO_DECODER_DEFAULTS{ov::hint::dynamic_quantization_group_siz
 
 }  // namespace
 
+std::vector<int64_t> read_lfm3_omni_token_ids(const nlohmann::json& config_json,
+                                              std::initializer_list<const char*> names) {
+    std::vector<int64_t> token_ids;
+    for (const char* name : names) {
+        int64_t token_id = -1;
+        utils::read_json_param(config_json, name, token_id);
+        OPENVINO_ASSERT(token_id >= 0, "LFM3-Omni config.json has no ", name);
+        token_ids.push_back(token_id);
+    }
+    return token_ids;
+}
+
+bool has_lfm3_speech_models(const std::filesystem::path& models_dir) {
+    return std::all_of(LFM3_SPEECH_MODELS.begin(), LFM3_SPEECH_MODELS.end(), [&models_dir](const char* name) {
+        return std::filesystem::exists(models_dir / ("openvino_" + std::string(name) + "_model.xml"));
+    });
+}
+
+bool has_lfm3_speech_models(const ModelsMap& models_map) {
+    return std::all_of(LFM3_SPEECH_MODELS.begin(), LFM3_SPEECH_MODELS.end(), [&models_map](const char* name) {
+        return models_map.count(name) > 0;
+    });
+}
+
+void check_lfm3_speech_models_loaded(bool loaded) {
+    OPENVINO_ASSERT(loaded,
+                    "LFM3-Omni speech output needs openvino_depth_decoder_model, openvino_audio_out_embeddings_model "
+                    "and openvino_audio_decoder_model");
+}
+
 void LFM3SpeechRequest::validate(const OmniTalkerSpeechConfig& speech_config) {
     const auto* speaker = std::get_if<std::string>(&speech_config.speaker);
     OPENVINO_ASSERT(speaker && speaker->empty(),
@@ -116,12 +149,9 @@ LFM3SpeechModelConfig LFM3SpeechModelConfig::read(const std::filesystem::path& c
     read_json_param(model_json, "audio_start_token_id", config.audio_start_token_id);
     read_json_param(model_json, "mixed_start_token_id", config.mixed_start_token_id);
     read_json_param(model_json, "text_end_token_id", config.text_end_token_id);
-    for (const char* name : {"audio_token_id", "audio_out_token_id", "image_token_id", "video_token_id"}) {
-        int64_t token_id = -1;
-        read_json_param(model_json, name, token_id);
-        OPENVINO_ASSERT(token_id >= 0, "LFM3-Omni config.json has no ", name);
-        config.placeholder_token_ids.push_back(token_id);
-    }
+    config.placeholder_token_ids =
+        read_lfm3_omni_token_ids(model_json,
+                                 {"audio_token_id", "audio_out_token_id", "image_token_id", "video_token_id"});
     OPENVINO_ASSERT(
         config.audio_start_token_id >= 0 && config.mixed_start_token_id >= 0 && config.text_end_token_id >= 0,
         "LFM3-Omni config.json must define audio_start_token_id, mixed_start_token_id and "

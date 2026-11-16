@@ -5,7 +5,9 @@
 
 #include <deque>
 #include <filesystem>
+#include <initializer_list>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <random>
 #include <set>
@@ -20,6 +22,17 @@
 #include "utils.hpp"
 
 namespace ov::genai {
+
+/// @brief Reads the token ids under the given keys of an LFM3-Omni config.json; each key must be defined.
+std::vector<int64_t> read_lfm3_omni_token_ids(const nlohmann::json& config_json,
+                                              std::initializer_list<const char*> names);
+
+/// @brief True if the export has the depth_decoder, audio_out_embeddings and audio_decoder models of speech output.
+bool has_lfm3_speech_models(const std::filesystem::path& models_dir);
+bool has_lfm3_speech_models(const ModelsMap& models_map);
+
+/// @brief Throws unless the speech models were found when the pipeline was built.
+void check_lfm3_speech_models_loaded(bool loaded);
 
 /// @brief Per-call settings of LFM3-Omni speech decoding, checked against what the decoder implements.
 struct LFM3SpeechRequest {

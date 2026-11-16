@@ -27,7 +27,7 @@ public:
         : m_impl{models_dir, scheduler_config, device, properties} {
         set_attention_backend(PA_BACKEND);
         load_vlm_config(models_dir);
-        install_speech_hook([models_dir, device, properties] {
+        install_speech_hook(has_lfm3_speech_models(models_dir), [&] {
             return std::make_unique<LFM3SpeechModels>(models_dir, device, properties);
         });
     }
@@ -40,7 +40,7 @@ public:
         : m_impl{language_model, models_dir, scheduler_config, device, properties} {
         set_attention_backend(PA_BACKEND);
         load_vlm_config(models_dir);
-        install_speech_hook([models_dir, device, properties] {
+        install_speech_hook(has_lfm3_speech_models(models_dir), [&] {
             return std::make_unique<LFM3SpeechModels>(models_dir, device, properties);
         });
     }
@@ -55,10 +55,8 @@ public:
         : m_impl{models_map, tokenizer, scheduler_config, device, config_dir_path, properties, generation_config} {
         set_attention_backend(PA_BACKEND);
         load_vlm_config(config_dir_path);
-        const ModelsMap speech_models =
-            utils::select_models(models_map, {"depth_decoder", "audio_out_embeddings", "audio_decoder"});
-        install_speech_hook([speech_models, config_dir_path, device, properties] {
-            return std::make_unique<LFM3SpeechModels>(speech_models, config_dir_path, device, properties);
+        install_speech_hook(has_lfm3_speech_models(models_map), [&] {
+            return std::make_unique<LFM3SpeechModels>(models_map, config_dir_path, device, properties);
         });
     }
 
@@ -80,10 +78,8 @@ public:
                  generation_config} {
         set_attention_backend(PA_BACKEND);
         load_vlm_config(config_dir_path);
-        const ModelsMap speech_models =
-            utils::select_models(models_map, {"depth_decoder", "audio_out_embeddings", "audio_decoder"});
-        install_speech_hook([speech_models, config_dir_path, device, properties] {
-            return std::make_unique<LFM3SpeechModels>(speech_models, config_dir_path, device, properties);
+        install_speech_hook(has_lfm3_speech_models(models_map), [&] {
+            return std::make_unique<LFM3SpeechModels>(models_map, config_dir_path, device, properties);
         });
     }
 
@@ -109,6 +105,24 @@ public:
                                const std::vector<VideoMetadata>& videos_metadata,
                                const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
+        return generate_with_speech(prompt,
+                                    images,
+                                    videos,
+                                    audios,
+                                    videos_metadata,
+                                    generation_config,
+                                    streamer,
+                                    std::nullopt);
+    }
+
+    VLMDecodedResults generate_with_speech(const std::string& prompt,
+                                           const std::vector<ov::Tensor>& images,
+                                           const std::vector<ov::Tensor>& videos,
+                                           const std::vector<ov::Tensor>& audios,
+                                           const std::vector<VideoMetadata>& videos_metadata,
+                                           const GenerationConfig& generation_config,
+                                           const StreamerVariant& streamer,
+                                           const std::optional<SpeechRequest>& speech_request) override {
         auto start_time = std::chrono::steady_clock::now();
         const auto run = [&](const GenerationConfig& config, const StreamerVariant& text_streamer) {
             return m_impl.generate({prompt},
@@ -119,8 +133,8 @@ public:
                                    ov::genai::generation_config_batches(std::vector<GenerationConfig>{config}),
                                    ov::genai::streamer(text_streamer))[0];
         };
-        if (m_pending_speech_config) {
-            return generate_with_speech(generation_config, streamer, start_time, run);
+        if (speech_request) {
+            return decode_with_speech(generation_config, streamer, *speech_request, start_time, run);
         }
         const auto decoded_results = run(generation_config, streamer);
         auto stop_time = std::chrono::steady_clock::now();
@@ -149,6 +163,24 @@ public:
                                const std::vector<VideoMetadata>& videos_metadata,
                                const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
+        return generate_with_speech(history,
+                                    images,
+                                    videos,
+                                    audios,
+                                    videos_metadata,
+                                    generation_config,
+                                    streamer,
+                                    std::nullopt);
+    }
+
+    VLMDecodedResults generate_with_speech(const ChatHistory& history,
+                                           const std::vector<ov::Tensor>& images,
+                                           const std::vector<ov::Tensor>& videos,
+                                           const std::vector<ov::Tensor>& audios,
+                                           const std::vector<VideoMetadata>& videos_metadata,
+                                           const GenerationConfig& generation_config,
+                                           const StreamerVariant& streamer,
+                                           const std::optional<SpeechRequest>& speech_request) override {
         auto start_time = std::chrono::steady_clock::now();
         ChatHistoryInternalState::get_or_create(history);
         const auto run = [&](const GenerationConfig& config, const StreamerVariant& text_streamer) {
@@ -160,8 +192,8 @@ public:
                                    ov::genai::generation_config_batches(std::vector<GenerationConfig>{config}),
                                    ov::genai::streamer(text_streamer))[0];
         };
-        if (m_pending_speech_config) {
-            return generate_with_speech(generation_config, streamer, start_time, run);
+        if (speech_request) {
+            return decode_with_speech(generation_config, streamer, *speech_request, start_time, run);
         }
         const auto decoded_results = run(generation_config, streamer);
         auto stop_time = std::chrono::steady_clock::now();
@@ -197,9 +229,10 @@ public:
     }
 
     void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const override {
-        if (!m_speech_hook) {
+        if (!m_speech_core_supported) {
             VLMBackend::check_speech_in_stream(speech_config);
         }
+        check_lfm3_speech_models_loaded(m_speech_hook != nullptr);
         LFM3SpeechRequest::validate(speech_config);
     }
 
@@ -212,10 +245,13 @@ private:
     /// Empty/default when no config.json is present (e.g., test scaffolding paths).
     VLMConfig m_vlm_config;
 
-    /// LFM3-Omni speech output; null for other models and for pipelines without a plain continuous batching core.
+    /// LFM3-Omni on a plain continuous batching core, the only core that can decode speech.
+    bool m_speech_core_supported = false;
+    /// LFM3-Omni speech output; null for other models, other cores and exports without the speech models.
     std::shared_ptr<LFM3SpeechStepHook> m_speech_hook;
 
-    void install_speech_hook(std::function<std::unique_ptr<LFM3SpeechModels>()> make_models) {
+    void install_speech_hook(bool has_speech_models,
+                             const std::function<std::unique_ptr<LFM3SpeechModels>()>& make_models) {
         if (m_vlm_config.model_type != VLMModelType::LFM3_OMNI) {
             return;
         }
@@ -224,17 +260,21 @@ private:
         if (!impl) {
             return;
         }
-        m_speech_hook = std::make_shared<LFM3SpeechStepHook>(std::move(make_models));
-        impl->set_step_hook(m_speech_hook);
+        m_speech_core_supported = true;
+        if (has_speech_models) {
+            m_speech_hook = std::make_shared<LFM3SpeechStepHook>(make_models());
+            impl->set_step_hook(m_speech_hook);
+        }
     }
 
     /// @brief LFM3-Omni speech on continuous batching: the step hook picks every slot, and the pipeline only
     /// records them, greedily and with the speech-aware stop tokens.
     template <typename Generate>
-    VLMDecodedResults generate_with_speech(const GenerationConfig& generation_config,
-                                           const StreamerVariant& streamer,
-                                           std::chrono::steady_clock::time_point start_time,
-                                           const Generate& run) {
+    VLMDecodedResults decode_with_speech(const GenerationConfig& generation_config,
+                                         const StreamerVariant& streamer,
+                                         const SpeechRequest& speech_request,
+                                         std::chrono::steady_clock::time_point start_time,
+                                         const Generate& run) {
         GenerationConfig text_config = generation_config;
         const GenerationConfig defaults = m_impl.get_config();
         // Same order as ContinuousBatchingImpl::add_request(): set_eos_token_id() adds EOS to the stop ids.
@@ -246,7 +286,7 @@ private:
         }
         // The pipeline only sees the greedy copy below, so the caller's settings are checked here, as on SDPA.
         text_config.validate();
-        const LFM3SpeechRequest request(*m_pending_speech_config, text_config);
+        const LFM3SpeechRequest request(speech_request.config, text_config);
 
         struct ExpectedRequestGuard {
             LFM3SpeechStepHook& hook;
@@ -255,7 +295,7 @@ private:
             }
         } expected_request_guard{*m_speech_hook};
         const auto text_streamer = utils::create_streamer(streamer, m_impl.get_tokenizer());
-        m_speech_hook->expect_request(request, m_pending_speech_streamer, text_streamer);
+        m_speech_hook->expect_request(request, speech_request.streamer, text_streamer);
         const LFM3SpeechModelConfig& speech_config = m_speech_hook->config();
 
         GenerationConfig pipeline_config = text_config;
@@ -286,11 +326,6 @@ private:
             text_streamer->end();
         }
         LFM3SpeechResult speech = m_speech_hook->take_result();
-        // Ended here so an end() failure reaches the caller; SpeechPropertiesGuard swallows it while unwinding.
-        const auto speech_streamer = std::exchange(m_pending_speech_streamer, std::monostate{});
-        if (is_speech_streamer_active(speech_streamer)) {
-            end_speech_streamer(speech_streamer);
-        }
         const auto stop_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded = finalize_decoded_results(decoded_results, start_time, stop_time);
         // The pipeline decoded a greedy copy, so the score comes from the text sampling of the hook.
