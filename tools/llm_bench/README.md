@@ -338,9 +338,13 @@ python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav 
 # FunASR speech recognition
 optimum-cli export openvino --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
 python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 2
+
+# SenseVoiceSmall speech recognition (export requires the funasr package)
+optimum-cli export openvino --model FunAudioLLM/SenseVoiceSmall models/sensevoice-small --trust-remote-code
+python benchmark.py -m models/sensevoice-small/ --media ./how_are_you_doing_today.wav -n 2
 ```
 
-> **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
+> **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, sense-voice, qwen3-omni
 
 For an already-exported Qwen3-ASR IR, `--genai` uses the native GenAI pipeline and tokenizer;
 the `qwen-asr` Python package is needed only for the Optimum reference path. Supply audio with
@@ -358,6 +362,12 @@ optimum-cli export openvino --model Qwen/Qwen3-ASR-1.7B --weight-format fp16 --t
 Explicitly selecting `--task automatic-speech-recognition` exports without past-key-value reuse.
 A directory name containing `stateful` or `use_cache: true` in the configuration does not
 make such a decoder stateful; adding a dummy `beam_idx` input does not restore its missing cache.
+On NPU, a requested output length beyond the compiled KV-cache is limited to the available
+capacity. If generation reaches that limit, the partial transcription is returned and an error
+is logged; increase `MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN` to allow longer output. A prompt or
+minimum output length that cannot fit is rejected before decoding.
+When importing a weightless decoder blob with `BLOB_PATH`, set `WEIGHTS_PATH` to the original
+`openvino_decoder_model.bin`; the encoder uses its own model weights.
 
 
 ### Text Rerank models

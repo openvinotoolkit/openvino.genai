@@ -139,6 +139,7 @@ TEST_F(Qwen3ASRStaticEncoderTest, SharedDecoderOptionsDoNotEnableLLMModeForEncod
     properties["++NPUW_LLM_GENERATE_CONFIG"] = ov::AnyMap{};
     properties["PREFILL_CONFIG"] = ov::AnyMap{};
     properties["BLOB_PATH"] = "decoder-only.blob";
+    properties["WEIGHTS_PATH"] = "decoder-only.bin";
     properties["EXPORT_BLOB"] = false;
     ov::genai::Qwen3ASREncoderNPU encoder(m_model_dir, properties);
     const auto output = encoder.encode(make_features(6));

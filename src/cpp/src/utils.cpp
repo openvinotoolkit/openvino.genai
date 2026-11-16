@@ -21,6 +21,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 
 
@@ -109,6 +110,7 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
     rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
+    rename_key(config, "WHISPER_DECOMPOSE_SDPA", "NPUW_WHISPER_DECOMPOSE_SDPA");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
@@ -334,7 +336,9 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     std::shared_ptr<ov::Node> matmul = ov::as_type_ptr<ov::op::v0::MatMul>(last_node);
 
     // in case of PA all tokens are moved to batch dimension and we have to slice / gather accordingly
-    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension");
+    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension")
+        || has_op_with_type(model, "PagedSparseAttention");
+
     int64_t slice_gather_dim = pa_based_model ? 0 : 1;
 
     // There are several patterns for matmul we are looking for:
@@ -417,13 +421,15 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 } // namespace
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+const std::string FORWARDED_ADAPTERS_PROPERTY = "FORWARDED_ADAPTERS";
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
         // Ignore MODEL_PROPERTIES as they are used only within this function
         // to construct final properties map for a given model.
-        if (property.first == PER_MODEL_PROPERTIES) {
+        // FORWARDED_ADAPTERS_PROPERTY is read by sub-model constructors and is meaningless for a plugin.
+        if (property.first == PER_MODEL_PROPERTIES || property.first == FORWARDED_ADAPTERS_PROPERTY) {
             continue;
         }
         // When a concrete device is known, DEVICE_PROPERTIES[device] is
@@ -1310,6 +1316,11 @@ ov::genai::GenerationConfig get_multinomial_config() {
 std::string patch_chat_template_multiline_strings(const std::string& chat_template) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
     return std::regex_replace(chat_template, multiline_string_concatenation, "");
+}
+
+std::string patch_chat_template_undefined_tests(const std::string& chat_template) {
+    const std::regex var_is_undefined{R"((\b[\w\.]+)\s+is\s+undefined)"};
+    return std::regex_replace(chat_template, var_is_undefined, "not $1 is defined");
 }
 
 }  // namespace utils

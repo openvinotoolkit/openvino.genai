@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <map>
 
+#include "logger.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
@@ -50,6 +51,10 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
     const ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
     OPENVINO_ASSERT(batch_size == 1 || !streamer_ptr, "Streaming is only supported with batch_size == 1");
+    const size_t prompt_len = prompts_shape[1];
+    const ASRGenerationConfig effective_config = prepare_generation_config(prompt_len, config);
+    const bool capacity_limited =
+        effective_config.get_max_new_tokens(prompt_len) < config.get_max_new_tokens(prompt_len);
 
     // Reset decoder state for fresh generation
     m_request.reset_state();
@@ -57,11 +62,10 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
     std::vector<SequenceGroup::Ptr> sequence_groups;
     sequence_groups.reserve(batch_size);
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    const size_t prompt_len = prompts_shape[1];
     for (size_t batch = 0; batch < batch_size; ++batch) {
         std::vector<int64_t> prompt_tokens(input_ids_data + batch * prompt_len,
                                            input_ids_data + (batch + 1) * prompt_len);
-        auto seq_group = std::make_shared<SequenceGroup>(batch, prompt_tokens, config);
+        auto seq_group = std::make_shared<SequenceGroup>(batch, prompt_tokens, effective_config);
         sequence_groups.push_back(std::move(seq_group));
     }
 
@@ -228,6 +232,12 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
 
         results.tokens.push_back(sequence->get_generated_ids());
         results.scores.push_back(score);
+        results.finish_reasons.push_back(sequence->get_finish_reason());
+
+        if (capacity_limited && sequence->get_finish_reason() == GenerationFinishReason::LENGTH) {
+            GENAI_ERR("Qwen3-ASR NPU KV-cache capacity was reached; the returned transcription may be truncated. "
+                      "Increase MAX_PROMPT_LEN or MIN_RESPONSE_LEN to allow longer output.");
+        }
 
         m_sampler.clear_request_info(sequence_groups[b]->get_request_id());
     }

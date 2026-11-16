@@ -92,6 +92,19 @@ protected:
     }
 };
 
+class CapacityLimitedCpuDecoder : public ov::genai::Qwen3ASRDecoder {
+public:
+    explicit CapacityLimitedCpuDecoder(const std::filesystem::path& models_path)
+        : Qwen3ASRDecoder(models_path, "CPU", {}) {}
+
+private:
+    ov::genai::ASRGenerationConfig prepare_generation_config(
+        size_t prompt_len,
+        const ov::genai::ASRGenerationConfig& config) const override {
+        return ov::genai::prepare_qwen3_asr_npu_generation(prompt_len, config, 2, 3);
+    }
+};
+
 TEST_P(Qwen3ASRDecoderFormatTest, RejectsPrefillOnlyDecoder) {
     save_decoder(false, false);
     expect_format_error();
@@ -138,6 +151,92 @@ TEST_F(Qwen3ASRDecoderFormatTest, NPUDecoderRequiresPositiveEncoderCapacity) {
     } catch (const ov::Exception& error) {
         EXPECT_NE(std::string(error.what()).find("NPUW_QWEN3_ASR_MAX_ENCODER_LEN must be > 0"), std::string::npos);
     }
+}
+
+TEST_F(Qwen3ASRDecoderFormatTest, ReturnsPartialTranscriptionAtCapacityAndPreservesEarlyEOS) {
+    save_decoder(true, true);
+    CapacityLimitedCpuDecoder decoder(m_model_dir);
+    ov::Tensor input_ids(ov::element::i64, {1, 2});
+    std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), 0);
+    ov::Tensor encoder_hidden_states(ov::element::f32, {1, 1, 1});
+    encoder_hidden_states.data<float>()[0] = 1.0f;
+    ov::genai::ASRGenerationConfig config;
+    config.set_eos_token_id(0);
+    config.ignore_eos = true;
+    config.max_new_tokens = 4;
+    ov::genai::RawPerfMetrics metrics;
+    metrics.m_inference_durations = {{ov::genai::MicroSeconds(0.0f)}};
+    ov::genai::ASRRawPerfMetrics asr_metrics;
+    const auto result = decoder.generate(input_ids, encoder_hidden_states, config, metrics, asr_metrics);
+    ASSERT_EQ(result.tokens.size(), 1u);
+    EXPECT_EQ(result.tokens[0].size(), 3u);
+    ASSERT_EQ(result.finish_reasons.size(), 1u);
+    EXPECT_EQ(result.finish_reasons[0], ov::genai::GenerationFinishReason::LENGTH);
+    EXPECT_EQ(asr_metrics.decode_inference_durations.size(), 3u);
+    EXPECT_EQ(config.max_new_tokens, 4u);
+
+    config.ignore_eos = false;
+    ov::genai::ASRRawPerfMetrics early_metrics;
+    const auto early = decoder.generate(input_ids, encoder_hidden_states, config, metrics, early_metrics);
+    ASSERT_EQ(early.tokens.size(), 1u);
+    EXPECT_EQ(early.tokens[0].size(), 1u);
+    ASSERT_EQ(early.finish_reasons.size(), 1u);
+    EXPECT_EQ(early.finish_reasons[0], ov::genai::GenerationFinishReason::STOP);
+}
+
+TEST(Qwen3ASRNPUGenerationCapacityTest, CapsOnlyAboveAvailableTokens) {
+    ov::genai::ASRGenerationConfig config;
+    config.ignore_eos = true;
+    config.max_new_tokens = 65;
+    EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).max_new_tokens, 65u);
+    config.max_new_tokens = 66;
+    EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).max_new_tokens, 65u);
+    EXPECT_EQ(config.max_new_tokens, 66u);
+}
+
+TEST(Qwen3ASRNPUGenerationCapacityTest, AppliesMaxLengthAndMaxNewTokensPrecedence) {
+    ov::genai::ASRGenerationConfig config;
+    config.max_length = 193;
+    EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).get_max_new_tokens(128), 65u);
+    config.max_length = 194;
+    EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).get_max_new_tokens(128), 65u);
+    config.max_new_tokens = 1;
+    EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).get_max_new_tokens(128), 1u);
+}
+
+TEST(Qwen3ASRNPUGenerationCapacityTest, CapsUnboundedGenerationAndRejectsInvalidInputs) {
+    ov::genai::ASRGenerationConfig config;
+    config.max_new_tokens = 1;
+    EXPECT_THROW(ov::genai::prepare_qwen3_asr_npu_generation(0, config, 128, 191), ov::Exception);
+    EXPECT_THROW(ov::genai::prepare_qwen3_asr_npu_generation(129, config, 128, 191), ov::Exception);
+    config.max_new_tokens = SIZE_MAX;
+    EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).max_new_tokens, 65u);
+    config.min_new_tokens = 66;
+    EXPECT_THROW(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191), ov::Exception);
+}
+
+TEST(Qwen3ASRNPUPropertiesTest, RejectsConflictingEncoderCapacity) {
+    for (const ov::Any& value : {ov::Any{64}, ov::Any{int64_t{64}}, ov::Any{std::string{"64"}}}) {
+        ov::AnyMap properties{{"NPUW_QWEN3_ASR_MAX_ENCODER_LEN", value}};
+        EXPECT_THROW(ov::genai::prepare_qwen3_asr_npu_properties(properties, 128), ov::Exception);
+    }
+    for (const ov::Any& value : {ov::Any{128}, ov::Any{int64_t{128}}, ov::Any{std::string{"128"}}}) {
+        ov::AnyMap properties{{"NPUW_QWEN3_ASR_MAX_ENCODER_LEN", value}};
+        EXPECT_NO_THROW(ov::genai::prepare_qwen3_asr_npu_properties(properties, 128));
+    }
+    EXPECT_THROW(ov::genai::prepare_qwen3_asr_npu_properties(
+                     {{"NPUW_QWEN3_ASR_MAX_ENCODER_LEN", "128extra"}}, 128),
+                 ov::Exception);
+}
+
+TEST(Qwen3ASRNPUPropertiesTest, AddsDefaultPromptLengthOnlyForCompileOrExport) {
+    const auto compiled = ov::genai::prepare_qwen3_asr_npu_properties({}, 128);
+    EXPECT_EQ(compiled.at("MAX_PROMPT_LEN").as<int64_t>(), 256);
+    const auto imported = ov::genai::prepare_qwen3_asr_npu_properties({{"BLOB_PATH", "model.blob"}}, 128);
+    EXPECT_EQ(imported.count("MAX_PROMPT_LEN"), 0u);
+    const auto exported =
+        ov::genai::prepare_qwen3_asr_npu_properties({{"BLOB_PATH", "model.blob"}, {"EXPORT_BLOB", true}}, 128);
+    EXPECT_EQ(exported.at("MAX_PROMPT_LEN").as<int64_t>(), 256);
 }
 
 INSTANTIATE_TEST_SUITE_P(Devices, Qwen3ASRDecoderFormatTest, ::testing::Values("CPU", "NPU"));

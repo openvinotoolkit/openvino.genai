@@ -34,6 +34,10 @@ protected:
     static std::shared_ptr<ov::Model> read_model(const std::filesystem::path& models_path,
                                                  const ov::AnyMap& properties);
 
+    virtual ASRGenerationConfig prepare_generation_config(size_t, const ASRGenerationConfig& config) const {
+        return config;
+    }
+
     InferRequest m_request;
 
 private:

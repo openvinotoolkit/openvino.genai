@@ -75,6 +75,27 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
         self.assertEqual(self.speech._get_output_token_size(tokenizer, "transcript", False), 3)
         tokenizer.assert_called_once_with("transcript", return_tensors="pt")
 
+    def test_sensevoice_uses_reported_output_count_without_processor(self):
+        self.assertEqual(self.speech._get_output_token_size(None, "transcript", False, 6), 6)
+
+    def test_missing_processor_and_output_count_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "did not report the generated token count"):
+            self.speech._get_output_token_size(None, "transcript", False)
+
+    def test_vlm_genai_keeps_upstream_config_loading(self):
+        module = self.ov_utils
+        expected = object()
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.object(module.AutoConfig, "from_pretrained") as config,
+                mock.patch.object(module, "is_genai_available", return_value=True),
+                mock.patch.object(module, "create_genai_image_text_gen_model", return_value=expected) as factory,
+            ):
+                actual = module.create_image_text_gen_model(directory, "CPU", None, genai=True, config={})
+                self.assertIs(actual, expected)
+                config.assert_called_once_with(Path(directory), trust_remote_code=False)
+                factory.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

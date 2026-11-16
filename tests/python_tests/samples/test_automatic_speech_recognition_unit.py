@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytestmark = [pytest.mark.samples, pytest.mark.automatic_speech_recognition]
+
 
 @pytest.fixture
 def asr_sample(monkeypatch):
