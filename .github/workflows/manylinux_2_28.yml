@@ -26,7 +26,6 @@ env:
   SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28
   HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
   HF_HUB_DISABLE_XET: "1"
-  HF_HOME: ${{ runner.temp }}/hf-home
   # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
@@ -37,8 +36,8 @@ env:
   BASE_PRODUCT_TYPE: public_manylinux_2_28_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
-  HF_TOKEN_PATH_LIN: /secrets/huggingface/token-primary
-  HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-primary"
+  HF_TOKEN_PATH_LIN: /secrets/huggingface/token-tertiary
+  HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-tertiary"
 
 jobs:
   smart_ci:
@@ -565,6 +564,7 @@ jobs:
     steps:
       - name: Setup Variables
         run: |
+          echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
@@ -627,6 +627,7 @@ jobs:
     steps:
       - name: Setup Variables
         run: |
+          echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
