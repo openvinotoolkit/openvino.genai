@@ -731,6 +731,91 @@ TEST(TestKVCacheOffloadCache, ProbeReportsEveryBlockOfTheChainInOrderWithOneStor
 
 namespace {
 
+/// Remembers which thread asked the store about its capacity or told it to drop a block.
+class CapacityCallRecorder : public IKVCacheStore {
+public:
+    struct Calls {
+        std::mutex mutex;
+        std::vector<std::pair<std::string, std::thread::id>> entries;
+    };
+
+    CapacityCallRecorder(std::shared_ptr<IKVCacheStore> inner, Calls& calls) : m_inner(std::move(inner)), m_calls(calls) {}
+
+    bool has_block(size_t hash) const override {
+        return m_inner->has_block(hash);
+    }
+    bool write_block(size_t hash, const std::vector<uint8_t>& data) override {
+        return m_inner->write_block(hash, data);
+    }
+    bool read_block(size_t hash, std::vector<uint8_t>& data) const override {
+        return m_inner->read_block(hash, data);
+    }
+    void drop_block(size_t hash) override {
+        record("drop_block");
+        m_inner->drop_block(hash);
+    }
+    size_t get_block_size() const override {
+        return m_inner->get_block_size();
+    }
+    size_t get_capacity_blocks() const override {
+        return m_inner->get_capacity_blocks();
+    }
+    size_t get_num_free_blocks() const override {
+        record("get_num_free_blocks");
+        return m_inner->get_num_free_blocks();
+    }
+    void flush() override {
+        m_inner->flush();
+    }
+
+private:
+    void record(const std::string& name) const {
+        std::lock_guard<std::mutex> lock(m_calls.mutex);
+        m_calls.entries.emplace_back(name, std::this_thread::get_id());
+    }
+
+    std::shared_ptr<IKVCacheStore> m_inner;
+    CapacityCallRecorder::Calls& m_calls;
+};
+
+}  // namespace
+
+TEST(TestKVCacheOffloadCache, ReplacesEntriesWithoutTheCallingThreadTouchingTheStoreCapacity) {
+    CacheFixture fixture;
+    CapacityCallRecorder::Calls calls;
+    auto offload_cache = std::make_unique<KVCacheOffloadCache>(
+        *fixture.cache_manager,
+        std::make_unique<CapacityCallRecorder>(make_shared_file_store(fixture, 1), calls),
+        /*max_queued_stores=*/8);
+    {
+        std::lock_guard<std::mutex> lock(calls.mutex);
+        calls.entries.clear();
+    }
+
+    constexpr size_t num_blocks = 5;
+    for (size_t i = 0; i < num_blocks; ++i) {
+        fixture.fill_block(0, /*seed=*/static_cast<uint8_t>(i + 1));
+        offload_cache->on_blocks_overwritten(/*hash=*/100 + i, make_block_set(0));
+        offload_cache->flush();
+    }
+
+    EXPECT_EQ(offload_cache->get_num_entries(), 1);
+    EXPECT_TRUE(offload_cache->contains(100 + num_blocks - 1));
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, num_blocks);
+    EXPECT_EQ(offload_cache->get_statistics().num_replaced, num_blocks - 1);
+    EXPECT_EQ(offload_cache->get_statistics().num_failed, 0);
+
+    std::lock_guard<std::mutex> lock(calls.mutex);
+    size_t num_drops = 0;
+    for (const auto& [name, thread_id] : calls.entries) {
+        EXPECT_NE(thread_id, std::this_thread::get_id()) << name << " was called on the thread that overwrote the block";
+        num_drops += name == "drop_block";
+    }
+    EXPECT_EQ(num_drops, num_blocks - 1);
+}
+
+namespace {
+
 /// Keeps at most `max_blocks` blocks and drops the oldest by itself, the way a plugin with OV_KVCACHE_CAP_SELF_EVICT
 /// does. It reports no free blocks at all, so a host that still counted capacity would refuse every write.
 class SelfEvictingStore : public IKVCacheStore {
