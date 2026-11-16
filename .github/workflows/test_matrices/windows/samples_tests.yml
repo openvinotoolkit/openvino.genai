@@ -65,7 +65,7 @@
 
 - name: Video generation
   # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
-  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/a741933e8f55cf90368c19ec4b7f0a4d98c26519.tar.gz"
+  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8.tar.gz"
   marker: video_generation
   cmd: tests/python_tests/samples
   runner: aks-win-4-cores-8gb-test

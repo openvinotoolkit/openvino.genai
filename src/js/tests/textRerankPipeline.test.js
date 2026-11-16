@@ -41,11 +41,17 @@ describe("TextRerankPipeline", { skip: os.platform() === "darwin" }, () => {
   });
 
   it("throws when rerank is already in progress", async () => {
-    await assert.rejects(() => {
-      const result1 = pipeline.rerank(query, docs);
-      const result2 = pipeline.rerank(query, docs);
-      return Promise.all([result1, result2]);
-    }, /Another reranking is already in progress/);
+    const reranking = pipeline.rerank(query, docs);
+    try {
+      for (let attempt = 0; attempt < 2; ++attempt) {
+        await assert.rejects(
+          pipeline.rerank(query, docs),
+          /Another reranking is already in progress/,
+        );
+      }
+    } finally {
+      await reranking;
+    }
   });
 
   it("throws with incorrect query type", async () => {

@@ -423,11 +423,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                                   time_precision,
                                                                   chunk_time_offset);
 
-            utils::filter_non_segment_metrics(raw_metrics,
-                                              result.perf_metrics.whisper_raw_metrics,
-                                              output_tokens.size(),
-                                              extracted_segments.segment_ranges);
-
             segments.insert(segments.end(), extracted_segments.segments.begin(), extracted_segments.segments.end());
 
             output_tokens.insert(output_tokens.end(),
