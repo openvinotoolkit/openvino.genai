@@ -294,6 +294,12 @@ public:
         }
     }
 
+    ~LinearAttentionCacheManager() override {
+        clear();
+        m_request = {};
+        m_context = {};
+    }
+
     void clear() override {
         for (auto& group : m_groups) {
             for (auto& [_, info] : group.layers) {

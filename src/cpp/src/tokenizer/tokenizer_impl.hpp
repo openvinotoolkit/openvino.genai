@@ -58,6 +58,7 @@ public:
     void set_state_if_necessary(CircularBufferQueueElementGuard<InferRequestWithState>& infer_request_guard, const ov::AnyMap& params);
 
     TokenizerImpl() = default;
+    ~TokenizerImpl();
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties);
 

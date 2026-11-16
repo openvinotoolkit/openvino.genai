@@ -395,8 +395,10 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         properties.erase(it);
     }
 
-    // Filter properties by leaving only params from the allowlist
+        // Filter properties by leaving only params from the allowlist
     filter_properties(properties);
+    properties.emplace(ov::num_streams(1));
+    properties.emplace(ov::inference_num_threads(1));
     
     is_paired_input = ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
     

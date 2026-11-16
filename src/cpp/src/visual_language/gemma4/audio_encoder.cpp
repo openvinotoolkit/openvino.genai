@@ -44,6 +44,16 @@ public:
         : m_feature_size(get_unified_feature_size(model)),
           m_ireq_queue(compile_audio_model(model, device, properties)) {}
 
+    ~AudioEncoderGemma4Unified() override {
+        if (m_ireq_queue && m_ireq_queue->size() > 0) {
+            try {
+                m_ireq_queue->get(0).get_compiled_model().release_memory();
+            } catch (...) {
+            }
+        }
+        m_ireq_queue.reset();
+    }
+
     ov::Tensor encode(const ov::Tensor& audio) override {
         const ov::Tensor input_features = prepare_input(audio);
         CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue.get());
@@ -102,6 +112,16 @@ public:
                                 const ov::AnyMap& properties)
         : m_feature_extractor(config_dir_path),
           m_ireq_queue(compile_audio_model(model, device, properties)) {}
+
+    ~AudioEncoderGemma4Effective() override {
+        if (m_ireq_queue && m_ireq_queue->size() > 0) {
+            try {
+                m_ireq_queue->get(0).get_compiled_model().release_memory();
+            } catch (...) {
+            }
+        }
+        m_ireq_queue.reset();
+    }
 
     ov::Tensor encode(const ov::Tensor& audio) override {
         const Gemma4AudioFeatures features = m_feature_extractor.extract(audio);

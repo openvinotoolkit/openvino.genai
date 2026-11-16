@@ -43,6 +43,18 @@ public:
                          const std::string& device,
                          const ov::AnyMap device_config);
 
+    ~InputsEmbedderGemma4() override {
+        m_lm_extra_inputs.clear();
+        if (m_per_layer_embeddings_requests && m_per_layer_embeddings_requests->size() > 0) {
+            try {
+                m_per_layer_embeddings_requests->get(0).get_compiled_model().release_memory();
+            } catch (...) {
+            }
+        }
+        m_per_layer_embeddings_requests.reset();
+        m_audio_encoder.reset();
+    }
+
     ov::Tensor get_inputs_embeds(const std::string& prompt,
                                  const std::vector<ov::genai::EncodedImage>& images,
                                  ov::genai::VLMPerfMetrics& metrics,

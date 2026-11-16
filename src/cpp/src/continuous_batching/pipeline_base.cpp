@@ -944,6 +944,11 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
 }
 
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::~IContinuousBatchingPipeline() {
+    m_history_images.clear();
+    m_history_videos.clear();
+    m_history_audios.clear();
+    m_embeddings_registry.reset();
+    m_inputs_embedder.reset();
     m_tokenizer = {};
     utils::release_core_plugin(m_device);
 }

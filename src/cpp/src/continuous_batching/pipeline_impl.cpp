@@ -147,20 +147,34 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
-    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
-    if (m_model_runner) {
-        try {
-            m_model_runner->get_infer_request().get_compiled_model().release_memory();
-        } catch (...) {
-        }
-    }
+    m_requests.clear();
+    m_awaiting_requests.clear();
+    m_hidden_state_cache.reset();
+    m_rotation_deltas_stores.clear();
+    m_current_step_rotation_deltas.clear();
 
+    // First release scheduler and KV/LinearAttention cache managers so they drop their
+    // m_request / m_context / RemoteTensor references BEFORE we release CompiledModel memory.
     if (m_scheduler) {
         try {
             m_scheduler->release();
         } catch (...) {
         }
+        m_scheduler.reset();
     }
+
+    if (m_model_runner) {
+        try {
+            m_model_runner->get_infer_request().get_compiled_model().release_memory();
+        } catch (...) {
+        }
+        m_model_runner.reset();
+    }
+
+    m_sampler.reset();
+    m_adapter_controller.reset();
+    m_embeddings_registry.reset();
+    m_inputs_embedder.reset();
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_candidates_for_prompt_lookup() {}
