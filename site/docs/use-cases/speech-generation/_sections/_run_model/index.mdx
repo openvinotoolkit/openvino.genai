@@ -143,9 +143,131 @@ python create_speaker_embedding.py
     </TabItemJS>
 </LanguageTabs>
 
+### Continuous Batching
+
+For Qwen3-TTS on CPU and GPU, `Text2SpeechPipeline` uses a PagedAttention-backed continuous batching adapter by default.
+Its synchronous `generate()` method processes a closed batch: all texts are supplied in one call, which returns after they finish.
+Like `LLMPipeline` and `VLMPipeline`, the constructor accepts `ATTENTION_BACKEND="SDPA"` to select the stateful backend or
+`ATTENTION_BACKEND="PA"` to require PagedAttention. Default PA initialization can fall back to SDPA; explicitly requiring PA
+disables that fallback. Qwen3-TTS on NPU uses SDPA and does not support the continuous batching API.
+
+For independently arriving requests, use `Text2SpeechContinuousBatchingPipeline` with `SchedulerConfig`.
+Submit requests with `add_request()` and call `step()` to advance the active requests together. New requests can be added
+between steps without waiting for earlier requests to finish. Keep each returned `SpeechGenerationHandle` alive until
+the request is complete, and use a unique request ID for each submission.
+
+The following examples use a converted `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` model directory and its built-in `serena` speaker.
+Set `device` to `"CPU"` or `"GPU"`.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        model_path = "Qwen3-TTS-12Hz-0.6B-CustomVoice"
+        device = "CPU"
+        scheduler_config = ov_genai.SchedulerConfig()
+        scheduler_config.enable_prefix_caching = True
+        pipeline = ov_genai.Text2SpeechContinuousBatchingPipeline(
+            model_path, scheduler_config, device
+        )
+
+        properties = {
+            "language": "English",
+            "speaker": "serena",
+        }
+        handles = [
+            pipeline.add_request(0, "Hello from OpenVINO GenAI.", **properties),
+            pipeline.add_request(1, "This is another speech request.", **properties),
+        ]
+
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+
+        for request_id, handle in enumerate(handles):
+            if handle.get_status() != ov_genai.GenerationStatus.FINISHED:
+                raise RuntimeError(f"Speech request {request_id} did not finish successfully")
+            output = handle.read_all()
+            print(request_id, output.waveform.get_size(), output.output_sample_rate)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include <iostream>
+        #include <string>
+        #include <vector>
+
+        #include "openvino/genai/speech_generation/text2speech_continuous_batching_pipeline.hpp"
+
+        int main() {
+            const std::string model_path = "Qwen3-TTS-12Hz-0.6B-CustomVoice";
+            const std::string device = "CPU";
+            ov::genai::SchedulerConfig scheduler_config;
+            scheduler_config.enable_prefix_caching = true;
+            ov::genai::Text2SpeechContinuousBatchingPipeline pipeline(
+                model_path, scheduler_config, device);
+
+            const ov::AnyMap properties = {
+                {"language", std::string("English")},
+                {"speaker", std::string("serena")},
+            };
+            std::vector<ov::genai::SpeechGenerationHandle> handles = {
+                pipeline.add_request(0, "Hello from OpenVINO GenAI.", {}, properties),
+                pipeline.add_request(1, "This is another speech request.", {}, properties),
+            };
+
+            while (pipeline.has_non_finished_requests()) {
+                pipeline.step();
+            }
+
+            for (size_t request_id = 0; request_id < handles.size(); ++request_id) {
+                const auto& handle = handles[request_id];
+                if (handle->get_status() != ov::genai::GenerationStatus::FINISHED) {
+                    std::cerr << "Speech request " << request_id << " did not finish successfully\n";
+                    return 1;
+                }
+                const auto output = handle->read_all();
+                std::cout << request_id << ": " << output.waveform.get_size()
+                          << " samples at " << output.output_sample_rate << " Hz\n";
+            }
+            return 0;
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+`SpeechGenerationOutput.waveform` contains float32 audio samples; use `output_sample_rate` when saving or playing them.
+`read_all()` consumes the output for one request, not the entire batch. It does not advance generation: calling it before
+completion requires another thread to continue calling `step()`.
+
+:::note
+Continuous batching interleaves speech requests; it does not currently stream partial audio. Each request's codec IDs
+are decoded into one waveform when that request finishes, without waiting for the other requests to finish.
+`read()` therefore currently returns one completed output rather than incremental audio chunks.
+The Qwen3-TTS `non_streaming_mode` generation option controls text conditioning, not waveform delivery.
+:::
+
+All three Qwen3-TTS variants are supported. CustomVoice uses `speaker` and optionally `instruct`; VoiceDesign requires
+`instruct` instead of `speaker`. Base requires a speaker embedding or `ref_audio`. For Base ICL voice cloning, also supply
+`ref_text` and either `ref_codec_ids` or `ref_audio`. The final Base output includes resolved `speaker_embedding` and
+`ref_codec_ids` artifacts when available, which can be reused in later requests.
+
+Handles expose `get_status()`, `can_read()`, `stop()`, `cancel()`, and `get_perf_metrics()`.
+`IGNORED` indicates a request could not continue because of KV-cache exhaustion; reduce concurrency or adjust the
+scheduler's cache capacity. `stop()` and `cancel()` terminate an active request; continue stepping to let the scheduler
+clean it up. Beam search and multiple return sequences are not supported.
+
+See [Continuous Batching](/docs/concepts/optimization-techniques/continuous-batching) for scheduling concepts and
+`SchedulerConfig` options. SpeechT5 and Kokoro continue to use `Text2SpeechPipeline`; the dedicated continuous batching
+API currently supports Qwen3-TTS only, through the C++ and Python bindings.
+
 ### Performance Metrics
 
 `Text2SpeechPipeline` returns `Text2SpeechDecodedResults` with a `perf_metrics` field of type `SpeechGenerationPerfMetrics`, which extends [`PerfMetrics`](/docs/guides/performance-metrics).
+
+For `Text2SpeechContinuousBatchingPipeline`, retrieve per-request metrics with `handle.get_perf_metrics()` in Python or
+`handle->get_perf_metrics()` in C++ after completion. `num_generated_samples` counts waveform samples, and throughput is
+reported in samples per second.
 
 In addition to common metrics, `SpeechGenerationPerfMetrics` provides:
 
