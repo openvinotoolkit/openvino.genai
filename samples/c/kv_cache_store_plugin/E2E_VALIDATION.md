@@ -104,17 +104,17 @@ python benchmark.py -m <model_dir> -d CPU --task visual_text_gen \
 
 | Device | `num_kv_blocks` | Baseline `P2` TTFT | Offload (via plugin) `P2` TTFT | Speedup | `P0` / `P2` MD5 |
 |---|---|---|---|---|---|
-| CPU | 120 | 76874.31 ms | 5562.59 ms | **~13.8x** | identical (`e067b6f4...`) |
-| GPU | 220 | 2636.81 ms | 777.23 ms | **~3.4x** | identical (`e067b6f4...`) |
+| CPU | 120 | 154682.83 ms | 10853.54 ms | **~14.3x** | identical (`e067b6f4...`) |
+| GPU | 220 | 2285.72 ms | 838.94 ms | **~2.7x** | identical (`e067b6f4...`) |
 
 The CPU figures are a single run; the GPU figures are the mean of two baseline/offload pairs run
-back to back (baseline `P2` 2703.94 / 2569.68 ms, offload `P2` 772.60 / 781.85 ms).
+back to back (baseline `P2` 2424.85 / 2146.59 ms, offload `P2` 768.47 / 909.40 ms).
 
 The absolute gain is far larger on CPU because CPU prefill is slower, so there is more recompute to
 avoid. Writing the evicted blocks is not free, but on this setup it is small: GPU `P0` / `P1` took
-2711 / 2804 ms and 2916 / 2792 ms with offload against 2927 / 2774 ms and 2725 / 2655 ms without, and
-on CPU `P1` took 80.7 s against 84.4 s - differences of a few percent at most, comparable to the
-run-to-run spread. Longer prompts widen the gap and very short
+2454 / 2721 ms and 2722 / 2925 ms with offload against 2584 / 2638 ms and 3431 / 2309 ms without, and
+on CPU `P1` took 162.9 s against 160.5 s - differences that are within the run-to-run spread (the baseline
+GPU `P0` alone ranged from 2584 to 3431 ms between two runs). Longer prompts widen the gap and very short
 ones can erase it, so benchmark with prompt lengths representative of your workload rather than
 relying on these numbers.
 
@@ -150,26 +150,30 @@ python verify_chunk_store.py -m <model_dir> -d CPU --plugin /path/to/sample_kv_c
     --store-dir /tmp/kv_chunk --phase read
 ```
 
-Real numbers with the sample's `sample-persistent-file` provider (single runs; the prompt is the sample sentence
-repeated, 300 times for Qwen3-8B and 310 times for Qwen3.5-9B, `--num-kv-blocks` 600 and 400):
+Real numbers with the sample's `sample-persistent-file` provider (Qwen3-8B: a single run; Qwen3.5-9B: the median of
+five runs; the prompt is the sample sentence repeated, 300 times for Qwen3-8B and 310 times for Qwen3.5-9B,
+`--num-kv-blocks` 600 and 400):
 
 | Model | Device | TTFT baseline | TTFT `write` (chunk store on) | TTFT `read` (new process) | Blocks read back | Generated text |
 |---|---|---|---|---|---|---|
-| Qwen3-8B | CPU | 55807 ms | 53925 ms | 6848 ms (**~8.1x**) | 94 KV | identical |
-| Qwen3.5-9B | GPU | 3644 ms | 3797 ms | 1130 ms (**~3.2x**) | 194 KV + 1 linear-attention | identical |
+| Qwen3-8B | CPU | 84724 ms | 81584 ms | 9463 ms (**~9.0x**) | 94 KV | identical |
+| Qwen3.5-9B | GPU | 2842 ms | 3445 ms | 1448 ms (**~2.0x**) | 194 KV + 1 linear-attention | identical |
 
-Turning it on did not slow the `write` run measurably (the difference is within run-to-run spread). The copy of each
+The timings vary a lot from run to run on the GPU: over the five runs the baseline ranged from 2392 to 3435 ms,
+`read` from 938 to 1968 ms, and the speedup from 1.5x to 3.7x. On CPU the `write` run was not measurably slower than
+the baseline. On the GPU it was 19% to 31% slower in every pair of runs (about 0.5 to 1 s for this prompt), so
+turning `store_completed_blocks` on has a visible cost on the first request of a long prefill there. The copy of each
 finished block runs on the pipeline thread, so a long prefill pays for copying its blocks right after the pass
-(about 0.2 s of copying for the 94 blocks above on CPU and 0.08 s for the 194 blocks on GPU); the writing itself
-(1.1 s and 1.7 s) happens on the writer thread. Blocks that do not fit into the writer's `buffer_slots` queue are
-skipped and only cost recomputation later.
+(0.23 s of copying for the 397 KV blocks of the `llm_bench` run below on GPU); the writing itself happens on the
+writer thread. Blocks that do not fit into the writer's `buffer_slots` queue are skipped and only cost recomputation
+later.
 
 `store_completed_blocks` also works together with opportunistic offload (Qwen3.5-9B, GPU, the in-memory provider):
 
 - `llm_bench`, `num_kv_blocks` 220, `"store_completed_blocks": true` in `cache_offload_config`:
   P0/P1/P2 give the same output hashes as without the flag, and P2 (the P0 prompt again after P1 evicted it) takes
-  780 ms against 3465 ms for P0 (194 blocks warmed from the store, 397 blocks stored as `published` plus 4 as
-  `overwritten`).
+  773 ms against 3078 ms for P0 (194 KV blocks and 1 linear-attention block warmed from the store; 397 KV blocks
+  and 4 linear-attention blocks stored over the run).
 
 ### What the host expects from your plugin's stores
 
@@ -209,11 +213,14 @@ same reason.
   call), after probing each block's chain from block 0.
 
 Checked on Qwen3.5-9B / GPU with `sample-self-evict-memory` (and `"store_properties": {"tier": "ssd-test",
-"policy": "lru"}`, both of which the plugin logged on open): with room for every block the `llm_bench` P2 run
-takes 925 ms against 3375 ms for P0 with identical output hashes; with a store of 250 blocks the plugin evicts
-the oldest blocks, which are the start of P0's prefix, so nothing is warmed for P2 (3069 ms), the output is
-still identical and the host reports no failed store. Which block a plugin evicts first decides how much of a prefix
-survives, which is why the choice belongs to the plugin.
+"policy": "lru"}`, both of which the plugin logged on open) and `"store_completed_blocks": true`: with room for
+every block the `llm_bench` P2 run takes 646 ms against 2446 ms for P0 with identical output hashes; with a store
+of 250 blocks (`capacity_bytes` 41472000, 165888 bytes per KV block) the plugin evicts the oldest blocks, which
+are the start of P0's prefix, so nothing is warmed for P2 (2369 ms), the output is still identical and the host
+reports no failed store. Without `store_completed_blocks` only the blocks the device cache overwrites reach the
+store, about 195 of them, so the same 250-block store still holds all of P0's prefix and P2 is warmed (648 ms).
+Which block a plugin evicts first decides how much of a prefix survives, which is why the choice belongs to the
+plugin.
 
 ## Scenario 2: Reuse after a restart
 
@@ -263,9 +270,11 @@ The host uses the optional capabilities your provider advertises:
 
 - `OV_KVCACHE_CAP_ASYNC_IO` (`read_blocks_async`/`write_blocks_async`/`wait`): when it is set and the vtable
   carries those entries, every read and write goes through them. The host submits one batch, then calls `wait`
-  with `OV_KVCACHE_WAIT_INFINITE` until the status is not `PENDING`, so no token is left open and `cancel` is
-  never needed. It does not overlap submissions: each batch is waited on before the next one starts. Without the
-  bit the host uses the synchronous `read_blocks`/`write_blocks`.
+  with `CacheOffloadConfig.store_timeout_ms` (default 10000 ms). If the status is still `PENDING` after that, the host
+  calls the optional `cancel` and waits again until the token is terminal, because the batch's buffers belong to the
+  plugin until then; the batch counts as a cache miss. It does not overlap submissions: each batch is waited on
+  before the next one starts. Without the bit the host uses the synchronous `read_blocks`/`write_blocks`, which
+  cannot be timed out.
 - Reads of a prompt's reusable prefix are one `read_blocks` batch (async or not), not one call per block.
 - `OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT`: the fingerprint `open` returns is logged at `OPENVINO_LOG_LEVEL=3` as
   `semantics_fingerprint=` and kept on the store; the host does not compare or persist it yet.
