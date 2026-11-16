@@ -264,9 +264,14 @@ TEST(TestAbiFileStoreProvider, ABatchThatStallsIsCancelledAndFailsInsteadOfBlock
     AbiKVCacheStore store(&stalled, opened.store, "kv", BLOCK_SIZE, 4, {provider->capabilities, std::nullopt},
                           /*io_timeout_ms=*/20);
     ASSERT_TRUE(store.uses_async_io());
-    EXPECT_THROW(store.write_block(1, make_block(1)), ov::Exception);
+    EXPECT_FALSE(store.write_block(1, make_block(1))) << "a cancelled batch writes nothing and is not an error";
     EXPECT_EQ(StalledPlugin::cancels, 1u);
     EXPECT_EQ(StalledPlugin::waits, 2u) << "one wait that times out, then the wait for the cancelled token";
+
+    StalledPlugin::waits = StalledPlugin::cancels = 0;
+    std::vector<std::vector<uint8_t>> data;
+    EXPECT_EQ(store.read_blocks({1}, data), (std::vector<bool>{false})) << "a cancelled batch reads nothing";
+    EXPECT_EQ(StalledPlugin::cancels, 1u);
     EXPECT_FALSE(store.is_given_up()) << "a cancelled batch that ends in time leaves the store usable";
 }
 

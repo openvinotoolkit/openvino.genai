@@ -88,8 +88,9 @@ private:
     static OvKVCacheBlockKey make_key(const std::string& group, size_t hash);
 
     /// Runs one batch to completion. Through the async entry points the batch is waited on for the I/O timeout, then
-    /// cancelled and waited on for one more timeout; the status is that of the batch. A batch that is still not
-    /// terminal then is kept alive for good, the store is given up, and the status is PENDING.
+    /// cancelled and waited on for one more timeout; the status is that of the batch, and CANCELLED means that it
+    /// ended without results. A batch that is still not terminal then is kept alive for good, the store is given up,
+    /// and the status is PENDING.
     OvKVCacheStatus run_reads(const std::shared_ptr<ReadBatch>& batch) const;
     OvKVCacheStatus run_writes(const std::shared_ptr<WriteBatch>& batch) const;
     OvKVCacheStatus await_token(OvKVCacheAsyncToken token, const std::shared_ptr<void>& batch) const;

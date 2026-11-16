@@ -174,7 +174,7 @@ std::vector<bool> AbiKVCacheStore::write_blocks(const std::vector<size_t>& hashe
     }
 
     const OvKVCacheStatus status = run_writes(batch);
-    if (status == OV_KVCACHE_PENDING) {
+    if (status == OV_KVCACHE_PENDING || status == OV_KVCACHE_ERR_CANCELLED) {
         return written;
     }
     const bool batch_ok = status == OV_KVCACHE_OK || status == OV_KVCACHE_PARTIAL;
@@ -220,7 +220,7 @@ std::vector<bool> AbiKVCacheStore::read_blocks(const std::vector<size_t>& hashes
     }
 
     const OvKVCacheStatus status = run_reads(batch);
-    if (status == OV_KVCACHE_PENDING) {
+    if (status == OV_KVCACHE_PENDING || status == OV_KVCACHE_ERR_CANCELLED) {
         return found;
     }
     const bool batch_ok = status == OV_KVCACHE_OK || status == OV_KVCACHE_PARTIAL;
@@ -287,7 +287,7 @@ OvKVCacheStatus AbiKVCacheStore::run_reads(const std::shared_ptr<ReadBatch>& bat
     OPENVINO_ASSERT(submitted == OV_KVCACHE_OK && token != 0, "ABI store read_blocks_async failed with status ", submitted);
     // The buffers stay untouched until the token is terminal; a failed or cancelled batch has no usable items.
     const OvKVCacheStatus finished = await_token(token, batch);
-    if (finished == OV_KVCACHE_PENDING) {
+    if (finished == OV_KVCACHE_PENDING || finished == OV_KVCACHE_ERR_CANCELLED) {
         return finished;
     }
     OPENVINO_ASSERT(finished == OV_KVCACHE_OK || finished == OV_KVCACHE_PARTIAL,
@@ -306,7 +306,7 @@ OvKVCacheStatus AbiKVCacheStore::run_writes(const std::shared_ptr<WriteBatch>& b
         m_vtable->write_blocks_async(m_store, batch->requests.data(), batch->results.data(), count, &token);
     OPENVINO_ASSERT(submitted == OV_KVCACHE_OK && token != 0, "ABI store write_blocks_async failed with status ", submitted);
     const OvKVCacheStatus finished = await_token(token, batch);
-    if (finished == OV_KVCACHE_PENDING) {
+    if (finished == OV_KVCACHE_PENDING || finished == OV_KVCACHE_ERR_CANCELLED) {
         return finished;
     }
     OPENVINO_ASSERT(finished == OV_KVCACHE_OK || finished == OV_KVCACHE_PARTIAL,
