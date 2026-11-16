@@ -22,6 +22,8 @@
 #include "speculative_decoding/mtp_model_transforms.hpp"
 #include "utils.hpp"
 #include "gguf_utils/gguf_utils.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
+#include "openvino/genai/gguf.hpp"
 #include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/multimodal_inputs.hpp"
@@ -85,15 +87,22 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path,
         utils::get_model_properties(properties_without_draft_model, "language_model"));
-    auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
+    const auto gguf_properties = gguf_utils::extract_gguf_properties(properties_without_draft_model);
+    auto properties_without_draft_model_without_gguf = gguf_properties.rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
-    auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
+    // Reuse the frontend's tokenizer metadata instead of reopening the .gguf, as LLMPipeline does.
+    const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.use_legacy_reader();
+    Tokenizer tokenizer =
+        tokenizer_from_model
+            ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), tokenizer_properties)
+            : Tokenizer(models_path, tokenizer_properties);
+    erase_gguf_tokenizer_metadata(model);
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
-        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, non_adapter_properties.fork());
+        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -160,8 +169,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
-        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, non_adapter_properties.fork());
+        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -227,7 +236,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto generation_config = utils::from_config_json_if_exists(models_path);
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device, properties_without_draft_model_without_gguf);
+        embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model_without_gguf));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -288,8 +298,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (!model_config_dir_path.empty() && std::filesystem::exists(model_config_dir_path / "openvino_text_embeddings_model.xml")) {
-        auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
-        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, device, non_adapter_properties.fork());
+        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, tokenizer, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -347,7 +357,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         std::string weights_path = rt_info.at("__weights_path").as<std::string>();
         directory = std::filesystem::path(weights_path).parent_path();
         if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml")) {
-            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device, properties_without_draft_model);
+            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device,
+                                                        forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
         }
     }
 
@@ -414,13 +425,15 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (embedder_config_dir_path.has_value()) {
         auto path = *embedder_config_dir_path;
         embedder =
-            std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device, properties_without_draft_model);
+            std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device,
+                                            forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
     }
     else if (rt_info.find("__weights_path") != rt_info.end()) {
         std::string weights_path = rt_info.at("__weights_path").as<std::string>();
         directory = std::filesystem::path(weights_path).parent_path();
         if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml")) {
-            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device, properties_without_draft_model);
+            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device,
+                                                        forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
         }
     }
 
@@ -481,13 +494,15 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     std::shared_ptr<InputsEmbedder> embedder = nullptr;
     if (embedder_config_dir_path.has_value()) {
         auto path = *embedder_config_dir_path;
-        embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device, properties);
+        embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device,
+                                                    forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
     }
     else if (rt_info.find("__weights_path") != rt_info.end()) {
         std::string weights_path = rt_info.at("__weights_path").as<std::string>();
         directory = std::filesystem::path(weights_path).parent_path();
         if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml")) {
-            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device, properties_without_draft_model);
+            embedder = std::make_shared<InputsEmbedder>(directory, tokenizer, device,
+                                                        forward_adapters_to_submodels(properties_without_draft_model, generation_config.adapters));
         }
     }
 
