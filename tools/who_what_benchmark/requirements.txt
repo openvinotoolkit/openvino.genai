@@ -16,7 +16,7 @@ scipy>=1.3.2,<=1.18.1
 # For video-to-text VLM sample/VideoGen
 opencv-python<=5.0.0.93
 imageio[pyav]<=2.38.1
-imageio-ffmpeg<=0.7.0
+imageio-ffmpeg<=0.8.1
 lpips==0.1.4
 scikit-image<=0.26.0
 # - openbmb/MiniCPM-o-2_6
