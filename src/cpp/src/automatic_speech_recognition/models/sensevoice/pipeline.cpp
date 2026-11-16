@@ -160,13 +160,9 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
     erase_allowed_asr_ctor_properties(properties_copy);
 
     std::optional<size_t> chunk_seconds;
-    if (const auto value = utils::pop_option(properties_copy, audio_chunk_duration.name())) {
+    if (const auto value = utils::pop_option(properties_copy, chunk_length_s.name())) {
         const int64_t seconds = value->as<int64_t>();
-        OPENVINO_ASSERT(seconds >= 1,
-                        audio_chunk_duration.name(),
-                        " must be at least 1 second, but got ",
-                        seconds,
-                        ".");
+        OPENVINO_ASSERT(seconds >= 1, chunk_length_s.name(), " must be at least 1 second, but got ", seconds, ".");
         chunk_seconds = static_cast<size_t>(seconds);
     }
 
@@ -198,7 +194,7 @@ SenseVoiceSmall::SenseVoiceSmall(const std::filesystem::path& models_path,
     if (chunk_seconds) {
         const size_t chunk_samples = *chunk_seconds * FunASRFeatureExtractor::sampling_rate;
         OPENVINO_ASSERT(chunk_samples <= m_max_window_samples,
-                        audio_chunk_duration.name(),
+                        chunk_length_s.name(),
                         " is ",
                         *chunk_seconds,
                         " seconds, but the model input accepts at most ",

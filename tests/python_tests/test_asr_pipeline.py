@@ -776,28 +776,28 @@ def test_sensevoice_batch_streamer(sample_from_dataset, pipelines_fixture, strea
 
 
 @pytest.mark.parametrize("model_type", ["whisper", "qwen3_asr", "fun_asr"])
-def test_audio_chunk_duration_rejected_for_non_sensevoice(tmp_path, model_type):
+def test_chunk_length_s_rejected_for_non_sensevoice(tmp_path, model_type):
     # The dispatcher rejects the property before constructing a backend.
     (tmp_path / "config.json").write_text(json.dumps({"model_type": model_type}))
     with pytest.raises(RuntimeError, match="only supported for SenseVoiceSmall"):
-        ov_genai.ASRPipeline(tmp_path, "CPU", audio_chunk_duration=10)
+        ov_genai.ASRPipeline(tmp_path, "CPU", chunk_length_s=10)
 
 
 @pytest.mark.sensevoice
-def test_sensevoice_audio_chunk_duration():
+def test_sensevoice_chunk_length_s():
     model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
     path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
     read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
     properties = {"INFERENCE_PRECISION_HINT": "f32", "ENABLE_MMAP": False}
     default_pipe = ov_genai.ASRPipeline(path, "CPU", **properties)
-    chunked_pipe = ov_genai.ASRPipeline(path, "CPU", audio_chunk_duration=5, **properties)
+    chunked_pipe = ov_genai.ASRPipeline(path, "CPU", chunk_length_s=5, **properties)
 
     samples = get_audio_dataset(long_form=False)
     long_audio = np.concatenate(samples[:10])
     assert len(long_audio) > 5 * 16000
 
-    # A chunk duration longer than the audio does not change the result.
-    wide_pipe = ov_genai.ASRPipeline(path, "CPU", audio_chunk_duration=len(long_audio) // 16000 + 1, **properties)
+    # A chunk length longer than the audio does not change the result.
+    wide_pipe = ov_genai.ASRPipeline(path, "CPU", chunk_length_s=len(long_audio) // 16000 + 1, **properties)
     assert wide_pipe.generate(long_audio).texts == default_pipe.generate(long_audio).texts
 
     result = chunked_pipe.generate(long_audio)
@@ -812,19 +812,19 @@ def test_sensevoice_audio_chunk_duration():
     stopped = chunked_pipe.generate(long_audio, streamer=lambda _: True)
     assert len(stopped.perf_metrics.asr_raw_metrics.encode_inference_durations) == 1
 
-    for invalid_duration in (0, -1):
-        with pytest.raises(RuntimeError, match="audio_chunk_duration"):
-            ov_genai.ASRPipeline(path, "CPU", audio_chunk_duration=invalid_duration, **properties)
+    for invalid_length in (0, -1):
+        with pytest.raises(RuntimeError, match="chunk_length_s"):
+            ov_genai.ASRPipeline(path, "CPU", chunk_length_s=invalid_length, **properties)
 
 
 @pytest.mark.sensevoice
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_sensevoice_npu_default_chunk_duration_is_30_seconds():
+def test_sensevoice_npu_default_chunk_length_is_30_seconds():
     model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
     path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
     read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
     default_pipe = ov_genai.ASRPipeline(path, "NPU", **NPUW_CPU_PROPERTIES)
-    explicit_pipe = ov_genai.ASRPipeline(path, "NPU", audio_chunk_duration=30, **NPUW_CPU_PROPERTIES)
+    explicit_pipe = ov_genai.ASRPipeline(path, "NPU", chunk_length_s=30, **NPUW_CPU_PROPERTIES)
 
     samples = get_audio_dataset(long_form=False)
     # Longer than 30 seconds, but within the aligned capacity of the static input shape.
@@ -837,14 +837,12 @@ def test_sensevoice_npu_default_chunk_duration_is_30_seconds():
 
 @pytest.mark.sensevoice
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_sensevoice_npu_audio_chunk_duration_matches_cpu():
+def test_sensevoice_npu_chunk_length_s_matches_cpu():
     model_id = SENSEVOICE_SMALL_TINY_MODEL_ID
     path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
     read_asr_model((model_id, path), pipeline_type=PipelineType.ASR)
-    cpu_pipe = ov_genai.ASRPipeline(
-        path, "CPU", audio_chunk_duration=10, INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False
-    )
-    npu_pipe = ov_genai.ASRPipeline(path, "NPU", audio_chunk_duration=10, **NPUW_CPU_PROPERTIES)
+    cpu_pipe = ov_genai.ASRPipeline(path, "CPU", chunk_length_s=10, INFERENCE_PRECISION_HINT="f32", ENABLE_MMAP=False)
+    npu_pipe = ov_genai.ASRPipeline(path, "NPU", chunk_length_s=10, **NPUW_CPU_PROPERTIES)
 
     samples = get_audio_dataset(long_form=False)
     long_audio = np.concatenate(samples[:10])

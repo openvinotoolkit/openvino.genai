@@ -387,7 +387,7 @@ void init_asr_pipeline(py::module_& m) {
             forced_aligner (ASRForcedAligner): Pre-constructed forced aligner instance.
                 Only supported for Qwen3-ASR. Required when requesting
                 generate(..., word_timestamps=True).
-            audio_chunk_duration (int): Duration in seconds of the audio chunk processed by one inference.
+            chunk_length_s (int): Maximum length in seconds of an audio chunk processed by one inference.
                 Longer audio is split into chunks and the results are merged. Only supported for SenseVoiceSmall.
                 By default CPU and GPU do not split audio and NPU uses 30 seconds.
         )")
