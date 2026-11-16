@@ -2842,7 +2842,6 @@ public:
             return 0;
         }
 
-        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         const auto sequences = group->get_not_finished_sequences();
         if (sequences.size() != 1) {
             return 0;
@@ -2861,6 +2860,7 @@ public:
         for (const size_t content_len : chain_lengths) {
             chain_hashes.push_back(sequence->get_hash(content_len, m_block_size));
         }
+        // The source may be a slow plugin, so the probe and the prefetch run without the manager lock.
         const std::vector<bool> probed = source.probe(chain_hashes);
         OPENVINO_ASSERT(probed.size() == chain_hashes.size(), "A prefix probe must answer for every block of the chain");
         std::set<size_t> available;
@@ -2870,6 +2870,7 @@ public:
             }
         }
 
+        std::unique_lock<std::mutex> lock(m_cached_blocks_map_mutex);
         std::vector<size_t> walk_lengths = chain_lengths;
         if (m_restore_latest_prefix_block_only) {
             walk_lengths.clear();
@@ -2903,7 +2904,9 @@ public:
             note_to_load(hash);
         }
         if (!to_load.empty()) {
+            lock.unlock();
             source.prefetch(to_load);
+            lock.lock();
         }
         struct PrefetchRelease {
             IExternalPrefixSource& source;

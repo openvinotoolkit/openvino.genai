@@ -385,8 +385,13 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         _throw_if_failed();
-        initialize_prefix_cache(sequence_group);
-        sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
+    }
+    // Restoring may read from a slow store, and step() waits for the awaiting-requests lock, so it runs outside it.
+    initialize_prefix_cache(sequence_group);
+    sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        _throw_if_failed();
         m_awaiting_requests.push_back(sequence_group);
     }
 

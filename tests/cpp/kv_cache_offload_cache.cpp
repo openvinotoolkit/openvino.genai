@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <list>
 #include <map>
@@ -978,6 +979,68 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheStillFindsBlocksThatReachTheSourceA
     }
 
     EXPECT_EQ(block_manager.warm_prefix_cache(consumer, source), num_blocks);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheDoesNotHoldTheBlockManagerLockWhileProbingOrPrefetching) {
+    constexpr size_t block_size = 4;
+    constexpr size_t num_blocks = 3;
+    CacheFixture fixture(num_blocks);
+    auto offload_cache = make_offload_cache(fixture, num_blocks);
+    BlockManager block_manager(num_blocks, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+
+    // Another thread must be able to take the manager lock while the source is being asked.
+    struct LockCheckingSource : IExternalPrefixSource {
+        LockCheckingSource(KVCacheOffloadCache& inner, BlockManager& manager) : m_inner(inner), m_manager(manager) {}
+        ~LockCheckingSource() {
+            for (std::thread& thread : m_threads) {
+                thread.join();
+            }
+        }
+        bool contains(size_t hash) const override { return m_inner.contains(hash); }
+        std::vector<bool> probe(const std::vector<size_t>& chain) override {
+            check_lock_is_free();
+            return m_inner.probe(chain);
+        }
+        void prefetch(const std::vector<size_t>& hashes) override {
+            check_lock_is_free();
+            m_inner.prefetch(hashes);
+        }
+        void release_prefetched() override { m_inner.release_prefetched(); }
+        bool load_into(size_t hash, size_t block_index) override { return m_inner.load_into(hash, block_index); }
+
+        void check_lock_is_free() {
+            auto reached = std::make_shared<std::atomic<bool>>(false);
+            m_threads.emplace_back([this, reached] {
+                m_manager.has_temporary_blocks(0);
+                *reached = true;
+            });
+            for (int attempt = 0; attempt < 200 && !*reached; ++attempt) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            if (!*reached) {
+                ++num_blocked_calls;
+            }
+        }
+
+        KVCacheOffloadCache& m_inner;
+        BlockManager& m_manager;
+        std::vector<std::thread> m_threads;
+        int num_blocked_calls = 0;
+    } source(*offload_cache, block_manager);
+
+    std::vector<int64_t> tokens(num_blocks * block_size + 1);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto consumer = make_group(tokens, /*request_id=*/32);
+    const auto sequence = consumer->get_running_sequences().at(0);
+    for (size_t block = 0; block < num_blocks; ++block) {
+        fixture.fill_block(block, static_cast<uint8_t>(block + 1));
+        store_block(*offload_cache, sequence->get_hash((block + 1) * block_size, block_size), block);
+    }
+
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, source), num_blocks);
+    EXPECT_EQ(source.num_blocked_calls, 0);
 }
 
 TEST(TestKVCacheOffloadCache, WarmPrefixCacheProbesTheWholeChainOnceBeforeReading) {

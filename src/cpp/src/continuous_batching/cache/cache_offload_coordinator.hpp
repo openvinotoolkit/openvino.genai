@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -139,6 +140,8 @@ public:
               BlockManager* la_block_manager,
               const SequenceGroup::Ptr& sequence_group,
               size_t max_processed_tokens) {
+        // The reclamation pause and the prefetched blocks of a tier belong to one warm-up at a time.
+        const std::lock_guard<std::mutex> warm_lock(m_warm_mutex);
         if (m_kv != nullptr && kv_block_manager != nullptr) {
             KVCacheOffloadCache::ScopedReclamationPause keep_entries(*m_kv);
             kv_block_manager->warm_prefix_cache(sequence_group, *m_kv);
@@ -160,6 +163,7 @@ public:
     }
 
 private:
+    std::mutex m_warm_mutex;
     std::string m_model_identity;
     std::unique_ptr<KVCacheOffloadCache> m_kv;
     std::unique_ptr<LinearAttentionOffloadCache> m_la;
