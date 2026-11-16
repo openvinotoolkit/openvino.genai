@@ -199,6 +199,7 @@ struct OrchestratorFixture {
                                                  [](const std::string&, size_t) {
                                                      return std::numeric_limits<size_t>::max();
                                                  },
+                                                 /*hidden_state_bytes_per_token=*/0,
                                                  model_identity);
     }
 

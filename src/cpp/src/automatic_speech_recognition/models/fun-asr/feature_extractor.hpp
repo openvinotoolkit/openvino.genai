@@ -33,11 +33,19 @@ public:
     static constexpr size_t lfr_stride = 6;
 
     /**
+     * @param dither Dither amplitude applied before DC-offset removal and pre-emphasis. Set to 0 to disable.
+     */
+    explicit FunASRFeatureExtractor(float dither = 0.0f);
+
+    /**
      * Converts mono, normalized floating-point audio into a float32 tensor of stacked
      * FunASR filter-bank features with shape [1, ceil(fbank frames / lfr_stride),
      * mel_bins * lfr_window].
      */
     ov::Tensor extract(const std::vector<float>& audio) const;
+
+private:
+    float m_dither;
 };
 
 }  // namespace ov::genai

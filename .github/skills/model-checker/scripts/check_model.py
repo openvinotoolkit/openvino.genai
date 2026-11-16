@@ -276,6 +276,8 @@ class HFWWBGroundTruthTool(ToolWrapper):
             "--num-samples",
             str(num_samples),
             "--hf",  # Use HuggingFace backend for ground truth generation
+            "--torch-dtype",
+            "fp32",  # Force f32 HF reference, to avoid precision related discrepancies
         ]
         super().__init__(name="wwb_hf_ground_truth", commands_list=cmd, work_dir=work_dir)
 

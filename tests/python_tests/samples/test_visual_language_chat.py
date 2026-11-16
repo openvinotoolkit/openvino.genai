@@ -22,6 +22,12 @@ class TestVisualLanguageChat:
             pytest.param("InternVL2-1B", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
             pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
             pytest.param("tiny-random-phi3-vision", "images/image.png", "What is unusual on this image?\nGo on."),
+            pytest.param(
+                "tiny-random-molmo2",
+                "images/image.png",
+                "What is unusual on this image?\nGo on.",
+                marks=pytest.mark.molmo2,
+            ),
         ],
         indirect=["convert_model", "download_test_content"],
     )

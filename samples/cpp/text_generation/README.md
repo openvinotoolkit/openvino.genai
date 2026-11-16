@@ -11,10 +11,20 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 4. [Support and Contribution](#support-and-contribution)
 
 ## Download and convert the model and tokenizers
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../export-requirements.txt
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model <model> <output_folder>
 ```
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via hf.
@@ -27,8 +37,37 @@ hf download <model> --local-dir <output_folder>
 
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `<MODEL_DIR>` parameter.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models
-and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
+The default legacy reader handles `llama`, `qwen2`, and `qwen3`, and ignores some metadata,
+such as `rope_freqs.weight`. The OpenVINO GGUF frontend supports more architectures and is
+expected to provide better model quality, but is in preview and may have limitations.
+
+Prefer models quantized in `Q4_0` or `Q8_0` format for better performance and accuracy. Their quantization layouts are closest to those used by OpenVINO.
+
+Select the frontend when constructing the pipeline:
+
+```cpp
+#include <iostream>
+#include <openvino/genai/gguf.hpp>
+#include <openvino/genai/llm_pipeline.hpp>
+
+int main() {
+    ov::genai::LLMPipeline pipe(
+        "model.gguf", "CPU", ov::genai::gguf_reader("FRONTEND"));
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 64;
+    std::cout << pipe.generate("Explain why the sky is blue.", config);
+}
+```
+
+With a compatible OpenVINO build, GenAI attempts paged attention by default and falls back to
+SDPA if conversion fails. An explicit `scheduler_config` requests continuous batching and
+reports conversion errors. Mamba2 and dense Nemotron-H GGUFs currently require SDPA.
+See [Run GGUF models](https://openvinotoolkit.github.io/openvino.genai/docs/guides/gguf) for model format recommendations, examples, and limitations.
+
+> [!NOTE]
+> The `GGUF_READER` property selects which reader converts the file. It defaults to
+> `"LEGACY"`, the hand-written reader described above; passing `ov::genai::gguf_reader("FRONTEND")`
+> (C++) or `GGUF_READER="FRONTEND"` (Python) uses the OpenVINO GGUF frontend instead.
 
 ## Sample Descriptions
 ### Common information
@@ -41,7 +80,7 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 
 Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
 ```sh
-pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
+pip install -r ../../deployment-requirements.txt
 ```
 
 ### 1. Chat Sample (`chat_sample`)

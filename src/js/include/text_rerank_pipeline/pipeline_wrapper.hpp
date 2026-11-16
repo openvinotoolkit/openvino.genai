@@ -5,6 +5,7 @@
 
 #include <napi.h>
 
+#include "include/base/pipeline_state.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 
 class TextRerankPipelineWrapper : public Napi::ObjectWrap<TextRerankPipelineWrapper> {
@@ -16,6 +17,5 @@ public:
 
 private:
     std::shared_ptr<ov::genai::TextRerankPipeline> pipe = nullptr;
-    std::shared_ptr<bool> is_initializing = std::make_shared<bool>(false);
-    std::shared_ptr<bool> is_reranking = std::make_shared<bool>(false);
+    std::shared_ptr<PipelineState> state = std::make_shared<PipelineState>();
 };
