@@ -3505,9 +3505,9 @@ class OmniTalkerSpeechConfig:
             time-to-first-audio but spend more vocoder time per second of audio and can fall behind
             real time. For LFM3-Omni, a frame is
             `stft_frame_stack * stft_hop_length` samples of the codec config (1920 for LFM3-Omni-2B).
-            The ISTFT overlap at the end of each chunk is held back until the next chunk, and the
-            last chunk flushes it, so all chunks together give exactly one frame of samples per frame.
-            After the speech streamer returns STOP, the held-back samples are dropped.
+            The ISTFT overlap at the end of each chunk is held back and emitted with the next chunk,
+            and the last chunk flushes it. After the speech streamer returns STOP, the held-back
+            samples are dropped.
         :type audio_chunk_frames: int
     
         :param audio_chunk_left_context_frames: Number of earlier codec frames the code2wav vocoder
@@ -3518,9 +3518,10 @@ class OmniTalkerSpeechConfig:
             streamed audio is shorter than non-streamed audio. Larger values give smoother seams
             between chunks but cost more vocoder work per chunk. Default is 25, the
             `left_context_size` of transformers `Qwen3OmniMoeCode2Wav.chunked_decode`. Must be
-            <= 4096. Ignored when no speech streamer is set. For LFM3-Omni, streamed audio has the
-            non-streamed length for any value. With the default, it also has the same samples; smaller
-            values change the samples at the start of each chunk.
+            <= 4096. Ignored when no speech streamer is set. For LFM3-Omni, the streamed chunks joined
+            together always have the same length as the waveform decoded without a speech streamer.
+            They also have the same samples when the value covers the codec decoder's receptive field
+            (20 frames for LFM3-Omni-2B). Smaller values change the first samples of each chunk.
         :type audio_chunk_left_context_frames: int
     
         :param max_new_tokens: Cap on talker AR steps. Independent of

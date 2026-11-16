@@ -26,33 +26,42 @@ class VLMPipeline::VLMBackend : public ov::genai::VLMPipelineBase {
 protected:
     VLMBackend();
 
-    // Speech streamer extracted from AnyMap when speech output is requested, forwarded to the speech decoder
-    OmniSpeechStreamerVariant m_pending_speech_streamer = std::monostate{};
-
-    // Speech config extracted from AnyMap: speech is decoded in the language model stream (LFM3-Omni)
-    std::optional<OmniTalkerSpeechConfig> m_pending_speech_config;
-
-    // RAII guard that ends a pending speech streamer that is still set, also when generate() throws, then resets the
-    // speech streamer and speech config. A successful speech decode takes the streamer and ends it itself.
-    struct SpeechPropertiesGuard {
-        OmniSpeechStreamerVariant& streamer_ref;
-        std::optional<OmniTalkerSpeechConfig>& speech_config_ref;
-        ~SpeechPropertiesGuard() {
-            { SpeechStreamerGuard end_guard(streamer_ref, is_speech_streamer_active(streamer_ref)); }
-            streamer_ref = std::monostate{};
-            speech_config_ref.reset();
-        }
+    /// @brief Speech output requested in the AnyMap generate(), decoded in the language model stream (LFM3-Omni).
+    struct SpeechRequest {
+        OmniTalkerSpeechConfig config;
+        OmniSpeechStreamerVariant streamer;
     };
 
     /// @brief Throws unless the language model emits speech frames itself, this backend decodes them, and the
     /// config fits the model.
     virtual void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const;
 
-    /// @brief Reads talker_speech_config and, when it requests audio, speech_streamer from AnyMap into the pending
-    /// members. The streamer is stored before validation, so a rejected config still ends it.
-    void extract_speech_properties(const ov::AnyMap& config_map);
+    /// @brief The typed generate() with the speech request of the AnyMap generate(). The default ignores the request:
+    /// check_speech_in_stream() has already rejected speech for backends that cannot decode it.
+    virtual VLMDecodedResults generate_with_speech(const std::string& prompt,
+                                                   const std::vector<ov::Tensor>& images,
+                                                   const std::vector<ov::Tensor>& videos,
+                                                   const std::vector<ov::Tensor>& audios,
+                                                   const std::vector<VideoMetadata>& videos_metadata,
+                                                   const GenerationConfig& generation_config,
+                                                   const StreamerVariant& streamer,
+                                                   const std::optional<SpeechRequest>& speech_request);
+    virtual VLMDecodedResults generate_with_speech(const ChatHistory& history,
+                                                   const std::vector<ov::Tensor>& images,
+                                                   const std::vector<ov::Tensor>& videos,
+                                                   const std::vector<ov::Tensor>& audios,
+                                                   const std::vector<VideoMetadata>& videos_metadata,
+                                                   const GenerationConfig& generation_config,
+                                                   const StreamerVariant& streamer,
+                                                   const std::optional<SpeechRequest>& speech_request);
 
     GenerationConfig resolve_generation_config(const ov::AnyMap& config_map);
+
+private:
+    /// @brief Reads talker_speech_config and, when it requests audio, speech_streamer from AnyMap. A request for audio
+    /// is validated by check_speech_request(), so the caller already guards the streamer when the config is rejected.
+    static std::optional<SpeechRequest> read_speech_request(const ov::AnyMap& config_map);
+    void check_speech_request(const SpeechRequest& speech_request) const;
 
 public:
     ~VLMBackend() override;

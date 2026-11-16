@@ -4,8 +4,10 @@
 #pragma once
 
 #include <filesystem>
+#include <initializer_list>
 #include <limits>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <random>
 #include <vector>
@@ -21,6 +23,10 @@
 #include "visual_language/embedding_model.hpp"
 
 namespace ov::genai {
+
+/// @brief Reads the token ids under the given keys of an LFM3-Omni config.json; each key must be defined.
+std::vector<int64_t> read_lfm3_omni_token_ids(const nlohmann::json& config_json,
+                                              std::initializer_list<const char*> names);
 
 /// @brief Per-call settings of LFM3OmniSpeechEngine::generate, checked against what the engine implements.
 struct LFM3SpeechRequest {

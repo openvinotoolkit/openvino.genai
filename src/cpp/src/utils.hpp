@@ -398,9 +398,6 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
-/// @brief The entries of models_map with the given keys; absent keys are skipped.
-ModelsMap select_models(const ModelsMap& models_map, const std::vector<std::string>& keys);
-
 /// @brief Throws if `properties[MODEL_PROPERTIES]` contains a role name
 /// not in the known VLM roles. No-op if the key is absent.
 void validate_vlm_model_properties(const ov::AnyMap& properties);

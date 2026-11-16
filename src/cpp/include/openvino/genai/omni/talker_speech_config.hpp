@@ -87,9 +87,9 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// audio and can fall behind real time.
     ///
     /// For LFM3-Omni, a frame is `stft_frame_stack * stft_hop_length` samples of the codec config (1920 for
-    /// LFM3-Omni-2B). The ISTFT overlap at the end of each chunk is held back until the next chunk, and the
-    /// last chunk flushes it, so all chunks together give exactly one frame of samples per frame. After the
-    /// speech streamer returns STOP, the held-back samples are dropped.
+    /// LFM3-Omni-2B). The ISTFT overlap at the end of each chunk is held back and emitted with the
+    /// next chunk, and the last chunk flushes it. After the speech streamer returns STOP, the held-back
+    /// samples are dropped.
     std::size_t audio_chunk_frames = 4;
 
     /// @brief Number of earlier codec frames the code2wav vocoder decodes together with each
@@ -103,8 +103,10 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// Default is 25, the `left_context_size` of transformers `Qwen3OmniMoeCode2Wav.chunked_decode`.
     /// Ignored when no speech streamer is set.
     ///
-    /// For LFM3-Omni, streamed audio has the non-streamed length for any value. With the default, it also
-    /// has the same samples; smaller values change the samples at the start of each chunk.
+    /// For LFM3-Omni, the streamed chunks joined together always have the same length as the waveform
+    /// decoded without a speech streamer. They also have the same samples when the value covers the codec
+    /// decoder's receptive field (20 frames for LFM3-Omni-2B). Smaller values change the first samples of
+    /// each chunk.
     std::size_t audio_chunk_left_context_frames = 25;
 
     /// @brief Cap on talker AR steps. Independent of `text_config.max_new_tokens`
@@ -135,7 +137,7 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     std::optional<float> talker_repetition_penalty;
 
     // LFM3-Omni samples every codebook of a speech frame with its depth decoder, which the cp_* fields
-    // control; its checkpoint defaults are the audio_* keys of generation_config.json.
+    // control; the checkpoint defaults are the audio_* keys of generation_config.json.
 
     /// @brief CodePredictor sampling temperature override (must be > 0 when set).
     /// Checkpoint default from `generation_config.json -> cp_temperature` (LFM3-Omni: `audio_temperature`)

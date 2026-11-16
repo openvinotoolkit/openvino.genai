@@ -686,7 +686,7 @@ def test_vlm_pipeline_ends_speech_streamer_on_rejected_config(vlm_pipe: ov_genai
 def test_text_works_without_unused_models(
     lfm3_omni_model_path: Path, tmp_path: Path, missing: list[str], request_kwargs: dict
 ) -> None:
-    # These models are compiled on first use, so a text-only call does not need their files.
+    # These models are optional: a text-only call works without their files, and a call that needs them names them.
     skipped = {f"openvino_{name}_model.{suffix}" for name in missing for suffix in ("xml", "bin")}
     for item in lfm3_omni_model_path.iterdir():
         if item.name not in skipped:
@@ -805,9 +805,9 @@ def test_rejects_maskgit_schedule_that_wraps(lfm3_omni_model_path: Path, tmp_pat
         if item.name != "config.json":
             (tmp_path / item.name).symlink_to(item)
     (tmp_path / "config.json").write_text(json.dumps(config))
-    pipe = ov_genai.OmniPipeline(tmp_path, "CPU")
+    # The speech models are compiled in the constructor, which reads the schedule.
     with pytest.raises(RuntimeError, match="maskgit_schedule"):
-        pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=_speech_config(2))
+        ov_genai.OmniPipeline(tmp_path, "CPU")
 
 
 def test_speech_decode_recovers_after_failed_call(omni_pipe: ov_genai.OmniPipeline) -> None:

@@ -71,6 +71,18 @@ const ov::AnyMap AUDIO_DECODER_DEFAULTS{ov::hint::dynamic_quantization_group_siz
 
 }  // namespace
 
+std::vector<int64_t> read_lfm3_omni_token_ids(const nlohmann::json& config_json,
+                                              std::initializer_list<const char*> names) {
+    std::vector<int64_t> token_ids;
+    for (const char* name : names) {
+        int64_t token_id = -1;
+        utils::read_json_param(config_json, name, token_id);
+        OPENVINO_ASSERT(token_id >= 0, "LFM3-Omni config.json has no ", name);
+        token_ids.push_back(token_id);
+    }
+    return token_ids;
+}
+
 void LFM3SpeechRequest::validate(const OmniTalkerSpeechConfig& speech_config) {
     const auto* speaker = std::get_if<std::string>(&speech_config.speaker);
     OPENVINO_ASSERT(speaker && speaker->empty(),
@@ -120,12 +132,9 @@ LFM3OmniSpeechEngine::ModelConfig LFM3OmniSpeechEngine::read_model_config(
     read_json_param(model_json, "audio_start_token_id", config.audio_start_token_id);
     read_json_param(model_json, "mixed_start_token_id", config.mixed_start_token_id);
     read_json_param(model_json, "text_end_token_id", config.text_end_token_id);
-    for (const char* name : {"audio_token_id", "audio_out_token_id", "image_token_id", "video_token_id"}) {
-        int64_t token_id = -1;
-        read_json_param(model_json, name, token_id);
-        OPENVINO_ASSERT(token_id >= 0, "LFM3-Omni config.json has no ", name);
-        config.placeholder_token_ids.push_back(token_id);
-    }
+    config.placeholder_token_ids =
+        read_lfm3_omni_token_ids(model_json,
+                                 {"audio_token_id", "audio_out_token_id", "image_token_id", "video_token_id"});
     OPENVINO_ASSERT(config.audio_start_token_id >= 0 && config.mixed_start_token_id >= 0 &&
                         config.text_end_token_id >= 0,
                     "LFM3-Omni config.json must define audio_start_token_id, mixed_start_token_id and "
@@ -605,7 +614,8 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                 }
             }
             if (token == m_config.text_end_token_id) {
-                // Inside an interleaved block it ends the text and starts the speech tail; otherwise it ends the turn.
+                // Inside an interleaved block text_end_token_id ends the text and starts the speech tail; otherwise
+                // text_end_token_id ends the turn.
                 if (interleaving) {
                     text_done = true;
                     speaking = true;
@@ -646,10 +656,12 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     if (result.status == GenerationStatus::RUNNING) {
         result.status = GenerationStatus::FINISHED;
     }
-    // A speech streamer that returned STOP or CANCEL gets no further write(). CANCEL from the text streamer drops
-    // the held-back samples too; its STOP keeps what was generated, so they are flushed.
+    // A speech streamer that returned STOP or CANCEL gets no further write(). CANCEL from the text streamer also
+    // drops the held-back samples. STOP from the text streamer keeps what was generated, so the held-back samples
+    // are flushed.
     if (!speech_streamer_stopped && result.status != GenerationStatus::CANCEL && !frames.empty()) {
-        // With fewer frames than audio_chunk_frames the flush is the only callback, so its status counts too.
+        // With fewer frames than audio_chunk_frames the flush is the only speech streamer callback, so its STOP or
+        // CANCEL also sets result.status.
         const StreamingStatus status = stream_up_to(frames.size(), true);
         if (status == StreamingStatus::STOP) {
             result.status = GenerationStatus::STOP;
