@@ -21,6 +21,7 @@
 #include "continuous_batching/cache/cache_type.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
+#include "continuous_batching/cache/cache_offload_coordinator.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
@@ -159,10 +160,8 @@ public:
 
     CacheOrchestrator() = default;
 
-    ~CacheOrchestrator() {
-        // The offload caches are registered as observers on their block managers, so detach before either is gone.
-        detach_kv_offload_cache();
-        detach_la_offload_cache();
+    const CacheOffloadCoordinator& get_offload_coordinator() const {
+        return *m_offload;
     }
 
     /**
@@ -186,7 +185,7 @@ public:
         config.validate();
 
         auto orchestrator = std::make_shared<CacheOrchestrator>();
-        orchestrator->m_model_identity = model_identity;
+        orchestrator->m_offload = std::make_unique<CacheOffloadCoordinator>(model_identity);
 
         auto [kv_mgr, la_mgr] = detect_cache_managers(infer_request, config);
 
@@ -245,81 +244,24 @@ public:
         auto cache_mgr_it = m_cache_managers.find(CacheType::KV_CACHE);
         OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
                         "KV cache offload requires a model with KV cache inputs");
-
-        auto& kv_manager = static_cast<KVCacheManager&>(*cache_mgr_it->second);
-        const size_t kv_block_tokens = m_block_managers.at(CacheType::KV_CACHE)->get_block_size();
-        auto store = open_kv_cache_store(kv_manager.get_block_layout(),
-                                         offload_config,
-                                         device,
-                                         offload_group_name("kv", kv_manager.get_block_layout(), kv_block_tokens,
-                                                            device, kv_manager.get_layout_signature()),
-                                         kv_block_tokens);
-        GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
-                   store->get_block_size(),
-                   store->get_capacity_blocks());
-
-        m_kv_offload_cache = std::make_unique<KVCacheOffloadCache>(kv_manager,
-                                                                   std::move(store),
-                                                                   offload_config.buffer_slots);
-        m_block_managers.at(CacheType::KV_CACHE)->set_overwritten_block_observer(m_kv_offload_cache.get());
-        m_kv_offload_cache->set_store_completed_blocks(offload_config.store_completed_blocks);
-    }
-
-    /**
-     * @brief Namespace the offload store of one cache type is opened under.
-     *
-     * Without a model identity this is just `base` ("kv" / "la"). With one, the namespace also carries a digest of
-     * the identity and the cache layout, so a persistent plugin keeps entries of different models, devices and
-     * layouts apart. `layout_signature` carries each segment's precision and shape, so two models whose aggregate
-     * block byte size happens to match (e.g. FP16 vs BF16) still open different namespaces.
-     */
-    std::string offload_group_name(const std::string& base,
-                                   const KVCacheDiskLayout& layout,
-                                   size_t block_tokens,
-                                   const std::string& device,
-                                   const std::string& layout_signature = "") const {
-        if (m_model_identity.empty()) {
-            return base;
-        }
-        const std::string key = m_model_identity + '|' + device + '|' + std::to_string(layout.get_slot_size()) + '|' +
-                                std::to_string(layout.get_num_layers()) + '|' + std::to_string(block_tokens) + '|' +
-                                layout_signature;
-        const ContentHash digest = compute_content_hash(key.data(), key.size());
-        char hex[33];
-        std::snprintf(hex, sizeof(hex), "%016llx%016llx", static_cast<unsigned long long>(digest.hi),
-                      static_cast<unsigned long long>(digest.lo));
-        return base + ':' + hex;
+        m_offload->enable_kv(static_cast<KVCacheManager&>(*cache_mgr_it->second),
+                             *m_block_managers.at(CacheType::KV_CACHE),
+                             offload_config,
+                             device);
     }
 
     /**
      * @brief Creates the disk offload cache for linear attention state blocks and attaches it to the
-     * linear attention block manager. Separate file/cache from the KV one, since the slot sizes differ.
+     * linear attention block manager.
      */
     void enable_linear_attention_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
         auto cache_mgr_it = m_cache_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
         OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
                         "Linear attention cache offload requires a model with linear attention cache inputs");
-
-        auto& la_manager = static_cast<LinearAttentionCacheManager&>(*cache_mgr_it->second);
-        CacheOffloadConfig la_backend_config = offload_config;
-        la_backend_config.capacity_bytes = offload_config.linear_attention_capacity_bytes;
-        // The LA block manager's block size is the checkpoint interval in tokens.
-        const size_t la_interval = m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_size();
-        auto store = open_kv_cache_store(la_manager.get_block_layout(),
-                                         la_backend_config,
-                                         device,
-                                         offload_group_name("la", la_manager.get_block_layout(), la_interval, device,
-                                                            la_manager.get_layout_signature()),
-                                         la_interval);
-        GENAI_INFO("[KV_TRACE] la_cache_offload slot_bytes=%zu capacity_blocks=%zu",
-                   store->get_block_size(),
-                   store->get_capacity_blocks());
-
-        m_la_offload_cache = std::make_unique<LinearAttentionOffloadCache>(la_manager,
-                                                                           std::move(store),
-                                                                           offload_config.buffer_slots);
-        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->set_overwritten_block_observer(m_la_offload_cache.get());
-        m_la_offload_cache->set_store_completed_blocks(offload_config.store_completed_blocks);
+        m_offload->enable_linear_attention(static_cast<LinearAttentionCacheManager&>(*cache_mgr_it->second),
+                                           *m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE),
+                                           offload_config,
+                                           device);
     }
 
     /**
@@ -540,27 +482,13 @@ public:
                 "Prefix restore supports only KV and linear-attention caches");
 
         // Refill the in-memory prefix cache from disk first, so the restore below sees those blocks as cached.
-        if (m_kv_offload_cache != nullptr || m_la_offload_cache != nullptr) {
+        if (m_offload->enabled()) {
             // Warming writes into physical blocks, which a pipeline that has not scheduled anything yet has not allocated.
             allocate_cache_if_needed();
-        }
-        if (m_kv_offload_cache != nullptr && kv_it != m_block_managers.end()) {
-            KVCacheOffloadCache::ScopedReclamationPause keep_entries(*m_kv_offload_cache);
-            kv_it->second->warm_prefix_cache(sequence_group, *m_kv_offload_cache);
-        }
-        if (m_la_offload_cache != nullptr && la_it != m_block_managers.end()) {
-            // A hybrid restore never goes past the last prompt token or the KV prefix that is in memory, so a
-            // checkpoint beyond that would be read for nothing and could crowd out the one that can be used.
-            size_t la_warm_ceiling = max_processed_tokens;
-            if (kv_it != m_block_managers.end()) {
-                const auto kv_plan = kv_it->second->get_prefix_restore_plan(sequence_group, max_processed_tokens);
-                const size_t last_usable = sequence_group->get_prompt_len() > 0 ? sequence_group->get_prompt_len() - 1 : 0;
-                la_warm_ceiling = kv_plan.empty() ? 0 : std::min(kv_plan.cache_token_position, last_usable);
-            }
-            if (la_warm_ceiling > 0) {
-                LinearAttentionOffloadCache::ScopedReclamationPause keep_entries(*m_la_offload_cache);
-                la_it->second->warm_prefix_cache(sequence_group, *m_la_offload_cache, la_warm_ceiling);
-            }
+            m_offload->warm(kv_it != m_block_managers.end() ? kv_it->second.get() : nullptr,
+                            la_it != m_block_managers.end() ? la_it->second.get() : nullptr,
+                            sequence_group,
+                            max_processed_tokens);
         }
 
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
@@ -1327,33 +1255,10 @@ private:
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
-    std::unique_ptr<KVCacheOffloadCache> m_kv_offload_cache;
-    std::unique_ptr<LinearAttentionOffloadCache> m_la_offload_cache;
-    std::string m_model_identity;
+    // Declared after the block managers so that it is destroyed first and can detach its observers from them.
+    std::unique_ptr<CacheOffloadCoordinator> m_offload = std::make_unique<CacheOffloadCoordinator>();
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
-
-    void detach_kv_offload_cache() {
-        if (m_kv_offload_cache == nullptr) {
-            return;
-        }
-        auto it = m_block_managers.find(CacheType::KV_CACHE);
-        if (it != m_block_managers.end()) {
-            it->second->set_overwritten_block_observer(nullptr);
-        }
-        m_kv_offload_cache.reset();
-    }
-
-    void detach_la_offload_cache() {
-        if (m_la_offload_cache == nullptr) {
-            return;
-        }
-        auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
-        if (it != m_block_managers.end()) {
-            it->second->set_overwritten_block_observer(nullptr);
-        }
-        m_la_offload_cache.reset();
-    }
 
     // Linear-attention pool footprint high-water mark.
     size_t m_linear_attention_pool_blocks_high_water = 0;

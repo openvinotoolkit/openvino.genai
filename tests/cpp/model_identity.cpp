@@ -199,33 +199,35 @@ struct OrchestratorFixture {
 TEST(TestOffloadGroupName, IsThePlainCacheNameWithoutAModelIdentity) {
     OrchestratorFixture fixture("");
 
-    EXPECT_EQ(fixture.orchestrator->offload_group_name("kv", fixture.kv_layout(), 32, "CPU"), "kv");
+    EXPECT_EQ(fixture.orchestrator->get_offload_coordinator().group_name("kv", fixture.kv_layout(), 32, "CPU"), "kv");
 }
 
 TEST(TestOffloadGroupName, KeepsModelsDevicesAndLayoutsApart) {
     OrchestratorFixture first("model-a");
     const auto layout = first.kv_layout();
-    const auto name = first.orchestrator->offload_group_name("kv", layout, 32, "CPU");
+    const auto& coordinator = first.orchestrator->get_offload_coordinator();
+    const auto name = coordinator.group_name("kv", layout, 32, "CPU");
 
     EXPECT_EQ(name.rfind("kv:", 0), 0u);
     EXPECT_EQ(name.size(), 3u + 32u);
-    EXPECT_EQ(name, first.orchestrator->offload_group_name("kv", layout, 32, "CPU"));
-    EXPECT_NE(name, first.orchestrator->offload_group_name("kv", layout, 16, "CPU"));
-    EXPECT_NE(name, first.orchestrator->offload_group_name("kv", layout, 32, "GPU.0"));
-    EXPECT_NE(name, first.orchestrator->offload_group_name("la", layout, 32, "CPU"));
+    EXPECT_EQ(name, coordinator.group_name("kv", layout, 32, "CPU"));
+    EXPECT_NE(name, coordinator.group_name("kv", layout, 16, "CPU"));
+    EXPECT_NE(name, coordinator.group_name("kv", layout, 32, "GPU.0"));
+    EXPECT_NE(name, coordinator.group_name("la", layout, 32, "CPU"));
 
     OrchestratorFixture second("model-b");
-    EXPECT_NE(name, second.orchestrator->offload_group_name("kv", layout, 32, "CPU"));
+    EXPECT_NE(name, second.orchestrator->get_offload_coordinator().group_name("kv", layout, 32, "CPU"));
 }
 
 TEST(TestOffloadGroupName, KeepsSegmentLayoutsAndTypesApartEvenWithTheSameAggregateByteSize) {
     OrchestratorFixture fixture("model-a");
     const auto layout = fixture.kv_layout();
-    const auto name = fixture.orchestrator->offload_group_name("kv", layout, 32, "CPU", "f16 {2,2}|f16 {2,2};");
+    const auto& coordinator = fixture.orchestrator->get_offload_coordinator();
+    const auto name = coordinator.group_name("kv", layout, 32, "CPU", "f16 {2,2}|f16 {2,2};");
 
     // Two layouts can reduce to the same slot size (e.g. FP16 vs BF16, same byte width) yet mean different bytes.
-    EXPECT_NE(name, fixture.orchestrator->offload_group_name("kv", layout, 32, "CPU", "bf16 {2,2}|bf16 {2,2};"));
-    EXPECT_NE(name, fixture.orchestrator->offload_group_name("kv", layout, 32, "CPU", ""));
-    EXPECT_EQ(name, fixture.orchestrator->offload_group_name("kv", layout, 32, "CPU", "f16 {2,2}|f16 {2,2};"));
+    EXPECT_NE(name, coordinator.group_name("kv", layout, 32, "CPU", "bf16 {2,2}|bf16 {2,2};"));
+    EXPECT_NE(name, coordinator.group_name("kv", layout, 32, "CPU", ""));
+    EXPECT_EQ(name, coordinator.group_name("kv", layout, 32, "CPU", "f16 {2,2}|f16 {2,2};"));
 }
 
