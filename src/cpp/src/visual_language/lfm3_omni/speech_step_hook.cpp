@@ -221,8 +221,10 @@ std::vector<IStepHook::GeneratedEmbedding> LFM3SpeechStepHook::after_sampling(
         if (m_result->status == GenerationStatus::CANCEL) {
             group->get_generation_stream()->cancel();
         } else if (m_result->status == GenerationStatus::STOP) {
-            const GenerationFinishReason reason = m_result->finish_reason == GenerationFinishReason::TOOL_CALL
-                                                      ? GenerationFinishReason::TOOL_CALL
+            // A frame limit hit before the STOP on the final flush keeps LENGTH, like on SDPA.
+            const GenerationFinishReason reason = m_result->finish_reason == GenerationFinishReason::TOOL_CALL ||
+                                                          m_result->finish_reason == GenerationFinishReason::LENGTH
+                                                      ? m_result->finish_reason
                                                       : GenerationFinishReason::STOP;
             group->get_generation_stream()->stop(reason);
             if (sampler_finished) {

@@ -905,6 +905,22 @@ def test_paged_attention_speech_matches_sdpa(
 
 
 @SKIP_PA_ON_MACOS_ARM64
+@pytest.mark.parametrize("backend", ["SDPA", "PA"])
+def test_speech_streamer_stop_on_final_flush_keeps_length(
+    backend: str, omni_sdpa_pipe: ov_genai.OmniPipeline, omni_pa_pipe: ov_genai.OmniPipeline
+) -> None:
+    # The frame limit ends the turn before a chunk is due, so the STOP comes from the final flush.
+    pipe = omni_sdpa_pipe if backend == "SDPA" else omni_pa_pipe
+    result = pipe.generate(
+        PROMPT,
+        text_config=_text_config(1000),
+        talker_speech_config=_speech_config(1, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY, audio_chunk_frames=4),
+        speech_streamer=lambda chunk: ov_genai.StreamingStatus.STOP,
+    )
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.LENGTH]
+
+
+@SKIP_PA_ON_MACOS_ARM64
 def test_paged_attention_chunked_prefill_matches_sdpa(
     lfm3_omni_model_path: Path, omni_sdpa_pipe: ov_genai.OmniPipeline
 ) -> None:
