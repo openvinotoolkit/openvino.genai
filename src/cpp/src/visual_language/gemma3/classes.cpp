@@ -114,14 +114,16 @@ NormalizedPrompt InputsEmbedderGemma3::normalize_prompt(const std::string& promp
 }
 
 void InputsEmbedderGemma3::patch_chat_template() {
-    std::string patched_chat_template = m_tokenizer.get_chat_template();
-    const std::string trim_filter = "| trim";
-    size_t pos = patched_chat_template.find(trim_filter);
-    while (pos != std::string::npos) {
-        patched_chat_template.erase(pos, trim_filter.length());
-        pos = patched_chat_template.find(trim_filter, pos);
-    }
-    m_tokenizer.set_chat_template(patched_chat_template);
+    set_chat_template_patcher(m_tokenizer, [](const std::string& chat_template) {
+        std::string patched_chat_template = chat_template;
+        const std::string trim_filter = "| trim";
+        size_t pos = patched_chat_template.find(trim_filter);
+        while (pos != std::string::npos) {
+            patched_chat_template.erase(pos, trim_filter.length());
+            pos = patched_chat_template.find(trim_filter, pos);
+        }
+        return patched_chat_template;
+    });
 }
 
 ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(
