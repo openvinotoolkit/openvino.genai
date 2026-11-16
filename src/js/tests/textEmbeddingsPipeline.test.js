@@ -54,7 +54,8 @@ describe("TextEmbeddingPipeline functions", { skip: os.platform() === "darwin" }
     assert.ok(isFloat32Array(embedResult[0]));
   });
 
-  it("sync embed query", () => {
+  it("sync embed query rejects invalid input and recovers", () => {
+    assert.throws(() => pipeline.embedQuerySync(123), /Passed argument must be of type String/);
     const embedResult = pipeline.embedQuerySync("test");
     assert.ok(isFloat32Array(embedResult));
   });
@@ -64,5 +65,18 @@ describe("TextEmbeddingPipeline functions", { skip: os.platform() === "darwin" }
     assert.ok(embedResult instanceof Array);
     assert.strictEqual(embedResult.length, 2);
     assert.ok(isFloat32Array(embedResult[0]));
+  });
+
+  it("rejects sync embedding until the async embedding completes", async () => {
+    const embedding = pipeline.embedQuery("test");
+    try {
+      assert.throws(
+        () => pipeline.embedQuerySync("test"),
+        /Another embedding is already in progress/,
+      );
+    } finally {
+      await embedding;
+    }
+    assert.ok(isFloat32Array(pipeline.embedQuerySync("test")));
   });
 });

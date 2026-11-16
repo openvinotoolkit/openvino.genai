@@ -5,21 +5,6 @@
 
 #include <algorithm>
 
-namespace {
-
-template <typename T>
-void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
-    OPENVINO_ASSERT(ranges.empty() || value.size() >= (offset + ranges.back().second));
-    std::vector<T> result{value.begin(), value.begin() + offset};
-    for (auto [start, end] : ranges) {
-        result.insert(result.end(), value.begin() + offset + start, value.begin() + offset + end);
-    }
-
-    value = result;
-}
-
-}  // namespace
-
 namespace ov {
 namespace genai {
 namespace utils {
@@ -36,23 +21,6 @@ void infer_with_perf_metrics(ov::InferRequest& request,
     raw_metrics.m_new_token_times.emplace_back(infer_end);
     raw_metrics.m_batch_sizes.emplace_back(1);
     extra_durations.emplace_back(infer_ms);
-}
-
-void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
-                                size_t offset,
-                                std::vector<std::pair<size_t, size_t>>& ranges) {
-    filter_by_ranges(raw_metrics.m_token_infer_durations, offset, ranges);
-    filter_by_ranges(raw_metrics.m_new_token_times, offset, ranges);
-    filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
-}
-
-void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
-                                ov::genai::WhisperRawPerfMetrics& whisper_raw_metrics,
-                                size_t offset,
-                                std::vector<std::pair<size_t, size_t>>& ranges) {
-    filter_non_segment_metrics(raw_metrics, offset, ranges);
-    filter_by_ranges(raw_metrics.m_sampling_durations, offset, ranges);
-    filter_by_ranges(whisper_raw_metrics.decode_inference_durations, offset, ranges);
 }
 
 int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {

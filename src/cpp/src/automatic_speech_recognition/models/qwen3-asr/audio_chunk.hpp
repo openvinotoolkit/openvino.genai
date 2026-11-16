@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <vector>
 
+#include "automatic_speech_recognition/pipeline_base.hpp"
+
 namespace ov::genai {
 
 // Nominal maximum duration of an audio chunk transcribed in one pass.
@@ -32,7 +34,7 @@ struct AudioChunk {
     float offset_sec;
 };
 
-std::vector<AudioChunk> split_audio_into_chunks(const std::vector<std::vector<float>>& raw_speech,
+std::vector<AudioChunk> split_audio_into_chunks(const AudiosView& raw_speech,
                                                 const size_t sr,
                                                 const size_t max_chunk_sec);
 }  // namespace ov::genai

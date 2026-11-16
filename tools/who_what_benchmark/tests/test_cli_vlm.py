@@ -190,6 +190,7 @@ def test_vlm_basic(model_id, model_type, tmp_path):
     ("model_id", "model_type"),
     [
         ("optimum-intel-internal-testing/tiny-random-llava", "visual-text-chat"),
+        ("optimum-intel-internal-testing/tiny-random-mistral3", "visual-text-chat"),
     ],
 )
 def test_vlm_chat(model_id, model_type, tmp_path):

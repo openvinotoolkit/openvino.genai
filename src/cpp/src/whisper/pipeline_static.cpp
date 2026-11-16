@@ -1237,11 +1237,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                                                   time_precision,
                                                                   chunk_time_offset);
 
-            ov::genai::utils::filter_non_segment_metrics(raw_metrics,
-                                                          perf_metrics.whisper_raw_metrics,
-                                                          output_tokens.size(),
-                                                          extracted_segments.segment_ranges);
-
             segments.insert(segments.end(), extracted_segments.segments.begin(), extracted_segments.segments.end());
 
             output_tokens.insert(output_tokens.end(),
