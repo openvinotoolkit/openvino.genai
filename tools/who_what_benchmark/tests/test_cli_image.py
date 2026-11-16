@@ -280,11 +280,6 @@ def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
 
 
 def test_multi_image_to_image_genai_with_local_manifest(tmp_path):
-    import diffusers
-
-    if not hasattr(diffusers, "QwenImage21Pipeline"):
-        pytest.skip("Qwen-Image 2.1 requires diffusers.QwenImage21Pipeline")
-
     first_image = tmp_path / "first.png"
     second_image = tmp_path / "second.png"
     Image.new("RGB", (64, 64), "red").save(first_image)
