@@ -108,6 +108,9 @@ EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) :
 
 void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     // TODO: support `timesteps` and `sigmas` inputs
+    OPENVINO_ASSERT(num_inference_steps > 0,
+                    "`num_inference_steps` must be greater than 0");
+
     m_timesteps.clear();
     m_sigmas.clear();
     m_step_index = m_begin_index = -1;

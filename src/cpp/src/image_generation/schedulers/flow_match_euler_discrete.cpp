@@ -124,6 +124,9 @@ double FlowMatchEulerDiscreteScheduler::sigma_to_t(double sigma) {
 }
 
 void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float strength) {
+    OPENVINO_ASSERT(num_inference_steps > 0,
+                    "`num_inference_steps` must be greater than 0");
+
     m_timesteps.clear();
     m_sigmas.clear();
 
@@ -271,6 +274,9 @@ void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float times
 }
 
 void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) {
+    OPENVINO_ASSERT(num_inference_steps > 0,
+                    "`num_inference_steps` must be greater than 0");
+
     double mu;
     if (m_config.time_shift_type == "exponential") {
         mu = compute_empirical_mu(image_seq_len, num_inference_steps);
@@ -284,6 +290,9 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t
 }
 
 void FlowMatchEulerDiscreteScheduler::set_timesteps_with_mu(const double mu, const size_t num_inference_steps, const float strength) {
+    OPENVINO_ASSERT(num_inference_steps > 0,
+                    "`num_inference_steps` must be greater than 0");
+
     m_timesteps.clear();
     m_sigmas.clear();
 
