@@ -245,7 +245,8 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
                                              group,
                                              layout.get_slot_size(),
                                              capacity_blocks,
-                                             info);
+                                             info,
+                                             config.store_timeout_ms);
 }
 
 }  // namespace

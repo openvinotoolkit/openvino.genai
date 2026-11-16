@@ -30,19 +30,22 @@ AbiKVCacheStore::AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
                                  std::string group,
                                  size_t block_size,
                                  size_t capacity_blocks,
-                                 StoreInfo info)
+                                 StoreInfo info,
+                                 std::uint32_t io_timeout_ms)
     : m_vtable(vtable),
       m_store(store),
       m_group(std::move(group)),
       m_block_size(block_size),
       m_capacity_blocks(capacity_blocks),
-      m_info(info) {
+      m_info(info),
+      m_io_timeout_ms(io_timeout_ms) {
     OPENVINO_ASSERT(m_vtable != nullptr && m_store != nullptr, "ABI KV cache store must not be null");
+    OPENVINO_ASSERT(m_io_timeout_ms > 0, "ABI KV cache store I/O timeout must be greater than 0");
     OPENVINO_ASSERT(m_vtable->struct_bytes >= offsetof(OvKVCacheStoreVTable, read_blocks_async),
                     "ABI store vtable is missing required synchronous entries");
 
     if ((m_info.capabilities & OV_KVCACHE_CAP_ASYNC_IO) != 0) {
-        // submit and wait are enough for the host; cancel is optional and never needed because every token is waited on.
+        // submit and wait are enough for the host; cancel is optional and only used on a timeout.
         constexpr size_t async_end = offsetof(OvKVCacheStoreVTable, wait) + sizeof(OvKVCacheStoreVTable::wait);
         m_use_async = m_vtable->struct_bytes >= async_end && m_vtable->read_blocks_async != nullptr &&
                       m_vtable->write_blocks_async != nullptr && m_vtable->wait != nullptr;
@@ -192,9 +195,19 @@ std::vector<bool> AbiKVCacheStore::read_blocks(const std::vector<size_t>& hashes
 }
 
 OvKVCacheStatus AbiKVCacheStore::await_token(OvKVCacheAsyncToken token) const {
-    OvKVCacheStatus status = OV_KVCACHE_PENDING;
+    OvKVCacheStatus status = m_vtable->wait(m_store, token, m_io_timeout_ms);
+    if (status != OV_KVCACHE_PENDING) {
+        return status;
+    }
+
+    GENAI_WARN("KV cache store plugin did not finish a batch within %u ms; cancelling it", m_io_timeout_ms);
+    constexpr size_t cancel_end = offsetof(OvKVCacheStoreVTable, cancel) + sizeof(OvKVCacheStoreVTable::cancel);
+    if (m_vtable->struct_bytes >= cancel_end && m_vtable->cancel != nullptr) {
+        m_vtable->cancel(m_store, token);
+    }
+    // The buffers of the batch belong to the plugin until the token is terminal, so the wait cannot be given up.
     while (status == OV_KVCACHE_PENDING) {
-        status = m_vtable->wait(m_store, token, OV_KVCACHE_WAIT_INFINITE);
+        status = m_vtable->wait(m_store, token, m_io_timeout_ms);
     }
     return status;
 }

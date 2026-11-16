@@ -1740,6 +1740,10 @@ TEST(TestScheduler, scheduler_config_cache_offload_takes_either_capacity_unit_bu
 
     scheduler_config.cache_offload_config.dram_cache_capacity_gb = -1;
     EXPECT_ANY_THROW(scheduler_config.validate());
+
+    scheduler_config.cache_offload_config.dram_cache_capacity_gb = 0;
+    scheduler_config.cache_offload_config.store_timeout_ms = 0;
+    EXPECT_ANY_THROW(scheduler_config.validate());
 }
 
 TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_is_ignored_for_kv_only_model) {

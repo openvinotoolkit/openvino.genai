@@ -94,6 +94,16 @@ struct CacheOffloadConfig {
      */
     bool store_completed_blocks = false;
 
+    static constexpr std::uint32_t DEFAULT_STORE_TIMEOUT_MS = 10000;
+
+    /**
+     * Longest wait, in milliseconds, for one asynchronous batch of a store plugin. A batch that is not done by then
+     * is cancelled and counted as a cache miss, so a stalled plugin only costs recomputation. Only plugins that
+     * advertise asynchronous I/O can be timed out; a synchronous plugin call is not interrupted. Must be greater
+     * than 0.
+     */
+    std::uint32_t store_timeout_ms = DEFAULT_STORE_TIMEOUT_MS;
+
     bool operator==(const CacheOffloadConfig& other) const {
         return kv_cache_dir == other.kv_cache_dir && capacity_bytes == other.capacity_bytes &&
                ssd_cache_capacity_gb == other.ssd_cache_capacity_gb &&
@@ -103,7 +113,8 @@ struct CacheOffloadConfig {
                buffer_slots == other.buffer_slots && use_page_cache == other.use_page_cache &&
                store_library_path == other.store_library_path && store_provider_name == other.store_provider_name &&
                allow_untrusted_store_plugin == other.allow_untrusted_store_plugin &&
-               store_properties == other.store_properties && store_completed_blocks == other.store_completed_blocks;
+               store_properties == other.store_properties && store_completed_blocks == other.store_completed_blocks &&
+               store_timeout_ms == other.store_timeout_ms;
     }
 
     std::string to_string() const {
@@ -130,6 +141,7 @@ struct CacheOffloadConfig {
         }
         oss << " }\n";
         oss << "    store_completed_blocks: " << std::boolalpha << store_completed_blocks << "\n";
+        oss << "    store_timeout_ms: " << store_timeout_ms << "\n";
         oss << "  }";
         return oss.str();
     }

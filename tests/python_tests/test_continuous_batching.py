@@ -199,6 +199,7 @@ def test_cache_offload_config_defaults():
     assert config.dram_cache_capacity_gb == 0
     assert config.reuse_ssd_cache is True
     assert config.debug_log_path == ""
+    assert config.store_timeout_ms == 10000
     assert config.linear_attention_capacity_bytes == 0
     assert config.buffer_slots == 2
     assert config.use_page_cache is True
@@ -225,6 +226,7 @@ def test_cache_offload_config_keyword_construction_and_assignment(tmp_path: Path
         dram_cache_capacity_gb=2,
         reuse_ssd_cache=False,
         debug_log_path=str(tmp_path / "logs"),
+        store_timeout_ms=2500,
     )
 
     assert config.kv_cache_dir == str(tmp_path)
@@ -233,6 +235,7 @@ def test_cache_offload_config_keyword_construction_and_assignment(tmp_path: Path
     assert config.dram_cache_capacity_gb == 2
     assert config.reuse_ssd_cache is False
     assert config.debug_log_path == str(tmp_path / "logs")
+    assert config.store_timeout_ms == 2500
     assert config.buffer_slots == 4
     assert config.linear_attention_capacity_bytes == 2 << 20
     assert config.store_completed_blocks is True

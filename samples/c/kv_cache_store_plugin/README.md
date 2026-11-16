@@ -107,6 +107,11 @@ With `reuse_ssd_cache` set to `false` a plugin must purge what it holds for the 
 requests; `sample-persistent-file` deletes the block files of that namespace. The in-tree file store ignores
 `dram_cache_capacity_gb`, `reuse_ssd_cache` and `debug_log_path`.
 
+`CacheOffloadConfig.store_timeout_ms` (default 10000) bounds how long the host waits for one asynchronous batch.
+A batch that is not terminal by then is cancelled through the optional `cancel` entry and counted as a cache miss, so
+a plugin has to drive a cancelled token to a terminal status (`OV_KVCACHE_ERR_CANCELLED`) promptly, because the host
+cannot reuse the batch's buffers before that. Synchronous entry points cannot be timed out.
+
 ## Writing your own plugin
 
 1. Copy [`sample_kv_cache_store_plugin.c`](sample_kv_cache_store_plugin.c) as a starting point.

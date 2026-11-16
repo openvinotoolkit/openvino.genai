@@ -170,6 +170,11 @@ auto cache_offload_config_docstring = R"(
         (chunk store), instead of only when the block is about to be overwritten. A background thread writes the
         copied block, so generation does not wait for the store. Defaults to false.
     :type store_completed_blocks: bool
+
+    :param store_timeout_ms: longest wait, in milliseconds, for one asynchronous batch of a store plugin. A batch that
+        is not done by then is cancelled and counted as a cache miss. Only plugins that advertise asynchronous I/O
+        can be timed out. Must be greater than 0.
+    :type store_timeout_ms: int
 )";
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
@@ -508,7 +513,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                              const std::string& store_provider_name, bool allow_untrusted_store_plugin,
                              bool store_completed_blocks, const std::map<std::string, std::string>& store_properties,
                              int32_t ssd_cache_capacity_gb, int32_t dram_cache_capacity_gb, bool reuse_ssd_cache,
-                             const std::string& debug_log_path) {
+                             const std::string& debug_log_path, std::uint32_t store_timeout_ms) {
                 CacheOffloadConfig config;
                 config.kv_cache_dir = kv_cache_dir;
                 config.capacity_bytes = capacity_bytes;
@@ -516,6 +521,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 config.dram_cache_capacity_gb = dram_cache_capacity_gb;
                 config.reuse_ssd_cache = reuse_ssd_cache;
                 config.debug_log_path = debug_log_path;
+                config.store_timeout_ms = store_timeout_ms;
                 config.linear_attention_capacity_bytes = linear_attention_capacity_bytes;
                 config.buffer_slots = buffer_slots;
                 config.use_page_cache = use_page_cache;
@@ -538,7 +544,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
                  py::arg("ssd_cache_capacity_gb") = 0,
                  py::arg("dram_cache_capacity_gb") = 0,
                  py::arg("reuse_ssd_cache") = true,
-                 py::arg("debug_log_path") = std::string{})
+                 py::arg("debug_log_path") = std::string{},
+                 py::arg("store_timeout_ms") = CacheOffloadConfig::DEFAULT_STORE_TIMEOUT_MS)
             .def_readwrite("kv_cache_dir", &CacheOffloadConfig::kv_cache_dir)
             .def_readwrite("capacity_bytes", &CacheOffloadConfig::capacity_bytes)
             .def_readwrite("ssd_cache_capacity_gb", &CacheOffloadConfig::ssd_cache_capacity_gb)
@@ -553,6 +560,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readwrite("allow_untrusted_store_plugin", &CacheOffloadConfig::allow_untrusted_store_plugin)
             .def_readwrite("store_properties", &CacheOffloadConfig::store_properties)
             .def_readwrite("store_completed_blocks", &CacheOffloadConfig::store_completed_blocks)
+            .def_readwrite("store_timeout_ms", &CacheOffloadConfig::store_timeout_ms)
             .def("to_string", &CacheOffloadConfig::to_string);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)

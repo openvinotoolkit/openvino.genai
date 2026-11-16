@@ -12,6 +12,7 @@
 
 #include "continuous_batching/cache/abi_file_store_provider.hpp"
 #include "continuous_batching/cache/abi_kv_cache_store.hpp"
+#include "openvino/core/except.hpp"
 
 using namespace ov::genai;
 
@@ -222,6 +223,49 @@ TEST(TestAbiFileStoreProvider, ReadReportsMissForUnknownHash) {
     auto store = open_store(/*num_blocks=*/4);
     std::vector<uint8_t> data;
     EXPECT_FALSE(store->read_block(1234, data));
+}
+
+namespace {
+
+/// A plugin whose async batches never finish on their own: `wait` reports PENDING until the host cancels the token.
+struct StalledPlugin {
+    static inline size_t waits = 0;
+    static inline size_t cancels = 0;
+
+    static OvKVCacheStatus wait(void* /*self*/, OvKVCacheAsyncToken /*token*/, uint32_t /*timeout_ms*/) {
+        ++waits;
+        return cancels == 0 ? OV_KVCACHE_PENDING : OV_KVCACHE_ERR_CANCELLED;
+    }
+    static OvKVCacheStatus cancel(void* /*self*/, OvKVCacheAsyncToken /*token*/) {
+        ++cancels;
+        return OV_KVCACHE_OK;
+    }
+};
+
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, ABatchThatStallsIsCancelledAndFailsInsteadOfBlocking) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    const std::string block_size_str = std::to_string(BLOCK_SIZE);
+    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
+    OvKVCacheStoreOpenOptions options{};
+    options.capacity_bytes = BLOCK_SIZE * 4;
+    options.properties = properties;
+    options.property_count = 1;
+    OvKVCacheStoreOpenResult opened{};
+    ASSERT_EQ(provider->vtable->open(provider->self, nullptr, &options, &opened), OV_KVCACHE_OK);
+
+    StalledPlugin::waits = StalledPlugin::cancels = 0;
+    OvKVCacheStoreVTable stalled = *opened.vtable;
+    stalled.wait = &StalledPlugin::wait;
+    stalled.cancel = &StalledPlugin::cancel;
+
+    AbiKVCacheStore store(&stalled, opened.store, "kv", BLOCK_SIZE, 4, {provider->capabilities, std::nullopt},
+                          /*io_timeout_ms=*/20);
+    ASSERT_TRUE(store.uses_async_io());
+    EXPECT_THROW(store.write_block(1, make_block(1)), ov::Exception);
+    EXPECT_EQ(StalledPlugin::cancels, 1u);
+    EXPECT_EQ(StalledPlugin::waits, 2u) << "one wait that times out, then the wait for the cancelled token";
 }
 
 TEST(TestAbiFileStoreProvider, KeysDifferingOnlyInTheHighHalfStayDistinct) {

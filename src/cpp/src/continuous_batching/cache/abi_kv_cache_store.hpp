@@ -7,6 +7,7 @@
 #include <string>
 
 #include "continuous_batching/cache/kv_cache_store.hpp"
+#include "openvino/genai/cache_offload.hpp"
 #include "openvino/genai/c/kv_cache_store_provider_abi.h"
 
 namespace ov::genai {
@@ -35,7 +36,8 @@ public:
                     std::string group,
                     size_t block_size,
                     size_t capacity_blocks,
-                    StoreInfo info = StoreInfo{0, std::nullopt});
+                    StoreInfo info = StoreInfo{0, std::nullopt},
+                    std::uint32_t io_timeout_ms = CacheOffloadConfig::DEFAULT_STORE_TIMEOUT_MS);
     ~AbiKVCacheStore() override;
 
     AbiKVCacheStore(const AbiKVCacheStore&) = delete;
@@ -75,7 +77,8 @@ public:
 private:
     OvKVCacheBlockKey make_key(size_t hash) const;
 
-    /// Runs one batch to completion. Through the async entry points every token is waited on before this returns.
+    /// Runs one batch to completion. Through the async entry points every token is waited on before this returns,
+    /// but a batch that takes longer than the I/O timeout is cancelled and reported as cancelled.
     /// @return The batch status; per-item statuses are in @p out.
     OvKVCacheStatus run_reads(const OvKVCacheStoreReadRequest* reqs, OvKVCacheStoreReadResult* out, size_t count) const;
     OvKVCacheStatus run_writes(const OvKVCacheStoreWriteRequest* reqs, OvKVCacheStoreWriteResult* out, size_t count) const;
@@ -87,6 +90,7 @@ private:
     size_t m_block_size;
     size_t m_capacity_blocks;
     StoreInfo m_info;
+    std::uint32_t m_io_timeout_ms;
     bool m_use_async = false;
 };
 
