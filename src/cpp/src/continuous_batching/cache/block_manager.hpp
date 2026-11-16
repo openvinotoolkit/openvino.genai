@@ -2832,9 +2832,12 @@ public:
      * (linear attention) brings back just the newest block the source can supply, since each of its blocks holds
      * the complete state at its position and does not depend on the earlier ones.
      *
+     * @param max_content_len Longest prefix, in tokens, the caller can still use; blocks beyond it are not brought back.
      * @return The number of blocks brought back into memory.
      */
-    size_t warm_prefix_cache(SequenceGroup::Ptr group, IExternalPrefixSource& source) {
+    size_t warm_prefix_cache(SequenceGroup::Ptr group,
+                             IExternalPrefixSource& source,
+                             size_t max_content_len = std::numeric_limits<size_t>::max()) {
         if (!m_enable_prefix_caching) {
             return 0;
         }
@@ -2845,12 +2848,12 @@ public:
             return 0;
         }
         const auto& sequence = sequences[0];
-        const size_t prompt_len = group->get_prompt_len();
+        const size_t chain_limit = std::min(group->get_prompt_len(), max_content_len);
 
         // Ask the source about the whole chain at once, from block 0 in order, before reading anything: a store
         // numbers the blocks by their place in this query. The walk below then only looks at the answer.
         std::vector<size_t> chain_lengths;
-        for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
+        for (size_t content_len = m_block_size; content_len <= chain_limit; content_len += m_block_size) {
             chain_lengths.push_back(content_len);
         }
         std::vector<size_t> chain_hashes;

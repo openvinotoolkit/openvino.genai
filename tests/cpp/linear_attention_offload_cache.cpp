@@ -224,6 +224,33 @@ TEST(TestLinearAttentionOffloadCache, WarmsNewestCheckpointAcrossMissingEarlierO
     block_manager.free_sequence(sequence->get_id());
 }
 
+// A prompt that ends on a checkpoint boundary cannot restart from that checkpoint, since the last prompt token has
+// to be computed, so the warm-up must bring back the checkpoint before it.
+TEST(TestLinearAttentionOffloadCache, WarmUpStaysWithinTheRestoreLimit) {
+    constexpr size_t cache_interval = 4;
+    LaCacheFixture fixture(/*num_blocks=*/4);
+    auto offload_cache = make_offload_cache(fixture, 2);
+
+    BlockManager block_manager(/*num_blocks=*/4, /*enable_prefix_caching=*/true, cache_interval, /*num_layers=*/1,
+                               /*fixed_blocks_per_sequence=*/0, /*restore_latest_prefix_block_only=*/true);
+
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    auto consumer = make_group(tokens, /*request_id=*/5);
+    const auto sequence = consumer->get_running_sequences().at(0);
+    fixture.fill_block(0, /*seed=*/5);
+    offload_cache->on_blocks_overwritten(sequence->get_hash(4, cache_interval), make_block_set(0));
+    offload_cache->flush();
+    fixture.fill_block(1, /*seed=*/9);
+    offload_cache->on_blocks_overwritten(sequence->get_hash(12, cache_interval), make_block_set(1));
+    offload_cache->flush();
+
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache, /*max_content_len=*/tokens.size() - 1), 1);
+    EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
+    EXPECT_EQ(consumer->get_num_processed_tokens(), 4);
+
+    block_manager.free_sequence(sequence->get_id());
+}
+
 namespace {
 
 /// Lets several offload caches see one store, the way pipelines do through a persistent plugin.

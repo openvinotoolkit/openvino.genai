@@ -549,8 +549,18 @@ public:
             kv_it->second->warm_prefix_cache(sequence_group, *m_kv_offload_cache);
         }
         if (m_la_offload_cache != nullptr && la_it != m_block_managers.end()) {
-            LinearAttentionOffloadCache::ScopedReclamationPause keep_entries(*m_la_offload_cache);
-            la_it->second->warm_prefix_cache(sequence_group, *m_la_offload_cache);
+            // A hybrid restore never goes past the last prompt token or the KV prefix that is in memory, so a
+            // checkpoint beyond that would be read for nothing and could crowd out the one that can be used.
+            size_t la_warm_ceiling = max_processed_tokens;
+            if (kv_it != m_block_managers.end()) {
+                const auto kv_plan = kv_it->second->get_prefix_restore_plan(sequence_group, max_processed_tokens);
+                const size_t last_usable = sequence_group->get_prompt_len() > 0 ? sequence_group->get_prompt_len() - 1 : 0;
+                la_warm_ceiling = kv_plan.empty() ? 0 : std::min(kv_plan.cache_token_position, last_usable);
+            }
+            if (la_warm_ceiling > 0) {
+                LinearAttentionOffloadCache::ScopedReclamationPause keep_entries(*m_la_offload_cache);
+                la_it->second->warm_prefix_cache(sequence_group, *m_la_offload_cache, la_warm_ceiling);
+            }
         }
 
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
