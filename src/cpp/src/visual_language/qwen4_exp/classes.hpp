@@ -52,7 +52,7 @@ public:
         const std::vector<std::pair<size_t, size_t>>& history_vision_count = {}
     ) override;
 
-    std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
     get_ngram_embeddings_callback() override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(
@@ -91,7 +91,6 @@ private:
     bool m_has_ngram_embeddings = false;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ngram_embeddings_ireq_queue = nullptr;
     size_t m_ngram_context_length = 0;
-    ov::Tensor m_ngram_history;
 
     void init_ngram_embeddings_model(
         const std::shared_ptr<ov::Model>& model,
@@ -99,7 +98,8 @@ private:
         const ov::AnyMap& device_config
     );
 
-    ov::Tensor get_ngram_embeddings(const ov::Tensor& input_ids);
+    // Returns ngram embeddings and new ngram history
+    std::pair<ov::Tensor, ov::Tensor> get_ngram_embeddings(const ov::Tensor& input_ids, const ov::Tensor& ngram_history);
 };
 
 } // namespace ov::genai

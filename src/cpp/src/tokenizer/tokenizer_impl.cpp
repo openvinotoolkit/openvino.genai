@@ -360,6 +360,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         }
 
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
+        if (auto patcher = gguf_chat_template_patcher(tokenizer_config)) {
+            set_chat_template_patcher(std::move(patcher));
+        }
         return;
     }
     if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {

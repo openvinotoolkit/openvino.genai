@@ -6,6 +6,7 @@ import numpy as np
 import copy
 from pathlib import Path
 import llm_bench_utils.output_json as output_json
+from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput
 from llm_bench_utils.memory_monitor import MemThreadHandler, MemoryUnit
 
 
@@ -105,6 +106,7 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
             "other_tokens_infer_avg_latency",
             "tokenization_time",
             "detokenization_time",
+            "throughput_token_count",
         ]
         if include_tts_metrics:
             key_word.extend(["tts_output_duration_s", "tts_sample_rate", "tts_rtf"])
@@ -122,6 +124,19 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
                     result[prompt_idx][0][key] = np.mean(values)
                     result[prompt_idx][1][key] = np.min(values)
                     result[prompt_idx][2][key] = np.median(values)
+            rates = [
+                data["end_to_end_token_throughput"]
+                for data in same_prompt_datas
+                if "end_to_end_token_throughput" in data
+            ]
+            for data in result[prompt_idx]:
+                data.pop("end_to_end_token_throughput", None)
+            if len(rates) > 0:
+                result[prompt_idx][0]["end_to_end_token_throughput"] = get_end_to_end_token_throughput(
+                    same_prompt_datas
+                )
+                result[prompt_idx][1]["end_to_end_token_throughput"] = np.min(rates)
+                result[prompt_idx][2]["end_to_end_token_throughput"] = np.median(rates)
     return result
 
 
@@ -133,6 +148,7 @@ def gen_data_to_csv(
     memory_data_collector: MemThreadHandler | None,
     mem_unit: MemoryUnit,
     include_tts_metrics: bool = False,
+    include_e2e_throughput: bool = False,
     first_latency_unit: str = "ms",
 ):
     generation_time = iter_data["generation_time"]
@@ -191,6 +207,12 @@ def gen_data_to_csv(
         )
         result["tts_sample_rate(hz)"] = int(tts_sample_rate) if tts_sample_rate != "" else tts_sample_rate
         result["tts_rtf"] = round(tts_rtf, 5) if tts_rtf != "" else tts_rtf
+    if include_e2e_throughput:
+        result["throughput_token_count"] = iter_data.get("throughput_token_count", "")
+        e2e_throughput = iter_data.get("end_to_end_token_throughput")
+        result["end_to_end_token_throughput(tokens/s)"] = (
+            round(e2e_throughput, 5) if e2e_throughput is not None else "NA"
+        )
     input_idx = chat_idx if chat_idx != "" else iter_data["prompt_idx"]
     result["start"], result["end"] = output_json.get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
     result = result | output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
@@ -212,6 +234,7 @@ def write_result(
     if memory_data_collector.mth:
         mem_unit = memory_data_collector.mth.memory_unit
     include_tts_metrics = model_args["use_case"].task == "text_to_speech"
+    include_e2e_throughput = any("throughput_token_count" in iter_data for iter_data in iter_data_list)
     first_latenct_unit = "ms/token" if model_args["use_case"].task in ["text_gen_chat"] else "ms"
     header = [
         "iteration",
@@ -257,6 +280,8 @@ def write_result(
                 "tts_rtf",
             ]
         )
+    if include_e2e_throughput:
+        header.extend(["throughput_token_count", "end_to_end_token_throughput(tokens/s)"])
     out_file = Path(report_file)
 
     if len(iter_data_list) > 0:
@@ -283,6 +308,7 @@ def write_result(
                     mem_data_collector,
                     mem_unit,
                     include_tts_metrics,
+                    include_e2e_throughput,
                     first_latency_unit=first_latenct_unit,
                 )
                 writer.writerow(result)
@@ -299,6 +325,7 @@ def write_result(
                         None,
                         mem_unit,
                         include_tts_metrics,
+                        include_e2e_throughput,
                         first_latency_unit=first_latenct_unit,
                     )
                     writer.writerow(result)

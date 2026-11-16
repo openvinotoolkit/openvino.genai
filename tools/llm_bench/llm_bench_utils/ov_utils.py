@@ -24,7 +24,7 @@ from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
 from openvino_genai import StreamingStatus
-from wrappers.speech_to_text import FunASROptimumPipeline, Qwen3ASROptimumPipeline
+from wrappers.speech_to_text import FunASROptimumPipeline, Qwen3ASROptimumPipeline, SenseVoiceOptimumPipeline
 
 
 def build_ov_tokenizer(hf_tokenizer):
@@ -647,6 +647,8 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
     if use_case.model_type == "fun-asr":
         processor = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         trust_remote_code = True
+    elif use_case.model_type == "sense-voice":
+        processor = None
     else:
         try:
             processor = AutoProcessor.from_pretrained(model_path)
@@ -694,6 +696,8 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
         pipe = Qwen3ASROptimumPipeline(model=ov_model, processor=processor)
     elif use_case.model_type == "fun-asr":
         pipe = FunASROptimumPipeline(model=ov_model, tokenizer=processor)
+    elif use_case.model_type == "sense-voice":
+        pipe = SenseVoiceOptimumPipeline(model=ov_model)
     elif use_case.model_type == "whisper":
         pipe = pipeline(
             "automatic-speech-recognition",

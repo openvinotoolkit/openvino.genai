@@ -278,6 +278,101 @@ struct PerLayerInputsContext {
 };
 
 /**
+ * @brief Per-forward-call context for ngram embedding inputs (e.g. Qwen4Exp).
+ */
+struct NgramEmbeddingsContext {
+    size_t num_layers = 0;
+    size_t embed_dim = 0;
+    size_t per_token_size = 0; // num_layers * embed_dim
+
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)> ngram_embeds_callback;
+
+    size_t filled_tokens_offset = 0;
+    bool has_ngram_embeddings = false;
+
+    void init(
+        const ov::Tensor& prompt_ngram_embeddings,
+        const std::function<ov::Tensor(const ov::Tensor&, const ov::Tensor&)>& ngram_embeddings_callback
+    ) {
+        if (!prompt_ngram_embeddings) {
+            return;
+        }
+
+        OPENVINO_ASSERT(ngram_embeddings_callback,
+            "ngram_embeddings_callback is not set while ngram_embeddings are provided");
+        OPENVINO_ASSERT(prompt_ngram_embeddings.get_element_type() == ov::element::f32,
+            "ngram_embeddings must have element type f32, got ", prompt_ngram_embeddings.get_element_type());
+
+        const auto& prompt_ngram_embeddings_shape = prompt_ngram_embeddings.get_shape();
+        OPENVINO_ASSERT(prompt_ngram_embeddings_shape.size() == 4 && prompt_ngram_embeddings_shape[0] == 1,
+            "ngram_embeddings must have shape [1, tokens, num_layers, embed_dim], got ", prompt_ngram_embeddings_shape);
+
+        num_layers = prompt_ngram_embeddings_shape[2];
+        embed_dim = prompt_ngram_embeddings_shape[3];
+        per_token_size = num_layers * embed_dim;
+        ngram_embeds_callback = ngram_embeddings_callback;
+        has_ngram_embeddings = true;
+    }
+
+    void fill_ngram_embeddings(
+        ov::Tensor& ngram_embeddings,
+        const SequenceGroup::CPtr& sequence_group,
+        Sequence::CPtr sequence
+    ) {
+        const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+        const size_t prompt_len = sequence_group->get_prompt_len();
+        // A scheduled window may end the prompt and continue with generated tokens (e.g. recompute after preemption)
+        const size_t num_scheduled_prompt_tokens =
+            num_processed_tokens < prompt_len ? std::min(num_scheduled_tokens, prompt_len - num_processed_tokens) : 0;
+        const size_t num_generated_tokens = num_scheduled_tokens - num_scheduled_prompt_tokens;
+
+        float* dst = ngram_embeddings.data<float>() + filled_tokens_offset * per_token_size;
+
+        if (num_scheduled_prompt_tokens > 0) {
+            const ov::Tensor& prompt_ngram_embeddings = sequence_group->get_ngram_embeddings();
+            OPENVINO_ASSERT(prompt_ngram_embeddings, "ngram_embeddings not stored for sequence group in prompt phase");
+            OPENVINO_ASSERT(prompt_ngram_embeddings.get_size() == prompt_len * per_token_size,
+                "stored ngram_embeddings have ", prompt_ngram_embeddings.get_size(), " elements, expected ",
+                prompt_len * per_token_size);
+            std::copy_n(prompt_ngram_embeddings.data<const float>() + num_processed_tokens * per_token_size,
+                        num_scheduled_prompt_tokens * per_token_size,
+                        dst);
+        }
+
+        if (num_generated_tokens > 0) {
+            const auto& generated_ids = sequence->get_generated_ids();
+            const size_t generated_offset_from_prompt = num_processed_tokens + num_scheduled_prompt_tokens - prompt_len;
+
+            ov::Tensor input_ids(ov::element::i64, {1, num_generated_tokens});
+            std::copy_n(generated_ids.begin() + generated_offset_from_prompt, num_generated_tokens, input_ids.data<int64_t>());
+
+            const ov::Tensor& prompt_ngram_history = sequence_group->get_ngram_history();
+            OPENVINO_ASSERT(prompt_ngram_history, "ngram_history not stored for sequence group");
+            ov::Tensor ngram_history(ov::element::i64, {1, prompt_ngram_history.get_size()});
+            fill_ngram_history(
+                prompt_ngram_history,
+                generated_ids,
+                generated_offset_from_prompt,
+                ngram_history.data<int64_t>()
+            );
+
+            const ov::Tensor new_ngram_embeddings = ngram_embeds_callback(input_ids, ngram_history);
+            OPENVINO_ASSERT(new_ngram_embeddings.get_element_type() == ov::element::f32,
+                "ngram_embeddings_callback must return a tensor with element type f32");
+            OPENVINO_ASSERT(new_ngram_embeddings.get_size() == num_generated_tokens * per_token_size,
+                "ngram_embeddings_callback returned ", new_ngram_embeddings.get_size(), " elements, expected ",
+                num_generated_tokens * per_token_size);
+            std::copy_n(new_ngram_embeddings.data<const float>(),
+                        num_generated_tokens * per_token_size,
+                        dst + num_scheduled_prompt_tokens * per_token_size);
+        }
+
+        filled_tokens_offset += num_scheduled_tokens;
+    }
+};
+
+/**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
  */
@@ -334,6 +429,7 @@ class ModelRunner {
     ov::Tensor m_cached_deepstack_visual_embeds;
     ov::Tensor m_cached_visual_pos_masks;
     ov::Tensor m_cached_per_layer_inputs;
+    ov::Tensor m_cached_ngram_embeddings;
 public:
     /**
      * Constructs the ModelRunner.
@@ -419,6 +515,17 @@ public:
     // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
     void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on; }
 
+    // DFlash draft: each scheduled request forwards [target hidden-state rows ; seed + mask block]. The target
+    // rows come from set_initial_hidden_state() and get token type 0; the remaining scheduled rows are the block
+    // and get token type 1. The block rows after the first `candidate_position_offset` ones are gathered.
+    void enable_dflash_draft(size_t candidate_position_offset) {
+        // a token-input draft gives the runner no embedding width, so hidden_states is sized from the model
+        m_dflash_hidden_state_size = static_cast<size_t>(
+            m_request.get_compiled_model().input("hidden_states").get_partial_shape()[2].get_length());
+        m_dflash_draft = true;
+        m_dflash_candidate_position_offset = candidate_position_offset;
+    }
+
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
         m_embedding = inputs_embedder->get_embedding_model();
@@ -484,6 +591,7 @@ public:
 
         DeepstackContext deepstack_context;
         PerLayerInputsContext per_layer_inputs_context;
+        NgramEmbeddingsContext ngram_embeddings_context;
 
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
@@ -496,6 +604,10 @@ public:
             per_layer_inputs_context.init(
                 sequence_groups[first_sequence_groups_id]->get_per_layer_inputs(),
                 m_inputs_embedder->get_per_layer_embeddings_callback()
+            );
+            ngram_embeddings_context.init(
+                sequence_groups[first_sequence_groups_id]->get_ngram_embeddings(),
+                m_inputs_embedder->get_ngram_embeddings_callback()
             );
         }
 
@@ -534,7 +646,9 @@ public:
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
 
-        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size);
+        ov::Tensor hidden_state_input = m_dflash_draft
+                                            ? _make_zeroed_hidden_state_input(total_num_tokens, m_dflash_hidden_state_size)
+                                            : _prepare_hidden_state_input(total_num_tokens, hidden_size);
         float* hidden_state_data = nullptr;
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
@@ -549,12 +663,17 @@ public:
         float *inputs_embeds_data = nullptr;
         int64_t *input_ids_data = nullptr;
         int64_t *token_type_ids_data = nullptr;
+        // DFlash sets token types for token and embedding inputs alike, so it does not share the VLM cursor
+        // token_type_ids_data; each request writes at its first row, dflash_token_type_ids_data + current_token_idx.
+        int64_t *dflash_token_type_ids_data = m_dflash_draft ? token_type_ids.data<int64_t>() : nullptr;
 
         ov::Tensor deepstack_visual_embeds;
         ov::Tensor visual_pos_masks;
         bool *visual_pos_masks_data = nullptr;
 
         ov::Tensor per_layer_inputs;
+
+        ov::Tensor ngram_embeddings;
 
         ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -597,6 +716,13 @@ public:
                 // PA model expects [total_num_tokens, 1, num_hidden_layers, hidden_size] input shape
                 per_layer_inputs = _get_or_resize_tensor(m_cached_per_layer_inputs, "per_layer_inputs",
                     {total_num_tokens, 1, per_layer_inputs_context.num_hidden_layers, per_layer_inputs_context.hidden_size},
+                    ov::element::f32);
+            }
+
+            if (ngram_embeddings_context.has_ngram_embeddings) {
+                // PA model expects [total_num_tokens, 1, num_layers, embed_dim] input shape
+                ngram_embeddings = _get_or_resize_tensor(m_cached_ngram_embeddings, "ngram_embeddings",
+                    {total_num_tokens, 1, ngram_embeddings_context.num_layers, ngram_embeddings_context.embed_dim},
                     ov::element::f32);
             }
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -642,7 +768,7 @@ public:
             size_t output_seq_len = 0;
             const bool echo_output = sequence_group->get_sampling_parameters().echo;
             const bool sampling_is_required = sequence_group->requires_sampling();
-            const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
+            size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
             if (sequence_group_type == SequenceGroupType::EMBEDDINGS 
                 && deepstack_context.have_deepstack_visual_inputs
@@ -682,6 +808,10 @@ public:
 
                     if (per_layer_inputs_context.has_per_layer_inputs) {
                         per_layer_inputs_context.fill_per_layer_inputs(per_layer_inputs, sequence_group, sequence);
+                    }
+
+                    if (ngram_embeddings_context.has_ngram_embeddings) {
+                        ngram_embeddings_context.fill_ngram_embeddings(ngram_embeddings, sequence_group, sequence);
                     }
                 }
 
@@ -740,6 +870,12 @@ public:
                             }
                         }
                     }
+                } else if (m_dflash_draft) {
+                    tokens_to_sample_per_sequence = _fill_dflash_draft_rows(sequence_group->get_request_id(),
+                                                                            num_scheduled_tokens,
+                                                                            current_token_idx,
+                                                                            hidden_state_input,
+                                                                            dflash_token_type_ids_data + current_token_idx);
                 }
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
@@ -907,6 +1043,10 @@ public:
 
             if (per_layer_inputs_context.has_per_layer_inputs && !m_cached_per_layer_inputs) {
                 m_request.set_tensor("per_layer_inputs", per_layer_inputs);
+            }
+
+            if (ngram_embeddings_context.has_ngram_embeddings && !m_cached_ngram_embeddings) {
+                m_request.set_tensor("ngram_embeddings", ngram_embeddings);
             }
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
@@ -1124,6 +1264,35 @@ private:
     // collect thinker hidden states, does not trigger an Eagle3-only tensor bind on Omni models.
     bool m_has_qq_bias_input = false;
 
+    bool m_dflash_draft = false;
+    size_t m_dflash_candidate_position_offset = 1;
+    size_t m_dflash_hidden_state_size = 0;
+
+    // Fills the rows of one DFlash draft window starting at `first_row`: the request's stored target hidden
+    // states go to the leading rows (token type 0) and the rest is the block (token type 1, hidden state
+    // left zero). `token_type_ids_data` points at the window's first row. Returns the number of block rows
+    // after the first `candidate_position_offset` ones; they are the window's last rows, so the gather keeps
+    // them, and a window cut before them has none.
+    size_t _fill_dflash_draft_rows(uint64_t request_id,
+                                   size_t num_scheduled_tokens,
+                                   size_t first_row,
+                                   const ov::Tensor& hidden_state_input,
+                                   int64_t* token_type_ids_data) {
+        const auto it = m_initial_hidden_states.find(request_id);
+        const ov::Tensor target_hidden_states = it != m_initial_hidden_states.end() ? it->second : ov::Tensor{};
+        const size_t num_target_rows = target_hidden_states ? target_hidden_states.get_shape()[0] : 0;
+        const size_t context_rows = std::min(num_scheduled_tokens, num_target_rows);
+        const size_t block_rows = num_scheduled_tokens - context_rows;
+
+        std::fill_n(token_type_ids_data, context_rows, 0);
+        std::fill_n(token_type_ids_data + context_rows, block_rows, 1);
+        if (context_rows > 0) {
+            _copy_roi_between_tensors(target_hidden_states, 0, context_rows, hidden_state_input, first_row);
+        }
+        const size_t first_candidate = context_rows + m_dflash_candidate_position_offset;
+        return num_scheduled_tokens > first_candidate ? num_scheduled_tokens - first_candidate : 0;
+    }
+
     // Hidden state flags and helpers
     bool _is_hs_export()   const { return m_hidden_state_flags & HS_EXPORT; }
     bool _is_hs_import()   const { return m_hidden_state_flags & HS_IMPORT; }
@@ -1293,6 +1462,10 @@ private:
             return {};
         }
 
+        return _make_zeroed_hidden_state_input(total_num_tokens, hidden_size);
+    }
+
+    static ov::Tensor _make_zeroed_hidden_state_input(size_t total_num_tokens, size_t hidden_size) {
         ov::Tensor hs(ov::element::f32, {total_num_tokens, 1, hidden_size});
         std::memset(hs.data<float>(), 0, hs.get_byte_size());
         return hs;

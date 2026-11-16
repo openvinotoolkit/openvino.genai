@@ -140,12 +140,12 @@ std::vector<ov::genai::AudioChunk> split_audio_into_chunks(const std::vector<flo
 
 namespace ov::genai {
 
-std::vector<AudioChunk> split_audio_into_chunks(const std::vector<std::vector<float>>& raw_speech,
+std::vector<AudioChunk> split_audio_into_chunks(const AudiosView& raw_speech,
                                                 const size_t sr,
                                                 const size_t max_chunk_sec) {
     std::vector<AudioChunk> chunks;
     for (size_t batch = 0; batch < raw_speech.size(); ++batch) {
-        std::vector<AudioChunk> sample_chunks = ::split_audio_into_chunks(raw_speech[batch], sr, max_chunk_sec);
+        std::vector<AudioChunk> sample_chunks = ::split_audio_into_chunks(raw_speech[batch].get(), sr, max_chunk_sec);
         for (AudioChunk& chunk : sample_chunks) {
             chunk.orig_batch = batch;
             chunks.push_back(std::move(chunk));

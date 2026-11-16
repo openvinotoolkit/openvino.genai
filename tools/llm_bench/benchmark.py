@@ -187,7 +187,7 @@ def get_argparser():
     parser.add_argument(
         "--memory_sampler",
         default="base",
-        choices=["base", "win-gpu", "full"],
+        choices=["base", "win-gpu", "full", "mac"],
         type=str.lower,  # normalise e.g. 'WIN-GPU'/'Full' -> 'win-gpu'/'full' before choices validation
         required=False,
         help="Memory sampler implementation to use when process-based monitoring is active\n"
@@ -207,7 +207,11 @@ def get_argparser():
         "  full           — MemorySamplerFull: same RAM metrics as base plus uss, pss\n"
         "                   and swap from psutil.memory_full_info() (reads /proc smaps).\n"
         "                   More accurate 'real' footprint but slower. Linux only;\n"
-        "                   falls back to MemorySamplerBase on other platforms.",
+        "                   on macOS falls back to mac, elsewhere to base.\n"
+        "  mac            — MemorySamplerMac: same RAM metrics as base plus foot, the\n"
+        "                   physical footprint from libproc proc_pid_rusage (what\n"
+        "                   Activity Monitor shows: incl. compressed and GPU/Metal\n"
+        "                   memory). macOS only; falls back to base on other platforms.",
     )
     parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
     parser.add_argument(

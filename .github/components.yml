@@ -211,5 +211,8 @@ llm_bench:
 WWB:
   revalidate: []
 
+genai_cli:
+  revalidate: []
+
 GH_Pages_Docs:
   revalidate: []

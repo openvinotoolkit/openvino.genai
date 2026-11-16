@@ -600,6 +600,12 @@ def load_visual_text_model(
                         model_kwargs["torch_dtype"],
                     )
                 model_kwargs.update({"torch_dtype": torch.float32})
+            elif config.model_type == "molmo2":
+                # The remote code of molmo2 checkpoints registers the model only under AutoModelForImageTextToText.
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+                model_kwargs["trust_remote_code"] = True
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
