@@ -450,7 +450,7 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 - `--memory_consumption_interval`: Interval sampling for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance.
 - `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources by portable heap-trimming helper.
 - `-mc_dir, --memory_consumption_dir`: Path to store memory consumption logs and chart.
-- `--memory_sampler`: set of metrics to collect: base, full, or win-gpu.
+- `--memory_sampler`: set of metrics to collect: base, full, win-gpu, or mac (macOS: adds `foot`, the physical footprint -- RSS-like but with compressed and GPU/Metal memory; `full` falls back to it on macOS).
 
 ## 9. Additional Resources
 
