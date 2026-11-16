@@ -117,10 +117,10 @@ the preceding run took about 10 minutes. The job has a 30-minute timeout. These 
 precede the standalone-tokenizer case added here and can vary with download caches and
 runner load.
 
-The 21 model variants cover 18 architecture IDs: BailingMoE2, ERNIE4.5-MoE, EXAONE4,
-Gemma, Gemma2, GPT-OSS, Hunyuan-Dense, Llama, Maincoder, MiniCPM, Mistral3, OLMoE,
-Phi3, Qwen2, Qwen3, Qwen3.5, Qwen3MoE and SmolLM3. Llama, MiniCPM and Mistral3 have
-separate dense and MoE cases. Each two-layer F32 model is about 4-12 MiB.
+The 23 model variants cover 20 architecture IDs: BailingMoE2, ERNIE4.5-MoE, EXAONE4,
+Gemma, Gemma2, GPT-OSS, Hunyuan-Dense, Llama, Maincoder, Mamba2, MiniCPM, Mistral3,
+Nemotron-H, OLMoE, Phi3, Qwen2, Qwen3, Qwen3.5, Qwen3MoE and SmolLM3. Llama, MiniCPM
+and Mistral3 have separate dense and MoE cases. Each two-layer F32 model is about 4-12 MiB.
 The architecture list is explicit: missing exports fail setup rather than silently
 skipping coverage. The pinned factory/saver cannot export Gemma3, Gemma4,
 DeepSeek2-OCR, Mellum or Muse-Glimmer; Gemma3 remains covered by the Optimum suite.
@@ -130,12 +130,15 @@ Known limitations are isolated from the passing cases:
 | Cases | Status |
 | --- | --- |
 | Qwen3.5 PA/default/continuous batching | Skipped: recurrent state needs SDPA |
-| Gemma2 explicit PA/continuous batching | Strict xfail: soft-capped attention has no SDPA node for PA conversion; automatic fallback passes |
-| GPT-OSS SDPA/PA/default/continuous batching | Strict xfail: first-token mismatch against llama.cpp CPU |
+| Mamba2 explicit PA/continuous batching | Non-strict xfail: no SDPA node for PA conversion |
+| Nemotron-H explicit PA/continuous batching | Non-strict xfail: SelectiveSSM fusion-count check fails during PA conversion |
+| Gemma2 explicit PA/continuous batching | Non-strict xfail: soft-capped attention has no SDPA node for PA conversion; automatic fallback passes |
+| GPT-OSS SDPA/PA/default/continuous batching | Non-strict xfail: first-token mismatch against llama.cpp CPU |
 
-Expected failures still execute and become failures on unexpected passes, so fixes
-require removing the corresponding markers. Generator/build/reference failures are
-never xfailed. Run with `--runxfail` to reproduce the underlying failures.
+Expected failures still execute. Unexpected passes are reported as XPASS without failing
+the suite; remove their markers after confirming the fixes are available in the tested
+OpenVINO builds. Generator/build/reference failures are never xfailed. Run with `--runxfail`
+to reproduce the underlying failures.
 
 Real-model comparisons with llama.cpp remain opt-in and require the WWB GGUF dependencies:
 
@@ -165,7 +168,7 @@ When adding a new architecture or fixing its integration:
 4. For production weights or quantization coverage, add a real-checkpoint case to
    `tools/who_what_benchmark/tests/test_cli_text_gguf.py:GGUF_MODELS` and run the opt-in
    llama.cpp comparison. Mark it `gguf_small` only when the download is under about 1 GB.
-5. Document any unsupported case with a specific skip reason or strict xfail, and remove
+5. Document any unsupported case with a specific skip reason or non-strict xfail, and remove
    the marker once fixed. Keep setup, generator and reference failures visible.
 
 Run both precommit suites after updating coverage and record pytest counts and elapsed

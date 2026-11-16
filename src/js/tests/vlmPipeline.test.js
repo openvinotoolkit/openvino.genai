@@ -104,7 +104,7 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
       pipeline.generate("What is 2+2?", {
         generationConfig: { max_new_tokens: "five" },
       }),
-      /vlmPerformInferenceThread error/,
+      /vlm_inference_thread error/,
     );
   });
 

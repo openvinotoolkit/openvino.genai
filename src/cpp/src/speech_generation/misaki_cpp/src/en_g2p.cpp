@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -1336,6 +1337,17 @@ private:
         continue;
       }
 
+      // Multi-byte currency symbols must be matched before the byte-wise branches below split them.
+      static constexpr std::array<std::string_view, 2> multibyte_currency_symbols = {"\xC2\xA3", "\xE2\x82\xAC"};  // £, €
+      const auto currency_it = std::find_if(
+          multibyte_currency_symbols.begin(), multibyte_currency_symbols.end(),
+          [&](std::string_view symbol) { return text.compare(i, symbol.size(), symbol) == 0; });
+      if (currency_it != multibyte_currency_symbols.end()) {
+        out.push_back({TokenKind::Word, std::string(*currency_it), ""});
+        i += currency_it->size();
+        continue;
+      }
+
       if (std::isalnum(c)) {
         std::size_t j = i;
         while (j < text.size()) {
@@ -2275,6 +2287,19 @@ private:
     return out;
   }
 
+  static bool is_currency_symbol(const std::string &text) {
+    return text == "$" || text == "£" || text == "€";
+  }
+
+  static std::string currency_major_word(const std::string &symbol) {
+    return symbol == "$" ? "dollar" : (symbol == "£" ? "pound" : "euro");
+  }
+
+  static bool is_scale_word(const std::string &text) {
+    const auto lower = ascii_lower(text);
+    return lower == "thousand" || lower == "million" || lower == "billion" || lower == "trillion";
+  }
+
   std::optional<std::string> expand_symbol_or_number(const std::vector<Token> &tokens, std::size_t index) const {
     // Python mapping: Lexicon.get_special_case symbols + num2words/extend_num numeric expansion logic.
     const auto &token = tokens[index].text;
@@ -2295,7 +2320,18 @@ private:
       return *pronunciation;
     }
 
-    if (token == "$" || token == "£" || token == "€") {
+    if (is_scale_word(token)) {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      if (prev_word && is_numeric_token(tokens[*prev_word].text)) {
+        const auto currency_word = find_prev_word_index(tokens, *prev_word);
+        if (currency_word && is_currency_symbol(tokens[*currency_word].text)) {
+          return words_to_phonemes({ascii_lower(token), currency_major_word(tokens[*currency_word].text) + "s"}, true);
+        }
+      }
+      return std::nullopt;
+    }
+
+    if (is_currency_symbol(token)) {
       const auto next_word = find_next_word_index(tokens, index);
       if (next_word && is_numeric_token(tokens[*next_word].text)) {
         return std::string{};
@@ -2331,8 +2367,11 @@ private:
     };
 
     const auto prev_word = find_prev_word_index(tokens, index);
-    const bool has_currency_symbol =
-        prev_word && (tokens[*prev_word].text == "$" || tokens[*prev_word].text == "£" || tokens[*prev_word].text == "€");
+    // Python misaki attaches the currency to the last number in a run (e.g. "$2.3 billion" -> "two point three
+    // billion dollars"), so a following scale word reads this number as a plain number and appends the currency.
+    const auto next_word = find_next_word_index(tokens, index);
+    const bool has_currency_symbol = prev_word && is_currency_symbol(tokens[*prev_word].text) &&
+                                     !(next_word && is_scale_word(tokens[*next_word].text));
 
     std::vector<std::string> words;
     if (parsed.negative) {
@@ -2341,7 +2380,7 @@ private:
 
     if (has_currency_symbol) {
       const auto currency_symbol = tokens[*prev_word].text;
-      const std::string major = currency_symbol == "$" ? "dollar" : (currency_symbol == "£" ? "pound" : "euro");
+      const std::string major = currency_major_word(currency_symbol);
       const std::string minor = currency_symbol == "£" ? "pence" : "cent";
 
       const auto major_value_opt = parse_i64(parsed.whole.empty() ? "0" : parsed.whole);
@@ -2371,7 +2410,7 @@ private:
         for (std::string w; iss >> w;) {
           words.push_back(w);
         }
-        words.push_back(minor_value == 1 ? "cent" : minor + "s");
+        words.push_back((minor_value == 1 || minor == "pence") ? minor : minor + "s");
       }
 
       return append_adjacent_percent(words_to_phonemes(words, true));

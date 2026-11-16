@@ -84,7 +84,11 @@ ov::Tensor build_pixel_values(const ov::Tensor image,
 std::pair<ov::Tensor, ov::Tensor> build_bilinear_indices_and_weights(
         const Qwen3VLForConditionalGeneration::VisionConfig& config,
         const size_t grid_height,
-        const size_t grid_width) {
+        const size_t grid_width,
+        const ov::element::Type& indices_type) {
+    OPENVINO_ASSERT(indices_type == ov::element::i32 || indices_type == ov::element::i64,
+                    "'bilinear_indices' must be of i32 or i64 type, got ", indices_type);
+
     const size_t num_grid_per_side = static_cast<size_t>(std::sqrt(config.num_position_embeddings));
     OPENVINO_ASSERT(num_grid_per_side * num_grid_per_side == config.num_position_embeddings,
                     "'num_position_embeddings' (", config.num_position_embeddings, ") must be a perfect square");
@@ -97,10 +101,20 @@ std::pair<ov::Tensor, ov::Tensor> build_bilinear_indices_and_weights(
                           : 0.0f;
     };
 
-    ov::Tensor indices(ov::element::i32, {4, num_patches});
+    ov::Tensor indices(indices_type, {4, num_patches});
     ov::Tensor weights(ov::element::f32, {4, num_patches});
-    int32_t* indices_data = indices.data<int32_t>();
     float* weights_data = weights.data<float>();
+
+    const bool indices_are_i32 = indices_type == ov::element::i32;
+    int32_t* indices_i32 = indices_are_i32 ? indices.data<int32_t>() : nullptr;
+    int64_t* indices_i64 = indices_are_i32 ? nullptr : indices.data<int64_t>();
+    const auto store_index = [&](const size_t offset, const int32_t value) {
+        if (indices_are_i32) {
+            indices_i32[offset] = value;
+        } else {
+            indices_i64[offset] = value;
+        }
+    };
 
     const int32_t grid_max = static_cast<int32_t>(num_grid_per_side - 1);
     size_t token = 0;
@@ -121,10 +135,10 @@ std::pair<ov::Tensor, ov::Tensor> build_bilinear_indices_and_weights(
                     const int32_t floor_base = row_floor * static_cast<int32_t>(num_grid_per_side);
                     const int32_t ceil_base = row_ceil * static_cast<int32_t>(num_grid_per_side);
 
-                    indices_data[0 * num_patches + token] = floor_base + col_floor;
-                    indices_data[1 * num_patches + token] = floor_base + col_ceil;
-                    indices_data[2 * num_patches + token] = ceil_base + col_floor;
-                    indices_data[3 * num_patches + token] = ceil_base + col_ceil;
+                    store_index(0 * num_patches + token, floor_base + col_floor);
+                    store_index(1 * num_patches + token, floor_base + col_ceil);
+                    store_index(2 * num_patches + token, ceil_base + col_floor);
+                    store_index(3 * num_patches + token, ceil_base + col_ceil);
 
                     weights_data[0 * num_patches + token] = (1.0f - row_frac) * (1.0f - col_frac);
                     weights_data[1 * num_patches + token] = (1.0f - row_frac) * col_frac;
@@ -526,8 +540,10 @@ ov::Tensor Qwen3VLForConditionalGeneration::infer_vision_tower(const ov::Tensor&
     const size_t grid_height = image_shape[2] / patch_size, grid_width = image_shape[3] / patch_size;
 
     const ov::Tensor pixel_values = build_pixel_values(condition_image, m_vision_config, grid_height, grid_width);
+    const ov::element::Type indices_type =
+        m_vision_request.get_compiled_model().input("bilinear_indices").get_element_type();
     const auto [bilinear_indices, bilinear_weights] =
-        build_bilinear_indices_and_weights(m_vision_config, grid_height, grid_width);
+        build_bilinear_indices_and_weights(m_vision_config, grid_height, grid_width, indices_type);
     const auto [cos, sin] = build_vision_rotary_embeddings(m_vision_config, grid_height, grid_width);
 
     m_vision_request.set_tensor("pixel_values", pixel_values);

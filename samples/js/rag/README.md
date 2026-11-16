@@ -4,12 +4,16 @@ This example showcases inference of Text Embedding and Text Rerank Models. The a
 
 ## Download and Convert the Model and Tokenizers
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
 Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install -r ../../export-requirements.txt
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
 ```
 
 To export text embedding model run Optimum CLI command:
@@ -138,6 +142,35 @@ import { TextRerankPipeline } from 'openvino-genai-node';
 
 const pipeline = await TextRerankPipeline(modelPath, { device: "CPU" });
 
+const rerankResult = await pipeline.rerank(query, documents);
+```
+
+## Applying a prompt template
+
+Some reranker models require their chat template to be applied to the query and each document.
+`TextRerankPipeline` concatenates `query + document`, so format them yourself and set
+`padding_side: "left"` (these models read the last token).
+
+Example for `Qwen/Qwen3-Reranker-0.6B`:
+
+```js
+import { TextRerankPipeline } from 'openvino-genai-node';
+
+const PREFIX =
+  '<|im_start|>system\n' +
+  'Judge whether the Document meets the requirements based on the Query and the Instruct ' +
+  'provided. Note that the answer can only be "yes" or "no".<|im_end|>\n' +
+  '<|im_start|>user\n';
+const SUFFIX = '<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n';
+const INSTRUCTION = 'Given a web search query, retrieve relevant passages that answer the query';
+
+const query = `${PREFIX}<Instruct>: ${INSTRUCTION}\n<Query>: ${userQuery}\n`;
+// Each complete query + formatted document must fit the tokenizer's effective max_length.
+// Shorten document content before formatting if needed: automatic truncation can
+// remove the required SUFFIX, even with padding_side: "left".
+const documents = userDocuments.map((doc) => `<Document>: ${doc}${SUFFIX}`);
+
+const pipeline = await TextRerankPipeline(modelPath, { device: 'CPU', config: { padding_side: 'left' } });
 const rerankResult = await pipeline.rerank(query, documents);
 ```
 
