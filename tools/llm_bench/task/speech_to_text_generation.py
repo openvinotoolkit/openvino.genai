@@ -23,6 +23,15 @@ DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE = 400
 DEFAULT_SPEECH_PROMPT = "Transcribe this audio."
 
 
+def _uses_native_npu_qwen3_asr_decoder(model_path, device, use_genai, model_type):
+    return (
+        use_genai
+        and model_type == "qwen3-asr"
+        and device.upper() == "NPU"
+        and not (Path(model_path) / "openvino_audio_encoder_model.xml").exists()
+    )
+
+
 def _get_output_token_size(processor, text, use_genai, num_generated_tokens=None):
     if processor is None:
         if num_generated_tokens is None:
@@ -52,7 +61,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     speech_language = input_param["speech_param"].get("language", default_language)
     ret_timestamps = input_param["speech_param"].get("timestamp", True)
     max_gen_tokens = args["infer_count"]
-    if max_gen_tokens is None:
+    if max_gen_tokens is None and not (use_genai and input_param.get("native_qwen3_asr_npu", False)):
         max_gen_tokens = (
             DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE if use_case.model_type in ["whisper"] else DEFAULT_OUTPUT_TOKEN_SIZE
         )
@@ -62,7 +71,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     mem_consumption.start(num)
     if use_genai:
         generation_config = pipe.get_generation_config()
-        generation_config.max_new_tokens = max_gen_tokens
+        if max_gen_tokens is not None:
+            generation_config.max_new_tokens = max_gen_tokens
         generation_config.language = speech_language
         generation_config.return_timestamps = ret_timestamps
         if use_case.model_type in ["whisper"]:
@@ -259,7 +269,12 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         "mem_consumption": mem_consumption,
         "processor": processor,
         "use_genai": use_genai,
+        "native_qwen3_asr_npu": _uses_native_npu_qwen3_asr_decoder(
+            model_path, device, use_genai, args["use_case"].model_type
+        ),
     }
+    if input_param["native_qwen3_asr_npu"] and args["infer_count"] is None:
+        log.info("No --infer_count specified; using the Qwen3-ASR pipeline's generation limits.")
     if args["use_case"].model_type == "sense-voice":
         input_param["dither"] = json.loads((Path(model_path) / "config.json").read_text(encoding="utf-8")).get(
             "dither", 1.0

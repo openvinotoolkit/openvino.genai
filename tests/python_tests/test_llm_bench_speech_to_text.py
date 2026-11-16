@@ -82,6 +82,142 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "did not report the generated token count"):
             self.speech._get_output_token_size(None, "transcript", False)
 
+    def test_native_qwen_npu_default_is_scoped_to_encoder_decoder_export(self):
+        classify = self.speech._uses_native_npu_qwen3_asr_decoder
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            self.assertTrue(classify(path, "NPU", True, "qwen3-asr"))
+            self.assertTrue(classify(path, "npu", True, "qwen3-asr"))
+            self.assertFalse(classify(path, "CPU", True, "qwen3-asr"))
+            self.assertFalse(classify(path, "NPU.0", True, "qwen3-asr"))
+            self.assertFalse(classify(path, "NPU", False, "qwen3-asr"))
+            self.assertFalse(classify(path, "NPU", True, "whisper"))
+            (path / "openvino_audio_encoder_model.xml").touch()
+            self.assertFalse(classify(path, "NPU", True, "qwen3-asr"))
+
+    def _run_native_generation(self, model_type, infer_count, native_qwen_npu, configured_max):
+        config = SimpleNamespace(max_new_tokens=configured_max, max_length=777)
+        metrics = SimpleNamespace(
+            get_ttft=lambda: SimpleNamespace(mean=1),
+            raw_metrics=SimpleNamespace(
+                m_new_token_times=[1, 2],
+                token_infer_durations=[1, 1],
+                sampling_durations=[1, 1],
+            ),
+            asr_raw_metrics=SimpleNamespace(encode_inference_durations=[1], decode_inference_durations=[1]),
+            get_tokenization_duration=lambda: SimpleNamespace(mean=1),
+            get_features_extraction_duration=lambda: SimpleNamespace(mean=1),
+            get_detokenization_duration=lambda: SimpleNamespace(mean=1),
+            get_num_generated_tokens=lambda: 1,
+        )
+        pipe = mock.Mock()
+        pipe.get_generation_config.return_value = config
+        pipe.generate.return_value = SimpleNamespace(texts=["transcript"], perf_metrics=metrics)
+        tokenizer = mock.Mock()
+        tokenizer.encode.return_value = SimpleNamespace(input_ids=SimpleNamespace(size=1))
+        memory = mock.Mock()
+        memory.iter_stop_and_collect_data.return_value = {}
+        input_param = {
+            "pipe": pipe,
+            "raw_speech": [0.0],
+            "iter_idx": 0,
+            "speech_idx": 0,
+            "processor": tokenizer,
+            "use_genai": True,
+            "native_qwen3_asr_npu": native_qwen_npu,
+            "speech_param": {},
+            "mem_consumption": memory,
+        }
+        args = {"use_case": SimpleNamespace(model_type=model_type), "infer_count": infer_count}
+        with (
+            mock.patch.object(self.speech.metrics_print, "print_metrics"),
+            mock.patch.object(self.speech.metrics_print, "print_generated"),
+        ):
+            self.speech.run_speech_2_txt_generation(input_param, args, {0: {}}, [])
+        self.assertIs(pipe.generate.call_args.args[1], config)
+        return config
+
+    def test_qwen_npu_omitted_limit_preserves_pipeline_configuration(self):
+        unlimited = (1 << 64) - 1
+        config = self._run_native_generation("qwen3-asr", None, True, unlimited)
+        self.assertEqual(config.max_new_tokens, unlimited)
+        self.assertEqual(config.max_length, 777)
+        configured = self._run_native_generation("qwen3-asr", None, True, 128)
+        self.assertEqual(configured.max_new_tokens, 128)
+        self.assertEqual(configured.max_length, 777)
+
+    def test_qwen_npu_explicit_limit_still_overrides_model_configuration(self):
+        config = self._run_native_generation("qwen3-asr", 256, True, 128)
+        self.assertEqual(config.max_new_tokens, 256)
+        self.assertEqual(config.max_length, 777)
+
+    def test_other_native_backends_keep_existing_implicit_limits(self):
+        self.assertEqual(self._run_native_generation("qwen3-asr", None, False, 128).max_new_tokens, 1000)
+        self.assertEqual(self._run_native_generation("fun-asr", None, False, 128).max_new_tokens, 1000)
+        self.assertEqual(self._run_native_generation("whisper", None, False, 128).max_new_tokens, 400)
+
+    def test_reference_backend_keeps_default_and_explicit_limits(self):
+        memory = mock.Mock()
+        memory.iter_stop_and_collect_data.return_value = {}
+        token_row = SimpleNamespace(numel=lambda: 1)
+        tokenizer = mock.Mock(return_value={"input_ids": [token_row]})
+        pipe = mock.Mock(return_value={"text": "transcript", "num_generated_tokens": 1})
+        hook = mock.Mock()
+        hook.get_time_list.return_value = [0.1]
+        hook.get_time_infer_list.return_value = [0.1]
+        input_param = {
+            "pipe": pipe,
+            "raw_speech": [0.0],
+            "iter_idx": 0,
+            "speech_idx": 0,
+            "processor": SimpleNamespace(tokenizer=tokenizer),
+            "use_genai": False,
+            "native_qwen3_asr_npu": False,
+            "speech_param": {},
+            "mem_consumption": memory,
+        }
+        args = {"use_case": SimpleNamespace(model_type="qwen3-asr"), "infer_count": None}
+        with (
+            mock.patch.object(self.speech, "asr_hook", hook),
+            mock.patch.object(self.speech.model_utils, "setup_gen_config_use_custom_args", return_value={}),
+            mock.patch.object(self.speech.metrics_print, "print_metrics"),
+            mock.patch.object(self.speech.metrics_print, "print_generated"),
+        ):
+            self.speech.run_speech_2_txt_generation(input_param, args, {0: {}}, [])
+            self.assertEqual(pipe.call_args.kwargs["generate_kwargs"]["max_new_tokens"], 1000)
+            args["infer_count"] = 256
+            self.speech.run_speech_2_txt_generation(input_param, args, {0: {}}, [])
+            self.assertEqual(pipe.call_args.kwargs["generate_kwargs"]["max_new_tokens"], 256)
+
+    def test_speech_benchmark_passes_native_npu_classification_to_generation(self):
+        memory = mock.Mock()
+        use_case = SimpleNamespace(model_type="qwen3-asr")
+        args = {"prompt_index": None, "use_case": use_case, "infer_count": None}
+        speech_files = [{"media": "audio.wav"}]
+        observed = []
+
+        def capture(input_param, *_):
+            observed.append(input_param["native_qwen3_asr_npu"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.object(self.speech, "get_speech_files", return_value=speech_files),
+                mock.patch.object(
+                    self.speech.FW_UTILS["ov"],
+                    "create_speech_2_txt_model",
+                    return_value=(object(), object(), 0.0, True),
+                ),
+                mock.patch.object(self.speech.model_utils, "init_timestamp", side_effect=lambda *_: {0: {0: {}}}),
+                mock.patch.object(self.speech.model_utils, "read_wav", return_value=[0.0]),
+                mock.patch.object(self.speech.metrics_print, "print_average"),
+                mock.patch.object(self.speech, "run_speech_2_txt_generation", side_effect=capture),
+            ):
+                self.speech.run_speech_2_txt_benchmark(Path(directory), "ov", "NPU", args, 0, memory)
+                self.speech.run_speech_2_txt_benchmark(Path(directory), "ov", "CPU", args, 0, memory)
+                (Path(directory) / "openvino_audio_encoder_model.xml").touch()
+                self.speech.run_speech_2_txt_benchmark(Path(directory), "ov", "NPU", args, 0, memory)
+        self.assertEqual(observed, [True, False, False])
+
     def test_vlm_genai_keeps_upstream_config_loading(self):
         module = self.ov_utils
         expected = object()

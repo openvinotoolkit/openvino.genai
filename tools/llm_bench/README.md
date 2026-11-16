@@ -367,6 +367,8 @@ decoding. Reduce `max_new_tokens`/`max_length` (or `--infer_count` in the benchm
 `MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN` in the NPU configuration. If no output limit is specified,
 generation is bounded by the available KV-cache; reaching it returns the partial transcription
 and logs an error. A prompt or minimum output length that cannot fit is also rejected before decoding.
+For the GenAI Qwen3-ASR encoder-decoder pipeline on NPU, omitting `--infer_count` preserves the
+model's generation configuration rather than applying the benchmark's 1000-token default.
 When importing a weightless decoder blob with `BLOB_PATH`, set `WEIGHTS_PATH` to the original
 `openvino_decoder_model.bin`; the encoder uses its own model weights.
 
