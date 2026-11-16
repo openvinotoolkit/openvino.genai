@@ -153,7 +153,7 @@ TEST_F(Qwen3ASRDecoderFormatTest, NPUDecoderRequiresPositiveEncoderCapacity) {
     }
 }
 
-TEST_F(Qwen3ASRDecoderFormatTest, ReturnsPartialTranscriptionAtCapacityAndPreservesEarlyEOS) {
+TEST_F(Qwen3ASRDecoderFormatTest, RejectsOversizedFiniteBudgetBeforeInference) {
     save_decoder(true, true);
     CapacityLimitedCpuDecoder decoder(m_model_dir);
     ov::Tensor input_ids(ov::element::i64, {1, 2});
@@ -167,13 +167,44 @@ TEST_F(Qwen3ASRDecoderFormatTest, ReturnsPartialTranscriptionAtCapacityAndPreser
     ov::genai::RawPerfMetrics metrics;
     metrics.m_inference_durations = {{ov::genai::MicroSeconds(0.0f)}};
     ov::genai::ASRRawPerfMetrics asr_metrics;
+    try {
+        decoder.generate(input_ids, encoder_hidden_states, config, metrics, asr_metrics);
+        FAIL() << "An explicit output budget beyond the KV capacity must be rejected.";
+    } catch (const ov::Exception& error) {
+        const std::string message = error.what();
+        EXPECT_NE(message.find("requested 4 new tokens"), std::string::npos);
+        EXPECT_NE(message.find("accommodate only 3"), std::string::npos);
+    }
+    EXPECT_TRUE(asr_metrics.decode_inference_durations.empty());
+    EXPECT_EQ(config.max_new_tokens, 4u);
+
+    config.max_new_tokens = 3;
     const auto result = decoder.generate(input_ids, encoder_hidden_states, config, metrics, asr_metrics);
     ASSERT_EQ(result.tokens.size(), 1u);
     EXPECT_EQ(result.tokens[0].size(), 3u);
     ASSERT_EQ(result.finish_reasons.size(), 1u);
     EXPECT_EQ(result.finish_reasons[0], ov::genai::GenerationFinishReason::LENGTH);
     EXPECT_EQ(asr_metrics.decode_inference_durations.size(), 3u);
-    EXPECT_EQ(config.max_new_tokens, 4u);
+}
+
+TEST_F(Qwen3ASRDecoderFormatTest, UnboundedGenerationReturnsPartialAndPreservesEarlyEOS) {
+    save_decoder(true, true);
+    CapacityLimitedCpuDecoder decoder(m_model_dir);
+    ov::Tensor input_ids(ov::element::i64, {1, 2});
+    std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), 0);
+    ov::Tensor encoder_hidden_states(ov::element::f32, {1, 1, 1});
+    encoder_hidden_states.data<float>()[0] = 1.0f;
+    ov::genai::ASRGenerationConfig config;
+    config.set_eos_token_id(0);
+    config.ignore_eos = true;
+    ov::genai::RawPerfMetrics metrics;
+    metrics.m_inference_durations = {{ov::genai::MicroSeconds(0.0f)}};
+    ov::genai::ASRRawPerfMetrics asr_metrics;
+    const auto bounded = decoder.generate(input_ids, encoder_hidden_states, config, metrics, asr_metrics);
+    ASSERT_EQ(bounded.tokens.size(), 1u);
+    EXPECT_EQ(bounded.tokens[0].size(), 3u);
+    ASSERT_EQ(bounded.finish_reasons.size(), 1u);
+    EXPECT_EQ(bounded.finish_reasons[0], ov::genai::GenerationFinishReason::LENGTH);
 
     config.ignore_eos = false;
     ov::genai::ASRRawPerfMetrics early_metrics;
@@ -184,13 +215,13 @@ TEST_F(Qwen3ASRDecoderFormatTest, ReturnsPartialTranscriptionAtCapacityAndPreser
     EXPECT_EQ(early.finish_reasons[0], ov::genai::GenerationFinishReason::STOP);
 }
 
-TEST(Qwen3ASRNPUGenerationCapacityTest, CapsOnlyAboveAvailableTokens) {
+TEST(Qwen3ASRNPUGenerationCapacityTest, AcceptsExactlyAvailableTokensAndRejectsOneMore) {
     ov::genai::ASRGenerationConfig config;
     config.ignore_eos = true;
     config.max_new_tokens = 65;
     EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).max_new_tokens, 65u);
     config.max_new_tokens = 66;
-    EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).max_new_tokens, 65u);
+    EXPECT_THROW(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191), ov::Exception);
     EXPECT_EQ(config.max_new_tokens, 66u);
 }
 
@@ -199,9 +230,21 @@ TEST(Qwen3ASRNPUGenerationCapacityTest, AppliesMaxLengthAndMaxNewTokensPrecedenc
     config.max_length = 193;
     EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).get_max_new_tokens(128), 65u);
     config.max_length = 194;
-    EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).get_max_new_tokens(128), 65u);
+    EXPECT_THROW(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191), ov::Exception);
     config.max_new_tokens = 1;
     EXPECT_EQ(ov::genai::prepare_qwen3_asr_npu_generation(128, config, 128, 191).get_max_new_tokens(128), 1u);
+}
+
+TEST(Qwen3ASRNPUGenerationCapacityTest, RejectsBeamSearchBeforeInference) {
+    ov::genai::ASRGenerationConfig config;
+    config.max_new_tokens = 1;
+    config.num_beams = 2;
+    try {
+        ov::genai::prepare_qwen3_asr_npu_generation(2, config, 128, 191);
+        FAIL() << "The NPU decoder only supports single-beam generation.";
+    } catch (const ov::Exception& error) {
+        EXPECT_NE(std::string(error.what()).find("does not support beam search"), std::string::npos);
+    }
 }
 
 TEST(Qwen3ASRNPUGenerationCapacityTest, CapsUnboundedGenerationAndRejectsInvalidInputs) {

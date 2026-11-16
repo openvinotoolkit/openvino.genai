@@ -362,10 +362,11 @@ optimum-cli export openvino --model Qwen/Qwen3-ASR-1.7B --weight-format fp16 --t
 Explicitly selecting `--task automatic-speech-recognition` exports without past-key-value reuse.
 A directory name containing `stateful` or `use_cache: true` in the configuration does not
 make such a decoder stateful; adding a dummy `beam_idx` input does not restore its missing cache.
-On NPU, a requested output length beyond the compiled KV-cache is limited to the available
-capacity. If generation reaches that limit, the partial transcription is returned and an error
-is logged; increase `MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN` to allow longer output. A prompt or
-minimum output length that cannot fit is rejected before decoding.
+On NPU, an explicitly requested output length beyond the compiled KV-cache is rejected before
+decoding. Reduce `max_new_tokens`/`max_length` (or `--infer_count` in the benchmark), or increase
+`MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN` in the NPU configuration. If no output limit is specified,
+generation is bounded by the available KV-cache; reaching it returns the partial transcription
+and logs an error. A prompt or minimum output length that cannot fit is also rejected before decoding.
 When importing a weightless decoder blob with `BLOB_PATH`, set `WEIGHTS_PATH` to the original
 `openvino_decoder_model.bin`; the encoder uses its own model weights.
 

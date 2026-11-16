@@ -53,6 +53,7 @@ ASRGenerationConfig prepare_qwen3_asr_npu_generation(size_t prompt_len,
                                                      const ASRGenerationConfig& config,
                                                      size_t max_prompt_len,
                                                      size_t kv_cache_capacity) {
+    OPENVINO_ASSERT(!config.is_beam_search(), "Qwen3-ASR NPU decoder does not support beam search.");
     OPENVINO_ASSERT(prompt_len > 0 && prompt_len <= max_prompt_len,
                     "Qwen3-ASR NPU prompt length ",
                     prompt_len,
@@ -72,7 +73,18 @@ ASRGenerationConfig prepare_qwen3_asr_npu_generation(size_t prompt_len,
                     prompt_len,
                     " tokens. Reduce min_new_tokens or increase MAX_PROMPT_LEN or MIN_RESPONSE_LEN.");
     auto result = config;
-    if (config.get_max_new_tokens(prompt_len) > available_new_tokens) {
+    const bool finite_limit = config.max_new_tokens != SIZE_MAX || config.max_length != SIZE_MAX;
+    if (finite_limit) {
+        const auto requested_new_tokens = config.get_max_new_tokens(prompt_len);
+        OPENVINO_ASSERT(requested_new_tokens <= available_new_tokens,
+                        "Qwen3-ASR NPU requested ",
+                        requested_new_tokens,
+                        " new tokens, but the compiled KV-cache can accommodate only ",
+                        available_new_tokens,
+                        " after a prompt of ",
+                        prompt_len,
+                        " tokens. Reduce max_new_tokens/max_length or increase MAX_PROMPT_LEN or MIN_RESPONSE_LEN.");
+    } else {
         result.max_new_tokens = available_new_tokens;
     }
     return result;
