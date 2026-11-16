@@ -7,6 +7,7 @@
 
 #include "openvino/genai/lora_adapter.hpp"
 #include "continuous_batching/cache/cache_eviction.hpp"
+#include "continuous_batching/cache/hidden_state_cache.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
@@ -18,6 +19,8 @@ class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatc
 protected:
     std::shared_ptr<ContinuousBatchingScheduler> m_scheduler;
     std::shared_ptr<ModelRunner> m_model_runner;
+    // Only for models exporting intermediate hidden states, with prefix caching on.
+    std::unique_ptr<HiddenStateCache> m_hidden_state_cache;
     std::optional<AdapterController> m_adapter_controller;
     std::shared_ptr<Sampler> m_sampler;
 
@@ -109,6 +112,12 @@ protected:
     /// Publishes canonical completed COW rows after successful non-speculative inference.
     void _publish_completed_cache_blocks(const ContinuousBatchingScheduler::Output& scheduler_output);
 
+    /// Caches the intermediate hidden states of the full blocks each scheduled sequence completed.
+    void _cache_completed_hidden_state_blocks(const ContinuousBatchingScheduler::Output& scheduler_output);
+
+    /// Restores KV only up to the prefix m_hidden_state_cache covers, and replays its hidden states.
+    void _restore_prefix_with_hidden_states(const SequenceGroup::Ptr& group);
+
     virtual bool _can_publish_kv_only_completed_blocks() const {
         return true;
     }
@@ -168,7 +177,12 @@ public:
     }
 
     virtual void initialize_prefix_cache(const SequenceGroup::Ptr& group) {
-        if (m_scheduler->get_config().enable_prefix_caching) {
+        if (!m_scheduler->get_config().enable_prefix_caching) {
+            return;
+        }
+        if (m_hidden_state_cache && group->get_sampling_parameters().return_omni_outputs) {
+            _restore_prefix_with_hidden_states(group);
+        } else {
             m_scheduler->restore_cached_blocks(group);
         }
     }

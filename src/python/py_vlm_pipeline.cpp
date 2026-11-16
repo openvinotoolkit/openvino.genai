@@ -219,8 +219,10 @@ auto vlm_generate_common_params = R"(
         Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
     :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
 
-    :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
-        Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
+    :param audio_chunk_frames: number of codec frames per streaming chunk. Must be >= 1. The default 4 gives
+        a first chunk of about 297ms and later chunks of 320ms with the standard Qwen3-Omni.
+        Smaller values lower time-to-first-audio but spend more vocoder time per second of audio and can run
+        slower than real time.
         Ignored when speech_streamer is not provided.
     :type audio_chunk_frames: int
 

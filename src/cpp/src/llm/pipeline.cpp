@@ -19,6 +19,8 @@
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
 #include "utils.hpp"
+#include "gguf_utils/gguf_utils.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "model_desc.hpp"
 
 namespace {
@@ -130,6 +132,7 @@ std::pair<std::string, Any> draft_model(
     const std::filesystem::path openvino_model_name = is_mtp ? "openvino_mtp_model.xml" : "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
     utils::dflash::apply_dflash_rt_info(model, plugin_config);
+    utils::dflash::read_markov_head(models_path, plugin_config);
     if (is_mtp) {
         plugin_config["mtp_mode"] = true;
     }
@@ -186,6 +189,11 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
     OPENVINO_ASSERT(model, "Model must not be null");
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
+
+    // GGUF-specific properties configure conversion, which already happened by the time we get a
+    // model, so drop them: the plugin rejects unknown properties, and this descriptor outlives
+    // the function so strip once, here (StatefulLLMPipeline strips them itself elsewhere).
+    properties_without_draft_model = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
 
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
@@ -295,9 +303,22 @@ ov::genai::LLMPipeline::LLMPipeline(
     utils::extract_extensions_to_core(properties);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
+    // The reader choice determines whether tokenizer metadata is available on the model.
+    const auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
+
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
-    const Tokenizer tokenizer(models_path, properties);
+    // For GGUF the frontend attaches tokenizer metadata to the model's rt_info, so build the
+    // tokenizer from what was already read instead of re-opening the .gguf. Exceptions: the
+    // legacy reader's model has no such rt_info, and enable_save_ov_model needs the source
+    // directory to write the tokenizer/detokenizer IRs to, which the metadata alone can't give.
+    const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.enable_save_ov_model &&
+                                      !gguf_properties.use_legacy_reader();
+    const Tokenizer tokenizer =
+        tokenizer_from_model ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
+                             : Tokenizer(models_path, properties);
+    // On the from-file path the frontend's metadata is still on the model and no longer read.
+    erase_gguf_tokenizer_metadata(model);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {

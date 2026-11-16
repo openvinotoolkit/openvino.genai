@@ -4,7 +4,7 @@
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
-from test_whisper_pipeline import (
+from test_asr_pipeline import (
     get_whisper_models_list,
     sample_from_multilingual_dataset,
     sample_from_dataset,

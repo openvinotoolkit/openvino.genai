@@ -5,11 +5,17 @@
 import pytest
 import torch
 import gc
+import os
+import stat
 import struct
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
+import numpy as np
+from gguf import GGUFReader, GGUFWriter, TokenType
+from tokenizers.processors import TemplateProcessing
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -26,6 +32,16 @@ from utils.ov_genai_pipelines import (
     PipelineType,
 )
 from data.models import GGUF_MODEL_LIST
+
+# ov::genai::gguf_reader values (see llm_pipeline.hpp): the OpenVINO GGUF frontend and the
+# pre-frontend, hand-written reader (currently the default; see llm_pipeline.hpp for why). Every
+# architecture in GGUF_MODEL_LIST (llama, qwen2) is within the legacy reader's supported scope, so
+# it is exercised here alongside the frontend to catch behavior differences between the two while
+# both exist.
+GGUF_READERS = (
+    pytest.param("FRONTEND", id="frontend"),
+    pytest.param("LEGACY", id="legacy"),
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +62,18 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
     opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
     hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    # HF's Qwen GGUF converter does not honor the file's BOS/EOS insertion policy.
+    fields = GGUFReader(gguf_full_path).fields
+    template = ["$A"]
+    special_tokens = []
+    for token in ("bos", "eos"):
+        flag = fields.get(f"tokenizer.ggml.add_{token}_token")
+        add_token = flag.contents() if flag is not None else getattr(hf_tokenizer, f"add_{token}_token", False)
+        if add_token:
+            token_id = fields[f"tokenizer.ggml.{token}_token_id"].contents()
+            special_tokens.append((token.upper(), token_id))
+            template.insert(0 if token == "bos" else len(template), token.upper())
+    hf_tokenizer.backend_tokenizer.post_processor = TemplateProcessing(single=template, special_tokens=special_tokens)
     return ModelInfo(
         gguf_model_id=gguf_model_id,
         gguf_filename=gguf_filename,
@@ -56,12 +84,14 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
     )
 
 
-@pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("pipeline_type", (*GGUF_PIPELINE_TYPES, PipelineType.AUTO))
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_pipelines_with_gguf_generate(
     model_gguf: ModelInfo,
     pipeline_type: PipelineType,
+    gguf_reader: str,
 ):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
@@ -100,6 +130,7 @@ def test_pipelines_with_gguf_generate(
         gguf_full_path,
         pipeline_type=pipeline_type,
         dynamic_quantization_group_size=dynamic_quantization_group_size,
+        gguf_reader=gguf_reader,
     )
     encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
     del ov_pipe_gguf
@@ -109,7 +140,18 @@ def test_pipelines_with_gguf_generate(
     assert res_string_input_1 == res_string_input_2
 
 
-@pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("pipeline_type", (*GGUF_PIPELINE_TYPES, PipelineType.AUTO))
+@pytest.mark.parametrize(
+    "gguf_reader",
+    [
+        pytest.param("FRONTEND", id="frontend"),
+        pytest.param(
+            "LEGACY",
+            id="legacy",
+            marks=pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725"),
+        ),
+    ],
+)
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.parametrize(
     "prompt",
@@ -125,12 +167,12 @@ def test_pipelines_with_gguf_generate(
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segmentation fault")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
-@pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725")
 def test_full_gguf_pipeline(
     model_gguf: ModelInfo,
     pipeline_type: PipelineType,
     enable_save_ov_model: bool,
     prompt: str,
+    gguf_reader: str,
 ):
     gguf_model_id = model_gguf.gguf_model_id
     gguf_full_path = model_gguf.gguf_full_path
@@ -140,9 +182,6 @@ def test_full_gguf_pipeline(
 
     if gguf_model_id == "sammysun0711/tiny-random-deepseek-distill-qwen-gguf" and "<|endoftext|>" in prompt:
         pytest.skip(reason="Prompts to test special tokens for this model fail on HF side")
-
-    # TODO: remove explicit switch-off of bos token
-    hf_tokenizer.add_bos_token = False
 
     ov_generation_config = ov_genai.GenerationConfig()
     ov_generation_config.max_new_tokens = 30
@@ -166,7 +205,14 @@ def test_full_gguf_pipeline(
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
 
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
+    ov_pipe_gguf = create_ov_pipeline(
+        gguf_full_path,
+        pipeline_type=pipeline_type,
+        enable_save_ov_model=enable_save_ov_model,
+        dynamic_quantization_group_size=dynamic_quantization_group_size,
+        gguf_reader=gguf_reader,
+    )
+    assert ov_pipe_gguf.get_tokenizer().encode(prompt).input_ids.data.tolist() == input_ids.tolist()
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     # Check that eos_token, bos_token string representations are loaded correctly from gguf file
@@ -178,7 +224,12 @@ def test_full_gguf_pipeline(
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
-        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
+        ov_pipe_native = create_ov_pipeline(
+            gguf_full_path.parent,
+            pipeline_type=pipeline_type,
+            dynamic_quantization_group_size=dynamic_quantization_group_size,
+        )
+        assert ov_pipe_native.get_tokenizer().encode(prompt).input_ids.data.tolist() == input_ids.tolist()
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
         gc.collect()
@@ -186,7 +237,8 @@ def test_full_gguf_pipeline(
 
     assert res_string_input_1 == res_string_input_2
 
-@pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("pipeline_type", (*GGUF_PIPELINE_TYPES, PipelineType.AUTO))
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize(
     "model_ids",
     [
@@ -199,7 +251,7 @@ def test_full_gguf_pipeline(
 )
 @pytest.mark.xfail(sys.platform == "darwin", reason="CVS-172335")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
-def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
+def test_full_gguf_qwen3_pipeline(pipeline_type, gguf_reader, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
     gguf_model_id = model_ids["gguf_model_id"]
@@ -218,10 +270,51 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     res_string_input_1 = "\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
 
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, gguf_reader=gguf_reader)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segmentation fault")
+@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+@pytest.mark.parametrize("backend", ["default", "PA", "SDPA", "scheduler"])
+@pytest.mark.parametrize("with_tokenizer", [False, True])
+def test_gguf_frontend_attention_backend(backend, with_tokenizer):
+    model_path = download_gguf_model("prithivMLmods/SmolLM2-135M-GGUF", "SmolLM2-135M.F16.gguf")
+    # The logger reads its environment once, so use a fresh process for backend assertions.
+    script = """
+import sys
+import openvino_genai as genai
+
+model_path, backend, with_tokenizer = sys.argv[1:]
+properties = {"GGUF_READER": "FRONTEND", "INFERENCE_PRECISION_HINT": "f32"}
+if backend == "scheduler":
+    properties["scheduler_config"] = genai.SchedulerConfig()
+elif backend != "default":
+    properties["ATTENTION_BACKEND"] = backend
+
+if with_tokenizer == "True":
+    tokenizer = genai.Tokenizer(model_path, GGUF_READER="FRONTEND")
+    pipeline = genai.LLMPipeline(model_path, tokenizer, "CPU", **properties)
+else:
+    pipeline = genai.LLMPipeline(model_path, "CPU", **properties)
+
+result = pipeline.generate("Why is the Sun yellow?", max_new_tokens=4, apply_chat_template=False)
+assert result
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(model_path), backend, str(with_tokenizer)],
+        env={**os.environ, "OPENVINO_LOG_LEVEL": "3"},
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    output = completed.stdout + completed.stderr
+    assert completed.returncode == 0, output
+    expected_backend = "SDPA" if backend == "SDPA" else "PA"
+    assert f"[INFO] {expected_backend} backend is enabled." in output, output
+    assert "Falling back to SDPA" not in output, output
 
 
 # GGUF tensor type ids (see gguflib.h enum gguf_tensor_type).
@@ -266,6 +359,7 @@ def _write_minimal_gguf(path: Path, tensor_type: int, last_dim: int) -> None:
     path.write_bytes(blob)
 
 
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize(
     "tensor_type,last_dim",
     [
@@ -278,12 +372,108 @@ def _write_minimal_gguf(path: Path, tensor_type: int, last_dim: int) -> None:
     ],
     ids=["q4_k_last_dim_32", "q6_k_last_dim_16"],
 )
-def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_dim):
+def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_dim, gguf_reader):
     # Regression test for the K-quant heap-buffer-overflow: a crafted GGUF whose
     # K-quant tensor has a last dim that is a multiple of the sub-block size but
     # not of 256 must be rejected at load time rather than overflowing the heap.
+    # Message wording differs between the frontend ("not a multiple of its block
+    # size 256", gguf.cpp) and the legacy reader ("super-block size 256",
+    # gguf_quants.cpp::gguf_load_quantized()); match the part common to both.
     gguf_path = tmp_path / "malformed_kquant.gguf"
     _write_minimal_gguf(gguf_path, tensor_type, last_dim)
 
-    with pytest.raises(RuntimeError, match="super-block size 256"):
-        ov_genai.LLMPipeline(str(gguf_path), "CPU")
+    with pytest.raises(RuntimeError, match="multiple of.*256"):
+        ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER=gguf_reader)
+
+
+@pytest.mark.parametrize("reader", [None, "LEGACY", "FRONTEND"])
+@pytest.mark.parametrize("with_tokenizer", [False, True])
+def test_gguf_default_reader_failure_hint(tmp_path, reader, with_tokenizer):
+    gguf_path = tmp_path / "malformed_kquant.gguf"
+    _write_minimal_gguf(gguf_path, _GGUF_TYPE_Q4_K, 32)
+    properties = {} if reader is None else {"GGUF_READER": reader}
+    args = (str(gguf_path),)
+    if with_tokenizer:
+        from tokenizers import Tokenizer
+        from tokenizers.models import WordLevel
+        from transformers import PreTrainedTokenizerFast
+        from utils.hugging_face import convert_and_save_tokenizer
+
+        backend = Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+        hf_tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]")
+        convert_and_save_tokenizer(hf_tokenizer, tmp_path)
+        args += (ov_genai.Tokenizer(tmp_path),)
+
+    with pytest.raises(RuntimeError, match="multiple of.*256") as exc:
+        ov_genai.LLMPipeline(*args, "CPU", **properties)
+
+    message = str(exc.value)
+    assert ("The default legacy GGUF reader failed" in message) == (reader is None)
+    if reader is None:
+        assert 'GGUF_READER="FRONTEND"' in message
+        assert 'ov::genai::gguf_reader("FRONTEND")' in message
+        assert "better model quality" in message
+        assert "preview" in message
+
+
+@pytest.fixture
+def tiny_gguf_model(tmp_path):
+    path = tmp_path / "model.gguf"
+    writer = GGUFWriter(path, "qwen3")
+    writer.add_block_count(1)
+    writer.add_embedding_length(8)
+    writer.add_context_length(32)
+    writer.add_head_count(2)
+    writer.add_head_count_kv(1)
+    writer.add_rope_dimension_count(4)
+    writer.add_feed_forward_length(12)
+    writer.add_layer_norm_rms_eps(1e-5)
+    writer.add_file_type(0)
+    writer.add_tokenizer_model("gpt2")
+    writer.add_tokenizer_pre("qwen2")
+    writer.add_token_list(["<|endoftext|>", "a", "b", "aa"] + list("cdefghijklmn"))
+    writer.add_token_types([TokenType.CONTROL] + [TokenType.NORMAL] * 15)
+    writer.add_token_merges(["a a"])
+    writer.add_eos_token_id(0)
+    writer.add_pad_token_id(0)
+    writer.add_unk_token_id(0)
+    writer.add_add_bos_token(False)
+    for name, shape in {
+        "token_embd.weight": (16, 8),
+        "output_norm.weight": (8,),
+        "blk.0.attn_norm.weight": (8,),
+        "blk.0.attn_q.weight": (8, 8),
+        "blk.0.attn_k.weight": (4, 8),
+        "blk.0.attn_v.weight": (4, 8),
+        "blk.0.attn_output.weight": (8, 8),
+        "blk.0.attn_q_norm.weight": (4,),
+        "blk.0.attn_k_norm.weight": (4,),
+        "blk.0.ffn_norm.weight": (8,),
+        "blk.0.ffn_gate.weight": (12, 8),
+        "blk.0.ffn_up.weight": (12, 8),
+        "blk.0.ffn_down.weight": (8, 12),
+    }.items():
+        writer.add_tensor(name, np.full(shape, 1.0 if "norm" in name else 0.01, dtype=np.float32))
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    return path
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="CVS-194249: CPU PagedAttention requires SVE, unavailable on Apple Silicon",
+)
+def test_gguf_frontend_continuous_batching_reuses_tokenizer_metadata(tiny_gguf_model):
+    scheduler = ov_genai.SchedulerConfig()
+    scheduler.num_kv_blocks = 4
+    # A writable reopen of a read-only file fails, so this passes only if the tokenizer reuses frontend metadata.
+    tiny_gguf_model.chmod(stat.S_IREAD)
+    try:
+        pipeline = ov_genai.ContinuousBatchingPipeline(tiny_gguf_model, scheduler, "CPU", {"GGUF_READER": "FRONTEND"})
+        assert pipeline.get_tokenizer().encode("ab").input_ids.data.tolist() == [[1, 2]]
+        config = ov_genai.GenerationConfig(max_new_tokens=1, apply_chat_template=False)
+        assert len(pipeline.generate(["ab"], [config])) == 1
+    finally:
+        tiny_gguf_model.chmod(stat.S_IREAD | stat.S_IWRITE)

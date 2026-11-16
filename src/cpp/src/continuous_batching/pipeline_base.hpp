@@ -5,7 +5,7 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "visual_language/inputs_embedder.hpp"
-#include "visual_language/vision_registry.hpp"
+#include "visual_language/embeddings_registry.hpp"
 
 #include "sampling/sampler.hpp"
 #include "continuous_batching/model_runner.hpp"
@@ -71,9 +71,14 @@ protected:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
 
-    std::shared_ptr<VisionRegistry> m_vision_registry;
+    std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
+
+protected:
+    virtual void prepare_inputs_embedder(const GenerationConfig& sampling_params) const;
+    virtual std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
+        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const;
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
@@ -139,6 +144,14 @@ public:
                                  const std::vector<ov::Tensor>& images,
                                  const std::vector<ov::Tensor>& videos,
                                  const std::vector<VideoMetadata>& videos_metadata,
+                                 GenerationConfig sampling_params);
+
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
+                                 const std::vector<VideoMetadata>& videos_metadata,
+                                 const std::vector<ov::Tensor>& audios,
                                  GenerationConfig sampling_params);
 
     /**

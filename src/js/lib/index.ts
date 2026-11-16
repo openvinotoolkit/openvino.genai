@@ -3,8 +3,9 @@
 
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
 import { VLMPipeline as VLM } from "./pipelines/vlmPipeline.js";
+import { TextEmbeddingPipeline as TextEmbedding } from "./pipelines/textEmbeddingPipeline.js";
+import { EmbeddingPipeline as Embedding } from "./pipelines/embeddingPipeline.js";
 import { OmniPipeline as Omni } from "./pipelines/omniPipeline.js";
-import { TextEmbeddingPipeline as Embedding } from "./pipelines/textEmbeddingPipeline.js";
 import {
   TextRerankPipeline as TextRerank,
   TextRerankPipelineOptions,
@@ -26,6 +27,7 @@ import {
   InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
 } from "./utils.js";
+import { EmbeddingPipelineProperties } from "./addon.js";
 
 class PipelineFactory {
   static async LLMPipeline(modelPath: string, device?: string): Promise<LLM>;
@@ -83,7 +85,18 @@ class PipelineFactory {
   }
 
   static async TextEmbeddingPipeline(modelPath: string, device = "CPU", config = {}) {
-    const pipeline = new Embedding(modelPath, device, config);
+    const pipeline = new TextEmbedding(modelPath, device, config);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
+  static async EmbeddingPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: EmbeddingPipelineProperties = {},
+  ) {
+    const pipeline = new Embedding(modelPath, device, properties);
     await pipeline.init();
 
     return pipeline;
@@ -168,6 +181,7 @@ export const {
   VLMPipeline,
   OmniPipeline,
   TextEmbeddingPipeline,
+  EmbeddingPipeline,
   TextRerankPipeline,
   WhisperPipeline,
   ASRPipeline,

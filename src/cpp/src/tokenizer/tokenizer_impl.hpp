@@ -6,6 +6,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include "minja/minja.hpp"
 #include "minja/chat-template.hpp"
@@ -56,6 +57,7 @@ public:
 
     void set_state_if_necessary(CircularBufferQueueElementGuard<InferRequestWithState>& infer_request_guard, const ov::AnyMap& params);
 
+    TokenizerImpl() = default;
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties);
     TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties);
 
@@ -82,9 +84,11 @@ public:
                                     bool add_generation_prompt,
                                     const std::string& chat_template,
                                     const std::optional<JsonContainer>& tools,
-                                    const std::optional<JsonContainer>& extra_context) const;
+                                    const std::optional<JsonContainer>& extra_context,
+                                    const ov::AnyMap& properties) const;
 
     void set_chat_template(const std::string& chat_template);
+    void set_chat_template_patcher(std::function<std::string(const std::string&)> patcher);
     std::string get_chat_template() const;
     std::string get_original_chat_template() const;
     std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
@@ -93,6 +97,8 @@ private:
     std::shared_ptr<const minja::chat_template> get_cached_minja_chat_template(const std::string& chat_template) const;
 
     mutable std::mutex m_chat_template_mutex;
+    // Applied to every template set afterwards; must be stateless (tokenizer may outlive the registrant).
+    std::function<std::string(const std::string&)> m_chat_template_patcher;
     mutable std::unordered_map<std::string, std::shared_ptr<const minja::chat_template>> m_minja_chat_template_cache;
 };
 

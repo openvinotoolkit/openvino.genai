@@ -6,12 +6,21 @@ This example showcases inference of speech recognition models. The application d
 
 ## Download and convert the model and tokenizers
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
 It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
-pip install --upgrade-strategy eager -r <GENAI_ROOT_DIR>/samples/requirements.txt
+pip install -r <GENAI_ROOT_DIR>/samples/requirements.txt
+```
+
+Some newer models may require the latest Optimum Intel. If needed, run:
+
+```sh
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 
@@ -47,10 +56,6 @@ Output:
 
 ```
  How are you doing today?
-timestamps: [0.00, 2.00] text:  How are you doing today?
-[0.00, 0.xx]:
-[0.xx, 0.xx]: How
-...
 ```
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.

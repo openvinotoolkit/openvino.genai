@@ -3,6 +3,7 @@
 
 import math
 import types
+from unittest.mock import Mock
 
 import numpy as np
 import pandas as pd
@@ -11,9 +12,13 @@ import torch
 
 from whowhatbench.whowhat_metrics import TranscriptSimilarity
 from whowhatbench.utils import to_mono_16k
-from whowhatbench.speech_recognition_evaluator import (
+from whowhatbench.speech_recognition_evaluator import SpeechRecognitionEvaluator
+from whowhatbench.speech_recognition_model_wrappers.model_wrappers import (
+    ASRGenAITranscriber,
+    ASRGenAIPipelineTranscriber,
     FunASROptimumTranscriber,
-    SpeechRecognitionEvaluator,
+    Qwen3ASROptimumTranscriber,
+    _transcribe_whisper,
 )
 
 
@@ -148,14 +153,184 @@ class _FakeTokenizer:
     "generated",
     [torch.tensor([[1, 2, 3, 7, 8]]), types.SimpleNamespace(sequences=torch.tensor([[1, 2, 3, 7, 8]]))],
 )
-def test_funasr_optimum_transcriber_decodes_generated_ids_only(generated):
+def test_funasr_optimum_transcriber_decodes_generated_ids_only(generated, monkeypatch):
     model, tokenizer = _FakeSpeechSeq2Seq(generated), _FakeTokenizer()
+    monkeypatch.setattr("optimum.intel.openvino.OVModelForSpeechSeq2Seq.from_pretrained", lambda *a, **kw: model)
+    monkeypatch.setattr("transformers.AutoTokenizer.from_pretrained", lambda *a, **kw: tokenizer)
 
-    assert FunASROptimumTranscriber(model, tokenizer, "en").transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
+    transcriber = FunASROptimumTranscriber("model_id", "funasr", "CPU", None, "en")
+    assert transcriber.transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
     assert model.preprocess_call == {"sampling_rate": 16000, "language": "en"}
     assert model.generate_call["max_new_tokens"] == 32
     # the 3 prompt ids are dropped, only the generated ids are decoded
     assert tokenizer.decoded.tolist() == [[7, 8]]
+
+
+class _FakeWhisperProcessor:
+    def __call__(self, audio, **kwargs):
+        return types.SimpleNamespace(input_features=torch.zeros(1, 80, 3000), attention_mask=torch.ones(1, 3000))
+
+    def batch_decode(self, tokens, **kwargs):
+        return ["decoded"]
+
+
+class _FakeWhisperModel:
+    def __init__(self, is_multilingual):
+        self.config = types.SimpleNamespace(max_source_positions=1500)
+        self.generation_config = types.SimpleNamespace(is_multilingual=is_multilingual)
+        self.generate_call = None
+
+    def generate(self, **kwargs):
+        self.generate_call = kwargs
+        return torch.tensor([[1, 2]])
+
+
+@pytest.mark.parametrize(
+    "is_multilingual, language, expected_language, expected_task",
+    [
+        (True, "fr", "fr", "transcribe"),
+        (True, None, None, "transcribe"),
+        (False, "en", None, None),
+        (False, None, None, None),
+    ],
+)
+def test_whisper_language_and_task_follow_model_type(is_multilingual, language, expected_language, expected_task):
+    model = _FakeWhisperModel(is_multilingual)
+
+    assert _transcribe_whisper(model, _FakeWhisperProcessor(), np.zeros(16), language, 32) == "decoded"
+    assert model.generate_call["language"] == expected_language
+    assert model.generate_call["task"] == expected_task
+
+
+class _FakeGenAIPipeline:
+    last_generate_kwargs = None
+
+    def __init__(self, model_id, device, **kwargs):
+        pass
+
+    def generate(self, audio, **kwargs):
+        _FakeGenAIPipeline.last_generate_kwargs = kwargs
+        return types.SimpleNamespace(texts=[" decoded "])
+
+
+@pytest.mark.parametrize("model_type, expected_language", [("whisper", None), ("funasr", "en")])
+def test_genai_asr_language_default_depends_on_model_type(model_type, expected_language, monkeypatch):
+    monkeypatch.setattr("openvino_genai.ASRPipeline", _FakeGenAIPipeline, raising=False)
+    monkeypatch.setattr(
+        "whowhatbench.speech_recognition_model_wrappers.model_wrappers.get_model_type", lambda model_id: model_type
+    )
+
+    transcriber = ASRGenAITranscriber.create("model_dir")
+
+    assert transcriber.transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
+    assert _FakeGenAIPipeline.last_generate_kwargs.get("language") == expected_language
+
+
+@pytest.mark.parametrize(
+    "export, eos_token_id, pad_token_id, language, decoded",
+    [
+        ("split", [151643, 151645], 151643, "", "language English<asr_text>decoded"),
+        ("legacy", None, None, "", "language English<asr_text>decoded"),
+        ("legacy", [151643, 151645], 151643, "English", "decoded"),
+    ],
+)
+def test_qwen3_asr_optimum_transcribes_with_export_settings(export, eos_token_id, pad_token_id, language, decoded):
+    model = _FakeSpeechSeq2Seq(torch.tensor([[1, 2, 3, 7, 8]]))
+    model.generation_config = types.SimpleNamespace(eos_token_id=eos_token_id, pad_token_id=pad_token_id)
+    if export == "split":
+        model.audio_encoder = object()
+    else:
+        model.config = types.SimpleNamespace(decoder_start_token_id=0)
+    processor = Mock()
+    processor.apply_chat_template.return_value = "audio prompt"
+    processor.return_value = {
+        "input_ids": torch.tensor([[1, 2, 3]]),
+        "input_features": torch.zeros(1, 128, 100),
+        "feature_attention_mask": torch.ones(1, 100),
+    }
+    processor.tokenizer.pad_token_id = 151643
+    processor.tokenizer.eos_token_id = 151645
+    processor.batch_decode.return_value = [decoded]
+    transcriber = Qwen3ASROptimumTranscriber.__new__(Qwen3ASROptimumTranscriber)
+    transcriber.model, transcriber.processor, transcriber.language = model, processor, language
+    audio = np.zeros(160, dtype=np.float32)
+
+    assert transcriber.transcribe(audio, 32) == "decoded"
+    assert processor.call_args.kwargs == {
+        "text": "audio prompt" + (f"language {language}<asr_text>" if language else ""),
+        "audio": audio,
+        "sampling_rate": 16000,
+        "return_tensors": "pt",
+    }
+    assert model.generate_call["max_new_tokens"] == 32
+    assert model.generate_call["do_sample"] is False
+    if export == "split":
+        assert model.generate_call["input_ids"] is processor.return_value["input_ids"]
+        assert "eos_token_id" not in model.generate_call
+        assert "pad_token_id" not in model.generate_call
+    else:
+        assert model.generate_call["decoder_input_ids"] is processor.return_value["input_ids"]
+        assert model.generate_call["attention_mask"] is processor.return_value["feature_attention_mask"]
+        assert model.generate_call["decoder_start_token_id"] == 0
+        if eos_token_id is None:
+            assert model.generate_call["eos_token_id"] == [151643, 151645]
+            assert model.generate_call["pad_token_id"] == 151643
+        else:
+            assert "eos_token_id" not in model.generate_call
+            assert "pad_token_id" not in model.generate_call
+    assert processor.batch_decode.call_args.args[0].tolist() == [[7, 8]]
+    assert processor.batch_decode.call_args.kwargs == {"skip_special_tokens": True}
+
+
+@pytest.mark.parametrize(
+    "model_type, language, expected_language",
+    [
+        ("qwen3_asr", "", None),
+        ("qwen3_asr", "Chinese", "Chinese"),
+        ("funasr", "", "en"),
+    ],
+)
+def test_asr_genai_uses_asr_pipeline(monkeypatch, model_type, language, expected_language):
+    import openvino_genai
+    from whowhatbench.speech_recognition_model_wrappers import model_wrappers
+
+    pipeline = Mock()
+    pipeline.generate.return_value = types.SimpleNamespace(texts=[" decoded "])
+    pipeline_factory = Mock(return_value=pipeline)
+    monkeypatch.setattr(openvino_genai, "ASRPipeline", pipeline_factory)
+    monkeypatch.setattr(model_wrappers, "_get_asr_model_type", lambda _: model_type)
+
+    transcriber = ASRGenAITranscriber.create("model_dir", "CPU", language=language)
+    assert isinstance(transcriber, ASRGenAIPipelineTranscriber)
+    assert pipeline_factory.call_args.args == ("model_dir", "CPU")
+
+    audio = np.zeros(160, dtype=np.float32)
+    assert transcriber.transcribe(audio, 32) == "decoded"
+    assert pipeline.generate.call_args.args == (audio.tolist(),)
+    expected_kwargs = {"max_new_tokens": 32}
+    if expected_language:
+        expected_kwargs["language"] = expected_language
+    assert pipeline.generate.call_args.kwargs == expected_kwargs
+
+
+@pytest.mark.parametrize("is_multilingual, expected_language", [(False, None), (True, "en")])
+def test_genai_whisper_language_follows_model_config(is_multilingual, expected_language, monkeypatch):
+    import openvino_genai
+    from whowhatbench.speech_recognition_model_wrappers import model_wrappers
+
+    pipeline = Mock()
+    pipeline.get_generation_config.return_value = types.SimpleNamespace(is_multilingual=is_multilingual)
+    pipeline.generate.return_value = types.SimpleNamespace(texts=[" decoded "])
+    monkeypatch.setattr(openvino_genai, "ASRPipeline", Mock(return_value=pipeline))
+    monkeypatch.setattr(model_wrappers, "_get_asr_model_type", lambda _: "whisper")
+
+    transcriber = ASRGenAITranscriber.create("model_dir", "CPU", language="en")
+
+    assert transcriber.transcribe(np.zeros(160, dtype=np.float32), 32) == "decoded"
+    expected_kwargs = {"max_new_tokens": 32}
+    if expected_language:
+        expected_kwargs["language"] = expected_language
+    assert pipeline.generate.call_args.kwargs == expected_kwargs
 
 
 @pytest.mark.parametrize(
