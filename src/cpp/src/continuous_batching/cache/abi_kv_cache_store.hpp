@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -70,19 +72,28 @@ public:
         return m_use_async;
     }
 
+    /// Whether the plugin never finished a cancelled batch, after which every request to the store is a miss.
+    bool is_given_up() const {
+        return m_abandoned;
+    }
+
     const StoreInfo& get_info() const {
         return m_info;
     }
 
 private:
-    OvKVCacheBlockKey make_key(size_t hash) const;
+    struct ReadBatch;
+    struct WriteBatch;
 
-    /// Runs one batch to completion. Through the async entry points every token is waited on before this returns,
-    /// but a batch that takes longer than the I/O timeout is cancelled and reported as cancelled.
-    /// @return The batch status; per-item statuses are in @p out.
-    OvKVCacheStatus run_reads(const OvKVCacheStoreReadRequest* reqs, OvKVCacheStoreReadResult* out, size_t count) const;
-    OvKVCacheStatus run_writes(const OvKVCacheStoreWriteRequest* reqs, OvKVCacheStoreWriteResult* out, size_t count) const;
-    OvKVCacheStatus await_token(OvKVCacheAsyncToken token) const;
+    static OvKVCacheBlockKey make_key(const std::string& group, size_t hash);
+
+    /// Runs one batch to completion. Through the async entry points the batch is waited on for the I/O timeout, then
+    /// cancelled and waited on for one more timeout; the status is that of the batch. A batch that is still not
+    /// terminal then is kept alive for good, the store is given up, and the status is PENDING.
+    OvKVCacheStatus run_reads(const std::shared_ptr<ReadBatch>& batch) const;
+    OvKVCacheStatus run_writes(const std::shared_ptr<WriteBatch>& batch) const;
+    OvKVCacheStatus await_token(OvKVCacheAsyncToken token, const std::shared_ptr<void>& batch) const;
+    void give_up(const std::shared_ptr<void>& batch) const;
 
     const OvKVCacheStoreVTable* m_vtable;
     void* m_store;
@@ -92,6 +103,7 @@ private:
     StoreInfo m_info;
     std::uint32_t m_io_timeout_ms;
     bool m_use_async = false;
+    mutable std::atomic<bool> m_abandoned{false};
 };
 
 }  // namespace ov::genai

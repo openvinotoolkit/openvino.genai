@@ -108,9 +108,14 @@ requests; `sample-persistent-file` deletes the block files of that namespace. Th
 `dram_cache_capacity_gb`, `reuse_ssd_cache` and `debug_log_path`.
 
 `CacheOffloadConfig.store_timeout_ms` (default 10000) bounds how long the host waits for one asynchronous batch.
-A batch that is not terminal by then is cancelled through the optional `cancel` entry and counted as a cache miss, so
-a plugin has to drive a cancelled token to a terminal status (`OV_KVCACHE_ERR_CANCELLED`) promptly, because the host
-cannot reuse the batch's buffers before that. Synchronous entry points cannot be timed out.
+A batch that is not terminal by then is cancelled through the `cancel` entry, which belongs to the async capability:
+a provider that advertises `OV_KVCACHE_CAP_ASYNC_IO` without `cancel` is used through its synchronous entries.
+After the cancel the host waits one more `store_timeout_ms`, so a plugin has to drive a cancelled token to a terminal
+status (`OV_KVCACHE_ERR_CANCELLED`) within that time. A cancelled batch that ends in time is counted as a cache miss.
+If the token is still pending then, the host gives up the store: every later request to it is a miss, the buffers of
+the batch stay allocated for the rest of the process because the plugin may still use them, and the instance is
+neither flushed nor destroyed. The host hands the plugin copies of the blocks it writes asynchronously, so a batch
+never refers to memory the host frees. Synchronous entry points cannot be timed out.
 
 ## Writing your own plugin
 

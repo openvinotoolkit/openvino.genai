@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <thread>
@@ -266,6 +267,180 @@ TEST(TestAbiFileStoreProvider, ABatchThatStallsIsCancelledAndFailsInsteadOfBlock
     EXPECT_THROW(store.write_block(1, make_block(1)), ov::Exception);
     EXPECT_EQ(StalledPlugin::cancels, 1u);
     EXPECT_EQ(StalledPlugin::waits, 2u) << "one wait that times out, then the wait for the cancelled token";
+    EXPECT_FALSE(store.is_given_up()) << "a cancelled batch that ends in time leaves the store usable";
+}
+
+namespace {
+
+/// A plugin that never ends an async batch, even after a cancel, and keeps the buffers of the batch it was given.
+struct UnresponsivePlugin {
+    static inline const OvKVCacheStoreVTable* inner = nullptr;
+    static inline size_t submitted = 0;
+    static inline size_t waits = 0;
+    static inline size_t cancels = 0;
+    static inline size_t probes = 0;
+    static inline size_t flushes = 0;
+    static inline size_t destroys = 0;
+    static inline void* held_buffer = nullptr;
+    static inline size_t held_bytes = 0;
+    static inline const void* held_source = nullptr;
+
+    static void reset() {
+        submitted = waits = cancels = probes = flushes = destroys = 0;
+        held_buffer = nullptr;
+        held_bytes = 0;
+        held_source = nullptr;
+    }
+
+    static OvKVCacheStatus read_async(void* /*self*/,
+                                      const OvKVCacheStoreReadRequest* reqs,
+                                      OvKVCacheStoreReadResult* /*out*/,
+                                      size_t /*count*/,
+                                      OvKVCacheAsyncToken* token) {
+        ++submitted;
+        held_buffer = reqs[0].target.base;
+        held_bytes = reqs[0].target.bytes;
+        *token = 1;
+        return OV_KVCACHE_OK;
+    }
+    static OvKVCacheStatus write_async(void* /*self*/,
+                                       const OvKVCacheStoreWriteRequest* reqs,
+                                       OvKVCacheStoreWriteResult* /*out*/,
+                                       size_t /*count*/,
+                                       OvKVCacheAsyncToken* token) {
+        ++submitted;
+        held_source = reqs[0].source;
+        *token = 1;
+        return OV_KVCACHE_OK;
+    }
+    static OvKVCacheStatus wait(void* /*self*/, OvKVCacheAsyncToken /*token*/, uint32_t /*timeout_ms*/) {
+        ++waits;
+        return OV_KVCACHE_PENDING;
+    }
+    static OvKVCacheStatus cancel(void* /*self*/, OvKVCacheAsyncToken /*token*/) {
+        ++cancels;
+        return OV_KVCACHE_OK;
+    }
+    static OvKVCacheStatus has_blocks(void* self, const OvKVCacheBlockKey* keys, uint8_t* present, size_t count) {
+        ++probes;
+        return inner->has_blocks(self, keys, present, count);
+    }
+    static OvKVCacheStatus flush(void* self) {
+        ++flushes;
+        return inner->flush(self);
+    }
+    static void destroy(void* self) {
+        ++destroys;
+        inner->destroy(self);
+    }
+};
+
+struct OpenedFileStore {
+    const OvKVCacheStoreProviderDescriptor* provider = nullptr;
+    OvKVCacheStoreOpenResult opened{};
+};
+
+OpenedFileStore open_file_store(size_t num_blocks) {
+    OpenedFileStore result;
+    result.provider = get_file_store_provider_module_info()->get_provider(0);
+    const std::string block_size_str = std::to_string(BLOCK_SIZE);
+    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
+    OvKVCacheStoreOpenOptions options{};
+    options.capacity_bytes = BLOCK_SIZE * num_blocks;
+    options.properties = properties;
+    options.property_count = 1;
+    EXPECT_EQ(result.provider->vtable->open(result.provider->self, nullptr, &options, &result.opened), OV_KVCACHE_OK);
+    return result;
+}
+
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, APluginThatIgnoresCancelLeavesAMissAndAGivenUpStoreInsteadOfHanging) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    UnresponsivePlugin::reset();
+    UnresponsivePlugin::inner = file_store.opened.vtable;
+    OvKVCacheStoreVTable unresponsive = *file_store.opened.vtable;
+    unresponsive.read_blocks_async = &UnresponsivePlugin::read_async;
+    unresponsive.wait = &UnresponsivePlugin::wait;
+    unresponsive.cancel = &UnresponsivePlugin::cancel;
+    unresponsive.has_blocks = &UnresponsivePlugin::has_blocks;
+    unresponsive.flush = &UnresponsivePlugin::flush;
+    unresponsive.destroy = &UnresponsivePlugin::destroy;
+
+    {
+        AbiKVCacheStore store(&unresponsive, file_store.opened.store, "kv", BLOCK_SIZE, 4,
+                              {file_store.provider->capabilities, std::nullopt}, /*io_timeout_ms=*/20);
+        ASSERT_TRUE(store.uses_async_io());
+
+        std::vector<std::vector<uint8_t>> data;
+        EXPECT_EQ(store.read_blocks({1}, data), (std::vector<bool>{false}));
+        EXPECT_TRUE(data[0].empty());
+        EXPECT_TRUE(store.is_given_up());
+        EXPECT_EQ(UnresponsivePlugin::cancels, 1u);
+        EXPECT_EQ(UnresponsivePlugin::waits, 2u) << "one wait that times out, then one for the cancelled token";
+
+        // Nothing reaches the plugin any more, and nothing throws.
+        const size_t probes_before = UnresponsivePlugin::probes;
+        EXPECT_FALSE(store.has_block(1));
+        EXPECT_EQ(store.has_blocks({1, 2}), (std::vector<bool>{false, false}));
+        EXPECT_EQ(store.write_blocks({1}, {&data[0]}), (std::vector<bool>{false}));
+        EXPECT_EQ(store.read_blocks({1}, data), (std::vector<bool>{false}));
+        EXPECT_NO_THROW(store.drop_block(1));
+        EXPECT_NO_THROW(store.flush());
+        EXPECT_EQ(store.get_num_free_blocks(), 0u);
+        EXPECT_EQ(UnresponsivePlugin::probes, probes_before);
+        EXPECT_EQ(UnresponsivePlugin::submitted, 1u);
+    }
+
+    EXPECT_EQ(UnresponsivePlugin::flushes, 0u) << "a store the plugin still uses is not flushed";
+    EXPECT_EQ(UnresponsivePlugin::destroys, 0u) << "a store the plugin still uses is not destroyed";
+
+    // The plugin may finish the batch long after the host stopped waiting, so its buffer has to be still there.
+    ASSERT_NE(UnresponsivePlugin::held_buffer, nullptr);
+    std::memset(UnresponsivePlugin::held_buffer, 0xAB, UnresponsivePlugin::held_bytes);
+
+    file_store.opened.vtable->destroy(file_store.opened.store);
+}
+
+TEST(TestAbiFileStoreProvider, AnUnresponsiveWriteIsAMissToo) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    UnresponsivePlugin::reset();
+    UnresponsivePlugin::inner = file_store.opened.vtable;
+    OvKVCacheStoreVTable unresponsive = *file_store.opened.vtable;
+    unresponsive.write_blocks_async = &UnresponsivePlugin::write_async;
+    unresponsive.wait = &UnresponsivePlugin::wait;
+    unresponsive.cancel = &UnresponsivePlugin::cancel;
+    unresponsive.destroy = &UnresponsivePlugin::destroy;
+
+    const std::vector<uint8_t> block = make_block(5);
+    {
+        AbiKVCacheStore store(&unresponsive, file_store.opened.store, "kv", BLOCK_SIZE, 4,
+                              {file_store.provider->capabilities, std::nullopt}, /*io_timeout_ms=*/20);
+        EXPECT_EQ(store.write_blocks({1}, {&block}), (std::vector<bool>{false}));
+        EXPECT_TRUE(store.is_given_up());
+    }
+
+    EXPECT_EQ(UnresponsivePlugin::destroys, 0u);
+    // The plugin reads a copy that outlives the caller's block, not the caller's block itself.
+    EXPECT_NE(UnresponsivePlugin::held_source, block.data());
+    ASSERT_NE(UnresponsivePlugin::held_source, nullptr);
+    EXPECT_EQ(std::memcmp(UnresponsivePlugin::held_source, block.data(), BLOCK_SIZE), 0);
+
+    file_store.opened.vtable->destroy(file_store.opened.store);
+}
+
+TEST(TestAbiFileStoreProvider, AsyncIoIsNotUsedWhenThePluginHasNoCancelEntry) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    OvKVCacheStoreVTable without_cancel = *file_store.opened.vtable;
+    without_cancel.cancel = nullptr;
+
+    AbiKVCacheStore store(&without_cancel, file_store.opened.store, "kv", BLOCK_SIZE, 4,
+                          {file_store.provider->capabilities, std::nullopt});
+    EXPECT_FALSE(store.uses_async_io());
+    ASSERT_TRUE(store.write_block(1, make_block(1)));
+    std::vector<uint8_t> actual;
+    ASSERT_TRUE(store.read_block(1, actual));
+    EXPECT_EQ(actual, make_block(1));
 }
 
 TEST(TestAbiFileStoreProvider, KeysDifferingOnlyInTheHighHalfStayDistinct) {

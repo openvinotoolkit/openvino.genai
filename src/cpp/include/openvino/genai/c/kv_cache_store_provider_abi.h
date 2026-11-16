@@ -448,7 +448,9 @@ typedef struct OvKVCacheStoreVTable {
     /// in flight are allowed to finish with their results discarded. `cancel`
     /// does NOT release the token: the host must still drive `wait` to a terminal
     /// status before reusing buffers. Callable from any thread, concurrently with
-    /// `wait`; the returned status is advisory only.
+    /// `wait`; the returned status is advisory only. The host cancels a batch that
+    /// is not terminal after `store_timeout_ms` and waits that long once more: the
+    /// token MUST be terminal by then, or the host stops using the store.
     OvKVCacheStatus (*cancel)(void* self, OvKVCacheAsyncToken token);
 } OvKVCacheStoreVTable;
 

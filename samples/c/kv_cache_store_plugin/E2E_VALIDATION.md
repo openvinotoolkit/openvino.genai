@@ -271,10 +271,11 @@ The host uses the optional capabilities your provider advertises:
 - `OV_KVCACHE_CAP_ASYNC_IO` (`read_blocks_async`/`write_blocks_async`/`wait`): when it is set and the vtable
   carries those entries, every read and write goes through them. The host submits one batch, then calls `wait`
   with `CacheOffloadConfig.store_timeout_ms` (default 10000 ms). If the status is still `PENDING` after that, the host
-  calls the optional `cancel` and waits again until the token is terminal, because the batch's buffers belong to the
-  plugin until then; the batch counts as a cache miss. It does not overlap submissions: each batch is waited on
-  before the next one starts. Without the bit the host uses the synchronous `read_blocks`/`write_blocks`, which
-  cannot be timed out.
+  calls `cancel` and waits once more for the same time, and the batch counts as a cache miss. A plugin that does not
+  reach a terminal status within that second wait is given up: later requests to its store are misses and the store is
+  neither flushed nor destroyed. A provider without a `cancel` entry is used through the synchronous entries. It does
+  not overlap submissions: each batch is waited on before the next one starts. Without the bit the host uses the
+  synchronous `read_blocks`/`write_blocks`, which cannot be timed out.
 - Reads of a prompt's reusable prefix are one `read_blocks` batch (async or not), not one call per block.
 - `OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT`: the fingerprint `open` returns is logged at `OPENVINO_LOG_LEVEL=3` as
   `semantics_fingerprint=` and kept on the store; the host does not compare or persist it yet.
