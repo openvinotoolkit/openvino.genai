@@ -141,6 +141,8 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
             for key in ("width", "height"):
                 size = generation_kwargs.get(key, self.DEFAULT_IMAGE_SIZE)
                 if size is not None:
+                    if isinstance(size, float) and not size.is_integer():
+                        raise ValueError(f"'{key}' must be an integer, got {size}")
                     generation_kwargs[key] = int(size)
             output = generation_fn(
                 model,
