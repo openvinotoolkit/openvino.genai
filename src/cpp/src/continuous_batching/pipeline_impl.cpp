@@ -242,6 +242,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
         return get_available_cpu_memory();
     };
     auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory, model_identity);
+    cache_orchestrator->set_execution_mutex(&m_execution_mutex);
     m_num_decoder_layers = cache_orchestrator->get_num_kv_layers();
 
     bool can_use_partial_preemption = true;
@@ -635,6 +636,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _throw_if_failed();
     }
 
+    const std::lock_guard<std::recursive_mutex> execution_lock{m_execution_mutex};
     try {
         _step();
     } catch (...) {

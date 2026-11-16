@@ -12,7 +12,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <functional>
 #include <limits>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -207,6 +209,12 @@ public:
     /// Drops whatever prefetch() read ahead that load_into() did not use.
     virtual void release_prefetched() {}
 };
+
+/**
+ * @brief Called by a warm-up right before it writes into the device cache, and returns the lock that keeps the
+ * pipeline from running or growing the cache until the warm-up is done.
+ */
+using DevicePhaseGuard = std::function<std::unique_lock<std::recursive_mutex>()>;
 
 /**
  * @brief Allows to store and retrieve KV-cache blocks based on their content- and position-based hash.
@@ -2833,11 +2841,13 @@ public:
      * the complete state at its position and does not depend on the earlier ones.
      *
      * @param max_content_len Longest prefix, in tokens, the caller can still use; blocks beyond it are not brought back.
+     * @param begin_device_phase Called after the store I/O and before the first block is written into the device cache.
      * @return The number of blocks brought back into memory.
      */
     size_t warm_prefix_cache(SequenceGroup::Ptr group,
                              IExternalPrefixSource& source,
-                             size_t max_content_len = std::numeric_limits<size_t>::max()) {
+                             size_t max_content_len = std::numeric_limits<size_t>::max(),
+                             const DevicePhaseGuard& begin_device_phase = {}) {
         if (!m_enable_prefix_caching) {
             return 0;
         }
@@ -2903,17 +2913,23 @@ public:
             }
             note_to_load(hash);
         }
-        if (!to_load.empty()) {
-            lock.unlock();
-            source.prefetch(to_load);
-            lock.lock();
-        }
+        // The pipeline takes the execution lock before the manager lock, so no lock is held while the store is read
+        // and the execution lock is taken before the manager lock is taken again.
+        lock.unlock();
         struct PrefetchRelease {
             IExternalPrefixSource& source;
             ~PrefetchRelease() {
                 source.release_prefetched();
             }
         } prefetch_release{source};
+        if (!to_load.empty()) {
+            source.prefetch(to_load);
+        }
+        std::unique_lock<std::recursive_mutex> device_phase;
+        if (begin_device_phase) {
+            device_phase = begin_device_phase();
+        }
+        lock.lock();
 
         // @return false when the chain cannot be extended with the block ending at `content_len`.
         const auto extend_chain = [&](size_t content_len) {

@@ -10,6 +10,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <numeric>
 #include <set>
 #include <tuple>
@@ -162,6 +163,11 @@ public:
 
     const CacheOffloadCoordinator& get_offload_coordinator() const {
         return *m_offload;
+    }
+
+    /// The lock the pipeline holds while it runs a step; a prefix warm-up takes it before it allocates or writes cache.
+    void set_execution_mutex(std::recursive_mutex* execution_mutex) {
+        m_execution_mutex = execution_mutex;
     }
 
     /**
@@ -483,12 +489,21 @@ public:
 
         // Refill the in-memory prefix cache from disk first, so the restore below sees those blocks as cached.
         if (m_offload->enabled()) {
-            // Warming writes into physical blocks, which a pipeline that has not scheduled anything yet has not allocated.
-            allocate_cache_if_needed();
+            // Warming writes into physical blocks, which a pipeline that has not scheduled anything yet has not
+            // allocated. Allocating rebinds the cache tensors, so it must not overlap a step of the pipeline.
+            const DevicePhaseGuard begin_device_phase = [this] {
+                std::unique_lock<std::recursive_mutex> execution_lock;
+                if (m_execution_mutex != nullptr) {
+                    execution_lock = std::unique_lock<std::recursive_mutex>(*m_execution_mutex);
+                }
+                allocate_cache_if_needed();
+                return execution_lock;
+            };
             m_offload->warm(kv_it != m_block_managers.end() ? kv_it->second.get() : nullptr,
                             la_it != m_block_managers.end() ? la_it->second.get() : nullptr,
                             sequence_group,
-                            max_processed_tokens);
+                            max_processed_tokens,
+                            begin_device_phase);
         }
 
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
@@ -1255,6 +1270,7 @@ private:
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
+    std::recursive_mutex* m_execution_mutex = nullptr;
     // Declared after the block managers so that it is destroyed first and can detach its observers from them.
     std::unique_ptr<CacheOffloadCoordinator> m_offload = std::make_unique<CacheOffloadCoordinator>();
     bool m_use_per_layer_kv_block_indices = false;

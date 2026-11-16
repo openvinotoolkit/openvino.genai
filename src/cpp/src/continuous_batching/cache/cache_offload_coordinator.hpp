@@ -135,16 +135,21 @@ public:
      *
      * @param kv_block_manager Block manager of the KV cache, or null when the model has none.
      * @param la_block_manager Block manager of the linear attention cache, or null when the model has none.
+     * @param begin_device_phase Called before a warm-up writes into the device cache; see DevicePhaseGuard.
      */
     void warm(BlockManager* kv_block_manager,
               BlockManager* la_block_manager,
               const SequenceGroup::Ptr& sequence_group,
-              size_t max_processed_tokens) {
+              size_t max_processed_tokens,
+              const DevicePhaseGuard& begin_device_phase) {
         // The reclamation pause and the prefetched blocks of a tier belong to one warm-up at a time.
         const std::lock_guard<std::mutex> warm_lock(m_warm_mutex);
         if (m_kv != nullptr && kv_block_manager != nullptr) {
             KVCacheOffloadCache::ScopedReclamationPause keep_entries(*m_kv);
-            kv_block_manager->warm_prefix_cache(sequence_group, *m_kv);
+            kv_block_manager->warm_prefix_cache(sequence_group,
+                                                *m_kv,
+                                                std::numeric_limits<size_t>::max(),
+                                                begin_device_phase);
         }
         if (m_la != nullptr && la_block_manager != nullptr) {
             // A hybrid restore never goes past the last prompt token or the KV prefix that is in memory, so a
@@ -157,7 +162,7 @@ public:
             }
             if (la_warm_ceiling > 0) {
                 LinearAttentionOffloadCache::ScopedReclamationPause keep_entries(*m_la);
-                la_block_manager->warm_prefix_cache(sequence_group, *m_la, la_warm_ceiling);
+                la_block_manager->warm_prefix_cache(sequence_group, *m_la, la_warm_ceiling, begin_device_phase);
             }
         }
     }

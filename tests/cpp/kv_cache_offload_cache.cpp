@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <future>
 #include <list>
 #include <map>
 #include <memory>
@@ -15,6 +16,7 @@
 #include <vector>
 
 #include "continuous_batching/cache/block_manager.hpp"
+#include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/file_kv_cache_store.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/kv_cache_offload_cache.hpp"
@@ -1041,6 +1043,109 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheDoesNotHoldTheBlockManagerLockWhile
 
     EXPECT_EQ(block_manager.warm_prefix_cache(consumer, source), num_blocks);
     EXPECT_EQ(source.num_blocked_calls, 0);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheHoldsTheDevicePhaseGuardOnlyWhileItWritesIntoTheDeviceCache) {
+    constexpr size_t block_size = 4;
+    constexpr size_t num_blocks = 3;
+    CacheFixture fixture(num_blocks);
+    auto offload_cache = make_offload_cache(fixture, num_blocks);
+    BlockManager block_manager(num_blocks, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    std::recursive_mutex execution_mutex;
+
+    // Records, for every call, whether another thread could take the execution mutex at that moment.
+    struct ObservingSource : IExternalPrefixSource {
+        ObservingSource(KVCacheOffloadCache& inner, std::recursive_mutex& mutex) : m_inner(inner), m_mutex(mutex) {}
+        bool contains(size_t hash) const override { return m_inner.contains(hash); }
+        std::vector<bool> probe(const std::vector<size_t>& chain) override {
+            note("probe");
+            return m_inner.probe(chain);
+        }
+        void prefetch(const std::vector<size_t>& hashes) override {
+            note("prefetch");
+            m_inner.prefetch(hashes);
+        }
+        void release_prefetched() override { m_inner.release_prefetched(); }
+        bool load_into(size_t hash, size_t block_index) override {
+            note("load_into");
+            return m_inner.load_into(hash, block_index);
+        }
+
+        void note(const std::string& call) {
+            const bool free = std::async(std::launch::async, [this] {
+                                  if (!m_mutex.try_lock()) {
+                                      return false;
+                                  }
+                                  m_mutex.unlock();
+                                  return true;
+                              }).get();
+            events.push_back(call + (free ? ":free" : ":held"));
+        }
+
+        KVCacheOffloadCache& m_inner;
+        std::recursive_mutex& m_mutex;
+        std::vector<std::string> events;
+    } source(*offload_cache, execution_mutex);
+
+    std::vector<int64_t> tokens(num_blocks * block_size + 1);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto consumer = make_group(tokens, /*request_id=*/33);
+    const auto sequence = consumer->get_running_sequences().at(0);
+    for (size_t block = 0; block < num_blocks; ++block) {
+        fixture.fill_block(block, static_cast<uint8_t>(block + 1));
+        store_block(*offload_cache, sequence->get_hash((block + 1) * block_size, block_size), block);
+    }
+
+    size_t num_guards = 0;
+    const DevicePhaseGuard guard = [&] {
+        ++num_guards;
+        return std::unique_lock<std::recursive_mutex>(execution_mutex);
+    };
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, source, std::numeric_limits<size_t>::max(), guard), num_blocks);
+
+    EXPECT_EQ(num_guards, 1u);
+    EXPECT_EQ(source.events,
+              (std::vector<std::string>{"probe:free", "prefetch:free", "load_into:held", "load_into:held", "load_into:held"}));
+    EXPECT_TRUE(execution_mutex.try_lock());
+    execution_mutex.unlock();
+}
+
+TEST(TestKVCacheOffloadCache, PrefixWarmUpWaitsForTheExecutionMutexBeforeItAllocatesCache) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, NUM_DECODER_LAYERS)).create_infer_request();
+    SchedulerConfig config;
+    config.num_kv_blocks = 4;
+    config.enable_prefix_caching = true;
+    config.use_cache_offload = true;
+    config.cache_offload_config.capacity_bytes = 1 << 20;
+    auto orchestrator = CacheOrchestrator::create(request, config, [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    });
+    std::recursive_mutex execution_mutex;
+    orchestrator->set_execution_mutex(&execution_mutex);
+    const auto num_allocated = [&] {
+        return orchestrator->get_cache_manager(CacheType::KV_CACHE).get_num_allocated_blocks();
+    };
+    ASSERT_EQ(num_allocated(), 0u);
+
+    std::vector<int64_t> tokens(40);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto group = make_group(tokens, /*request_id=*/34);
+
+    // A step of the pipeline holds this mutex for as long as it runs.
+    execution_mutex.lock();
+    auto restoring = std::async(std::launch::async, [&] { orchestrator->restore_cached_blocks(group); });
+    EXPECT_EQ(restoring.wait_for(std::chrono::milliseconds(300)), std::future_status::timeout);
+    EXPECT_EQ(num_allocated(), 0u);
+
+    execution_mutex.unlock();
+    ASSERT_EQ(restoring.wait_for(std::chrono::seconds(30)), std::future_status::ready);
+    restoring.get();
+    EXPECT_GT(num_allocated(), 0u);
 }
 
 TEST(TestKVCacheOffloadCache, WarmPrefixCacheProbesTheWholeChainOnceBeforeReading) {
