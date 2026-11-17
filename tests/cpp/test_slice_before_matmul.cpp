@@ -127,6 +127,22 @@ std::shared_ptr<ov::Model> make_matmul_model_with_weights(const ov::PartialShape
 
 } // namespace
 
+TEST(LmHeadLocator, FrontendMarkerDoesNotDependOnOperationType) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 64});
+    auto scale = ov::op::v0::Constant::create(ov::element::f32, {}, {2.f});
+    auto head = std::make_shared<ov::op::v1::Multiply>(input, scale);
+    auto model = std::make_shared<ov::Model>(ov::OutputVector{head}, ov::ParameterVector{input});
+    EXPECT_EQ(std::get<0>(ov::genai::utils::find_llm_matmul(model)), nullptr);
+    head->get_rt_info()["gguf_lm_head"] = true;
+    EXPECT_EQ(std::get<0>(ov::genai::utils::find_llm_matmul(model)), head);
+
+    auto sliced = model->clone();
+    ov::genai::utils::apply_slice_before_matmul_transformation(sliced);
+    EXPECT_EQ(count_ops<ov::op::v8::Slice>(sliced), 1u);
+    ov::genai::utils::apply_gather_before_matmul_transformation(model);
+    EXPECT_EQ(count_ops<ov::op::v8::Gather>(model), 1u);
+}
+
 // ===================== apply_slice_before_matmul_transformation =====================
 
 // Graph-level: all 4 supported patterns
