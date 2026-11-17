@@ -115,7 +115,12 @@ def create_ov_pipeline(
     if scheduler_config is None:
         scheduler_config = SchedulerConfig()
 
-    if pipeline_type in (PipelineType.AUTO, PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION):
+    if pipeline_type in (
+        PipelineType.AUTO,
+        PipelineType.STATEFUL,
+        PipelineType.PAGED_ATTENTION,
+        PipelineType.CONTINUOUS_BATCHING,
+    ):
         if enable_save_ov_model is not None: 
             ov_config["enable_save_ov_model"] = enable_save_ov_model
         if dynamic_quantization_group_size is not None: 
