@@ -1242,7 +1242,8 @@ class CacheOffloadConfig:
     
         Offloaded blocks are rediscovered through the prefix-cache block hash, so offload requires
         SchedulerConfig.enable_prefix_caching and is currently not supported together with
-        SchedulerConfig.use_cache_eviction.
+        SchedulerConfig.use_cache_eviction, SchedulerConfig.use_sparse_attention, or models whose
+        sparse attention keeps index caches per block (QSA).
     
         Parameters:
         :param kv_cache_dir: existing directory on the SSD where the offloaded KV cache files are stored, which is also the

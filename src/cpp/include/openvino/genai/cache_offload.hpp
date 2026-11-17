@@ -15,7 +15,9 @@ namespace ov::genai {
  * @brief Configuration of the KV cache disk offload backend.
  *
  * Offloaded blocks are rediscovered through the prefix-cache block hash, so offload is only
- * meaningful together with `SchedulerConfig::enable_prefix_caching`.
+ * meaningful together with `SchedulerConfig::enable_prefix_caching`. It is not supported yet together with
+ * `SchedulerConfig::use_cache_eviction`, `SchedulerConfig::use_sparse_attention`, or models whose sparse attention
+ * keeps index caches per block (QSA).
  */
 struct CacheOffloadConfig {
     /**

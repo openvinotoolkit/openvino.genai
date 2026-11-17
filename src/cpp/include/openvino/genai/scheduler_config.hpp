@@ -92,7 +92,8 @@ struct SchedulerConfig {
     /**
      * Whether to offload KV cache blocks that are about to be dropped from the in-memory prefix cache
      * to a local disk file, so that a later request with the same prefix can restore them.
-     * Requires `enable_prefix_caching` and is currently not supported together with `use_cache_eviction`.
+     * Requires `enable_prefix_caching`. Not supported yet together with `use_cache_eviction`, `use_sparse_attention`,
+     * or models whose sparse attention keeps index caches per block (QSA).
      */
     bool use_cache_offload = false;
     /** Configuration struct for the KV cache disk offload. Has effect only if `use_cache_offload` is `true`.
@@ -120,6 +121,8 @@ struct SchedulerConfig {
                 "SchedulerConfig use_cache_offload requires enable_prefix_caching to be enabled");
         OPENVINO_ASSERT(!use_cache_offload || !use_cache_eviction,
                 "SchedulerConfig use_cache_offload is not supported together with use_cache_eviction");
+        OPENVINO_ASSERT(!use_cache_offload || !use_sparse_attention,
+                "SchedulerConfig use_cache_offload is not supported together with use_sparse_attention yet");
         OPENVINO_ASSERT(cache_offload_config.ssd_cache_capacity_gb >= 0 && cache_offload_config.dram_cache_capacity_gb >= 0,
                 "SchedulerConfig cache_offload_config ssd_cache_capacity_gb and dram_cache_capacity_gb must not be negative");
         OPENVINO_ASSERT(cache_offload_config.ssd_cache_capacity_gb == 0 || cache_offload_config.capacity_bytes == 0,

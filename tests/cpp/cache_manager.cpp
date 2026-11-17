@@ -3,6 +3,7 @@
 //
 
 #include <gtest/gtest.h>
+#include "openvino/op/parameter.hpp"
 #include "openvino/runtime/core.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
@@ -52,6 +53,30 @@ TEST(TestCacheManager, test_cache_size_param) {
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), expected_size);
 }
 
+
+TEST(TestCacheManager, cache_offload_is_rejected_for_models_with_qsa_index_caches) {
+    ov::Core core;
+    auto model = get_dummy_model(core, 2);
+    auto index_cache = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32,
+        ov::PartialShape{ov::Dimension::dynamic(), 2, 32, 8});
+    index_cache->get_output_tensor(0).set_names({"block_index_keys_cache.0"});
+    model->add_parameters({index_cache});
+    ov::InferRequest request = core.compile_model(model).create_infer_request();
+    auto get_available_memory = [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    };
+
+    SchedulerConfig config;
+    config.num_kv_blocks = 16;
+    config.enable_prefix_caching = true;
+    EXPECT_NO_THROW(CacheOrchestrator::create(request, config, get_available_memory));
+
+    SchedulerConfig offload_config = config;
+    offload_config.use_cache_offload = true;
+    offload_config.cache_offload_config.capacity_bytes = 1 << 20;
+    EXPECT_THROW(CacheOrchestrator::create(request, offload_config, get_available_memory), ov::Exception);
+}
 
 TEST(TestCacheManager, test_kv_blocks_param) {
     ov::Core core;

@@ -1747,6 +1747,20 @@ TEST(TestScheduler, scheduler_config_cache_offload_takes_either_capacity_unit_bu
     EXPECT_ANY_THROW(scheduler_config.validate());
 }
 
+TEST(TestScheduler, scheduler_config_cache_offload_is_rejected_with_sparse_attention) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.use_cache_offload = true;
+    scheduler_config.cache_offload_config.capacity_bytes = 1 << 20;
+    EXPECT_NO_THROW(scheduler_config.validate());
+
+    scheduler_config.use_sparse_attention = true;
+    EXPECT_ANY_THROW(scheduler_config.validate());
+
+    scheduler_config.use_cache_offload = false;
+    EXPECT_NO_THROW(scheduler_config.validate());
+}
+
 TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_is_ignored_for_kv_only_model) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(get_dummy_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();

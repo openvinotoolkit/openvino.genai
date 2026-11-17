@@ -261,6 +261,9 @@ public:
         auto cache_mgr_it = m_cache_managers.find(CacheType::KV_CACHE);
         OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
                         "KV cache offload requires a model with KV cache inputs");
+        // The offload slot holds only the key/value blocks; the index caches of the same block would come back stale.
+        OPENVINO_ASSERT(!static_cast<KVCacheManager&>(*cache_mgr_it->second).has_qsa_index_caches(),
+                        "KV cache offload is not supported yet for models with sparse attention index caches (QSA)");
         m_offload->enable_kv(static_cast<KVCacheManager&>(*cache_mgr_it->second),
                              *m_block_managers.at(CacheType::KV_CACHE),
                              offload_config,
