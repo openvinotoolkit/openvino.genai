@@ -69,6 +69,11 @@ struct OmniStreamerKwarg {
     }
 };
 
+// An explicit omni_streamer=None is the same call as one without the keyword.
+bool has_omni_streamer(const py::kwargs& kwargs) {
+    return kwargs.contains(OMNI_STREAMER_ARG_NAME) && !kwargs[OMNI_STREAMER_ARG_NAME].is_none();
+}
+
 // Property-bag inputs of VLMPipelineBase::generate(prompt, AnyMap) when the receiver is a Python
 // subclass. kwargs_to_any_map() accepts the speech_streamer key and extract_multimodal_inputs()
 // does not consume it, so letting it through would drop the caller's streamer without a word.
@@ -274,8 +279,17 @@ private:
             return ov::genai::VLMPipelineBase::generate(prompt, images, videos, audios, videos_metadata,
                                                         generation_config, streamer, omni_streamer);
         }
-        py::object result = override(prompt, images, videos, audios, videos_metadata, generation_config, streamer,
-                                     py::arg("omni_streamer") = omni_streamer);
+        py::object result;
+        try {
+            result = override(prompt, images, videos, audios, videos_metadata, generation_config, streamer,
+                              py::arg("omni_streamer") = omni_streamer);
+        } catch (const py::error_already_set& error) {
+            // No traceback: the call was rejected before the override ran, so nothing else closes the bridge.
+            if (!error.trace()) {
+                omni_streamer->abandon();
+            }
+            throw;
+        }
         return result.cast<ov::genai::VLMDecodedResults>();
     }
 };
@@ -501,11 +515,13 @@ py::object call_vlm_generate(
     const std::vector<ov::Tensor>& videos,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs
+    const py::kwargs& all_kwargs
 ) {
-    if (kwargs.contains(OMNI_STREAMER_ARG_NAME)) {
-        return call_vlm_generate_omni_streaming(pipe, prompt, images, videos, generation_config, py_streamer, kwargs);
+    if (has_omni_streamer(all_kwargs)) {
+        return call_vlm_generate_omni_streaming(pipe, prompt, images, videos, generation_config, py_streamer,
+                                                all_kwargs);
     }
+    const py::kwargs kwargs = OmniStreamerKwarg::strip(all_kwargs);
     // Route through AnyMap overload when audio kwargs are present, since only the AnyMap path
     // extracts the audio tensors and sets up the speech streamer for the underlying pipeline.
     if (kwargs.contains("audios") || kwargs.contains("speech_streamer")) {
@@ -555,11 +571,13 @@ py::object call_vlm_generate_with_chat_history(
     const std::vector<ov::Tensor>& videos,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs
+    const py::kwargs& all_kwargs
 ) {
-    if (kwargs.contains(OMNI_STREAMER_ARG_NAME)) {
-        return call_vlm_generate_omni_streaming(pipe, history, images, videos, generation_config, py_streamer, kwargs);
+    if (has_omni_streamer(all_kwargs)) {
+        return call_vlm_generate_omni_streaming(pipe, history, images, videos, generation_config, py_streamer,
+                                                all_kwargs);
     }
+    const py::kwargs kwargs = OmniStreamerKwarg::strip(all_kwargs);
     if (kwargs.contains("audios") || kwargs.contains("speech_streamer")) {
         auto map = pyutils::kwargs_to_any_map(kwargs);
         if (!images.empty()) {
@@ -915,10 +933,10 @@ An input image without explicit slicing metadata counts as one slice.)")
                const std::string& prompt,
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                if (kwargs.contains(OMNI_STREAMER_ARG_NAME)) {
+                if (has_omni_streamer(kwargs)) {
                     return call_vlm_generate_omni_streaming(pipe, prompt, {}, {}, std::nullopt, std::monostate{}, kwargs);
                 }
-                auto map = pyutils::kwargs_to_any_map(kwargs);
+                auto map = pyutils::kwargs_to_any_map(OmniStreamerKwarg::strip(kwargs));
                 ov::genai::VLMDecodedResults res;
                 {
                     py::gil_scoped_release rel;
@@ -988,10 +1006,10 @@ An input image without explicit slicing metadata counts as one slice.)")
                const ov::genai::ChatHistory& history,
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                if (kwargs.contains(OMNI_STREAMER_ARG_NAME)) {
+                if (has_omni_streamer(kwargs)) {
                     return call_vlm_generate_omni_streaming(pipe, history, {}, {}, std::nullopt, std::monostate{}, kwargs);
                 }
-                auto map = pyutils::kwargs_to_any_map(kwargs);
+                auto map = pyutils::kwargs_to_any_map(OmniStreamerKwarg::strip(kwargs));
                 ov::genai::VLMDecodedResults res;
                 {
                     py::gil_scoped_release rel;

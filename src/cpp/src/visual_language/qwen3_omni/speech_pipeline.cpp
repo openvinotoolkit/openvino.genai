@@ -1219,6 +1219,10 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::shared_ptr<Omn
     const std::optional<int64_t> row8_token = stream.ensure_tokens(seg_start + 4)
                                                   ? std::optional<int64_t>(stream.tokens()[seg_start + 3])
                                                   : std::nullopt;
+    // The first frame is sampled from the prefix alone, before the decode loop asks for more text.
+    if (stream.truncated()) {
+        return abandon_speech(streamer_guard, speech_start_time);
+    }
 
     auto talker_input = build_talker_prefix(stream.tokens(),
                                            stream.hidden_states(),

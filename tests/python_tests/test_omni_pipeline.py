@@ -1043,6 +1043,25 @@ class TestStreamText2SpeechDependencyInjection:
         assert vlm.generate_calls == 0
         assert (streamer.ended, streamer.abandoned) == (0, 1)
 
+    @pytest.mark.parametrize(
+        ("make_vlm", "error", "match"),
+        [
+            (RecordingVLM, TypeError, "omni_streamer"),
+            (lambda: StreamingVLM(fail_after_steps=1), RuntimeError, "failed mid-generation"),
+        ],
+        ids=["rejected_before_the_override_runs", "raised_by_the_override"],
+    )
+    def test_vlm_pipeline_base_binding_abandons_omni_streamer_exactly_once(
+        self, make_vlm: Callable[[], RecordingVLM], error: type[Exception], match: str
+    ) -> None:
+        """An override that never got the bridge cannot close it, and one that closed it must not see it closed again."""
+        streamer = RecordingOmniStreamer()
+
+        with pytest.raises(error, match=match):
+            ov_genai.VLMPipelineBase.generate(make_vlm(), "describe", omni_streamer=streamer)
+
+        assert (streamer.ended, streamer.abandoned) == (0, 1)
+
 
 @pytest.fixture(scope="module")
 def omni_pipe(omni_model_path: Path) -> ov_genai.OmniPipeline:
@@ -1544,6 +1563,43 @@ class TestOmniPipelineRealModel:
 
         assert (streamer.ended, streamer.abandoned) == (0, 1)
         assert streamer.steps == []
+
+    @pytest.mark.parametrize("as_history", [False, True], ids=["prompt", "history"])
+    @pytest.mark.parametrize("typed_inputs", [{}, {"images": []}], ids=["kwargs_overload", "typed_overload"])
+    def test_vlm_generate_treats_null_omni_streamer_as_omitted(
+        self, omni_pipe: ov_genai.OmniPipeline, as_history: bool, typed_inputs: dict[str, Any]
+    ) -> None:
+        """omni_streamer=None must not switch to the bridge path, which takes no speech_streamer."""
+        vlm = omni_pipe.get_vlm()
+        prompt = "Describe this."
+        inputs = ChatHistory([{"role": "user", "content": prompt}]) if as_history else prompt
+        arguments = {**typed_inputs, "generation_config": _text_config(4), "speech_streamer": lambda chunk: None}
+
+        expected = vlm.generate(inputs, **arguments)
+        result = vlm.generate(inputs, omni_streamer=None, **arguments)
+
+        assert result.texts == expected.texts
+
+    def test_talker_voices_nothing_of_response_abandoned_before_its_first_token(
+        self, omni_pipe: ov_genai.OmniPipeline
+    ) -> None:
+        """The prompt alone is enough to prefill the talker, but a response that was dropped has no speech."""
+        recorded = RecordingOmniStreamer()
+        omni_pipe.get_vlm().generate(
+            "Describe this.", generation_config=_omni_outputs_config(1), omni_streamer=recorded
+        )
+        prompt_length = recorded.steps[0]["prompt_length"]
+        prompt_tokens = [token for step in recorded.steps for token in step["tokens"]][:prompt_length]
+        source = ListTextSource([{"tokens": prompt_tokens, "prompt_length": prompt_length}], truncated=True)
+        speech_config = _talker_speech_config(return_audio=True, max_new_tokens=TALKER_MAX_NEW_TOKENS)
+        # One frame per chunk, so the first frame is streamed before the talker asks for more text.
+        speech_config.audio_chunk_frames = 1
+        chunks: list[ov.Tensor] = []
+
+        result = omni_pipe.get_talker().generate(source, speech_config, speech_streamer=chunks.append)
+
+        assert chunks == []
+        assert len(result.waveforms) == 0
 
     def test_omni_streamer_gets_no_tokens_cut_by_stop_string(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """The talker must not voice what a stop string removes from the text, so it is never written."""

@@ -1202,12 +1202,12 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 } catch (...) {
                 }
             }
+            // Released before the text streamer is joined, so the talker never waits on user callbacks.
+            omni_forwarder.abandon();
             try {
                 streamer_ptr->end();
             } catch (...) {
             }
-            // Release the talker too, otherwise it blocks forever on a thinker that threw.
-            omni_forwarder.abandon();
             std::rethrow_exception(error);
         }
     }
