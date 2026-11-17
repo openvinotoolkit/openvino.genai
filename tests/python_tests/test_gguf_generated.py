@@ -192,7 +192,9 @@ def generated_model(request, llama_reference_tools, tmp_path_factory):
     else:
         run_reference_command([str(generator), arch, str(directory), variant])
         model = directory / f"{arch}-{variant}.gguf"
-        assert model.is_file(), f"Pinned llama.cpp did not export {model.name}; do not silently drop architecture coverage"
+        assert model.is_file(), (
+            f"Pinned llama.cpp did not export {model.name}; do not silently drop architecture coverage"
+        )
     spec = directory / "inputs.json"
     spec.write_text(json.dumps({"prompts": PROMPTS, "max_new_tokens": NEW_TOKENS}))
     reference_path = model.with_suffix(".json")
