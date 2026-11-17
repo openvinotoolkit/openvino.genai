@@ -167,7 +167,7 @@ Set `device` to `"CPU"` or `"GPU"`.
         model_path = "Qwen3-TTS-12Hz-0.6B-CustomVoice"
         device = "CPU"
         scheduler_config = ov_genai.SchedulerConfig()
-        scheduler_config.enable_prefix_caching = True
+        scheduler_config.enable_prefix_caching = False
         pipeline = ov_genai.Text2SpeechContinuousBatchingPipeline(
             model_path, scheduler_config, device
         )
@@ -203,7 +203,7 @@ Set `device` to `"CPU"` or `"GPU"`.
             const std::string model_path = "Qwen3-TTS-12Hz-0.6B-CustomVoice";
             const std::string device = "CPU";
             ov::genai::SchedulerConfig scheduler_config;
-            scheduler_config.enable_prefix_caching = true;
+            scheduler_config.enable_prefix_caching = false;
             ov::genai::Text2SpeechContinuousBatchingPipeline pipeline(
                 model_path, scheduler_config, device);
 
