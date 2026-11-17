@@ -643,12 +643,11 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param stream_text2speech if set to true, OmniPipeline streams the thinker's tokens and hidden states
  *        to the talker as they are produced instead of handing over the whole sequence once text
  *        generation has finished, so speech starts before the text is complete. Requires
- *        talker_speech_config.return_audio and the continuous-batching backend.
- *        Interaction with stop_strings: a token is streamed to the talker at the step it is sampled,
- *        which is before a stop string spanning it can be matched. Tokens rewound out of the text
- *        afterwards have already reached the talker, so the speech may voice up to one stop string
- *        more than the returned text shows. Leave stream_text2speech off if the two must agree
- *        exactly.
+ *        talker_speech_config.return_audio and the continuous-batching backend. The generated text is
+ *        unchanged, and with the same OmniTalkerSpeechConfig::rng_seed so is the waveform, unless the
+ *        thinker generates an <|im_start|> token.
+ *        Interaction with stop_strings: a token reaches the talker only once no stop string can
+ *        remove it, which delays speech by the token length of the longest stop string.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
@@ -715,16 +714,13 @@ public:
     bool apply_chat_template = true;
 
     // Accumulate intermediate hidden states and full token ids in the result for Qwen3-Omni speech
-    // generation. Only supported by the continuous-batching backend; set internally by OmniPipeline.
+    // generation. Only supported by the continuouzs-batching backend; set internally by OmniPipeline.
     // Preview API: subject to change.
     bool return_omni_outputs = false;
 
     // Stream the thinker's tokens and hidden states to the talker while text generation is still
-    // running, instead of handing the whole sequence over once it has finished. OmniPipeline creates
-    // an OmniChannel and passes it to the VLM when this is set. Requires
+    // running, instead of handing the whole sequence over once it has finished. Requires
     // talker_speech_config.return_audio and the continuous-batching backend.
-    // Combined with stop_strings, the speech can run up to one stop string past the returned text;
-    // see the class doc above.
     // Preview API: subject to change.
     bool stream_text2speech = false;
 

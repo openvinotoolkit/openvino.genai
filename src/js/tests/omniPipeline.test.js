@@ -87,14 +87,23 @@ describe("OmniPipeline", { skip: os.platform() === "darwin" }, () => {
     );
   });
 
-  it("should generate speech while text is still being generated", async () => {
-    const result = await pipeline.generate("Say hello.", {
-      textConfig: { max_new_tokens: 20, stream_text2speech: true },
-      talkerSpeechConfig: deterministicSpeechConfig,
-    });
-    assert.ok(result instanceof OmniDecodedResults);
-    assert.ok(result.texts.length > 0, "Should generate text");
-    assert.ok(result.speechResult.waveforms.length > 0, "Should produce speech waveforms");
+  it("should generate the same text and speech while text is still being generated", async () => {
+    const generate = (streamText2Speech) =>
+      pipeline.generate("Say hello.", {
+        textConfig: { max_new_tokens: 20, stream_text2speech: streamText2Speech },
+        talkerSpeechConfig: deterministicSpeechConfig,
+      });
+    const batch = await generate(false);
+    const streamed = await generate(true);
+
+    assert.ok(streamed instanceof OmniDecodedResults);
+    assert.deepStrictEqual(streamed.texts, batch.texts);
+    assert.strictEqual(streamed.speechResult.waveforms.length, 1);
+    assert.deepStrictEqual(
+      streamed.speechResult.waveforms[0].data,
+      batch.speechResult.waveforms[0].data,
+      "The talker must produce the same waveform from the thinker's output arriving step by step",
+    );
   });
 
   it("should stream text and speech chunks", async () => {

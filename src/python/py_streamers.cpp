@@ -5,7 +5,6 @@
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 
-#include "openvino/genai/omni/channel.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/streamer_base.hpp"
 #include "openvino/genai/omni/text_source_base.hpp"
@@ -18,7 +17,6 @@
 namespace py = pybind11;
 
 using ov::genai::CallbackTypeVariant;
-using ov::genai::OmniChannel;
 using ov::genai::OmniStreamerBase;
 using ov::genai::OmniTextSourceBase;
 using ov::genai::StreamingStatus;
@@ -133,7 +131,15 @@ ov::AnyMap omni_step_from_py(const py::dict& step) {
         if (key == ov::genai::omni_stream::tokens.name()) {
             data[key] = value.cast<std::vector<int64_t>>();
         } else if (key == ov::genai::omni_stream::hidden_states.name()) {
-            data[key] = value.cast<std::vector<ov::Tensor>>();
+            // Copied: a Tensor created with shared_memory=True borrows a buffer only its Python
+            // wrapper keeps alive, while the C++ handle is queued and read after that wrapper is gone.
+            std::vector<ov::Tensor> hidden_states;
+            for (const ov::Tensor& borrowed : value.cast<std::vector<ov::Tensor>>()) {
+                ov::Tensor owned(borrowed.get_element_type(), borrowed.get_shape());
+                borrowed.copy_to(owned);
+                hidden_states.push_back(std::move(owned));
+            }
+            data[key] = std::move(hidden_states);
         } else if (key == ov::genai::omni_stream::prompt_length.name()) {
             data[key] = value.cast<size_t>();
         } else {
@@ -192,16 +198,18 @@ auto omni_streamer_base_docstring = R"(
     reading the other end can start speaking before text generation finishes.
 
     Inherit and implement write(), end() and abandon(). A typical custom bridge is a queue
-    implementing both OmniStreamerBase and OmniTextSourceBase. OmniPipeline creates its own
-    OmniChannel for built-in streaming and does not accept a caller-provided bridge. To drive custom
-    stages yourself, pass your bridge to VLMPipeline.generate(..., omni_streamer=...) and to
-    Talker.generate(...) as the text source.
+    implementing both OmniStreamerBase and OmniTextSourceBase. OmniPipeline creates its own bridge
+    and does not accept a caller-provided one. To drive custom stages yourself, pass your bridge to
+    VLMPipeline.generate(..., omni_streamer=...) and to Talker.generate(...) as the text source.
 
     write(step: dict) -> StreamingStatus:
         Called once per VLM decode step. Ignore unknown keys. Known keys:
-          "tokens": list[int] -- token ids produced by this step; continuous batching may split a
-              long prefill across writes when the prompt exceeds batch capacity, and each decode
-              step carries one token.
+          "tokens": list[int] -- token ids released by this step: prompt tokens first, then
+              generated ones. Continuous batching may split a long prefill across writes when the
+              prompt exceeds batch capacity. A decode step usually releases one generated token,
+              but GenerationConfig.stop_strings holds tokens back until no stop string can remove
+              them, so a step may carry none or several. A token on the bridge is never cut from
+              the result.
           "hidden_states": list[ov.Tensor] -- f32 [1, 1, hidden_size] thinker hidden states,
               co-indexed with the token stream by absolute position across the whole stream, not
               within one payload; the token stream ends one entry longer. A hidden state is written
@@ -219,12 +227,12 @@ auto omni_streamer_base_docstring = R"(
         cancel the VLM.
 
     end():
-        Called exactly once when the VLM stage ends, including on an early stop or cancel.
+        Called exactly once when the VLM stage ends, including on an early stop.
         Must release any reader blocked in OmniTextSourceBase.read().
 
     abandon():
-        Called instead of end() when the VLM stage raised: what was written is a prefix of a
-        response that will never be completed. Same obligation to release readers.
+        Called instead of end() when the VLM stage was cancelled or raised: what was written is a
+        prefix of a response that will never be completed. Same obligation to release readers.
 
     write() and end()/abandon() are called sequentially from the thread running the VLM decode
     loop. This is a preview API and is subject to change.
@@ -236,47 +244,21 @@ auto omni_text_source_base_docstring = R"(
     VLMDecodedResults.
 
     Inherit and implement read() and truncated(). What a producer passed to OmniStreamerBase.write()
-    is what read() returns, with the same keys and in the same order. OmniChannel implements both
-    interfaces as the built-in bridge. In streaming mode, OmniPipeline passes that channel instance
-    to the VLM as a sink and to the talker as a source.
+    is what read() returns, with the same keys and in the same order. In streaming mode,
+    OmniPipeline passes one bridge object implementing both interfaces to the VLM as a sink and to
+    the talker as a source.
 
     read() -> dict | None:
         Take the next VLM step, blocking until one arrives or the stream ends. Return None once the
         write end has called end() and every queued step has been read; None is final. Must not
-        block forever on a VLM that stopped early or raised: end() or abandon() is always called
-        on the write end and must release the reader.
+        block forever on a VLM that stopped early, was cancelled or raised: end() or abandon() is
+        always called on the write end and must release the reader.
 
     truncated() -> bool:
         Whether the producer called abandon() instead of end(). Only meaningful once read() has
         returned None.
 
     This is a preview API and is subject to change.
-)";
-
-auto omni_channel_docstring = R"(
-    Built-in thinker -> talker bridge: the VLM writes decode steps in, the talker reads them out,
-    so speech generation runs while text generation is still going. Implements both
-    OmniStreamerBase and OmniTextSourceBase.
-
-    When GenerationConfig.stream_text2speech is set, each OmniPipeline.generate() call creates an
-    OmniChannel and passes it to the VLM as an OmniStreamerBase and to the talker as an
-    OmniTextSourceBase. Construct an OmniChannel directly only when driving
-    VLMPipeline.generate(..., omni_streamer=channel) and Talker.generate(channel, ...) yourself,
-    typically on two threads.
-
-    Steps are queued in arrival order and are never dropped or coalesced. The queue is unbounded,
-    so a talker slower than the thinker costs memory rather than stalling text generation.
-
-    The reader closes its own end with finish_reading() when it stops listening normally and with
-    fail_reading() when it fails. Both drop the queue and are idempotent, with fail_reading() taking
-    precedence. After finish_reading(), write() keeps returning RUNNING so text generation can
-    finish; after fail_reading(), it returns STOP.
-
-    The writer closes with end() or abandon(), and the difference reaches the reader as
-    truncated(). abandon() also drops the queue.
-
-    Safe to use from two threads, one writing and one reading. read() releases the GIL while it
-    waits. This is a preview API and is subject to change.
 )";
 
 } // namespace
@@ -374,9 +356,9 @@ void init_streamers(py::module_& m) {
              py::arg("step"),
              "Called once per VLM decode step with that step's payload. Return StreamingStatus.")
         .def("end", &OmniStreamerBase::end,
-             "Called exactly once when the VLM stage ends, including on an early stop or cancel.")
+             "Called exactly once when the VLM stage ends, including on an early stop.")
         .def("abandon", &OmniStreamerBase::abandon,
-             "Called instead of end() when the VLM stage raised.");
+             "Called instead of end() when the VLM stage was cancelled or raised.");
 
     py::class_<OmniTextSourceBase, ConstructableOmniTextSource, std::shared_ptr<OmniTextSourceBase>>(
         m, "OmniTextSourceBase", omni_text_source_base_docstring)
@@ -396,12 +378,4 @@ void init_streamers(py::module_& m) {
              "Take the next VLM step, blocking until one arrives or the stream ends. None once the stream ended.")
         .def("truncated", &OmniTextSourceBase::truncated,
              "Whether the producer called abandon() instead of end(). Meaningful once read() returned None.");
-
-    py::class_<OmniChannel, OmniStreamerBase, OmniTextSourceBase, std::shared_ptr<OmniChannel>>(
-        m, "OmniChannel", omni_channel_docstring)
-        .def(py::init<>())
-           .def("finish_reading", &OmniChannel::finish_reading,
-               "Close the read end after the talker finished normally. write() keeps returning RUNNING.")
-           .def("fail_reading", &OmniChannel::fail_reading,
-               "Close the read end after the talker failed. write() returns STOP from now on.");
 }

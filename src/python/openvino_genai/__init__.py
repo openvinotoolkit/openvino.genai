@@ -51,7 +51,6 @@ from .py_openvino_genai import (
 # Omni pipeline (Qwen3-Omni text + speech)
 
 from .py_openvino_genai import (
-    OmniChannel,
     OmniDecodedResults,
     OmniPipeline,
     OmniStreamerBase,

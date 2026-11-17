@@ -99,12 +99,18 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
 SPEECH_SAMPLE_RATE = 24000
 
 
-def save_speech(decoded_results: openvino_genai.OmniDecodedResults, file_name: str) -> None:
-    """Save the first speech waveform to a WAV file. Speech output is optional (talker mode)."""
-    if not decoded_results.speech_result.waveforms:
-        return
-    waveform = np.array(decoded_results.speech_result.waveforms[0].data).reshape(-1)
-    sf.write(file_name, waveform, samplerate=SPEECH_SAMPLE_RATE)
+def open_speech_file(file_name: str) -> sf.SoundFile:
+    """Open a WAV file that speech chunks are appended to while they are generated."""
+    return sf.SoundFile(file_name, "w", samplerate=SPEECH_SAMPLE_RATE, channels=1, subtype="FLOAT")
+
+
+def write_speech_chunk(speech_file: sf.SoundFile, audio_chunk: Tensor) -> openvino_genai.StreamingStatus:
+    """Speech streamer body: the talker calls it with each [1, 1, N] chunk as soon as it is produced,
+    which with stream_text2speech is while the thinker is still generating text. It runs on the
+    talker's thread.
+    """
+    speech_file.write(audio_chunk.data.reshape(-1))
+    return openvino_genai.StreamingStatus.RUNNING
 
 
 def main() -> None:
@@ -132,11 +138,12 @@ def main() -> None:
 
     # Two configs: text_config drives the thinker text decode; talker_speech_config drives the
     # talker + speech output. Speech output is hardcoded on here to show the multimodal path.
-    # Set talker_speech_config.return_audio = False to get text-only responses.
+    # Set talker_speech_config.return_audio = False and text_config.stream_text2speech = False to
+    # get text-only responses.
     text_config = openvino_genai.GenerationConfig()
     text_config.max_new_tokens = 256
-    # Hand the thinker's tokens and hidden states to the talker as they are produced.
-    # OmniPipeline creates the bridge between the two stages.
+    # Hand the thinker's tokens and hidden states to the talker as they are produced, so the first
+    # speech chunk reaches the speech streamer before the text is complete.
     text_config.stream_text2speech = True
 
     talker_speech_config = openvino_genai.OmniTalkerSpeechConfig(args.model_dir)
@@ -153,18 +160,19 @@ def main() -> None:
     history = openvino_genai.ChatHistory()
     prompt = input("question:\n")
     history.append({"role": "user", "content": prompt})
-    decoded_results = pipe.generate(
-        history,
-        images=rgbs,
-        videos=videos,
-        videos_metadata=videos_metadata,
-        audios=audios,
-        text_config=text_config,
-        talker_speech_config=talker_speech_config,
-        streamer=streamer,
-    )
+    with open_speech_file("output_audio_0.wav") as speech_file:
+        decoded_results = pipe.generate(
+            history,
+            images=rgbs,
+            videos=videos,
+            videos_metadata=videos_metadata,
+            audios=audios,
+            text_config=text_config,
+            talker_speech_config=talker_speech_config,
+            streamer=streamer,
+            speech_streamer=lambda audio_chunk: write_speech_chunk(speech_file, audio_chunk),
+        )
     history.append({"role": "assistant", "content": decoded_results.texts[0]})
-    save_speech(decoded_results, "output_audio_0.wav")
 
     for turn in itertools.count(start=1):
         try:
@@ -175,14 +183,15 @@ def main() -> None:
         history.append({"role": "user", "content": prompt})
         # Media attaches to the turn it is supplied on, so later turns pass none at all and refer
         # back through the history rather than re-sending turn 1's tensors.
-        decoded_results = pipe.generate(
-            history,
-            text_config=text_config,
-            talker_speech_config=talker_speech_config,
-            streamer=streamer,
-        )
+        with open_speech_file(f"output_audio_{turn}.wav") as speech_file:
+            decoded_results = pipe.generate(
+                history,
+                text_config=text_config,
+                talker_speech_config=talker_speech_config,
+                streamer=streamer,
+                speech_streamer=lambda audio_chunk: write_speech_chunk(speech_file, audio_chunk),
+            )
         history.append({"role": "assistant", "content": decoded_results.texts[0]})
-        save_speech(decoded_results, f"output_audio_{turn}.wav")
 
 
 if __name__ == "__main__":

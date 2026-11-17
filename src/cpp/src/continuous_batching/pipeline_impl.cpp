@@ -919,6 +919,11 @@ namespace {
 /// i + 1, so the very last generated token (typically EOS) is sampled from position n-1's state and
 /// never fed back — it never gets a hidden state of its own. Clamping tokens to the hidden-state
 /// count would silently drop it, and the talker would speak a sentence short of its ending.
+///
+/// Generated tokens follow the text streamer's buffering: one is written once
+/// SequenceGroup::prepare_notification() has released it to the generation stream, which holds back
+/// the tokens a stop string can still remove. The bridge therefore never carries text that is cut
+/// from the result.
 class OmniStepForwarder {
 public:
     /// @param requests Exactly one request with one running sequence; checked by the caller before
@@ -929,12 +934,13 @@ public:
         if (!m_streamer) {
             return;
         }
-        const auto& running_sequences = requests.front()->get_running_sequences();
+        m_request = requests.front();
+        const auto& running_sequences = m_request->get_running_sequences();
         OPENVINO_ASSERT(requests.size() == 1 && running_sequences.size() == 1,
                         "Internal error: the omni_streamer constraints were supposed to be validated before add_request");
         // Held by shared_ptr so it stays reachable after the group drops it from the running list.
         m_sequence = running_sequences.front();
-        m_prompt_ids = requests.front()->get_prompt_ids();
+        m_prompt_ids = m_request->get_prompt_ids();
     }
 
     OmniStepForwarder(const OmniStepForwarder&) = delete;
@@ -947,17 +953,46 @@ public:
         abandon();
     }
 
-    /// @brief Write whatever the last step added, if anything.
+    /// @brief Write whatever the last step released, if anything.
     /// @return What the bridge asked the decode loop to do; RUNNING when there is no bridge.
     StreamingStatus flush() {
         if (!m_streamer) {
             return StreamingStatus::RUNNING;
         }
+        return write(std::min(m_request->get_num_streamed_tokens(), m_sequence->get_generated_ids().size()));
+    }
+
+    /// @brief Write the generated tokens that were still held back, then close the write end. A
+    /// finished sequence has released everything already; a stopped one keeps its held back tokens
+    /// in the result, so the talker gets them too. Idempotent.
+    void end() {
+        if (m_streamer) {
+            write(m_sequence->get_generated_ids().size());
+            m_streamer->end();
+            m_streamer.reset();
+        }
+    }
+
+    /// @brief Close the write end after the decode loop threw or the request was cancelled, so the
+    /// talker can tell the tokens it got are a prefix and stop instead of speaking a half sentence to
+    /// its end. @see end.
+    void abandon() {
+        if (m_streamer) {
+            auto streamer = std::exchange(m_streamer, nullptr);
+            try {
+                streamer->abandon();
+            } catch (...) {
+            }
+        }
+    }
+
+private:
+    /// @param num_generated How many of the sequence's generated tokens may be on the bridge after
+    ///                      this write.
+    StreamingStatus write(size_t num_generated) {
         const auto& hidden_states = m_sequence->get_all_intermediate_hidden_states();
         const auto& generated_ids = m_sequence->get_generated_ids();
-        const size_t total_tokens = m_prompt_ids.size() + generated_ids.size();
-        // Stop strings are stripped by rewinding generated_ids, so the token count can shrink.
-        // Nothing to take back — those tokens are already on their way — but don't underflow either.
+        const size_t total_tokens = m_prompt_ids.size() + num_generated;
         const size_t new_tokens = total_tokens > m_forwarded_tokens ? total_tokens - m_forwarded_tokens : 0;
         const size_t new_hidden_states = hidden_states.size() - m_forwarded_hidden_states;
         if (new_tokens == 0 && new_hidden_states == 0) {
@@ -980,29 +1015,8 @@ public:
                                   omni_stream::prompt_length(m_prompt_ids.size())});
     }
 
-    /// @brief Close the write end. Idempotent, so the exception path can call it without racing
-    /// the normal one. A reader blocked on the bridge is released here and nowhere else.
-    void end() {
-        if (m_streamer) {
-            m_streamer->end();
-            m_streamer.reset();
-        }
-    }
-
-    /// @brief Close the write end after the decode loop threw, so the talker can tell the tokens it
-    /// got are a prefix and stop instead of speaking a half sentence to its end. @see end.
-    void abandon() {
-        if (m_streamer) {
-            auto streamer = std::exchange(m_streamer, nullptr);
-            try {
-                streamer->abandon();
-            } catch (...) {
-            }
-        }
-    }
-
-private:
     std::shared_ptr<OmniStreamerBase> m_streamer;
+    SequenceGroup::Ptr m_request;
     Sequence::Ptr m_sequence;
     TokenIds m_prompt_ids;
     /// How far into each stream the writes have gotten. Kept apart because the streams end at
@@ -1204,11 +1218,16 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         raw_perf_counters.m_grammar_compile_times.emplace_back(t);
     }
 
+    // Closed before the text streamer: joining that one waits on user callbacks, which must neither
+    // delay the talker's last read nor, by throwing, abandon a finished run. A cancelled response is
+    // dropped, so the talker must not voice it to its end.
+    if (generation->get_status() == GenerationStatus::CANCEL) {
+        omni_forwarder.abandon();
+    } else {
+        omni_forwarder.end();
+    }
     // waiting for completion of streaming
     streamer_ptr->end();
-    // Everything the last step produced has been forwarded by the loop above; tell the talker the
-    // thinker is done so its read() stops blocking.
-    omni_forwarder.end();
 
     OPENVINO_ASSERT(m_requests.empty(),
                     "Internal error: current request is supposed to be dropped within step() function as completed");

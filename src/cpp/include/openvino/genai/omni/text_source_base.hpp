@@ -17,11 +17,11 @@ namespace ov::genai {
  *
  * This is the mirror of OmniStreamerBase: what a producer passed to write() is what read() returns,
  * with the same keys (see the `omni_stream` namespace in omni/streamer_base.hpp) and in the same
- * order. OmniChannel implements both interfaces as the built-in bridge. In streaming mode,
- * OmniPipeline passes that channel instance to the VLM as a sink and to the talker as a source.
+ * order. In streaming mode, OmniPipeline passes one bridge object implementing both interfaces to the
+ * VLM as a sink and to the talker as a source.
  *
  * read() blocks until a step is available or the stream ends, so the talker thread parks instead of
- * spinning. It must not block forever on a VLM that stopped early or threw: one of
+ * spinning. It must not block forever on a VLM that stopped early, was cancelled or threw: one of
  * OmniStreamerBase::end() or OmniStreamerBase::abandon() is always called and must release the
  * reader. Which of the two it was is what truncated() reports.
  *
@@ -34,10 +34,11 @@ public:
     ///         queued step has been read. nullopt is final: further reads keep returning nullopt.
     virtual std::optional<ov::AnyMap> read() = 0;
 
-    /// @brief Whether the producer died rather than finished, i.e. called OmniStreamerBase::abandon()
-    ///        instead of end(). Only meaningful once read() has returned std::nullopt; a consumer
-    ///        that sees true is holding a prefix of a response nobody is going to complete, and
-    ///        should give up rather than pad it out to a plausible-sounding whole.
+    /// @brief Whether the response was cancelled or the producer failed, i.e. it called
+    ///        OmniStreamerBase::abandon() instead of end(). Only meaningful once read() has returned
+    ///        std::nullopt; a consumer that sees true is holding a prefix of a response nobody is
+    ///        going to complete, and should give up rather than pad it out to a plausible-sounding
+    ///        whole.
     virtual bool truncated() const = 0;
 
     virtual ~OmniTextSourceBase();

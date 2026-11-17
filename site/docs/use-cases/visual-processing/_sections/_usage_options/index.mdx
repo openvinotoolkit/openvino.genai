@@ -256,7 +256,7 @@ Without a speech streamer, both fields have no effect and the whole audio is ret
 
 By default, `OmniPipeline` runs the talker after the thinker has produced the whole response. Set `GenerationConfig.stream_text2speech` on the text config to start the talker as soon as the first thinker token is available: the talker then runs on its own thread and consumes the thinker's tokens and hidden states one decode step at a time, so the first audio chunk arrives while text is still being generated. The generated text is unchanged, and with the same `OmniTalkerSpeechConfig.rng_seed` the waveform is the same as without the flag, as long as the thinker does not generate an `<|im_start|>` token.
 
-The flag requires `return_audio` and works with the continuous batching backend that `OmniPipeline` uses by default. It is not compatible with speculative decoding, prompt lookup, beam search, or `num_return_sequences > 1`.
+The flag requires `return_audio` and works with the continuous batching backend that `OmniPipeline` uses by default. It is not compatible with speculative decoding, prompt lookup, beam search, or `num_return_sequences > 1`. With `stop_strings` the talker gets a token only once no stop string can remove it, so speech lags the text by the token length of the longest stop string.
 
 When streaming, the speech streamer is called from the talker's thread and can run concurrently with the text streamer.
 
@@ -323,7 +323,7 @@ When streaming, the speech streamer is called from the talker's thread and can r
     </TabItemJS>
 </LanguageTabs>
 
-To drive the two stages yourself, `OmniChannel` is the bridge `OmniPipeline` uses: pass it as `omni_streamer` to `VLMPipeline::generate()` on one thread and as the text source to `Talker::generate()` on another. `OmniStreamerBase` and `OmniTextSourceBase` are the two ends of that bridge, so a custom VLM or talker can implement them to take part in streaming.
+To drive the two stages yourself, implement the bridge between them. An `OmniStreamerBase` passed as `omni_streamer` to `VLMPipeline::generate()` on one thread receives the tokens and hidden states of every decode step, and an `OmniTextSourceBase` passed to `Talker::generate()` on another thread hands them to the talker. A custom VLM or talker takes part in streaming by accepting the same two interfaces.
 
 ### Working with LoRA Adapters
 

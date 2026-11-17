@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <mutex>
 #include <memory>
-#include <utility>
 #include <openvino/runtime/properties.hpp>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
@@ -661,8 +660,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const ov::AnyMap& properties_map
 ) {
     const size_t batch_size = prompts.size();
-    auto properties = extract_cb_generate_properties(properties_map);
-    PendingOmniStreamerGuard bridge_guard{properties.omni_streamer};
+    const auto properties = extract_cb_generate_properties(properties_map);
 
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
@@ -678,8 +676,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
-        properties.streamer,
-        std::exchange(properties.omni_streamer, nullptr)
+        properties.streamer
     );
 }
 
@@ -707,8 +704,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const ov::AnyMap& properties_map
 ) {
     const size_t batch_size = histories.size();
-    auto properties = extract_cb_generate_properties(properties_map);
-    PendingOmniStreamerGuard bridge_guard{properties.omni_streamer};
+    const auto properties = extract_cb_generate_properties(properties_map);
 
     OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
         "\"generation_config_batches\" property is required in generate with properties map");
@@ -724,8 +720,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
-        properties.streamer,
-        std::exchange(properties.omni_streamer, nullptr)
+        properties.streamer
     );
 }
 

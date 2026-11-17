@@ -45,6 +45,7 @@ import gc
 import json
 import os
 import platform
+import queue
 import shutil
 import sys
 import threading
@@ -100,7 +101,6 @@ class TestOmniPipelineImports:
     def test_omni_pipeline_imports(self) -> None:
         """All new public symbols must be importable from the top-level module."""
         from openvino_genai import (  # noqa: F401
-            OmniChannel,
             OmniPipeline,
             OmniSpeechStreamerBase,
             OmniStreamerBase,
@@ -240,90 +240,8 @@ def _step(*tokens: int, hidden_size: int = 0, prompt_length: int | None = None) 
     return step
 
 
-class TestOmniChannel:
-    """OmniChannel is the built-in thinker -> talker bridge; these cover its queue semantics without a model."""
-
-    def test_is_both_bridge_ends(self) -> None:
-        channel = ov_genai.OmniChannel()
-        assert isinstance(channel, ov_genai.OmniStreamerBase), "the VLM side takes the channel as an OmniStreamerBase"
-        assert isinstance(channel, ov_genai.OmniTextSourceBase), "the talker takes the channel as an OmniTextSourceBase"
-
-    def test_reads_steps_in_write_order(self) -> None:
-        channel = ov_genai.OmniChannel()
-        assert channel.write(_step(1, 2, 3, hidden_size=4, prompt_length=3)) == ov_genai.StreamingStatus.RUNNING
-        assert channel.write(_step(4)) == ov_genai.StreamingStatus.RUNNING
-        channel.end()
-
-        first = channel.read()
-        assert first is not None
-        assert first["tokens"] == [1, 2, 3]
-        assert first["prompt_length"] == 3
-        assert [tensor.shape for tensor in first["hidden_states"]] == [[1, 1, 4]] * 3
-        assert [float(tensor.data[0, 0, 0]) for tensor in first["hidden_states"]] == [1.0, 2.0, 3.0]
-        second = channel.read()
-        assert second is not None
-        assert second["tokens"] == [4]
-        assert "hidden_states" not in second, "a step written without hidden states must be read without them"
-        assert channel.read() is None, "read() must return None once end() was called and the queue is drained"
-        assert channel.read() is None, "None is final"
-        assert channel.truncated() is False
-
-    def test_abandon_drops_queue_and_reports_truncated(self) -> None:
-        channel = ov_genai.OmniChannel()
-        channel.write(_step(1))
-        channel.abandon()
-
-        assert channel.read() is None, "abandon() drops what the talker has not read yet"
-        assert channel.truncated() is True
-
-    def test_finish_reading_keeps_thinker_running(self) -> None:
-        channel = ov_genai.OmniChannel()
-        channel.write(_step(1))
-        channel.finish_reading()
-
-        assert channel.read() is None, "a finished reader must not see queued steps"
-        assert channel.write(_step(2)) == ov_genai.StreamingStatus.RUNNING, (
-            "finish_reading() must not stop text generation"
-        )
-        channel.end()
-        assert channel.truncated() is False
-
-    def test_fail_reading_stops_thinker(self) -> None:
-        channel = ov_genai.OmniChannel()
-        channel.write(_step(1))
-        channel.fail_reading()
-
-        assert channel.read() is None
-        assert channel.write(_step(2)) == ov_genai.StreamingStatus.STOP, "abort() must ask the thinker to stop"
-        channel.finish_reading()
-        assert channel.write(_step(3)) == ov_genai.StreamingStatus.STOP, (
-            "fail_reading() takes precedence over finish_reading()"
-        )
-        channel.end()
-
-    def test_read_blocks_until_write_from_another_thread(self) -> None:
-        """read() releases the GIL while waiting, so a Python writer on another thread can make progress."""
-        channel = ov_genai.OmniChannel()
-        reader_waiting = threading.Event()
-        received: list[dict[str, Any] | None] = []
-
-        def read_all() -> None:
-            reader_waiting.set()
-            while (step := channel.read()) is not None:
-                received.append(step)
-            received.append(None)
-
-        reader = threading.Thread(target=read_all)
-        reader.start()
-        assert reader_waiting.wait(timeout=10), "the reader thread did not start"
-        channel.write(_step(7))
-        channel.write(_step(8))
-        channel.end()
-        reader.join(timeout=10)
-
-        assert not reader.is_alive(), "end() must release the reader blocked in read()"
-        assert [step["tokens"] for step in received[:-1]] == [[7], [8]]
-        assert received[-1] is None
+# Upper bound for one blocking wait on a bridge, so a stage that never shows up fails the test instead of hanging it.
+BRIDGE_TIMEOUT_SECONDS = 60
 
 
 class RecordingOmniStreamer(ov_genai.OmniStreamerBase):
@@ -360,6 +278,45 @@ class ListTextSource(ov_genai.OmniTextSourceBase):
 
     def truncated(self) -> bool:
         return self._truncated
+
+
+class QueueOmniStreamer(ov_genai.OmniStreamerBase):
+    """Write end of a user-written thinker -> talker bridge. QueueTextSource is its read end."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.steps: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self.abandoned = False
+        self.reader_failed = False
+
+    def write(self, step: dict[str, Any]) -> ov_genai.StreamingStatus:
+        self.steps.put(step)
+        return ov_genai.StreamingStatus.STOP if self.reader_failed else ov_genai.StreamingStatus.RUNNING
+
+    def end(self) -> None:
+        self.steps.put(None)
+
+    def abandon(self) -> None:
+        self.abandoned = True
+        self.steps.put(None)
+
+
+class QueueTextSource(ov_genai.OmniTextSourceBase):
+    """Read end of QueueOmniStreamer: read() blocks until the thinker's thread writes the next step."""
+
+    def __init__(self, streamer: QueueOmniStreamer) -> None:
+        super().__init__()
+        self._streamer = streamer
+
+    def read(self) -> dict[str, Any] | None:
+        step = self._streamer.steps.get(timeout=BRIDGE_TIMEOUT_SECONDS)
+        if step is None:
+            # Keep the end marker so that a repeated read() returns None again instead of blocking.
+            self._streamer.steps.put(None)
+        return step
+
+    def truncated(self) -> bool:
+        return self._streamer.abandoned
 
 
 class TestPythonBridgeSubclasses:
@@ -830,14 +787,17 @@ STREAMED_TOKENS = [[11, 12, 13], [14], [15], [16]]
 
 class StreamingVLM(RecordingVLM):
     """A thinker that supports stream_text2speech: it accepts the `omni_streamer` keyword and writes
-    STREAMED_TOKENS into it one step at a time, then closes the write end.
+    STREAMED_TOKENS into it one step at a time, then closes the write end. With `gate` it writes the
+    first step and does not go on until the event is set.
     """
 
-    def __init__(self, fail_after_steps: int | None = None) -> None:
+    def __init__(self, fail_after_steps: int | None = None, gate: threading.Event | None = None) -> None:
         super().__init__()
         self.last_omni_streamer: ov_genai.OmniStreamerBase | None = None
         self.write_statuses: list[ov_genai.StreamingStatus] = []
+        self.gate_opened: bool | None = None
         self._fail_after_steps = fail_after_steps
+        self._gate = gate
 
     def generate(
         self,
@@ -859,6 +819,8 @@ class StreamingVLM(RecordingVLM):
                 if self._fail_after_steps is not None and index == self._fail_after_steps:
                     raise RuntimeError("StreamingVLM failed mid-generation")
                 self.write_statuses.append(omni_streamer.write(_step(*tokens, hidden_size=2)))
+                if index == 0 and self._gate is not None:
+                    self.gate_opened = self._gate.wait(timeout=BRIDGE_TIMEOUT_SECONDS)
         except Exception:
             omni_streamer.abandon()
             raise
@@ -878,6 +840,7 @@ class StreamingTalker(RecordingTalker):
         self.truncated: bool | None = None
         self.text_source_calls = 0
         self.thread_ids: set[int] = set()
+        self.first_read = threading.Event()
 
     def generate(
         self,
@@ -892,6 +855,7 @@ class StreamingTalker(RecordingTalker):
         while (step := source.read()) is not None:
             self.read_tokens.append(step["tokens"])
             self.read_hidden_state_count += len(step.get("hidden_states", []))
+            self.first_read.set()
         self.truncated = source.truncated()
         return ov_genai.TalkerResults()
 
@@ -904,7 +868,7 @@ def _streaming_text_config() -> ov_genai.GenerationConfig:
 
 
 class TestStreamText2SpeechDependencyInjection:
-    """stream_text2speech bridges a Python thinker and a Python talker through OmniPipeline's OmniChannel."""
+    """stream_text2speech bridges a Python thinker and a Python talker through OmniPipeline's own bridge."""
 
     def test_talker_reads_what_the_vlm_wrote(self) -> None:
         vlm, talker = StreamingVLM(), StreamingTalker()
@@ -917,9 +881,9 @@ class TestStreamText2SpeechDependencyInjection:
         )
 
         assert isinstance(result, ov_genai.OmniDecodedResults)
-        assert isinstance(vlm.last_omni_streamer, ov_genai.OmniChannel), "OmniPipeline must hand the VLM its channel"
+        assert isinstance(vlm.last_omni_streamer, ov_genai.OmniStreamerBase), "OmniPipeline must hand the VLM a bridge"
         assert vlm.write_statuses == [ov_genai.StreamingStatus.RUNNING] * len(STREAMED_TOKENS), (
-            "a healthy channel never asks the thinker to stop"
+            "a healthy bridge never asks the thinker to stop"
         )
         assert talker.text_source_calls == 1, "the talker must be driven through the OmniTextSourceBase form"
         assert talker.generate_calls == 0, "the VLMDecodedResults form must not run as well"
@@ -927,6 +891,25 @@ class TestStreamText2SpeechDependencyInjection:
         assert talker.read_hidden_state_count == sum(len(tokens) for tokens in STREAMED_TOKENS)
         assert talker.truncated is False
         assert talker.thread_ids != {threading.get_ident()}, "the talker must run on its own thread"
+
+    def test_talker_reads_while_the_vlm_is_still_generating(self) -> None:
+        """The VLM writes one step and does not go on until the talker has read it.
+
+        A pipeline that ignores the flag, or starts the talker only after the VLM returned, never
+        opens the gate.
+        """
+        talker = StreamingTalker()
+        vlm = StreamingVLM(gate=talker.first_read)
+        pipeline = ov_genai.OmniPipeline(vlm, talker)
+
+        pipeline.generate(
+            "describe this",
+            text_config=_streaming_text_config(),
+            talker_speech_config=_talker_speech_config(return_audio=True),
+        )
+
+        assert vlm.gate_opened is True, "the talker must read the first step while the VLM is still generating"
+        assert talker.read_tokens == STREAMED_TOKENS
 
     def test_vlm_failure_reaches_caller_and_truncates_talker(self) -> None:
         vlm, talker = StreamingVLM(fail_after_steps=2), StreamingTalker()
@@ -997,10 +980,36 @@ class TestStreamText2SpeechDependencyInjection:
             def get_speaker_embedding(self, name: str) -> ov.Tensor:
                 return ov.Tensor(np.zeros((1, 1, 4), dtype=np.float32))
 
-        channel = ov_genai.OmniChannel()
-        channel.end()
         with pytest.raises(RuntimeError, match="stream_text2speech"):
-            StreamingUnawareTalker().generate(channel, _talker_speech_config(return_audio=True))
+            StreamingUnawareTalker().generate(ListTextSource([]), _talker_speech_config(return_audio=True))
+
+    def test_batch_only_talker_refuses_text_source_by_delegating(self) -> None:
+        """A generate() override gets the OmniTextSourceBase in the place of the VLMDecodedResults. A
+        talker without streaming support passes that form on to TalkerBase.generate(), which refuses.
+        """
+
+        class BatchOnlyTalker(RecordingTalker):
+            def generate(
+                self,
+                vlm_result: ov_genai.VLMDecodedResults | ov_genai.OmniTextSourceBase,
+                talker_speech_config: ov_genai.OmniTalkerSpeechConfig,
+                speech_streamer: ov_genai.OmniSpeechStreamerBase | None = None,
+            ) -> ov_genai.TalkerResults:
+                if isinstance(vlm_result, ov_genai.OmniTextSourceBase):
+                    return ov_genai.TalkerBase.generate(self, vlm_result, talker_speech_config, speech_streamer)
+                return super().generate(vlm_result, talker_speech_config, speech_streamer)
+
+        talker = BatchOnlyTalker()
+        pipeline = ov_genai.OmniPipeline(StreamingVLM(), talker)
+
+        with pytest.raises(RuntimeError, match="stream_text2speech"):
+            pipeline.generate(
+                "describe this",
+                text_config=_streaming_text_config(),
+                talker_speech_config=_talker_speech_config(return_audio=True),
+            )
+
+        assert talker.generate_calls == 0, "the batch form must not run on a text source"
 
     def test_vlm_pipeline_base_binding_delegates_null_omni_streamer(self) -> None:
         """VLMPipelineBase.generate(..., omni_streamer=None) is the plain generate(); the Python VLM
@@ -1021,6 +1030,19 @@ class TestStreamText2SpeechDependencyInjection:
         assert streamer.ended == 1
         assert streamer.abandoned == 0
 
+    def test_vlm_pipeline_base_binding_abandons_omni_streamer_on_rejected_keyword(self) -> None:
+        """A call rejected before the VLM runs must still close the bridge, or its reader blocks forever."""
+        vlm = StreamingVLM()
+        streamer = RecordingOmniStreamer()
+
+        with pytest.raises(RuntimeError, match="speech_streamer"):
+            ov_genai.VLMPipelineBase.generate(
+                vlm, "describe", omni_streamer=streamer, speech_streamer=lambda chunk: None
+            )
+
+        assert vlm.generate_calls == 0
+        assert (streamer.ended, streamer.abandoned) == (0, 1)
+
 
 @pytest.fixture(scope="module")
 def omni_pipe(omni_model_path: Path) -> ov_genai.OmniPipeline:
@@ -1037,6 +1059,10 @@ def _text_config(max_new_tokens: int = 10) -> ov_genai.GenerationConfig:
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
     return config
+
+
+# The random talker would otherwise stop only on a random codec EOS.
+TALKER_MAX_NEW_TOKENS = 8
 
 
 def _sampling_text_config(rng_seed: int, max_new_tokens: int = 20) -> ov_genai.GenerationConfig:
@@ -1365,21 +1391,34 @@ class TestOmniPipelineRealModel:
 
         _extract_assert_single_waveform(result)
 
-    def test_stream_text2speech_does_not_change_results(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+    def test_stream_text2speech_does_not_change_results(
+        self, omni_pipe: ov_genai.OmniPipeline, omni_model_path: Path
+    ) -> None:
         """Streaming the thinker's output to the talker changes when speech is computed, not what.
 
         Greedy text decode keeps the thinker identical on both paths; the talker re-seeds from
         talker_speech_config.rng_seed, so the same token and hidden-state stream yields the same codec
-        tokens whether it arrived one step at a time or all at once.
+        tokens whether it arrived one step at a time or all at once. That the two stages overlap in
+        time is covered by test_talker_reads_while_the_vlm_is_still_generating.
         """
-        speech_on = _talker_speech_config(return_audio=True, rng_seed=7)
+        speech_on = _talker_speech_config(return_audio=True, rng_seed=7, max_new_tokens=TALKER_MAX_NEW_TOKENS)
         batch_config = _text_config()
+        batch_config.ignore_eos = True
         streaming_config = _text_config()
+        streaming_config.ignore_eos = True
         streaming_config.stream_text2speech = True
+        generated = _CapturingStreamer()
 
-        batch = omni_pipe.generate("Describe this.", text_config=batch_config, talker_speech_config=speech_on)
+        batch = omni_pipe.generate(
+            "Describe this.", text_config=batch_config, talker_speech_config=speech_on, streamer=generated
+        )
         streamed = omni_pipe.generate("Describe this.", text_config=streaming_config, talker_speech_config=speech_on)
 
+        im_start_token_id = json.loads((omni_model_path / "config.json").read_text())["im_start_token_id"]
+        assert im_start_token_id not in generated.token_ids, (
+            "the batch talker takes a generated <|im_start|> for the start of the response, so the two paths "
+            "would voice different text; pick a prompt that generates none"
+        )
         assert streamed.texts == batch.texts, "stream_text2speech must not change the generated text"
         batch_waveform = _extract_assert_single_waveform(batch)
         streamed_waveform = _extract_assert_single_waveform(streamed)
@@ -1392,43 +1431,44 @@ class TestOmniPipelineRealModel:
             "and batch talkers consume the same thinker output from the same seed, so they must agree"
         )
 
-    def test_vlm_and_talker_driven_through_omni_channel(self, omni_pipe: ov_genai.OmniPipeline) -> None:
-        """VLMPipeline.generate(omni_streamer=...) and Talker.generate(text_source, ...) compose by hand.
+    def test_vlm_and_talker_driven_through_python_bridge(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+        """VLMPipeline.generate(omni_streamer=...) and Talker.generate(text_source, ...) compose by hand
+        over a bridge written in Python.
 
         Same result as OmniPipeline's own streaming path, proving the public bridge API is enough to
-        drive the two stages from Python without OmniPipeline.
+        drive the two stages from Python without OmniPipeline. The talker waits in the Python read()
+        for the thinker's thread to write, and every hidden state crosses the binding in both directions.
         """
         vlm, talker = omni_pipe.get_vlm(), omni_pipe.get_talker()
-        speech_on = _talker_speech_config(return_audio=True)
+        speech_on = _talker_speech_config(return_audio=True, max_new_tokens=TALKER_MAX_NEW_TOKENS)
         text_config = _text_config()
         text_config.return_omni_outputs = True
 
         reference = omni_pipe.generate("Describe this.", text_config=text_config, talker_speech_config=speech_on)
         reference_waveform = _extract_assert_single_waveform(reference)
 
-        channel = ov_genai.OmniChannel()
+        streamer = QueueOmniStreamer()
+        source = QueueTextSource(streamer)
         vlm_results: list[ov_genai.VLMDecodedResults] = []
         talker_results: list[ov_genai.TalkerResults] = []
         errors: list[Exception] = []
 
         def think() -> None:
             try:
-                vlm_results.append(vlm.generate("Describe this.", generation_config=text_config, omni_streamer=channel))
+                vlm_results.append(
+                    vlm.generate("Describe this.", generation_config=text_config, omni_streamer=streamer)
+                )
             except Exception as error:
-                channel.abandon()
                 errors.append(error)
 
         def speak() -> None:
             try:
-                talker_results.append(talker.generate(channel, speech_on))
+                talker_results.append(talker.generate(source, speech_on))
             except Exception as error:
-                channel.fail_reading()
+                streamer.reader_failed = True
                 errors.append(error)
 
-        thinker = threading.Thread(
-            target=think,
-            daemon=True,
-        )
+        thinker = threading.Thread(target=think, daemon=True)
         speaker = threading.Thread(target=speak, daemon=True)
         thinker.start()
         speaker.start()
@@ -1436,7 +1476,7 @@ class TestOmniPipelineRealModel:
         speaker.join(timeout=600)
 
         if thinker.is_alive() or speaker.is_alive():
-            channel.abandon()
+            streamer.abandon()
             thinker.join(timeout=10)
             speaker.join(timeout=10)
 
@@ -1451,6 +1491,77 @@ class TestOmniPipelineRealModel:
         assert np.array_equal(waveform, reference_waveform), (
             f"waveforms differ by up to {np.abs(waveform - reference_waveform).max():.3g}"
         )
+
+    @pytest.mark.parametrize("as_history", [False, True], ids=["prompt", "history"])
+    @pytest.mark.parametrize(
+        ("status", "ended", "abandoned"),
+        [
+            (ov_genai.StreamingStatus.RUNNING, 1, 0),
+            (ov_genai.StreamingStatus.STOP, 1, 0),
+            (ov_genai.StreamingStatus.CANCEL, 0, 1),
+        ],
+        ids=["running", "stop", "cancel"],
+    )
+    def test_vlm_generate_feeds_and_closes_omni_streamer(
+        self,
+        omni_pipe: ov_genai.OmniPipeline,
+        as_history: bool,
+        status: ov_genai.StreamingStatus,
+        ended: int,
+        abandoned: int,
+    ) -> None:
+        """VLMPipeline.generate(omni_streamer=...) writes the tokens of its result to the bridge and closes it.
+
+        A bridge that is accepted but not closed would leave the reader blocked in read() forever.
+        end() tells the talker to voice what it got; a cancelled response is abandon()ed instead.
+        """
+        streamer = RecordingOmniStreamer(status)
+        max_new_tokens = 4
+        prompt = "Describe a calm morning."
+        inputs = ChatHistory([{"role": "user", "content": prompt}]) if as_history else prompt
+
+        result = omni_pipe.get_vlm().generate(
+            inputs, generation_config=_omni_outputs_config(max_new_tokens), omni_streamer=streamer
+        )
+
+        assert (streamer.ended, streamer.abandoned) == (ended, abandoned)
+        streamed = [token for step in streamer.steps for token in step["tokens"]]
+        num_generated = len(streamed) - streamer.steps[0]["prompt_length"]
+        if status == ov_genai.StreamingStatus.RUNNING:
+            assert num_generated == max_new_tokens
+            assert sum(len(step.get("hidden_states", [])) for step in streamer.steps) == len(streamed) - 1
+        else:
+            assert num_generated < max_new_tokens, "the status the bridge returns must end generation early"
+        if status != ov_genai.StreamingStatus.CANCEL:
+            assert streamed == list(result.full_token_ids[0])
+
+    def test_vlm_generate_abandons_omni_streamer_on_rejected_keyword(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+        """A call rejected while its keywords are parsed must still close the bridge, or its reader blocks forever."""
+        streamer = RecordingOmniStreamer()
+
+        with pytest.raises(RuntimeError, match="cannot be combined"):
+            omni_pipe.get_vlm().generate("Describe this.", omni_streamer=streamer, speech_streamer=lambda chunk: None)
+
+        assert (streamer.ended, streamer.abandoned) == (0, 1)
+        assert streamer.steps == []
+
+    def test_omni_streamer_gets_no_tokens_cut_by_stop_string(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+        """The talker must not voice what a stop string removes from the text, so it is never written."""
+        vlm = omni_pipe.get_vlm()
+        max_new_tokens = 16
+        prompt = "Describe a calm morning."
+        reference = list(vlm.generate(prompt, generation_config=_omni_outputs_config(max_new_tokens)).full_token_ids[0])
+        generated = reference[len(reference) - max_new_tokens :]
+        config = _omni_outputs_config(max_new_tokens)
+        # Starts past the first tokens so that the stop string leaves generated text in front of it.
+        config.stop_strings = {_find_stop_string(vlm.get_tokenizer(), generated, range(4, max_new_tokens))}
+        streamer = RecordingOmniStreamer()
+
+        stopped = list(vlm.generate(prompt, generation_config=config, omni_streamer=streamer).full_token_ids[0])
+
+        assert len(reference) - max_new_tokens < len(stopped) < len(reference)
+        assert [token for step in streamer.steps for token in step["tokens"]] == stopped
+        assert streamer.ended == 1
 
     def test_matches_optimum_text(self, omni_pipe: ov_genai.OmniPipeline, optimum_reference: OptimumReference) -> None:
         """Greedy decode must produce the same token ids as optimum-intel for a text-only prompt.
@@ -1658,6 +1769,16 @@ def _rows(result: VLMDecodedResults) -> list[np.ndarray]:
     return [np.array(state.data) for state in result.intermediate_hidden_states[0]]
 
 
+def _find_stop_string(tokenizer: ov_genai.Tokenizer, generated: list[int], last_token_positions: range) -> str:
+    """Text of 3 generated tokens that occurs for the first time where it ends at one of the positions."""
+    for j in last_token_positions:
+        text = tokenizer.decode(generated[: j + 1])
+        candidate = tokenizer.decode(generated[j - 2 : j + 1])
+        if j >= 2 and candidate.strip() and text.find(candidate) + len(candidate) == len(text):
+            return candidate
+    pytest.fail(f"no clean 3-token stop string ends at one of the positions {last_token_positions}")
+
+
 @requires_paged_attention
 def test_prefix_cache_replays_hidden_states_of_restored_prefix(omni_model_path: Path) -> None:
     """A restored prefix is not recomputed, yet the talker still needs one hidden state per position."""
@@ -1703,14 +1824,8 @@ def test_prefix_cache_survives_stop_string_trim_at_block_end(omni_model_path: Pa
     generated = reference[prompt_len:]
 
     # Generated token j is sampled on the step that completes position prompt_len + j.
-    stop_string = None
-    for j in range(-prompt_len % CPU_KV_BLOCK_SIZE, max_new_tokens, CPU_KV_BLOCK_SIZE):
-        text = tokenizer.decode(generated[: j + 1])
-        candidate = tokenizer.decode(generated[j - 2 : j + 1])
-        if j >= 2 and candidate.strip() and text.find(candidate) + len(candidate) == len(text):
-            stop_string = candidate
-            break
-    assert stop_string is not None, "no generated block end is a clean 3-token stop string"
+    block_ends = range(-prompt_len % CPU_KV_BLOCK_SIZE, max_new_tokens, CPU_KV_BLOCK_SIZE)
+    stop_string = _find_stop_string(tokenizer, generated, block_ends)
 
     config = _omni_outputs_config(max_new_tokens)
     config.stop_strings = {stop_string}
@@ -1718,31 +1833,6 @@ def test_prefix_cache_survives_stop_string_trim_at_block_end(omni_model_path: Pa
 
     assert len(stopped) < len(reference)
     assert list(stopped) == reference[: len(stopped)]
-
-
-@requires_paged_attention
-@pytest.mark.parametrize("as_history", [False, True], ids=["prompt", "history"])
-def test_cb_generate_feeds_and_closes_omni_streamer(omni_model_path: Path, as_history: bool) -> None:
-    """ContinuousBatchingPipeline.generate(omni_streamer=...) must write every token to the bridge and end() it.
-
-    A bridge that is accepted but not forwarded would leave the reader blocked in read() forever.
-    """
-    pipe = ContinuousBatchingPipeline(omni_model_path, SchedulerConfig(), "CPU")
-    streamer = RecordingOmniStreamer()
-    max_new_tokens = 4
-    config = _omni_outputs_config(max_new_tokens)
-    prompt = "Describe a calm morning."
-    inputs = [ChatHistory([{"role": "user", "content": prompt}])] if as_history else [prompt]
-
-    results = pipe.generate(inputs, [[]], [[]], [config], omni_streamer=streamer)
-
-    assert streamer.ended == 1, "generate() must end() the bridge"
-    assert streamer.abandoned == 0, "successful generation must not abandon() the bridge"
-    full_token_ids = list(results[0].full_token_ids[0])
-    streamed = [token for step in streamer.steps for token in step["tokens"]]
-    assert streamed == full_token_ids
-    assert streamer.steps[0]["prompt_length"] == len(full_token_ids) - max_new_tokens
-    assert sum(len(step.get("hidden_states", [])) for step in streamer.steps) == len(full_token_ids) - 1
 
 
 # The tiny CI model's tokenizer lacks the audio tokens, so audio dies in the merge assert; audio

@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "openvino/core/except.hpp"
-#include "openvino/genai/omni/channel.hpp"
+#include "omni/channel.hpp"
 
 namespace ov::genai {
 

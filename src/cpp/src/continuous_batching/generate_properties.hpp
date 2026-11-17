@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <memory>
 #include <optional>
 #include <vector>
 
@@ -11,7 +10,6 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
-#include "openvino/genai/omni/streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
 
@@ -24,8 +22,6 @@ struct CBGenerateProperties {
     std::optional<std::vector<std::vector<ov::Tensor>>> audios_batches;
     std::optional<std::vector<GenerationConfig>> generation_config_batches;
     StreamerVariant streamer = std::monostate();
-    /// Thinker -> talker bridge; null unless the caller passed ov::genai::omni_streamer.
-    std::shared_ptr<OmniStreamerBase> omni_streamer;
 
     bool has_media_properties() const {
         return images_batches.has_value() || videos_batches.has_value() || videos_metadata_batches.has_value() ||

@@ -883,14 +883,6 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
 ///
 /// The bridge carries the prompt length so a chunked prefill can be fully buffered before locating the
 /// assistant segment. This preserves the batch path's segment selection when the prompt spans writes.
-///
-/// A stop string that the thinker rewinds after writing cannot be taken back off the bridge, so the
-/// talker may speak a token the caller's text does not show. The bridge delivers a token at the step
-/// it is sampled, and a stop string spanning it is only matched afterwards, so no consumer can avoid
-/// this — fixing it would mean withholding tokens here for as long as the longest stop string, which
-/// costs exactly the time-to-first-audio that streaming exists to buy. Accepted and documented on
-/// GenerationConfig::stream_text2speech; only the batch path, which reads full_token_ids after the
-/// rewind, is exact.
 class Qwen3OmniSpeechPipeline::ThinkerStream {
 public:
     explicit ThinkerStream(const std::shared_ptr<OmniTextSourceBase>& source) : m_source(source) {
@@ -1051,9 +1043,9 @@ public:
             return m_row.data<const float>();
         }
 
-        // The thinker threw, so the text stops mid-sentence and will never be completed. Padding it
-        // out would speak a plausible ending to a request that is about to throw on the caller's
-        // thread anyway, and delay that throw by a whole talker inference.
+        // The thinker threw or was cancelled, so the text stops mid-sentence and will never be
+        // completed. Padding it out would speak a plausible ending to a response the caller does not
+        // get, and delay generate()'s return by a whole talker inference.
         if (m_stream.truncated()) {
             return nullptr;
         }

@@ -201,8 +201,9 @@ public:
         return generate(vlm_result, resolved.config, resolved.speech_streamer);
     }
 
-    // Python has one generate(); it receives the OmniTextSourceBase where the batch form receives
-    // a VLMDecodedResults. Not PURE: a subclass that leaves it out keeps the base's NotImplemented.
+    // Python has one generate(), so an override receives the OmniTextSourceBase where the batch form
+    // receives a VLMDecodedResults and tells them apart by type. Not PURE: TalkerBase.generate()
+    // called from that override reaches the base's NotImplemented.
     ov::genai::TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
                                       const OmniTalkerSpeechConfig& talker_speech_config,
                                       const ov::genai::OmniSpeechStreamerVariant& speech_streamer) override {
@@ -364,8 +365,9 @@ void init_omni_pipeline(py::module_& m) {
 
         generate() has two forms that share one Python name: the first argument is a
         VLMDecodedResults on the batch path, and an OmniTextSourceBase when
-        GenerationConfig.stream_text2speech is set. A subclass that does not handle the
-        OmniTextSourceBase form keeps the default, which raises NotImplemented.)")
+        GenerationConfig.stream_text2speech is set. An override receives both forms and tells
+        them apart by the type of that argument. To refuse the OmniTextSourceBase form, pass
+        the call on to TalkerBase.generate(), which raises.)")
         .def(py::init<>())
         .def("list_speakers", &TalkerBase::list_speakers)
         .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"))
@@ -499,8 +501,8 @@ void init_omni_pipeline(py::module_& m) {
                         same thinker output, as long as the thinker did not generate an <|im_start|>
                         token. Optional to override; the default raises NotImplemented.
 
-                        :param text_source: Read end of the bridge, e.g. the OmniChannel passed to
-                            VLMPipeline.generate(..., omni_streamer=channel) on another thread.
+                        :param text_source: Read end of the bridge whose write end is passed to
+                            VLMPipeline.generate(..., omni_streamer=...) on another thread.
                         :type text_source: OmniTextSourceBase
                         :return: TalkerResults
                     )");
