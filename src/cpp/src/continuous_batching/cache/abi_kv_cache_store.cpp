@@ -236,9 +236,20 @@ std::vector<bool> AbiKVCacheStore::read_blocks(const std::vector<size_t>& hashes
 
         const ContentHash expected_witness =
             compute_content_hash(scratch.data(), scratch.size(), static_cast<uint64_t>(hashes[i]));
-        OPENVINO_ASSERT(batch->results[i].witness.len == sizeof(expected_witness) &&
-                            std::memcmp(&expected_witness, &batch->witnesses[i], sizeof(expected_witness)) == 0,
-                        "ABI store witness mismatch for a read block - payload may be corrupted");
+        if (batch->results[i].witness.len != sizeof(expected_witness) ||
+            std::memcmp(&expected_witness, &batch->witnesses[i], sizeof(expected_witness)) != 0) {
+            // A corrupted or mismatched block is quarantined: dropped from the store and served as a miss, so the
+            // request recomputes it instead of failing.
+            GENAI_WARN("KV cache store plugin returned a block whose witness does not match; dropping it and "
+                       "treating it as a miss");
+            const OvKVCacheBlockKey key = make_key(m_group, hashes[i]);
+            const OvKVCacheStatus drop_status = m_vtable->drop_blocks(m_store, &key, 1);
+            if (drop_status != OV_KVCACHE_OK) {
+                GENAI_WARN("KV cache store plugin could not drop a block that failed its witness check (status %d)",
+                           static_cast<int>(drop_status));
+            }
+            continue;
+        }
         data[i] = std::move(scratch);
         found[i] = true;
     }

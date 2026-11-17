@@ -313,10 +313,28 @@ TEST(TestKVCacheOffloadCache, LoadsStoredContentsIntoAnotherBlock) {
     offload_cache->flush();
     fixture.fill_block(2, /*seed=*/0);
 
+    offload_cache->prefetch({77});
     ASSERT_TRUE(offload_cache->load_into(/*hash=*/77, /*block_index=*/2));
 
     EXPECT_EQ(fixture.cache_manager->read_block(2), expected);
     EXPECT_EQ(offload_cache->get_statistics().num_loaded, 1);
+}
+
+TEST(TestKVCacheOffloadCache, LoadServesOnlyBlocksThatArePrefetchedOrStillQueued) {
+    CacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    const auto expected = fixture.fill_block(0, /*seed=*/23);
+    offload_cache->on_blocks_overwritten(/*hash=*/77, make_block_set(0));
+    offload_cache->flush();
+    const auto untouched = fixture.fill_block(2, /*seed=*/0);
+
+    // The block is in the store but was not read ahead; the store is not read under the caller's locks.
+    EXPECT_FALSE(offload_cache->load_into(/*hash=*/77, /*block_index=*/2));
+    EXPECT_EQ(fixture.cache_manager->read_block(2), untouched);
+
+    offload_cache->prefetch({77});
+    ASSERT_TRUE(offload_cache->load_into(/*hash=*/77, /*block_index=*/2));
+    EXPECT_EQ(fixture.cache_manager->read_block(2), expected);
 }
 
 TEST(TestKVCacheOffloadCache, LoadReportsMissForUnknownHash) {
@@ -609,6 +627,7 @@ TEST(TestKVCacheOffloadCache, AnotherInstanceServesEntriesItNeverWrote) {
     ASSERT_TRUE(second->read(42, restored));
     EXPECT_EQ(restored, expected);
     fixture.fill_block(1, /*seed=*/0);
+    second->prefetch({42});
     ASSERT_TRUE(second->load_into(/*hash=*/42, /*block_index=*/1));
     EXPECT_EQ(fixture.cache_manager->read_block(1), expected);
 }
@@ -917,7 +936,8 @@ TEST(TestKVCacheOffloadCache, SelfEvictingStoreIsNeverToldToDropBlocksAndKeepsAc
     EXPECT_EQ(offload.store->num_host_drops(), 0u);
     EXPECT_EQ(offload.cache->get_statistics().num_failed, 0u);
     EXPECT_EQ(offload.cache->get_statistics().num_stored, 4u);
-    // The store's own policy decided that the two oldest blocks go, and contains() follows it.
+    // The store's own policy decided that the two oldest blocks go; contains() follows what the latest probe found.
+    EXPECT_EQ(offload.cache->probe({1, 2, 3, 4}), (std::vector<bool>{false, false, true, true}));
     EXPECT_FALSE(offload.cache->contains(1));
     EXPECT_FALSE(offload.cache->contains(2));
     EXPECT_TRUE(offload.cache->contains(3));
@@ -935,6 +955,7 @@ TEST(TestKVCacheOffloadCache, LoadingABlockTheSelfEvictingStoreDroppedIsAMiss) {
     }
 
     fixture.fill_block(1, /*seed=*/0);
+    offload.cache->prefetch({1, 3});
     EXPECT_FALSE(offload.cache->load_into(/*hash=*/1, /*block_index=*/1));
     ASSERT_TRUE(offload.cache->load_into(/*hash=*/3, /*block_index=*/1));
     EXPECT_EQ(fixture.cache_manager->read_block(1), newest);
@@ -954,7 +975,7 @@ TEST(TestKVCacheOffloadCache, SelfEvictingStoreIsNotWrittenTwiceForTheSameBlock)
     EXPECT_EQ(offload.cache->get_statistics().num_already_present, 1u);
 }
 
-TEST(TestKVCacheOffloadCache, WarmPrefixCacheStillFindsBlocksThatReachTheSourceAfterTheProbe) {
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheDoesNotReadTheStoreForBlocksThatReachTheSourceAfterTheProbe) {
     constexpr size_t block_size = 4;
     constexpr size_t num_blocks = 3;
     CacheFixture fixture(num_blocks);
@@ -981,7 +1002,8 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheStillFindsBlocksThatReachTheSourceA
         store_block(*offload_cache, sequence->get_hash((block + 1) * block_size, block_size), block);
     }
 
-    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, source), num_blocks);
+    // The blocks are in the store but nothing read them ahead, and the walk holds the manager lock, so they are misses.
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, source), 0u);
 }
 
 TEST(TestKVCacheOffloadCache, WarmPrefixCacheDoesNotHoldTheBlockManagerLockWhileProbingOrPrefetching) {
@@ -1210,7 +1232,7 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheProbesTheWholeChainOnceBeforeReadin
     EXPECT_EQ(events, (std::vector<std::string>{expected_probe, "read_blocks " + std::to_string(num_blocks)}));
 }
 
-TEST(TestKVCacheOffloadCache, WarmPrefixCacheFallsBackToReadingBlocksOneByOneWhenTheBatchFails) {
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheTreatsBlocksAsMissesWhenTheBatchReadFails) {
     constexpr size_t block_size = 4;
     constexpr size_t num_blocks = 3;
     CacheFixture fixture(num_blocks);
@@ -1237,5 +1259,6 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheFallsBackToReadingBlocksOneByOneWhe
         store_block(offload_cache, sequence->get_hash((block + 1) * block_size, block_size), block);
     }
 
-    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, offload_cache), num_blocks);
+    // Blocks are never read one by one under the manager lock, so a failed batch leaves them unavailable.
+    EXPECT_NO_THROW(EXPECT_EQ(block_manager.warm_prefix_cache(consumer, offload_cache), 0u));
 }

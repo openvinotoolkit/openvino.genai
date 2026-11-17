@@ -228,6 +228,51 @@ TEST(TestAbiFileStoreProvider, ReadReportsMissForUnknownHash) {
 
 namespace {
 
+/// Returns the stored blocks with a damaged witness, the way a corrupted store would.
+struct CorruptWitnessPlugin {
+    static inline const OvKVCacheStoreVTable* inner = nullptr;
+
+    static OvKVCacheStatus read_blocks(void* self, const OvKVCacheStoreReadRequest* r, OvKVCacheStoreReadResult* o, size_t n) {
+        const OvKVCacheStatus status = inner->read_blocks(self, r, o, n);
+        for (size_t i = 0; i < n; ++i) {
+            if (o[i].status == OV_KVCACHE_OK && o[i].witness.len > 0) {
+                static_cast<uint8_t*>(r[i].witness_out.data)[0] ^= 0xFF;
+            }
+        }
+        return status;
+    }
+};
+
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, ABlockWhoseWitnessDoesNotMatchIsDroppedAndReadAsAMiss) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    const std::string block_size_str = std::to_string(BLOCK_SIZE);
+    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
+    OvKVCacheStoreOpenOptions options{};
+    options.capacity_bytes = BLOCK_SIZE * 4;
+    options.properties = properties;
+    options.property_count = 1;
+    OvKVCacheStoreOpenResult opened{};
+    ASSERT_EQ(provider->vtable->open(provider->self, nullptr, &options, &opened), OV_KVCACHE_OK);
+
+    CorruptWitnessPlugin::inner = opened.vtable;
+    OvKVCacheStoreVTable corrupting = *opened.vtable;
+    corrupting.read_blocks = &CorruptWitnessPlugin::read_blocks;
+
+    AbiKVCacheStore store(&corrupting, opened.store, "kv", BLOCK_SIZE, 4, AbiKVCacheStore::StoreInfo{});
+    ASSERT_FALSE(store.uses_async_io());
+    ASSERT_TRUE(store.write_block(1, make_block(1)));
+    ASSERT_TRUE(store.has_block(1));
+
+    std::vector<std::vector<uint8_t>> data;
+    EXPECT_NO_THROW(EXPECT_EQ(store.read_blocks({1}, data), (std::vector<bool>{false})));
+    EXPECT_TRUE(data[0].empty());
+    EXPECT_FALSE(store.has_block(1)) << "a block that failed its witness check is dropped from the store";
+}
+
+namespace {
+
 /// A plugin whose async batches never finish on their own: `wait` reports PENDING until the host cancels the token.
 struct StalledPlugin {
     static inline size_t waits = 0;

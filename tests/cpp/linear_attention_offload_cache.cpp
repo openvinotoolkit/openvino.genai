@@ -159,6 +159,7 @@ TEST(TestLinearAttentionOffloadCache, LoadsStoredContentsIntoAnotherBlock) {
     offload_cache->flush();
     fixture.fill_block(2, /*seed=*/0);
 
+    offload_cache->prefetch({77});
     ASSERT_TRUE(offload_cache->load_into(/*hash=*/77, /*block_index=*/2));
 
     EXPECT_EQ(fixture.cache_manager->read_block(2), expected);
@@ -324,6 +325,7 @@ TEST(TestLinearAttentionOffloadCache, AnotherInstanceServesEntriesItNeverWrote) 
     ASSERT_TRUE(second->read(42, restored));
     EXPECT_EQ(restored, expected);
     fixture.fill_block(1, /*seed=*/0);
+    second->prefetch({42});
     ASSERT_TRUE(second->load_into(/*hash=*/42, /*block_index=*/1));
     EXPECT_EQ(fixture.cache_manager->read_block(1), expected);
 }

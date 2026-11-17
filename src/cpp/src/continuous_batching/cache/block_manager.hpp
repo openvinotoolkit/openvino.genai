@@ -177,6 +177,7 @@ class IExternalPrefixSource {
 public:
     virtual ~IExternalPrefixSource() = default;
 
+    /// Answers from what probe() found and what is still queued; it is called under the manager lock, so it never asks the store.
     virtual bool contains(size_t hash) const = 0;
 
     /**
@@ -195,13 +196,17 @@ public:
 
     /**
      * @brief Fills a physical cache block with the contents stored for @p hash.
+     *
+     * Called under the manager and execution locks, so it only serves blocks that are already in memory: queued for
+     * writing, or read ahead by prefetch(). It never reads the store itself.
      * @return false if the contents are unavailable, in which case the block is left untouched.
      */
     virtual bool load_into(size_t hash, size_t block_index) = 0;
 
     /**
-     * @brief Lets the source read the blocks a warm-up is about to load in one batch.
-     * @param hashes Blocks of one prompt's chain, in order; load_into() then serves them from memory. Optional.
+     * @brief Lets the source read the blocks a warm-up is about to load in one batch, with no host lock held.
+     * @param hashes Blocks of one prompt's chain, in order; load_into() serves them from memory. The source may read
+     * fewer than asked, within its memory budget; the rest is reported by load_into() as unavailable.
      */
     virtual void prefetch(const std::vector<size_t>& /*hashes*/) {}
 

@@ -47,7 +47,9 @@
 //   * The host never calls into the plugin while holding a host lock, and no
 //     un-terminated async token may exist while the host holds a host lock.
 //     `wait` must have reported a terminal status before the host reads any
-//     result under a lock.
+//     result under a lock. Copies between device memory and host buffers are
+//     not plugin calls; they do run under the host's pipeline and block
+//     manager locks.
 //   * A store instance may be called concurrently from the host I/O pool unless
 //     a provider documents otherwise at open time; implementations must be
 //     either internally synchronized or explicitly single-threaded and

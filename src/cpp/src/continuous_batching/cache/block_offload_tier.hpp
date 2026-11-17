@@ -178,19 +178,16 @@ public:
     }
 
     bool contains(std::size_t hash) const override {
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            if (find_queued(hash) != nullptr) {
-                return true;
-            }
-            if (!m_self_evicting) {
-                // The store may hold entries this instance never wrote, e.g. blocks of an earlier pipeline on a
-                // persistent store; probe() finds them.
-                return m_entries.find(hash) != m_entries.end() || m_store_hits.find(hash) != m_store_hits.end();
-            }
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (find_queued(hash) != nullptr) {
+            return true;
         }
-        // A self-evicting store may have dropped any block since the last probe, so ask it, with no lock held.
-        return m_store->has_block(hash);
+        // The store is never asked here, because callers hold the block manager lock. It may hold entries this
+        // instance never wrote, e.g. blocks of an earlier pipeline on a persistent store; probe() finds them.
+        if (m_self_evicting) {
+            return m_store_hits.find(hash) != m_store_hits.end();
+        }
+        return m_entries.find(hash) != m_entries.end() || m_store_hits.find(hash) != m_store_hits.end();
     }
 
     /**
@@ -258,52 +255,36 @@ public:
                 lock.lock();
                 m_statistics.load_write_us += write_us;
             } else {
-                auto it = m_entries.find(hash);
-                if (!m_self_evicting && it == m_entries.end() && m_store_hits.find(hash) == m_store_hits.end()) {
+                if (!m_self_evicting && m_entries.find(hash) == m_entries.end() &&
+                    m_store_hits.find(hash) == m_store_hits.end()) {
                     return false;
                 }
-                // Captured now: `it` must not be dereferenced once the lock below is released, since the writer
-                // thread may concurrently insert into m_entries (a rehash would invalidate the iterator).
-                const bool was_indexed = it != m_entries.end();
-                GENAI_INFO("[KV_TRACE] %s load hash=%zu source=disk physical_block=%zu", Traits::kClassName, hash, block_index);
+                // Callers hold the block manager lock, so the store is not read here: only prefetch() reads it,
+                // without any host lock. A block it did not bring (over its memory budget, or lost) is a miss.
                 const auto prefetched = m_prefetched.find(hash);
-                bool have_data = prefetched != m_prefetched.end();
-                if (have_data) {
-                    m_staging = std::move(prefetched->second);
-                    m_prefetched.erase(prefetched);
-                }
-
-                lock.unlock();
-                bool read_failed = false;
-                std::size_t disk_us = 0;
-                if (!have_data) {
-                    const auto started = std::chrono::steady_clock::now();
-                    read_failed = !m_store->read_block(hash, m_staging);
-                    disk_us = static_cast<std::size_t>(
-                        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started)
-                            .count());
-                }
-                std::size_t write_us = 0;
-                if (!read_failed) {
-                    const auto started = std::chrono::steady_clock::now();
-                    m_cache_manager.write_block(block_index, m_staging);
-                    write_us = static_cast<std::size_t>(
-                        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started)
-                            .count());
-                }
-                lock.lock();
-                m_statistics.load_disk_us += disk_us;
-                if (read_failed) {
-                    m_store_hits.erase(hash);
-                    // A self-evicting store drops blocks behind our back; that is a miss, not a broken index.
-                    OPENVINO_ASSERT(m_self_evicting || !was_indexed,
-                                    Traits::kKind, " index and store are out of sync for hash ", hash);
+                if (prefetched == m_prefetched.end()) {
+                    GENAI_INFO("[KV_TRACE] %s load hash=%zu source=none (not prefetched)", Traits::kClassName, hash);
                     return false;
                 }
+                m_staging = std::move(prefetched->second);
+                m_prefetched.erase(prefetched);
+                GENAI_INFO("[KV_TRACE] %s load hash=%zu source=disk physical_block=%zu", Traits::kClassName, hash, block_index);
+
+                const auto started = std::chrono::steady_clock::now();
+                lock.unlock();
+                m_cache_manager.write_block(block_index, m_staging);
+                const auto write_us = static_cast<std::size_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started)
+                        .count());
+                lock.lock();
                 m_statistics.load_write_us += write_us;
             }
         } catch (const std::exception& error) {
             GENAI_WARN("%s load failed for hash %zu: %s", Traits::kKind, hash, error.what());
+            // The write above runs with the lock released, so an exception from it arrives here unlocked.
+            if (!lock.owns_lock()) {
+                lock.lock();
+            }
             ++m_statistics.num_failed;
             return false;
         }
@@ -314,7 +295,7 @@ public:
         return true;
     }
 
-    /// Reads the blocks of @p hashes the store holds in one batch, so the load_into calls of a warm-up are served from memory.
+    /// Reads the blocks of @p hashes the store holds in one batch; load_into() serves only from this memory.
     void prefetch(const std::vector<std::size_t>& hashes) override {
         // Bounds the memory a warm-up can hold before it copies the blocks into the device cache.
         constexpr std::size_t max_prefetch_bytes = 256ull * 1024 * 1024;
@@ -348,7 +329,7 @@ public:
         try {
             found = m_store->read_blocks(wanted, data);
         } catch (const std::exception& error) {
-            // The blocks are then read one by one by load_into, which reports its own failures.
+            // Nothing was read ahead, so load_into reports these blocks as misses.
             GENAI_WARN("%s prefetch failed: %s", Traits::kKind, error.what());
             read_succeeded = false;
         }
@@ -363,6 +344,9 @@ public:
         for (std::size_t i = 0; i < wanted.size(); ++i) {
             if (found[i]) {
                 m_prefetched.emplace(wanted[i], std::move(data[i]));
+            } else {
+                // Not found, or the store gave up on the batch; either way this warm-up cannot use the block.
+                m_store_hits.erase(wanted[i]);
             }
         }
     }
