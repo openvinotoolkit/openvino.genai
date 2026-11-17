@@ -877,6 +877,7 @@ jobs:
         env:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
+          OFFLOAD_E2E_MODEL: "${{ env.HF_HOME }}/ov_test_models/tiny-random-Phi3ForCausalLM"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
 
       - name: Test Continuous Batching Tools
