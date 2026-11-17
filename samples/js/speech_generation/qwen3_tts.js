@@ -76,6 +76,12 @@ async function runBase(pipeline, argv) {
   if (typeof argv.seed === 'number') {
     generateOptions.generationConfig.rng_seed = argv.seed;
   }
+  if (argv.do_sample !== undefined) {
+    generateOptions.generationConfig.do_sample = argv.do_sample === 'true';
+  }
+  if (argv.subtalker_dosample !== undefined) {
+    generateOptions.generationConfig.subtalker_dosample = argv.subtalker_dosample === 'true';
+  }
 
   if (argv.speaker_embedding_file_path) {
     generateOptions.speakerEmbedding = await readSpeakerEmbedding(
@@ -126,6 +132,12 @@ async function runCustomVoice(pipeline, argv) {
   if (typeof argv.seed === 'number') {
     generationConfig.rng_seed = argv.seed;
   }
+  if (argv.do_sample !== undefined) {
+    generationConfig.do_sample = argv.do_sample === 'true';
+  }
+  if (argv.subtalker_dosample !== undefined) {
+    generationConfig.subtalker_dosample = argv.subtalker_dosample === 'true';
+  }
 
   const result = await pipeline.generate(argv.text, { generationConfig });
   await writeAudioAndPerf(result, argv.output_wav_path);
@@ -145,6 +157,12 @@ async function runVoiceDesign(pipeline, argv) {
   }
   if (typeof argv.seed === 'number') {
     generationConfig.rng_seed = argv.seed;
+  }
+  if (argv.do_sample !== undefined) {
+    generationConfig.do_sample = argv.do_sample === 'true';
+  }
+  if (argv.subtalker_dosample !== undefined) {
+    generationConfig.subtalker_dosample = argv.subtalker_dosample === 'true';
   }
 
   const result = await pipeline.generate(argv.text, { generationConfig });
@@ -219,6 +237,16 @@ async function main() {
             type: 'number',
             describe: 'Optional max new tokens override',
           })
+          .option('do_sample', {
+            type: 'string',
+            choices: ['true', 'false'],
+            describe: 'Sample talker tokens (default: model config)',
+          })
+          .option('subtalker_dosample', {
+            type: 'string',
+            choices: ['true', 'false'],
+            describe: 'Sample subtalker tokens (default: model config)',
+          })
           .option('seed', {
             type: 'number',
             describe: 'Optional RNG seed override',
@@ -229,6 +257,13 @@ async function main() {
             default: 'output_audio.wav',
           }),
     )
+    // yargs turns a non-numeric --seed into NaN, which the bindings would pass on as a seed.
+    .check((args) => {
+      if (args.seed !== undefined && !Number.isInteger(args.seed)) {
+        throw new Error('--seed must be an integer.');
+      }
+      return true;
+    })
     .strict()
     .help()
     .parse();

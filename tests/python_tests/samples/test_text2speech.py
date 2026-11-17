@@ -1136,7 +1136,7 @@ class TestTextToSpeechSample:
         ids=["base", "customvoice", "voice-design"],
         indirect=["convert_model"],
     )
-    @pytest.mark.parametrize("sample_kind", ["python", "cpp", "c"])
+    @pytest.mark.parametrize("sample_kind", ["python", "cpp", "c", "js"])
     @pytest.mark.parametrize("qwen3_reference_audio_wav_path", [1], ids=["mono"], indirect=True)
     def test_sample_qwen3_tts_sampling_options(
         self,
@@ -1152,8 +1152,10 @@ class TestTextToSpeechSample:
             launcher = [sys.executable, SAMPLES_PY_DIR / "speech_generation/qwen3_tts.py"]
         elif sample_kind == "cpp":
             launcher = [SAMPLES_CPP_DIR / "qwen3_tts"]
-        else:
+        elif sample_kind == "c":
             launcher = [SAMPLES_C_DIR / "qwen3_tts_c"]
+        else:
+            launcher = ["node", SAMPLES_JS_DIR / "speech_generation/qwen3_tts.js"]
 
         if variant == "base":
             variant_args = ("--ref_audio_wav_path", qwen3_reference_audio_wav_path)
