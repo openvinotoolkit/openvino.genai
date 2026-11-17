@@ -203,6 +203,42 @@ def test_extended_perf_metrics():
         assert std_gen_duration == 0
 
 
+def test_perf_metrics_reset_between_generate_calls():
+    """Perf metrics of each generate() call must not include the previous calls."""
+    main_model, draft_model, prompt = models_and_input[0]
+    main_model_path = download_and_convert_model(main_model).models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    ov_draft_model = ov_genai.draft_model(draft_model_path, "NPU", **get_npu_llm_properties_for_test())
+    ov_pipe = ov_genai.LLMPipeline(
+        main_model_path, "NPU", get_npu_llm_properties_for_test(), draft_model=ov_draft_model
+    )
+    generation_config = ov_genai.GenerationConfig(max_new_tokens=5, ignore_eos=True, num_assistant_tokens=5)
+
+    def generate_and_count() -> dict:
+        results = ov_pipe.generate([prompt], generation_config)
+        raw_metrics = results.perf_metrics.raw_metrics
+        extended_perf_metrics = results.extended_perf_metrics
+        assert np.isclose(
+            extended_perf_metrics.get_generate_duration().mean,
+            extended_perf_metrics.raw_metrics.generate_durations[0] / 1000,
+        )
+        return {
+            "tokenization": len(raw_metrics.tokenization_durations),
+            "detokenization": len(raw_metrics.detokenization_durations),
+            "generated": results.perf_metrics.get_num_generated_tokens(),
+            "sd_iterations": len(extended_perf_metrics.raw_metrics.m_batch_sizes),
+            "main_iterations": len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations),
+            "draft_iterations": len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations),
+        }
+
+    first = generate_and_count()
+    second = generate_and_count()
+    assert first["tokenization"] == 1 and first["detokenization"] == 1
+    assert first["generated"] <= generation_config.max_new_tokens
+    assert second == first
+
+
 # assistant model is randomly generated from the target model
 gemma4_mtp_models_and_input = [
     (

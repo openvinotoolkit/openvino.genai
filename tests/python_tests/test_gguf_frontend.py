@@ -6,8 +6,11 @@
 See README.md, "GGUF Frontend Tests", for the steps, CI runtime and model-coverage checklist.
 """
 
+import ctypes
 import gc
+import os
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -215,6 +218,64 @@ def test_gguf_frontend_extensions(gguf_extension_model, build_pipeline, make_ext
     properties = {"GGUF_READER": "FRONTEND", "extensions": make_extension()}
     with pytest.raises(RuntimeError, match="GGUF frontend extension was invoked"):
         build_pipeline(str(gguf_extension_model), properties)
+
+
+def test_gguf_frontend_extension_filename_in_working_directory(gguf_extension_model, monkeypatch):
+    library = get_extension_lib_path("openvino_gguf_test_extension").resolve()
+    monkeypatch.chdir(library.parent)
+    with pytest.raises(RuntimeError, match="GGUF frontend extension was invoked"):
+        genai.LLMPipeline(str(gguf_extension_model), "CPU", GGUF_READER="FRONTEND", extensions=[Path(library.name)])
+
+
+def test_gguf_frontend_extension_filename_in_library_search_path(gguf_extension_model, tmp_path):
+    library = get_extension_lib_path("openvino_gguf_test_extension").resolve()
+    env = os.environ.copy()
+    env["LD_LIBRARY_PATH"] = os.pathsep.join([str(library.parent), env.get("LD_LIBRARY_PATH", "")])
+    script = """
+import sys
+import openvino_genai as genai
+
+try:
+    genai.LLMPipeline(sys.argv[1], "CPU", GGUF_READER="FRONTEND", extensions=[sys.argv[2]])
+except RuntimeError as error:
+    assert "GGUF frontend extension was invoked" in str(error), error
+else:
+    raise AssertionError("GGUF frontend extension was not invoked")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(gguf_extension_model), library.name],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    "build_pipeline",
+    [
+        pytest.param(
+            lambda path, properties: genai.LLMPipeline(path, "CPU", **properties, ATTENTION_BACKEND="SDPA"),
+            id="llm-pipeline",
+        ),
+        pytest.param(
+            lambda path, properties: genai.ContinuousBatchingPipeline(path, genai.SchedulerConfig(), "CPU", properties),
+            id="continuous-batching-pipeline",
+        ),
+    ],
+)
+def test_gguf_frontend_extension_library_outlives_conversion(gguf_extension_model, build_pipeline):
+    library = get_extension_lib_path("openvino_gguf_generation_extension").resolve()
+    pipeline = build_pipeline(str(gguf_extension_model), {"GGUF_READER": "FRONTEND", "extensions": [library]})
+    libdl = ctypes.CDLL("libdl.so.2")
+    libdl.dlopen.argtypes = [ctypes.c_char_p, ctypes.c_int]
+    libdl.dlopen.restype = ctypes.c_void_p
+    libdl.dlclose.argtypes = [ctypes.c_void_p]
+    handle = libdl.dlopen(os.fsencode(library), os.RTLD_NOLOAD | os.RTLD_LAZY)
+    assert handle, "GGUF frontend extension library was unloaded while the pipeline is alive"
+    assert libdl.dlclose(handle) == 0
+    assert pipeline.get_tokenizer()
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,7 @@
 
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <nlohmann/json_fwd.hpp>
 #include <openvino/core/any.hpp>
 #include <openvino/runtime/properties.hpp>
@@ -84,6 +85,19 @@ public:
     /// @brief Merge kernel size for downsample MLP merge (config.json merge_kernel_size)
     size_t merge_kernel_size = 2;
 
+    // Molmo2 processor options (Molmo2Processor saves them at the top level of processor_config.json)
+    /// @brief Whether a column token follows every row of patches of the high-resolution image crops.
+    bool image_use_col_tokens = true;
+    /// @brief Whether a column token follows every row of patches of the low-resolution image crop; not set: follow
+    /// image_use_col_tokens.
+    std::optional<bool> use_single_crop_col_tokens;
+    /// @brief Whether the low-resolution image crop starts with the low-resolution start token.
+    bool use_single_crop_start_token = false;
+    /// @brief Whether a column token follows every row of patches of video frames.
+    bool video_use_col_tokens = false;
+    /// @brief Whether video frames are wrapped in frame start / end tokens instead of image start / end tokens.
+    bool use_frame_special_tokens = true;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 
@@ -95,5 +109,9 @@ public:
     explicit ProcessorConfig(const std::filesystem::path& json_path);
 
     static ProcessorConfig from_any_map(const ov::AnyMap& config_map, const ProcessorConfig& initial);
+
+    /// @brief Reads the processor-level options (e.g. Molmo2Processor ones), which processors save at the top level
+    /// of processor_config.json rather than in the image or video processor config.
+    void read_processor_options(const nlohmann::json& processor_config);
 };
 }  // namespace ov::genai

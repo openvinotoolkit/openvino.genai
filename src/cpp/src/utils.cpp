@@ -21,14 +21,10 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 #include "gguf_utils/gguf_utils.hpp"
-#include "openvino/frontend/extension/conversion.hpp"
-#include "openvino/frontend/extension/decoder_transformation.hpp"
-#include "openvino/frontend/extension/telemetry.hpp"
 #ifdef ENABLE_GGUF
-#    include "gguf_utils/gguf_tokenizer.hpp"
-#    include "openvino/frontend/gguf/extension/architecture.hpp"
-#    include "openvino/frontend/gguf/extension/genai.hpp"
+#    include "gguf_utils/gguf_frontend_extensions.hpp"
 #endif
 
 
@@ -343,7 +339,9 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     std::shared_ptr<ov::Node> matmul = ov::as_type_ptr<ov::op::v0::MatMul>(last_node);
 
     // in case of PA all tokens are moved to batch dimension and we have to slice / gather accordingly
-    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension");
+    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension")
+        || has_op_with_type(model, "PagedSparseAttention");
+
     int64_t slice_gather_dim = pa_based_model ? 0 : 1;
 
     // There are several patterns for matmul we are looking for:
@@ -426,13 +424,15 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 } // namespace
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+const std::string FORWARDED_ADAPTERS_PROPERTY = "FORWARDED_ADAPTERS";
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
         // Ignore MODEL_PROPERTIES as they are used only within this function
         // to construct final properties map for a given model.
-        if (property.first == PER_MODEL_PROPERTIES) {
+        // FORWARDED_ADAPTERS_PROPERTY is read by sub-model constructors and is meaningless for a plugin.
+        if (property.first == PER_MODEL_PROPERTIES || property.first == FORWARDED_ADAPTERS_PROPERTY) {
             continue;
         }
         // When a concrete device is known, DEVICE_PROPERTIES[device] is
@@ -1115,33 +1115,10 @@ ExtensionList extract_extensions_to_core(ov::AnyMap& properties, bool gguf_front
     ExtensionList extensions = extract_extensions(properties);
 #ifdef ENABLE_GGUF
     if (gguf_frontend_registers_extensions_separately) {
-        ExtensionList resolved_extensions;
-        for (const auto& extension : extensions) {
-            if (const auto* path = std::get_if<std::filesystem::path>(&extension)) {
-                auto library = load_shared_object(*path);
-                using CreateExtensions = void (*)(std::vector<std::shared_ptr<ov::Extension>>&);
-                std::vector<std::shared_ptr<ov::Extension>> objects;
-                reinterpret_cast<CreateExtensions>(get_symbol(library, "create_extensions"))(objects);
-                for (const auto& object : objects) {
-                    auto owner =
-                        std::make_shared<std::pair<std::shared_ptr<void>, std::shared_ptr<ov::Extension>>>(library,
-                                                                                                            object);
-                    resolved_extensions.emplace_back(std::shared_ptr<ov::Extension>(owner, object.get()));
-                }
-            } else {
-                resolved_extensions.push_back(extension);
-            }
-        }
-        extensions = std::move(resolved_extensions);
-
-        for (const auto& extension : extensions) {
-            if (const auto* object = std::get_if<std::shared_ptr<ov::Extension>>(&extension)) {
-                OPENVINO_ASSERT(!std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(*object),
-                                "A GenAIExtension cannot be passed through the 'extensions' property because GenAI "
-                                "registers its own GGUF GenAIExtension.");
-            }
-        }
+        extensions = resolve_gguf_extensions(extensions);
     }
+#else
+    (void)gguf_frontend_registers_extensions_separately;
 #endif
 
     for (const auto& extension : extensions) {
@@ -1149,18 +1126,12 @@ ExtensionList extract_extensions_to_core(ov::AnyMap& properties, bool gguf_front
             singleton_core().add_extension(std::get<std::filesystem::path>(extension));
         } else {
             const auto& object = std::get<std::shared_ptr<ov::Extension>>(extension);
-            bool is_frontend_extension =
-                std::dynamic_pointer_cast<ov::frontend::ConversionExtensionBase>(object) ||
-                std::dynamic_pointer_cast<ov::frontend::DecoderTransformationExtension>(object) ||
-                std::dynamic_pointer_cast<ov::frontend::TelemetryExtension>(object);
 #ifdef ENABLE_GGUF
-            is_frontend_extension = is_frontend_extension ||
-                                    std::dynamic_pointer_cast<ov::frontend::gguf::ArchitectureExtension>(object) !=
-                                        nullptr;
-#endif
-            if (!gguf_frontend_registers_extensions_separately || !is_frontend_extension) {
-                singleton_core().add_extension(object);
+            if (gguf_frontend_registers_extensions_separately && is_gguf_frontend_extension(object)) {
+                continue;
             }
+#endif
+            singleton_core().add_extension(object);
         }
     }
     return extensions;
@@ -1369,6 +1340,11 @@ ov::genai::GenerationConfig get_multinomial_config() {
 std::string patch_chat_template_multiline_strings(const std::string& chat_template) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
     return std::regex_replace(chat_template, multiline_string_concatenation, "");
+}
+
+std::string patch_chat_template_undefined_tests(const std::string& chat_template) {
+    const std::regex var_is_undefined{R"((\b[\w\.]+)\s+is\s+undefined)"};
+    return std::regex_replace(chat_template, var_is_undefined, "not $1 is defined");
 }
 
 }  // namespace utils
