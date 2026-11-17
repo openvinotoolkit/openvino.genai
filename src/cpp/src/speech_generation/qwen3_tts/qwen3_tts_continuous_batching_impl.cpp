@@ -127,6 +127,8 @@ ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::Qwen3TTSContinuousBa
                              utils::get_model_properties(properties, roles::TALKER, device),
                              GenerationConfig()),
       m_engine(models_path, device, properties, tokenizer) {
+        OPENVINO_ASSERT(!scheduler_config.enable_prefix_caching,
+                                        "Text2SpeechContinuousBatchingPipeline does not currently support prefix caching.");
     OPENVINO_ASSERT(device.find("NPU") == std::string::npos,
                     "Text2SpeechContinuousBatchingPipeline does not support NPU; use Text2SpeechPipeline "
                     "with the default (SDPA) backend on NPU instead.");
@@ -320,8 +322,6 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     try {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         _throw_if_failed();
-        initialize_prefix_cache(sequence_group);
-        sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
         m_awaiting_requests.push_back(sequence_group);
     } catch (...) {
         on_request_failed(sequence_group, std::current_exception());
