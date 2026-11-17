@@ -333,8 +333,7 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     }
     const auto as_lm_head = [](const std::shared_ptr<ov::Node>& node) -> std::shared_ptr<ov::Node> {
         if (ov::is_type<ov::op::v0::MatMul>(node) ||
-            (node->get_rt_info().count("gguf_lm_head") &&
-             std::string(node->get_type_name()) == "FullyConnectedCompressed")) {
+            node->get_rt_info().count("gguf_lm_head")) {
             return node;
         }
         return nullptr;
