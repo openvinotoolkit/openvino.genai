@@ -19,6 +19,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
 #include "logger.hpp"
+#include "sampling/draft_proposal.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
@@ -61,6 +62,8 @@ class Sequence {
 
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
+    // Empty until a proposal is recorded, then aligned with m_generated_ids.
+    std::vector<DraftProposalPtr> m_draft_proposals;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
@@ -99,6 +102,7 @@ class Sequence {
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
         m_generated_log_probs(seq.m_generated_log_probs),
+        m_draft_proposals(seq.m_draft_proposals),
         m_grouped_id(id),
         m_hidden_state(seq.m_hidden_state),
         m_accumulate_hidden_states(seq.m_accumulate_hidden_states),
@@ -176,6 +180,9 @@ public:
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
         m_generated_ids.push_back(token_id);
+        if (!m_draft_proposals.empty()) {
+            m_draft_proposals.emplace_back();
+        }
     }
 
     void update_hidden_state(const ov::Tensor& tensor) {
@@ -252,6 +259,9 @@ public:
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
+            if (!m_draft_proposals.empty()) {
+                m_draft_proposals.pop_back();
+            }
         }
         if (m_type == SequenceGroupType::EMBEDDINGS) {
             const size_t tokens_to_remove = static_cast<size_t>(n);
@@ -309,7 +319,46 @@ public:
 
     void update_generated_log_prob(size_t idx, float log_prob) {
         OPENVINO_ASSERT(idx < m_generated_log_probs.size());
+        m_cumulative_log_prob += log_prob - m_generated_log_probs[idx];
         m_generated_log_probs[idx] = log_prob;
+    }
+
+    void set_draft_proposal(size_t idx, DraftProposalPtr proposal) {
+        if (m_draft_proposals.empty()) {
+            m_draft_proposals.resize(m_generated_ids.size());
+        }
+        OPENVINO_ASSERT(idx < m_draft_proposals.size());
+        m_draft_proposals[idx] = std::move(proposal);
+    }
+
+    void set_draft_proposal(size_t idx, DraftProposal proposal) {
+        set_draft_proposal(idx, std::make_shared<const DraftProposal>(std::move(proposal)));
+    }
+
+    const DraftProposal& get_draft_proposal(size_t idx) const {
+        static const DraftProposal empty_proposal;
+        if (m_draft_proposals.empty()) {
+            return empty_proposal;
+        }
+        OPENVINO_ASSERT(idx < m_draft_proposals.size());
+        const auto& proposal = m_draft_proposals[idx];
+        return proposal ? *proposal : empty_proposal;
+    }
+
+    const std::vector<DraftProposalPtr>& get_draft_proposals() const {
+        return m_draft_proposals;
+    }
+
+    void clear_draft_proposal(size_t idx) {
+        if (m_draft_proposals.empty()) {
+            return;
+        }
+        OPENVINO_ASSERT(idx < m_draft_proposals.size());
+        m_draft_proposals[idx].reset();
+    }
+
+    void clear_draft_proposals() {
+        m_draft_proposals.clear();
     }
 
     float get_beam_search_score(const ov::genai::GenerationConfig& sampling_params) const {
@@ -459,6 +508,9 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     
     ov::Tensor m_per_layer_inputs;
 
+    ov::Tensor m_ngram_embeddings;
+    ov::Tensor m_ngram_history;
+
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     size_t m_num_evicted_tokens = 0;
@@ -569,6 +621,16 @@ public:
                             tensor.data<const int64_t>(),
                             tensor.data<const int64_t>() + tensor.get_size()
                         );
+                    } else if (input_name == "ngram_embeddings") {
+                        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32, "ngram_embeddings must have element type f32");
+                        const auto& shape = tensor.get_shape();
+                        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1 && shape[1] == prompt_len,
+                            "ngram_embeddings must have shape [1, tokens, num_ple_layers, ple_embed_dim], got ", shape);
+                        m_ngram_embeddings = ov::Tensor(tensor.get_element_type(), shape);
+                        tensor.copy_to(m_ngram_embeddings);
+                    } else if (input_name == "ngram_history") {
+                        m_ngram_history = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
+                        tensor.copy_to(m_ngram_history);
                     } else {
                         OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }
@@ -886,6 +948,16 @@ public:
     const ov::Tensor& get_per_layer_inputs() const {
         OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         return m_per_layer_inputs;
+    }
+
+    const ov::Tensor& get_ngram_embeddings() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_ngram_embeddings;
+    }
+
+    const ov::Tensor& get_ngram_history() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_ngram_history;
     }
 
     size_t get_hidden_size() const {

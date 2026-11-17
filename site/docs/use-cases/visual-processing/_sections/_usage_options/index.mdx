@@ -261,7 +261,8 @@ Without a speech streamer, both fields have no effect and the whole audio is ret
 ### Working with LoRA Adapters
 
 For Vision Language Models (VLMs), LoRA adapters can customize the generated text by applying adapters to the language-model (LLM) part.
-LoRA adapters that target the vision encoder or other multimodal components are not supported.
+Qwen-VL models also support vision LoRA adapters targeting the `vision_embeddings_merger` submodel, using the same `adapters` configuration.
+LoRA adapters targeting other multimodal components are not supported.
 
 Refer to the [LoRA Adapters](/docs/guides/lora-adapters) guide for more details on working with LoRA adapters.
 

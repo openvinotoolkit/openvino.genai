@@ -238,7 +238,12 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     auto language_models = convert_gguf_with_frontend(language.string(),
                                                       extensions,
                                                       {gguf::pass::AdaptToGenAI::InputMode::EMBEDS_TO_LOGITS});
-    result.language = language_models.at("language");
+    const auto language_model = language_models.find("language");
+    OPENVINO_ASSERT(language_model != language_models.end() && language_model->second,
+                    "GGUF file '",
+                    language.string(),
+                    "' does not contain a language model; expected a decoder GGUF, not an mmproj file.");
+    result.language = language_model->second;
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     auto tokenizer_metadata = take_gguf_tokenizer_metadata(result.language);
     result.stop_token_ids = gguf_stop_token_ids(tokenizer_metadata);

@@ -592,9 +592,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
 
-    if ov_model == MODEL_QWEN38_FLASH_NEXT and ov_backend == "PA":
-        pytest.xfail("Qwen3.8-Flash-Next model does not support PA backend")
-
     models_path = _get_ov_model(ov_model)
 
     pipeline_properties: dict = {"ATTENTION_BACKEND": ov_backend, "prompt_lookup": ov_prompt_lookup}
@@ -1452,6 +1449,24 @@ def test_vlm_pipeline_chat_history_multipart_content(
         )
 
 
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", backend) for backend in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+def test_vlm_pipeline_string_generate_after_chat_history(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+
+    expected = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    history = ChatHistory([{"role": "user", "content": PROMPTS[1]}])
+    ov_pipe.generate(history, images=[cat_tensor], generation_config=generation_config)
+    actual = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    assert actual.texts == expected.texts
+
+
 def finish_chat(ov_pipe_model: VlmModelInfo):
     # Clear chat state left by ChatHistory on the shared pipeline.
     ov_pipe_model.pipeline.finish_chat()
@@ -2119,7 +2134,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
-        (MODEL_QWEN38_FLASH_NEXT, "SDPA"),
+        (MODEL_QWEN38_FLASH_NEXT, "PA"),
         ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ]
 
