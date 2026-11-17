@@ -68,6 +68,12 @@ public:
 
     void multistep();
 
+    // Requested-token logprobs are collected by the sampler of a plain autoregressive pipeline; the
+    // speculative candidate-verification path never fills GenerationOutput::requested_token_logprobs.
+    bool supports_requested_token_logprobs(const GenerationConfig&) const override {
+        return false;
+    }
+
     void fail_pipeline(std::exception_ptr error) noexcept {
         _fail_pipeline(std::move(error));
     }
@@ -103,6 +109,12 @@ public:
                                             return request->get_request_id() == request_id;
                                         });
         return found == m_awaiting_requests.end() ? nullptr : *found;
+    }
+
+    // Rolls back a batch whose enqueue was rejected mid-loop before the step loop started:
+    // releases the restored block tables and clears this pipeline's awaiting queue.
+    void rollback_awaiting_requests() {
+        ContinuousBatchingImpl::rollback_awaiting_requests();
     }
 
     void discard_awaiting_request(uint64_t request_id) {

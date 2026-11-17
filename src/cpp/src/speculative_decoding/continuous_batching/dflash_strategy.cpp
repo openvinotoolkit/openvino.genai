@@ -239,6 +239,10 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     validate_request_config(sampling_params);
+    // Checked here because the DFlash draft is initialized before the main add_request() that would
+    // otherwise reject the request.
+    OPENVINO_ASSERT(sampling_params.logprob_token_ids.empty(),
+                    "logprob_token_ids is not supported with speculative decoding.");
     const auto input_shape = input_ids.get_shape();
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         OPENVINO_ASSERT(input_ids.get_element_type() == ov::element::f32 && input_shape.size() == 3 &&

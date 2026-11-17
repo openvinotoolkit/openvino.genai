@@ -1338,6 +1338,9 @@ void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
             }
 
             auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, 0);
+            // m_size is the full vocabulary width before any transform; TopK/TopP/MinP shrink
+            // m_size during apply() but m_data always spans the full vocab.
+            const size_t full_vocab_size = logit_vector.m_size;
             logit_processor.update_generated_len(generated_len);
             logit_processor.apply(logit_vector);
             std::optional<SamplingDistribution> distribution;
@@ -1353,6 +1356,22 @@ void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
                 sampled_token.m_index += d2t[sampled_token.m_index];
             }
             append_sampled_token(sampled_token, running_sequence, logit_processor);
+            if (!sampling_params.logprob_token_ids.empty()) {
+                // m_data is kept pristine by CopyLogitsToVectorTransform (installed when logprobs > 0 or
+                // logprob_token_ids is set), so this is the raw model logit normalized over the full
+                // vocabulary. The range check lives here (not only at CB enqueue time) because
+                // non-CB pipelines (stateful, static, VLM, whisper, qwen3-asr) reach this sampler
+                // without an enqueue-time check and an out-of-range id would read m_data out of bounds.
+                std::vector<std::pair<int64_t, float>> requested_token_logprobs;
+                requested_token_logprobs.reserve(sampling_params.logprob_token_ids.size());
+                for (const auto requested_token_id : sampling_params.logprob_token_ids) {
+                    OPENVINO_ASSERT(requested_token_id >= 0 && static_cast<size_t>(requested_token_id) < full_vocab_size,
+                                    "logprob_token_id is out of vocabulary range: ", requested_token_id);
+                    requested_token_logprobs.emplace_back(requested_token_id,
+                                                          logit_vector.m_data[requested_token_id] - logit_vector.m_full_vocab_log_sum_exp);
+                }
+                running_sequence->append_requested_token_logprobs(std::move(requested_token_logprobs));
+            }
             pause_if_unconfident(sampled_token, running_sequence, logit_processor);
             if (is_draft_proposal_needed) {
                 running_sequence->set_draft_proposal(running_sequence->get_generated_len() - 1,
@@ -1808,6 +1827,19 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                     " entries, fewer than the ",
                     vocab_size,
                     " draft logits.");
+
+    // Validate requested-token IDs before creating any request context: an out-of-range ID must
+    // not leave a persistent context (with its LogitProcessor) in m_request_contexts for the next
+    // generate() to reuse (stateful pipelines reuse request ID 0).
+    for (const auto& sequence_group : sequence_groups) {
+        if (!sequence_group->is_scheduled())
+            continue;
+        const auto& sampling_params = sequence_group->get_sampling_parameters();
+        for (const auto requested_token_id : sampling_params.logprob_token_ids) {
+            OPENVINO_ASSERT(requested_token_id >= 0 && static_cast<size_t>(requested_token_id) < vocab_size,
+                            "logprob_token_id is out of vocabulary range: ", requested_token_id);
+        }
+    }
 
     SamplerOutput sampler_output;
     std::unordered_map<uint64_t, std::future<SequenceGroupSamplingInfo>> sg_sampling_future_map;

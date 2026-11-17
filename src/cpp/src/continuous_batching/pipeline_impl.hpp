@@ -45,6 +45,9 @@ protected:
 
     size_t m_num_decoder_layers = 0;
 
+    // Vocabulary size of the "logits" output; 0 if unknown (test-only default ctor)
+    size_t m_vocab_size = 0;
+
     // Pre-allocated per-layer storages for the per-token cache re-rotation deltas used in cache eviction case
     std::vector<ov::Tensor> m_rotation_deltas_stores;
 
@@ -138,6 +141,11 @@ protected:
 
     virtual void drop_requests();
 
+    // Releases the scheduler block tables restored by add_request and clears m_awaiting_requests.
+    // Used to roll back a batch whose enqueue was rejected mid-loop, so the next generate() does
+    // not fail with "already in running state". Safe before the step loop has started.
+    void rollback_awaiting_requests();
+
 public:
     ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
                            const Tokenizer& tokenizer,
@@ -174,6 +182,12 @@ public:
 
     virtual bool supports_embedding_prefix_verification() const {
         return false;
+    }
+
+    // Speculative/validation-mode pipelines publish through a path that cannot return requested-token
+    // logprobs; checked in add_request before enqueueing.
+    virtual bool supports_requested_token_logprobs(const GenerationConfig& sampling_params) const {
+        return true;
     }
 
     virtual void initialize_prefix_cache(const SequenceGroup::Ptr& group) {

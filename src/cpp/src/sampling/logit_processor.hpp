@@ -33,13 +33,14 @@ public:
             m_unique_prompt_token_ids->insert(input_id);
         }
 
-        // When logprobs > 0: snapshot the full-vocab log-partition function (LSE) and copy
-        // all logits to m_vector BEFORE any transform runs.  This keeps m_data pristine so
-        // returned log-probabilities are normalised over the raw model output:
+        // When logprobs > 0 or logprob_token_ids is set: snapshot the full-vocab log-partition
+        // function (LSE) and copy all logits to m_vector BEFORE any transform runs.  This keeps
+        // m_data pristine so returned log-probabilities are normalised over the raw model output:
         //   log p_i = m_data[i] − m_full_vocab_log_sum_exp
         // All subsequent transforms (EOSPenalty, grammar, penalties, TopK/Temp/TopP) operate
         // on m_vector because is_vector_initialized() will be true from this point on.
-        if ((sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) && sampling_params.logprobs > 0) {
+        if ((sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) &&
+            (sampling_params.logprobs > 0 || !sampling_params.logprob_token_ids.empty())) {
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::FullVocabLogSumExpTransform>());
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::CopyLogitsToVectorTransform>());
         }
