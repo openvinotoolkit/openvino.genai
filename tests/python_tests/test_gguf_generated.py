@@ -319,10 +319,18 @@ def test_generated_gguf_continuous_batching(request, generated_model, numeric_to
     # F32 reduction order differs from llama.cpp. OpenVINO fixtures drift more (up to about 4e-3
     # relative); the frontend accepts their logits up to an NMSE of 1e-5.
     rtol = 5e-3 if variant == "fixture" else 1e-4
+    scenario_references = references
     if scenario == "preemption":
+        scenario_references = sorted(
+            references,
+            key=lambda reference: (
+                len(reference["input_ids"]) < len(PROMPTS[2]),
+                len(reference["input_ids"]),
+            ),
+        )
         assert max(map(kv_blocks_required, references)) <= scheduler.num_kv_blocks
         assert sum(map(kv_blocks_required, references)) > scheduler.num_kv_blocks
-    run_continuous_batching(pipeline, references, model.name, rtol)
+    run_continuous_batching(pipeline, scenario_references, model.name, rtol)
     if scenario == "prefix_caching":
         handles = run_continuous_batching(pipeline, references, model.name, rtol)
         hits = handles[-1].get_perf_metrics().get_num_prefix_cache_hit_tokens()
