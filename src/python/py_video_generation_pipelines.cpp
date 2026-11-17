@@ -10,6 +10,7 @@
 
 #include "openvino/genai/video_generation/image2video_pipeline.hpp"
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+#include "openvino/genai/video_generation/video2video_pipeline.hpp"
 #include "py_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
@@ -42,7 +43,9 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("audio_modality_scale", &ov::genai::VideoGenerationConfig::audio_modality_scale)
         .def_readwrite("audio_guidance_rescale", &ov::genai::VideoGenerationConfig::audio_guidance_rescale)
         .def_readwrite("spatio_temporal_guidance_blocks",
-                       &ov::genai::VideoGenerationConfig::spatio_temporal_guidance_blocks);
+                       &ov::genai::VideoGenerationConfig::spatio_temporal_guidance_blocks)
+        .def_readwrite("sparse_attention_ratio", &ov::genai::VideoGenerationConfig::sparse_attention_ratio)
+        .def_readwrite("color_correction", &ov::genai::VideoGenerationConfig::color_correction);
 
     py::class_<ov::genai::VideoGenerationResult>(m, "VideoGenerationResult")
         .def_readonly("video", &ov::genai::VideoGenerationResult::video)
@@ -182,4 +185,71 @@ void init_video_generation_pipelines(py::module_& m) {
              },
              py::arg("latent"))
         .def("get_performance_metrics", &ov::genai::Image2VideoPipeline::get_performance_metrics);
+
+    py::class_<ov::genai::VideoToVideoPipeline>(m,
+                                                "VideoToVideoPipeline",
+                                                "Video to video pipeline, e.g. FlashVSR x4 video super-resolution.")
+        .def(py::init([](const std::filesystem::path& models_path) {
+                 return std::make_unique<ov::genai::VideoToVideoPipeline>(models_path);
+             }),
+             py::arg("models_path"))
+        .def(
+            py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
+                return std::make_unique<ov::genai::VideoToVideoPipeline>(models_path,
+                                                                         device,
+                                                                         pyutils::kwargs_to_any_map(kwargs));
+            }),
+            py::arg("models_path"),
+            py::arg("device"))
+        .def("get_generation_config",
+             &ov::genai::VideoToVideoPipeline::get_generation_config,
+             py::return_value_policy::copy)
+        .def("set_generation_config", &ov::genai::VideoToVideoPipeline::set_generation_config, py::arg("config"))
+        .def(
+            "compile",
+            [](ov::genai::VideoToVideoPipeline& pipe, const std::string& device, const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                pipe.compile(device, properties);
+            },
+            py::arg("device"))
+        .def(
+            "generate",
+            [](ov::genai::VideoToVideoPipeline& pipe, const ov::Tensor& video, const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                ov::genai::VideoGenerationResult result;
+                {
+                    py::gil_scoped_release rel;
+                    result = pipe.generate(video, properties);
+                }
+                return result;
+            },
+            py::arg("video"),
+            "Transforms a whole video: uint8 [num_frames, height, width, 3] -> VideoGenerationResult with "
+            "video [1, num_frames, out_height, out_width, 3].")
+        .def(
+            "start_stream",
+            [](ov::genai::VideoToVideoPipeline& pipe, const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                pipe.start_stream(properties);
+            },
+            "Starts processing a video given frame by frame and resets the model states.")
+        .def(
+            "push_frames",
+            [](ov::genai::VideoToVideoPipeline& pipe, const ov::Tensor& frames) {
+                py::gil_scoped_release rel;
+                return pipe.push_frames(frames);
+            },
+            py::arg("frames"),
+            "Adds uint8 frames [n, height, width, 3] to the stream and returns the output frames that became "
+            "available.")
+        .def(
+            "end_stream",
+            [](ov::genai::VideoToVideoPipeline& pipe) {
+                py::gil_scoped_release rel;
+                return pipe.end_stream();
+            },
+            "Finishes the stream and returns the remaining output frames.")
+        .def("get_performance_metrics", &ov::genai::VideoToVideoPipeline::get_performance_metrics);
 }

@@ -197,6 +197,23 @@ The TaylorSeer configuration parameters can be adjusted in the source code:
 
 For more details about TaylorSeer, see the [diffusion caching documentation](../../../site/docs/concepts/optimization-techniques/diffusion-caching.md).
 
+### Video to Video Sample (`video2video.cpp`)
+
+Video super-resolution (x4) with `VideoToVideoPipeline` and [FlashVSR](https://huggingface.co/JunhaoZhuang/FlashVSR).
+The input frames are streamed with `start_stream()` / `push_frames()` / `end_stream()`: every chunk is processed as soon
+as enough frames are available, and the output frames are written as they come. The output has 4x the input
+resolution, center cropped to a multiple of 128 pixels.
+
+Export the model with genai-cli (FlashVSR is converted natively, without optimum-intel):
+```sh
+genai-cli export -m JunhaoZhuang/FlashVSR --weight-format fp16 FlashVSR-ov
+```
+
+Run:
+```sh
+./video2video ./FlashVSR-ov input.mp4 output.avi GPU
+```
+
 ## Troubleshooting
 
 ### LTX-Video Model Constraints

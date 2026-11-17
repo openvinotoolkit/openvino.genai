@@ -140,6 +140,7 @@ from .py_openvino_genai import (
     LTX2TextConnectors,
     LTX2Vocoder,
     Image2VideoPipeline,
+    VideoToVideoPipeline,
     Text2VideoPipeline,
     VideoGenerationConfig,
     VideoGenerationResult,

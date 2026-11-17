@@ -12,8 +12,11 @@ class NativeExporter:
     MODEL_TYPE: str
     # Tasks the exporter produces; the first one is used for `--task auto`.
     TASKS: tuple[str, ...]
-    # The transformers version the model is exported with, provided by a uv overlay when not installed.
-    TRANSFORMERS_VERSION: str
+    # The transformers version the model is exported with, provided by a uv overlay when not installed; None for models
+    # that do not use transformers.
+    TRANSFORMERS_VERSION: str | None
+    # Other requirements of the export (e.g. "diffusers>=0.35"), provided by the uv overlay as well.
+    EXTRA_REQUIREMENTS: tuple[str, ...] = ()
     # Whether the modeling code is only available as remote code in the model repository.
     REQUIRES_REMOTE_CODE: bool = False
 

@@ -15,6 +15,7 @@ import openvino_genai as ov_genai
 
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
+from utils.export import export_with_genai_cli
 from utils.network import retry_request
 
 logger = logging.getLogger(__name__)
@@ -1161,3 +1162,99 @@ class TestImage2VideoPipeline:
         image = self._make_image()
         result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, adapters=adapter_config)
         assert result.video is not None
+
+
+# FlashVSR (VideoToVideoPipeline). There is no tiny FlashVSR repository on the Hub yet: the checkpoint is taken from
+# VIDEO_GEN_MODEL_SOURCE_tiny_random_flashvsr (a directory in the JunhaoZhuang/FlashVSR layout with random weights) and
+# exported with genai-cli.
+FLASHVSR_MODEL_ID = "tiny-random-flashvsr"
+FLASHVSR_SOURCE_ENV = "VIDEO_GEN_MODEL_SOURCE_tiny_random_flashvsr"
+
+
+@pytest.fixture(scope="module")
+def flashvsr_model() -> str:
+    source = os.environ.get(FLASHVSR_SOURCE_ENV)
+    if not source:
+        pytest.skip(f"{FLASHVSR_SOURCE_ENV} is not set: no tiny FlashVSR checkpoint to export")
+    model_path = Path(get_ov_cache_converted_models_dir()) / FLASHVSR_MODEL_ID
+    AtomicDownloadManager(model_path).execute(
+        lambda temp_path: export_with_genai_cli(source, temp_path, ["--weight-format", "fp32"])
+    )
+    return str(model_path)
+
+
+def _flashvsr_video(num_frames: int, height: int = 32, width: int = 64) -> np.ndarray:
+    return np.random.default_rng(1).integers(0, 256, (num_frames, height, width, 3), dtype=np.uint8)
+
+
+@pytest.mark.parametrize("num_frames", [1, 13, 30])
+def test_flashvsr_generate_output_shape(flashvsr_model, num_frames):
+    pipe = ov_genai.VideoToVideoPipeline(flashvsr_model, "CPU")
+    result = pipe.generate(ov.Tensor(_flashvsr_video(num_frames)), generator=ov_genai.TorchGenerator(0))
+    # x4, cropped to a multiple of the 128-pixel attention block, one output frame per input frame.
+    assert list(result.video.shape) == [1, num_frames, 128, 256, 3]
+    assert result.video.get_element_type() == ov.Type.u8
+    assert result.perf_metrics.get_generate_duration() > 0
+
+
+def test_flashvsr_generate_is_deterministic(flashvsr_model):
+    pipe = ov_genai.VideoToVideoPipeline(flashvsr_model, "CPU")
+    video = ov.Tensor(_flashvsr_video(13))
+    first = pipe.generate(video, generator=ov_genai.TorchGenerator(7)).video.data.copy()
+    second = pipe.generate(video, generator=ov_genai.TorchGenerator(7)).video.data.copy()
+    other_seed = pipe.generate(video, generator=ov_genai.TorchGenerator(8)).video.data.copy()
+    np.testing.assert_array_equal(first, second)
+    assert not np.array_equal(first, other_seed)
+
+
+def test_flashvsr_streaming(flashvsr_model):
+    pipe = ov_genai.VideoToVideoPipeline(flashvsr_model, "CPU")
+    video = _flashvsr_video(30)
+    pipe.start_stream(generator=ov_genai.TorchGenerator(0))
+    produced = []
+    for i, frame in enumerate(video):
+        out = pipe.push_frames(ov.Tensor(np.ascontiguousarray(frame)))
+        produced.append(out.shape[0])
+        # The first chunk needs 25 input frames and gives the first 21 output frames, then 8 per 8 frames.
+        if i == 24:
+            assert out.shape[0] == 21
+    tail = pipe.end_stream()
+    assert sum(produced) == 21
+    assert sum(produced) + tail.shape[0] == len(video)
+    assert list(tail.shape[1:]) == [128, 256, 3]
+
+
+def test_flashvsr_streaming_matches_generate_for_first_chunk(flashvsr_model):
+    # The first chunk draws noise of the first chunk's shape in streaming mode; with a generator whose noise does not
+    # depend on the tensor shape layout of later chunks (a single chunk), the two modes give the same frames.
+    pipe = ov_genai.VideoToVideoPipeline(flashvsr_model, "CPU")
+    video = _flashvsr_video(21)
+    offline = pipe.generate(ov.Tensor(video), generator=ov_genai.TorchGenerator(3)).video.data[0].copy()
+    pipe.start_stream(generator=ov_genai.TorchGenerator(3))
+    streamed = np.concatenate([pipe.push_frames(ov.Tensor(video)).data, pipe.end_stream().data], axis=0)
+    np.testing.assert_array_equal(offline, streamed)
+
+
+def test_flashvsr_generation_config(flashvsr_model):
+    pipe = ov_genai.VideoToVideoPipeline(flashvsr_model, "CPU")
+    config = pipe.get_generation_config()
+    assert config.sparse_attention_ratio == pytest.approx(2.0)
+    assert config.color_correction is True
+    video = ov.Tensor(_flashvsr_video(13))
+    corrected = pipe.generate(video, generator=ov_genai.TorchGenerator(0)).video.data.copy()
+    raw = pipe.generate(video, generator=ov_genai.TorchGenerator(0), color_correction=False).video.data.copy()
+    assert not np.array_equal(corrected, raw)
+    config.color_correction = False
+    pipe.set_generation_config(config)
+    np.testing.assert_array_equal(pipe.generate(video, generator=ov_genai.TorchGenerator(0)).video.data, raw)
+    # A smaller attention budget is accepted; at this size the local window covers every block anyway.
+    sparse = pipe.generate(video, generator=ov_genai.TorchGenerator(0), sparse_attention_ratio=1.5).video
+    assert list(sparse.shape) == [1, 13, 128, 256, 3]
+
+
+def test_flashvsr_rejects_mismatched_frame_sizes(flashvsr_model):
+    pipe = ov_genai.VideoToVideoPipeline(flashvsr_model, "CPU")
+    pipe.start_stream()
+    pipe.push_frames(ov.Tensor(_flashvsr_video(1)[0]))
+    with pytest.raises(RuntimeError, match="same size"):
+        pipe.push_frames(ov.Tensor(_flashvsr_video(1, height=48)[0]))
