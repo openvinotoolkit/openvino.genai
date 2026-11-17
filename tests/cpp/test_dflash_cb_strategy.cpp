@@ -192,6 +192,27 @@ TEST(DFlashCBHiddenDeltaBuffer, MergesChunksInOrder) {
     ASSERT_EQ(tensor_values(materialized), (std::vector<float>{0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f}));
 }
 
+TEST(DFlashModelTransforms, RejectsMarkedNonMatMulHeadWithoutChangingDraft) {
+    auto activation = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1, 2, 4});
+    auto weights = ov::op::v0::Constant::create(ov::element::f32, {}, {2.f});
+    auto head = std::make_shared<ov::op::v1::Multiply>(activation, weights);
+    head->get_rt_info()["gguf_lm_head"] = true;
+    auto target = std::make_shared<ov::Model>(ov::OutputVector{head}, ov::ParameterVector{activation});
+    auto draft = make_dflash_draft_hidden_states_model(ov::Shape{1, 2, 4});
+    auto result = draft->get_results().at(0);
+    result->output(0).set_names({"last_hidden_state"});
+    try {
+        ov::genai::utils::dflash::attach_target_lm_head_to_draft(target, draft);
+        FAIL() << "Non-MatMul LM head grafting must be rejected";
+    } catch (const ov::Exception& error) {
+        EXPECT_NE(std::string(error.what()).find("not supported for grafting"), std::string::npos);
+    }
+    EXPECT_EQ(draft->get_results().at(0), result);
+    EXPECT_EQ(draft->get_parameters().size(), 1u);
+    EXPECT_EQ(result->output(0).get_names().count("last_hidden_state"), 1u);
+    EXPECT_NO_THROW(draft->validate_nodes_and_infer_types());
+}
+
 TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
     auto model = make_annotated_stateful_sdpa_model();
     model->set_rt_info(true, "dflash_mode");
