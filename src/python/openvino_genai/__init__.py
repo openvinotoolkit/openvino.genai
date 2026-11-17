@@ -168,7 +168,10 @@ from .py_openvino_genai import EmbedResult, EmbeddingPipeline, TextEmbeddingPipe
 # Speech generation
 from .py_openvino_genai import (
     SpeechGenerationConfig,
+    SpeechGenerationHandle,
+    SpeechGenerationOutput,
     SpeechGenerationPerfMetrics,
+    Text2SpeechContinuousBatchingPipeline,
     Text2SpeechDecodedResults,
     Text2SpeechPipeline,
 )

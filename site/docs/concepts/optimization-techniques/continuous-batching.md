@@ -25,6 +25,12 @@ To avoid fallback, set the backend explicitly by passing `ATTENTION_BACKEND="PA"
 
 Set `ATTENTION_BACKEND="SDPA"` to force SDPA instead of PA.
 
+For Qwen3-TTS, `Text2SpeechPipeline` also uses a PA-backed closed-batch adapter by default on CPU and GPU and accepts
+the same `ATTENTION_BACKEND` setting. Independently arriving speech requests use the dedicated
+`Text2SpeechContinuousBatchingPipeline`, which returns waveform audio through speech-generation handles rather than
+token-generation results. See [Speech Generation: Continuous Batching](/docs/use-cases/speech-generation#continuous-batching)
+for Python and C++ examples, supported variants, and output limitations.
+
 Scheduling and paged KV cache behavior are configured with `ov::genai::SchedulerConfig` (`openvino_genai.SchedulerConfig`). Please read more about supported parameters and default values in [src/cpp/include/openvino/genai/scheduler_config.hpp](../../../../src/cpp/include/openvino/genai/scheduler_config.hpp).
 
 ## Sample Usage
