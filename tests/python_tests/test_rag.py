@@ -1016,6 +1016,18 @@ def test_embedding_constructors(emb_model):
     )
 
 
+@pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
+def test_embed_documents_empty_input(emb_model):
+    pipeline = TextEmbeddingPipeline(emb_model.models_path, "CPU")
+    # on a fresh pipeline, and after a normal request (which used to be returned again as a stale result)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="should not be empty"):
+            pipeline.embed_documents([])
+        with pytest.raises(RuntimeError, match="should not be empty"):
+            pipeline.start_embed_documents_async([])
+        pipeline.embed_documents(["warm up"])
+
+
 @pytest.mark.parametrize("emb_model", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
     "config",
