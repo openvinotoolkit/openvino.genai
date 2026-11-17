@@ -83,6 +83,43 @@ def test_native_export_reexecutes_with_pinned_transformers(tmp_path, monkeypatch
     assert calls == [(["transformers==4.57.6"], argv)]
 
 
+def test_native_export_reexecutes_with_transformers_from_a_url(tmp_path, monkeypatch):
+    from openvino_genai._cli.exporters.bagel import BagelExporter
+
+    calls = []
+    monkeypatch.setattr(uv_env, "is_satisfied", lambda requirement: False)
+    monkeypatch.setattr(uv_env, "reexec_with", lambda requirements, argv: calls.append((requirements, argv)) or 0)
+    model_dir = _checkpoint(tmp_path, "bagel")
+    argv = ["export", "-m", str(model_dir), str(tmp_path / "out")]
+
+    assert cli_main.main(argv) == 0
+    assert calls == [([BagelExporter.transformers_requirement()], argv)]
+    assert Requirement(calls[0][0][0]).url
+
+
+def test_url_requirement_is_satisfied_only_by_the_same_source(monkeypatch):
+    url = "https://example.com/transformers.tar.gz"
+    monkeypatch.setattr(uv_env, "installed_requirement", lambda name: f"transformers @ {url}")
+    assert uv_env.is_satisfied(f"transformers @ {url}")
+    assert not uv_env.is_satisfied("transformers @ https://example.com/other.tar.gz")
+    monkeypatch.setattr(uv_env, "installed_requirement", lambda name: "transformers==5.0.0")
+    assert not uv_env.is_satisfied(f"transformers @ {url}")
+
+
+def test_bagel_int4_default_matches_optimum_intel():
+    from openvino_genai._cli.exporters.bagel import BagelExporter
+
+    default = BagelExporter(_export_args("-m", "m", "--weight-format", "int4", "out"))._compression()
+    assert (default.mode, default.group_size, default.backup_precision, default.group_size_fallback) == (
+        "int4_sym",
+        128,
+        "int8_sym",
+        "adjust",
+    )
+    custom = BagelExporter(_export_args("-m", "m", "--weight-format", "int4", "--group-size", "64", "out"))
+    assert custom._compression().group_size == 64
+
+
 @pytest.mark.parametrize(
     "options, message",
     [
@@ -472,11 +509,13 @@ def test_fallback_imports_export_configs_only_with_supported_transformers(monkey
 
 def test_native_exporters_are_found_through_their_registration():
     from openvino_genai._cli.exporters import get_native_exporter
+    from openvino_genai._cli.exporters.bagel import BagelExporter
     from openvino_genai._cli.exporters.molmo2 import Molmo2Exporter
 
     assert get_native_exporter("molmo2", None) is Molmo2Exporter
     assert get_native_exporter("molmo2", "transformers") is Molmo2Exporter
     assert get_native_exporter("molmo2", "diffusers") is None
+    assert get_native_exporter("bagel", None) is BagelExporter
     assert get_native_exporter("llama", None) is None
     assert get_native_exporter(None, None) is None
 

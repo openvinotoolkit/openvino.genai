@@ -16,7 +16,6 @@ The model is split into the three OpenVINO models consumed by ov::genai::VLMPipe
 """
 
 import gc
-import json
 import logging
 import tempfile
 from pathlib import Path
@@ -30,6 +29,7 @@ from openvino_genai._cli.exporters.common import (
     convert_tokenizer,
     copy_model_files,
     make_stateful,
+    processor_chat_template,
     resolve_compression,
     resolve_model_dir,
     save_submodel,
@@ -43,14 +43,6 @@ logger = logging.getLogger(__name__)
 # .bin files (safe_serialization=False). MolmoWeb repositories also hold large training checkpoints
 # (model_and_optim/*.distcp) that are not downloaded.
 _ALLOW_PATTERNS = ["*.json", "*.safetensors", "pytorch_model*.bin", "*.py", "*.jinja", "*.txt"]
-
-
-def _processor_chat_template(model_dir: Path) -> str | None:
-    if (model_dir / "chat_template.jinja").is_file():
-        return (model_dir / "chat_template.jinja").read_text(encoding="utf-8")
-    if (model_dir / "chat_template.json").is_file():
-        return json.loads((model_dir / "chat_template.json").read_text(encoding="utf-8")).get("chat_template")
-    return None
 
 
 def _patch_text_model_for_export(text_model) -> None:
@@ -358,5 +350,5 @@ class Molmo2Exporter(NativeExporter):
 
         copy_model_files(model_dir, output)
         if not args.disable_convert_tokenizer:
-            convert_tokenizer(model_dir, output, _processor_chat_template(model_dir))
+            convert_tokenizer(model_dir, output, processor_chat_template(model_dir))
         logger.info(f"Model exported to {output}")

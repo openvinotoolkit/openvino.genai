@@ -66,6 +66,13 @@ from .py_openvino_genai import (
     draft_model,
 )
 
+# BAGEL pipeline
+from .py_openvino_genai import (
+    BagelImageGenerationConfig,
+    BagelPerfMetrics,
+    BagelPipeline,
+)
+
 # LoRA
 from .py_openvino_genai import Adapter, AdapterConfig
 

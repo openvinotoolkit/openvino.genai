@@ -125,6 +125,17 @@
   components:
     - omni
 
+- name: BAGEL
+  cmd: |-
+    # TODO: use the tests/python_tests/requirements.txt pins once transformers and optimum-intel
+    # (huggingface/optimum-intel#2126) release BAGEL support
+    python -m pip install "transformers @ https://github.com/padatta/transformers/archive/38b3e74123a005abfd071d2709bbbb017a7919e1.tar.gz"
+    python -m pip install --no-deps "optimum-intel @ https://github.com/padatta/optimum-intel/archive/b13d14169be2f04a06a5251931cba624170849d4.tar.gz"
+    python -m pytest -v ./tests/python_tests/test_bagel_pipeline.py --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 30
+  components:
+    - bagel
+
 - name: Video Generation
   cmd: |-
     # LTX-2.3 export support landed after the optimum-intel pin in tests/python_tests/requirements.txt

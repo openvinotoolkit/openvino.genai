@@ -13,6 +13,16 @@ type VLMModelType = {
 
 export const VLM_MODELS: VLMModelType[] = [
   {
+    architecture: 'Bagel',
+    models: [
+      {
+        name: 'BAGEL-7B-MoT',
+        links: ['https://huggingface.co/ByteDance-Seed/BAGEL-7B-MoT'],
+        notesLink: '#bagel-notes',
+      },
+    ],
+  },
+  {
     architecture: 'InternVLChat',
     models: [
       {

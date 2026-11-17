@@ -9,6 +9,7 @@ consume optimum-intel exports.
 """
 
 import gc
+import json
 import logging
 import shutil
 from collections.abc import Sequence
@@ -334,6 +335,15 @@ def copy_model_files(src_dir: Path, output: Path) -> None:
         # Hub cache files are read-only: copy the content only and replace files of a previous export.
         dst.unlink(missing_ok=True)
         shutil.copyfile(src, dst)
+
+
+def processor_chat_template(model_dir: Path) -> str | None:
+    """The chat template saved with the processor of a checkpoint, None if it has none."""
+    if (model_dir / "chat_template.jinja").is_file():
+        return (model_dir / "chat_template.jinja").read_text(encoding="utf-8")
+    if (model_dir / "chat_template.json").is_file():
+        return json.loads((model_dir / "chat_template.json").read_text(encoding="utf-8")).get("chat_template")
+    return None
 
 
 def convert_tokenizer(model_dir: Path, output: Path, chat_template: str | None = None) -> None:
