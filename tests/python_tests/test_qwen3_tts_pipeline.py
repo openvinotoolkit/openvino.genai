@@ -952,7 +952,7 @@ def test_qwen3_tts_non_base_continuous_batching_concurrent_requests(
 def test_qwen3_tts_continuous_batching_rejects_prefix_cache(tiny_qwen3_tts_customvoice_ov_path: Path):
     scheduler_config = ov_genai.SchedulerConfig()
     scheduler_config.enable_prefix_caching = True
-    with pytest.raises(RuntimeError, match="does not support prefix caching"):
+    with pytest.raises(RuntimeError, match="does not currently support prefix caching"):
         ov_genai.Text2SpeechContinuousBatchingPipeline(
             str(tiny_qwen3_tts_customvoice_ov_path),
             scheduler_config,
