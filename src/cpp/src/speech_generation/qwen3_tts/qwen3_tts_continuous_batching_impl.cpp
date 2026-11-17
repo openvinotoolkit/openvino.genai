@@ -173,6 +173,7 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     const bool base_model = m_engine.is_base_model();
     const bool has_voice_clone_props = !generation_config.ref_text.empty() ||
                                        static_cast<bool>(generation_config.ref_codec_ids);
+    MicroSeconds tokenization_duration{0};
 
     if (!base_model &&
         (!generation_config.ref_text.empty() || static_cast<bool>(generation_config.ref_audio) ||
@@ -223,12 +224,16 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
                                                                       effective_speaker_embedding,
                                                                       effective_ref_codec_ids,
                                                                       generation_config);
+        tokenization_duration = voice_clone_prefill.tokenization_duration;
         prefill = std::move(voice_clone_prefill.prefill);
         effective_ref_codec_ids = std::move(voice_clone_prefill.ref_codec_ids);
     } else {
         const std::string assistant_text = "<|im_start|>assistant\n" + text +
                                            "<|im_end|>\n<|im_start|>assistant\n";
+        const auto tokenization_start = std::chrono::steady_clock::now();
         const ov::Tensor input_ids_tensor = m_engine.tokenizer().encode(assistant_text).input_ids;
+        tokenization_duration =
+            MicroSeconds{PerfMetrics::get_microsec(std::chrono::steady_clock::now() - tokenization_start)};
         prefill = m_engine.build_prefill(input_ids_tensor,
                                          effective_speaker_embedding,
                                          generation_config,
@@ -262,6 +267,7 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
         SpeechGenerationPerfMetrics perf_metrics;
         perf_metrics.raw_metrics.generate_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - request_start_time));
+        perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration);
         perf_metrics.evaluate_statistics();
         stream->set_perf_metrics(std::move(perf_metrics));
         stream->push_and_close(std::move(output), GenerationStatus::FINISHED);
@@ -288,6 +294,7 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     RequestState state;
     state.generation_config = generation_config;
     state.start_time = request_start_time;
+    state.tokenization_duration = tokenization_duration;
     state.generation_config.ref_audio = ov::Tensor();
     state.generation_config.ref_codec_ids = ov::Tensor();
     state.generation_config.ref_text.clear();
@@ -431,6 +438,7 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::on_request_term
         SpeechGenerationPerfMetrics perf_metrics;
         perf_metrics.raw_metrics.generate_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - state.start_time));
+        perf_metrics.raw_metrics.tokenization_durations.emplace_back(state.tokenization_duration);
         perf_metrics.evaluate_statistics();
         state.stream->set_perf_metrics(std::move(perf_metrics));
     }
@@ -585,6 +593,7 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
     perf_metrics.num_prefix_cache_hit_tokens = sequence_group->get_num_prefix_cache_hit_tokens();
     perf_metrics.raw_metrics.generate_durations.emplace_back(
         PerfMetrics::get_microsec(std::chrono::steady_clock::now() - state.start_time));
+    perf_metrics.raw_metrics.tokenization_durations.emplace_back(state.tokenization_duration);
     perf_metrics.evaluate_statistics();
     state.stream->set_perf_metrics(std::move(perf_metrics));
     state.stream->push_and_close(std::move(output), GenerationStatus::FINISHED);

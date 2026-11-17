@@ -122,7 +122,12 @@ public:
                 "Qwen3-TTS request ran out of KV-cache memory. "
                 "Increase SchedulerConfig.cache_size or reduce the batch size.");
             auto output = handle->read_all();
+            const auto request_metrics = handle->get_perf_metrics();
             result.perf_metrics.num_generated_samples += output.waveform.get_size();
+            result.perf_metrics.raw_metrics.tokenization_durations.insert(
+                result.perf_metrics.raw_metrics.tokenization_durations.end(),
+                request_metrics.raw_metrics.tokenization_durations.begin(),
+                request_metrics.raw_metrics.tokenization_durations.end());
             result.speeches.push_back(std::move(output.waveform));
             if (output.speaker_embedding) {
                 result.speaker_embedding = output.speaker_embedding;

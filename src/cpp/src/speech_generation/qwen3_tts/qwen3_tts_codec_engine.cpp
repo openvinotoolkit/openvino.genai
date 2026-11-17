@@ -4,6 +4,7 @@
 #include "speech_generation/qwen3_tts/qwen3_tts_codec_engine.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -1354,8 +1355,10 @@ Qwen3TTSCodecEngine::VoiceClonePrefillResult Qwen3TTSCodecEngine::build_voice_cl
     const std::string ref_turn = "<|im_start|>assistant\n" + ref_text + "<|im_end|>\n";
     const std::string target_turn = "<|im_start|>assistant\n" + text + "<|im_end|>\n<|im_start|>assistant\n";
 
+    const auto tokenization_start = std::chrono::steady_clock::now();
     const ov::Tensor ref_input_ids = tokenizer().encode(ref_turn).input_ids;
     const ov::Tensor target_input_ids = tokenizer().encode(target_turn).input_ids;
+    const auto tokenization_end = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(ref_input_ids.get_element_type() == ov::element::i64 &&
                         target_input_ids.get_element_type() == ov::element::i64,
                     "Qwen3-TTS tokenizer must produce i64 input_ids tensor");
@@ -1515,6 +1518,7 @@ Qwen3TTSCodecEngine::VoiceClonePrefillResult Qwen3TTSCodecEngine::build_voice_cl
     }
 
     VoiceClonePrefillResult result;
+    result.tokenization_duration = MicroSeconds{PerfMetrics::get_microsec(tokenization_end - tokenization_start)};
     result.prefill.talker_prefill = prepend_instruct_embed(
         concat_embed({role_embed, codec_input_part, icl_input_embed}), generation_config.instruct);
     result.prefill.tts_pad = special_embeds.pad;

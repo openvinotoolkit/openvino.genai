@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
@@ -171,6 +172,7 @@ public:
     struct VoiceClonePrefillResult {
         PrefillResult prefill;
         ov::Tensor ref_codec_ids;
+        MicroSeconds tokenization_duration{0};
     };
 
     // Builds the talker prefill embedding for the non-ICL path (CustomVoice / VoiceDesign / Base

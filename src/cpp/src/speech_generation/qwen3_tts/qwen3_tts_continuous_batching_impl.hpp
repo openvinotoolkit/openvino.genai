@@ -11,6 +11,7 @@
 
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 #include "sequence_group.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_codec_engine.hpp"
 #include "speech_generation/speech_generation_stream.hpp"
@@ -61,6 +62,7 @@ private:
     struct RequestState {
         SpeechGenerationConfig generation_config;
         std::chrono::steady_clock::time_point start_time;
+        MicroSeconds tokenization_duration{0};
         std::mt19937 rng;
         ov::Tensor speaker_embedding;
         ov::Tensor tts_pad;

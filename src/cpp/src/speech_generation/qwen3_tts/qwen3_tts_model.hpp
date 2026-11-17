@@ -4,8 +4,10 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 
+#include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_codec_engine.hpp"
@@ -51,7 +53,8 @@ private:
                                                   const ov::Tensor& trailing_text_hidden,
                                                   const SpeechGenerationConfig& generation_config,
                                                   const std::vector<bool>& suppress_tokens,
-                                                  const ov::Tensor& ref_codec_ids = ov::Tensor{});
+                                                  const ov::Tensor& ref_codec_ids = ov::Tensor{},
+                                                  std::optional<MicroSeconds> tokenization_duration = std::nullopt);
 
     Qwen3TTSCodecEngine m_engine;
     ov::InferRequest m_talker;
