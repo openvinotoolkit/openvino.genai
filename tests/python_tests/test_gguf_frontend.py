@@ -10,7 +10,7 @@ import ctypes
 import gc
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from pathlib import Path
