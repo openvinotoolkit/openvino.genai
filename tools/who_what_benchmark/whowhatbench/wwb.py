@@ -360,7 +360,7 @@ def parse_args():
         "of the VAE decoder. Supported keys: 'tile_sample_min_num_frames' (chunk length in video frames, "
         "0 disables tiling), 'tile_sample_stride_num_frames' (distance between chunk starts in video frames). "
         "Both must be multiples of the VAE temporal compression ratio. "
-        "Example: '{\"tile_sample_min_num_frames\": 16, \"tile_sample_stride_num_frames\": 8}'.",
+        'Example: \'{"tile_sample_min_num_frames": 16, "tile_sample_stride_num_frames": 8}\'.',
     )
     parser.add_argument(
         "--from-onnx",

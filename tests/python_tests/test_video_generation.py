@@ -986,7 +986,6 @@ class TestAutoEncoderKLLTXVideoEncoder:
             vae.encode(video, None)
 
 
-
 @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
 class TestAutoEncoderKLLTX2VideoTemporalTiling:
     """Temporal tiling of the LTX-2 video VAE decoder: overlapping chunks of latent frames, cross-faded in time."""
