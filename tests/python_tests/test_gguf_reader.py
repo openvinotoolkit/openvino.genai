@@ -416,6 +416,21 @@ def test_gguf_default_reader_failure_hint(tmp_path, reader, with_tokenizer):
         assert "preview" in message
 
 
+def test_gguf_frontend_rejects_mmproj_as_language_model(tmp_path):
+    gguf_path = tmp_path / "audio_mmproj.gguf"
+    writer = GGUFWriter(gguf_path, "clip")
+    writer.add_bool("clip.has_audio_encoder", True)
+    writer.add_string("clip.projector_type", "gemma4ua")
+    writer.add_tensor("mm.a.input_projection.weight", np.ones((12, 640), dtype=np.float32))
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+
+    with pytest.raises(RuntimeError, match="does not contain a language model.*decoder GGUF"):
+        ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER="FRONTEND")
+
+
 @pytest.fixture
 def tiny_gguf_model(tmp_path):
     path = tmp_path / "model.gguf"
