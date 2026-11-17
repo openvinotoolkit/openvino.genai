@@ -525,6 +525,9 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_fra
     float* token_embed_ptr = token_embed.data<float>();
     for (size_t g = 1; g < groups.size(); ++g) {
         auto pred_emb = m_engine.infer_predictor_embedding(groups[g], static_cast<int64_t>(g - 1));
+        OPENVINO_ASSERT(pred_emb.get_shape() == ov::Shape({1, 1, hidden}),
+                         "Code predictor residual embedding must have shape [1, 1, ",
+                         hidden, "], got ", pred_emb.get_shape());
         const float* pred_ptr = pred_emb.data<const float>();
         for (size_t h = 0; h < hidden; ++h) {
             token_embed_ptr[h] += pred_ptr[h];
