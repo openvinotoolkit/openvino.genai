@@ -152,7 +152,7 @@
 - 'src/cpp/src/whisper/**/*'
 - 'src/python/py_asr_pipeline.cpp'
 - 'src/python/py_whisper_pipeline.cpp'
-- 'tests/python_tests/test_whisper_pipeline.py'
+- 'tests/python_tests/test_asr_pipeline.py'
 - 'tests/python_tests/test_whisper_pipeline_static.py'
 - 'tests/python_tests/test_asr_forced_aligner.py'
 - 'tests/python_tests/samples/test_automatic_speech_recognition.py'
