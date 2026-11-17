@@ -426,12 +426,15 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::on_request_term
     }
 
     RequestState& state = state_it->second;
-    if (status == GenerationStatus::IGNORED) {
+    if (status == GenerationStatus::IGNORED || status == GenerationStatus::STOP ||
+        status == GenerationStatus::CANCEL) {
         SpeechGenerationPerfMetrics perf_metrics;
         perf_metrics.raw_metrics.generate_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - state.start_time));
         perf_metrics.evaluate_statistics();
         state.stream->set_perf_metrics(std::move(perf_metrics));
+    }
+    if (status == GenerationStatus::IGNORED) {
         state.stream->close(GenerationStatus::IGNORED);
     } else if (status == GenerationStatus::STOP) {
         state.stream->stop(sequence_group->get_generation_stream()->get_finish_reason());
