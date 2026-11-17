@@ -197,7 +197,7 @@ def apply_taylorseer_config_genai(pipe, config_data=None):
 def get_scheduler_config_genai(config_data, config_name="CB config"):
     import openvino_genai
     user_config = copy.deepcopy(config_data)
-    offload_config = user_config.pop('cache_offload_config', None)
+    offload_config = user_config.pop("cache_offload_config", None)
 
     scheduler_config = openvino_genai.SchedulerConfig()
     if user_config:
@@ -240,10 +240,15 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
 
 
 def cb_pipeline_required(args):
-    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and args.get("cb_config") is not None and\
-        (args["cb_config"].get("cache_eviction_config") is not None or
-         args["cb_config"].get("sparse_attention_config") is not None or
-         args["cb_config"].get("use_cache_offload", False))
+    return (
+        args["config"].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND
+        and args.get("cb_config") is not None
+        and (
+            args["cb_config"].get("cache_eviction_config") is not None
+            or args["cb_config"].get("sparse_attention_config") is not None
+            or args["cb_config"].get("use_cache_offload", False)
+        )
+    )
 
 
 def setup_draft_model_for_sd(args, device, ov_config):

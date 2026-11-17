@@ -244,4 +244,3 @@ TEST(TestOffloadGroupName, KeepsSegmentLayoutsAndTypesApartEvenWithTheSameAggreg
     EXPECT_NE(name, coordinator.group_name("kv", layout, 32, "CPU", ""));
     EXPECT_EQ(name, coordinator.group_name("kv", layout, 32, "CPU", "f16 {2,2}|f16 {2,2};"));
 }
-

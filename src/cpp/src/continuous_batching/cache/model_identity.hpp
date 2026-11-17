@@ -297,4 +297,3 @@ inline std::string compute_model_identity(const std::shared_ptr<const ov::Model>
 }
 
 }  // namespace ov::genai
-
