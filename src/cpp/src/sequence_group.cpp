@@ -3,6 +3,7 @@
 
 #include <string_view>
 #include "content_hash.hpp"
+#include "prefix_digest_registry.hpp"
 #include "sequence_group.hpp"
 
 namespace ov {
@@ -14,7 +15,6 @@ size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
     OPENVINO_ASSERT(content_length > 0, "Hash computation requires positive content length");
     OPENVINO_ASSERT(block_size > 0, "Hash computation requires positive block size");
     auto& prefix_hashes = m_prefix_hashes.at(block_size);
-    auto sequence_group = get_sequence_group_ptr();
     size_t block_start_idx = content_length - (content_length % block_size);
     if (block_start_idx == content_length) {
         block_start_idx -= block_size;
@@ -28,6 +28,52 @@ size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
         content.emplace_back(prefix_hashes[filled_blocks_count - 1]);
     }
 
+    _append_block_content(content, block_start_idx, content_length);
+    const char* data = reinterpret_cast<const char*>(content.data());
+    std::size_t size = content.size() * sizeof(content[0]);
+    return std::hash<std::string_view>{}(std::string_view(data, size));
+}
+
+ContentHash Sequence::_make_digest(size_t content_length, size_t block_size) {
+    OPENVINO_ASSERT(content_length > 0, "Digest computation requires positive content length");
+    OPENVINO_ASSERT(block_size > 0, "Digest computation requires positive block size");
+    size_t block_start_idx = content_length - (content_length % block_size);
+    if (block_start_idx == content_length) {
+        block_start_idx -= block_size;
+    }
+
+    // The digest of the current block chains the digest of the preceding block, like _make_hash() does with hashes.
+    auto& digests = m_prefix_digests[block_size];
+    const size_t filled_blocks_count = block_start_idx / block_size;
+    while (digests.size() < filled_blocks_count) {
+        digests.push_back(_make_digest((digests.size() + 1) * block_size, block_size));
+    }
+    std::vector<int64_t> content;
+    if (filled_blocks_count > 0) {
+        const ContentHash& previous = digests[filled_blocks_count - 1];
+        content.push_back(static_cast<int64_t>(previous.lo));
+        content.push_back(static_cast<int64_t>(previous.hi));
+    }
+    _append_block_content(content, block_start_idx, content_length);
+    return compute_content_hash(content.data(), content.size() * sizeof(content[0]));
+}
+
+ContentHash Sequence::get_digest(size_t content_length, size_t block_size) {
+    OPENVINO_ASSERT(content_length > 0, "Digest computation requires positive content length");
+    OPENVINO_ASSERT(block_size > 0, "Digest computation requires positive block size");
+    if (content_length % block_size != 0) {
+        return _make_digest(content_length, block_size);
+    }
+    const size_t block_idx = content_length / block_size - 1;
+    auto& digests = m_prefix_digests[block_size];
+    while (digests.size() <= block_idx) {
+        digests.push_back(_make_digest((digests.size() + 1) * block_size, block_size));
+    }
+    return digests[block_idx];
+}
+
+void Sequence::_append_block_content(std::vector<int64_t>& content, size_t block_start_idx, size_t content_length) {
+    auto sequence_group = get_sequence_group_ptr();
     // get tokens corresponding to current block
     if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
         const auto& prompt_ids = sequence_group->get_prompt_ids();
@@ -72,13 +118,6 @@ size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
     else {
         OPENVINO_THROW("Hash calculation is not supported for this sequence type.");
     }
-    const char* data = reinterpret_cast<const char*>(content.data());
-    std::size_t size = content.size() * sizeof(content[0]);
-    // std::hash<string_view> is implementation-defined and not stable across STL/compiler
-    // versions or processes; use the documented, versioned ContentHash algorithm instead so
-    // that prefix-cache block hashes can eventually be persisted and reproduced elsewhere.
-    const ContentHash digest = compute_content_hash(data, size);
-    return static_cast<size_t>(digest.lo ^ digest.hi);
 }
 
 std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embedding) {
@@ -98,12 +137,15 @@ size_t Sequence::get_prefix_identity_length() const {
 }
 
 void Sequence::truncate_prefix_hashes() {
-    if (m_prefix_hashes.empty()) {
+    if (m_prefix_hashes.empty() && m_prefix_digests.empty()) {
         return;
     }
     const size_t identity_length = get_prefix_identity_length();
     for (auto& [block_size, prefix_hashes] : m_prefix_hashes) {
         prefix_hashes.resize(std::min(prefix_hashes.size(), identity_length / block_size));
+    }
+    for (auto& [block_size, digests] : m_prefix_digests) {
+        digests.resize(std::min(digests.size(), identity_length / block_size));
     }
 }
 
@@ -129,10 +171,20 @@ size_t Sequence::get_hash(size_t content_length, size_t block_size) {
         cur_content += block_size;
     }
     if (content_length % block_size == 0) {
-        return prefix_hashes[content_length / block_size - 1];
+        const size_t hash = prefix_hashes[content_length / block_size - 1];
+        record_digest(hash, content_length, block_size);
+        return hash;
     }
     
-    return _make_hash(content_length, block_size);
+    const size_t hash = _make_hash(content_length, block_size);
+    record_digest(hash, content_length, block_size);
+    return hash;
+}
+
+void Sequence::record_digest(size_t hash, size_t content_length, size_t block_size) {
+    if (PrefixDigestRegistry::enabled()) {
+        PrefixDigestRegistry::instance().record(hash, get_digest(content_length, block_size));
+    }
 }
 
 size_t Sequence::get_hash(size_t block_size) {

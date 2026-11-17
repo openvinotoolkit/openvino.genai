@@ -726,6 +726,113 @@ TEST(TestKVCacheOffloadCache, PluginStoreWriteIsPrecededByAProbeOfItsChainFromBl
     EXPECT_EQ(events, expected);
 }
 
+namespace {
+
+/// A plugin-like store that is addressed by key and records the keys it is asked about.
+class KeyRecordingStore : public IKVCacheStore {
+public:
+    KeyRecordingStore(std::shared_ptr<IKVCacheStore> inner, std::vector<std::string>& events)
+        : m_inner(std::move(inner)),
+          m_events(events) {}
+
+    static std::string describe(const PrefixKey& key) {
+        return std::to_string(key.hash) + ":" + (key.digest ? std::to_string(key.digest->hi) : "none");
+    }
+    static std::string describe(const std::string& verb, const std::vector<PrefixKey>& keys) {
+        std::string event = verb;
+        for (const PrefixKey& key : keys) {
+            event += " " + describe(key);
+        }
+        return event;
+    }
+
+    bool has_block(size_t hash) const override {
+        return m_inner->has_block(hash);
+    }
+    bool write_block(size_t hash, const std::vector<uint8_t>& data) override {
+        return m_inner->write_block(hash, data);
+    }
+    bool read_block(size_t hash, std::vector<uint8_t>& data) const override {
+        return m_inner->read_block(hash, data);
+    }
+    void drop_block(size_t hash) override {
+        m_inner->drop_block(hash);
+    }
+    std::vector<bool> has_blocks_by_key(const std::vector<PrefixKey>& chain) const override {
+        m_events.push_back(describe("has", chain));
+        return m_inner->has_blocks(hashes_of(chain));
+    }
+    std::vector<bool> write_blocks_by_key(const std::vector<PrefixKey>& keys,
+                                          const std::vector<const std::vector<uint8_t>*>& data) override {
+        m_events.push_back(describe("write", keys));
+        return m_inner->write_blocks(hashes_of(keys), data);
+    }
+    std::vector<bool> read_blocks_by_key(const std::vector<PrefixKey>& keys,
+                                         std::vector<std::vector<uint8_t>>& data) const override {
+        m_events.push_back(describe("read", keys));
+        return m_inner->read_blocks(hashes_of(keys), data);
+    }
+    void drop_block_by_key(const PrefixKey& key) override {
+        m_events.push_back("drop " + describe(key));
+        m_inner->drop_block(key.hash);
+    }
+    size_t get_block_size() const override {
+        return m_inner->get_block_size();
+    }
+    size_t get_capacity_blocks() const override {
+        return m_inner->get_capacity_blocks();
+    }
+    size_t get_num_free_blocks() const override {
+        return m_inner->get_num_free_blocks();
+    }
+    bool is_plugin_backed() const override {
+        return true;
+    }
+
+private:
+    std::shared_ptr<IKVCacheStore> m_inner;
+    std::vector<std::string>& m_events;
+};
+
+}  // namespace
+
+TEST(TestKVCacheOffloadCache, PluginStoreIsAddressedByTheDigestOfEveryBlockItIsAskedAbout) {
+    CacheFixture fixture;
+    std::vector<std::string> events;
+    KVCacheOffloadCache offload_cache(*fixture.cache_manager,
+                                      std::make_unique<KeyRecordingStore>(make_shared_file_store(fixture, 1), events),
+                                      /*max_queued_stores=*/8);
+    // Hashes that no other test uses, so that the process-wide registry holds nothing else for them.
+    constexpr size_t first = 910011;
+    constexpr size_t second = 910022;
+    constexpr size_t unrecorded = 910033;
+    auto& registry = PrefixDigestRegistry::instance();
+    registry.record(first, ContentHash{1, 5001});
+    registry.record(second, ContentHash{1, 5002});
+    fixture.fill_block(0, /*seed=*/3);
+
+    offload_cache.on_prefix_link(first, /*parent_hash=*/0, /*has_parent=*/false);
+    offload_cache.on_prefix_link(second, first, /*has_parent=*/true);
+    offload_cache.on_blocks_overwritten(second, make_block_set(0));
+    offload_cache.flush();
+    EXPECT_EQ(events, (std::vector<std::string>{"has 910011:5001 910022:5002", "write 910022:5002"}));
+
+    events.clear();
+    EXPECT_EQ(offload_cache.probe({first, second}), (std::vector<bool>{false, true}));
+    EXPECT_EQ(events, (std::vector<std::string>{"has 910011:5001 910022:5002"}));
+
+    events.clear();
+    offload_cache.prefetch({second});
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(offload_cache.read(second, restored));
+    EXPECT_EQ(events, (std::vector<std::string>{"read 910022:5002", "read 910022:5002"}));
+
+    // A block the registry does not know is addressed by its hash alone.
+    events.clear();
+    EXPECT_EQ(offload_cache.probe({unrecorded}), (std::vector<bool>{false}));
+    EXPECT_EQ(events, (std::vector<std::string>{"has 910033:none"}));
+}
+
 TEST(TestKVCacheOffloadCache, FileStoreIsNotProbedBeforeWrites) {
     CacheFixture fixture;
     std::vector<std::string> events;

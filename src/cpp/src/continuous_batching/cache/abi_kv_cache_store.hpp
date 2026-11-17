@@ -54,6 +54,15 @@ public:
     std::vector<bool> read_blocks(const std::vector<size_t>& hashes, std::vector<std::vector<uint8_t>>& data) const override;
     void drop_block(size_t hash) override;
 
+    /// These address the plugin by PrefixKey::wire_id(): the 128-bit digest when known, else the size_t hash mirrored
+    /// into both halves. The size_t methods above are the second case.
+    std::vector<bool> has_blocks_by_key(const std::vector<PrefixKey>& chain) const override;
+    std::vector<bool> write_blocks_by_key(const std::vector<PrefixKey>& keys,
+                                          const std::vector<const std::vector<uint8_t>*>& data) override;
+    std::vector<bool> read_blocks_by_key(const std::vector<PrefixKey>& keys,
+                                         std::vector<std::vector<uint8_t>>& data) const override;
+    void drop_block_by_key(const PrefixKey& key) override;
+
     size_t get_block_size() const override;
     size_t get_capacity_blocks() const override;
     size_t get_num_free_blocks() const override;
@@ -85,7 +94,8 @@ private:
     struct ReadBatch;
     struct WriteBatch;
 
-    static OvKVCacheBlockKey make_key(const std::string& group, size_t hash);
+    static OvKVCacheBlockKey make_key(const std::string& group, const PrefixKey& key);
+    static std::vector<PrefixKey> to_keys(const std::vector<size_t>& hashes);
 
     /// Runs one batch to completion. Through the async entry points the batch is waited on for the I/O timeout, then
     /// cancelled and waited on for one more timeout; the status is that of the batch, and CANCELLED means that it

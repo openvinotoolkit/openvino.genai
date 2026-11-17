@@ -17,6 +17,7 @@
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "content_hash.hpp"
 #include "generation_stream.hpp"
 #include "logger.hpp"
 #include "sampling/draft_proposal.hpp"
@@ -77,6 +78,8 @@ class Sequence {
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
     std::unordered_map<size_t, std::vector<int64_t>> m_prefix_hashes;
+    // Digest chain parallel to m_prefix_hashes, filled only while a digest-keyed consumer asks for it.
+    std::unordered_map<size_t, std::vector<ContentHash>> m_prefix_digests;
     size_t m_prefix_publication_limit = std::numeric_limits<size_t>::max();
     std::function<size_t(size_t, size_t)> m_prefix_hash_provider;
     SequenceGroup* m_sequence_group = nullptr;
@@ -93,6 +96,9 @@ class Sequence {
     static constexpr size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
 
     size_t _make_hash(size_t content_length, size_t block_size);
+    ContentHash _make_digest(size_t content_length, size_t block_size);
+    void record_digest(size_t hash, size_t content_length, size_t block_size);
+    void _append_block_content(std::vector<int64_t>& content, size_t block_start_idx, size_t content_length);
     void truncate_prefix_hashes();
 
     static std::vector<int64_t> _reduce_embedding(const std::vector<float>& embedding);
@@ -111,6 +117,7 @@ class Sequence {
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_prefix_hashes(seq.m_prefix_hashes),
+        m_prefix_digests(seq.m_prefix_digests),
         m_prefix_publication_limit(seq.m_prefix_publication_limit),
         m_prefix_hash_provider(seq.m_prefix_hash_provider),
         m_sequence_group(seq.m_sequence_group),
@@ -450,6 +457,10 @@ public:
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length, size_t block_size);
     size_t get_hash(size_t block_size);
+
+    /// @return The 128-bit digest of the same prefix get_hash() identifies, a reproducible function of the prefix
+    /// content alone. It is independent of the size_t hash, which std::hash makes implementation-defined.
+    ContentHash get_digest(size_t content_length, size_t block_size);
 
     /// @return Number of leading positions get_hash() can identify. A stop-string trim can make it smaller
     /// than the number of processed tokens.

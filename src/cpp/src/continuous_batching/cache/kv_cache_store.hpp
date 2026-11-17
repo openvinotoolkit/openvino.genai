@@ -5,9 +5,31 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
+#include "content_hash.hpp"
+
 namespace ov::genai {
+
+/**
+ * @brief Identity of one block for a store: the prefix-cache hash plus, when known, the 128-bit digest behind it.
+ *
+ * A store that keeps blocks beyond this process keys them by the digest, which is wide and reproducible. The size_t
+ * hash is the fallback identity for a block whose digest is unknown, for example one hashed by a hash provider.
+ */
+struct PrefixKey {
+    size_t hash = 0;
+    std::optional<ContentHash> digest;
+
+    /// @return The 128 bits a persistent store addresses the block by.
+    ContentHash wire_id() const {
+        if (digest) {
+            return *digest;
+        }
+        return ContentHash{static_cast<uint64_t>(hash), static_cast<uint64_t>(hash)};
+    }
+};
 
 /**
  * @brief Host-internal, key-addressed interface to a KV/linear-attention cache block store.
@@ -84,6 +106,29 @@ public:
     /// Drops the entry for @p hash, if any. Not an error when missing.
     virtual void drop_block(size_t hash) = 0;
 
+    /// @name Keyed variants
+    /// The same operations, addressing blocks by PrefixKey. A store that cannot use the digest keeps these defaults,
+    /// which address by PrefixKey::hash.
+    /// @{
+    virtual std::vector<bool> has_blocks_by_key(const std::vector<PrefixKey>& chain) const {
+        return has_blocks(hashes_of(chain));
+    }
+
+    virtual std::vector<bool> write_blocks_by_key(const std::vector<PrefixKey>& keys,
+                                                  const std::vector<const std::vector<uint8_t>*>& data) {
+        return write_blocks(hashes_of(keys), data);
+    }
+
+    virtual std::vector<bool> read_blocks_by_key(const std::vector<PrefixKey>& keys,
+                                                 std::vector<std::vector<uint8_t>>& data) const {
+        return read_blocks(hashes_of(keys), data);
+    }
+
+    virtual void drop_block_by_key(const PrefixKey& key) {
+        drop_block(key.hash);
+    }
+    /// @}
+
     /// @return Byte size of one block, as persisted by this store.
     virtual size_t get_block_size() const = 0;
 
@@ -107,6 +152,16 @@ public:
     /// to make room, and any block it stored earlier may be gone by the time it asks for it again.
     virtual bool evicts_itself() const {
         return false;
+    }
+
+protected:
+    static std::vector<size_t> hashes_of(const std::vector<PrefixKey>& keys) {
+        std::vector<size_t> hashes;
+        hashes.reserve(keys.size());
+        for (const PrefixKey& key : keys) {
+            hashes.push_back(key.hash);
+        }
+        return hashes;
     }
 };
 

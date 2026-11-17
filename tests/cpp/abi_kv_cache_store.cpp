@@ -542,6 +542,89 @@ TEST(TestAbiFileStoreProvider, KeysDifferingOnlyInTheHighHalfStayDistinct) {
     opened.vtable->destroy(opened.store);
 }
 
+TEST(TestAbiFileStoreProvider, BlocksOfEqualHashButDifferentDigestsAreDistinctKeys) {
+    auto store = open_store(/*num_blocks=*/4);
+    const PrefixKey first{7, ContentHash{1, 100}};
+    const PrefixKey second{7, ContentHash{1, 200}};
+    const auto first_payload = make_block(1);
+    const auto second_payload = make_block(2);
+
+    EXPECT_EQ(store->write_blocks_by_key({first, second}, {&first_payload, &second_payload}),
+              (std::vector<bool>{true, true}));
+
+    EXPECT_EQ(store->has_blocks_by_key({first, second}), (std::vector<bool>{true, true}));
+    EXPECT_FALSE(store->has_block(7)) << "without a digest the block is addressed by its size_t hash instead";
+
+    std::vector<std::vector<uint8_t>> data;
+    EXPECT_EQ(store->read_blocks_by_key({second, first}, data), (std::vector<bool>{true, true}));
+    EXPECT_EQ(data[0], second_payload);
+    EXPECT_EQ(data[1], first_payload);
+
+    store->drop_block_by_key(first);
+    EXPECT_EQ(store->has_blocks_by_key({first, second}), (std::vector<bool>{false, true}));
+}
+
+TEST(TestAbiFileStoreProvider, ASizeTHashAndItsMirroredDigestAddressTheSameBlock) {
+    auto store = open_store(/*num_blocks=*/4);
+    ASSERT_TRUE(store->write_block(42, make_block(3)));
+
+    // A block without a digest is addressed by the hash mirrored into both halves, which is what write_block uses.
+    EXPECT_EQ(store->has_blocks_by_key({PrefixKey{42, std::nullopt}}), (std::vector<bool>{true}));
+    EXPECT_EQ(store->has_blocks_by_key({PrefixKey{42, ContentHash{42, 42}}}), (std::vector<bool>{true}));
+    EXPECT_EQ(store->has_blocks_by_key({PrefixKey{42, ContentHash{42, 43}}}), (std::vector<bool>{false}));
+}
+
+namespace {
+
+/// Serves a read of one key from the block of another one, the way a store that mixes up keys would.
+struct RedirectHighHalfPlugin {
+    static inline const OvKVCacheStoreVTable* inner = nullptr;
+    static inline uint64_t from_hi = 0;
+    static inline uint64_t to_hi = 0;
+
+    static OvKVCacheStatus read_blocks(void* self, const OvKVCacheStoreReadRequest* r, OvKVCacheStoreReadResult* o, size_t n) {
+        std::vector<OvKVCacheStoreReadRequest> redirected(r, r + n);
+        for (auto& request : redirected) {
+            if (request.key.hash.hi == from_hi) {
+                request.key.hash.hi = to_hi;
+            }
+        }
+        return inner->read_blocks(self, redirected.data(), o, n);
+    }
+};
+
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, TheWitnessBindsABlockToBothHalvesOfItsKey) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    const std::string block_size_str = std::to_string(BLOCK_SIZE);
+    const OvKVCacheProperty properties[] = {{"block_size_bytes", block_size_str.c_str()}};
+    OvKVCacheStoreOpenOptions options{};
+    options.capacity_bytes = BLOCK_SIZE * 4;
+    options.properties = properties;
+    options.property_count = 1;
+    OvKVCacheStoreOpenResult opened{};
+    ASSERT_EQ(provider->vtable->open(provider->self, nullptr, &options, &opened), OV_KVCACHE_OK);
+
+    RedirectHighHalfPlugin::inner = opened.vtable;
+    RedirectHighHalfPlugin::from_hi = 200;
+    RedirectHighHalfPlugin::to_hi = 100;
+    OvKVCacheStoreVTable redirecting = *opened.vtable;
+    redirecting.read_blocks = &RedirectHighHalfPlugin::read_blocks;
+
+    AbiKVCacheStore store(&redirecting, opened.store, "kv", BLOCK_SIZE, 4, AbiKVCacheStore::StoreInfo{});
+    const PrefixKey stored{7, ContentHash{1, 100}};
+    const PrefixKey requested{7, ContentHash{1, 200}};
+    const auto payload = make_block(5);
+    ASSERT_EQ(store.write_blocks_by_key({stored}, {&payload}), (std::vector<bool>{true}));
+
+    std::vector<std::vector<uint8_t>> data;
+    EXPECT_EQ(store.read_blocks_by_key({stored}, data), (std::vector<bool>{true}));
+    EXPECT_EQ(data[0], payload);
+    EXPECT_EQ(store.read_blocks_by_key({requested}, data), (std::vector<bool>{false}))
+        << "a block served for the other key must fail its witness even though the low halves agree";
+}
+
 namespace {
 std::vector<std::pair<OvKVCacheLogLevel, std::string>> g_captured_logs;
 void capture_log(OvKVCacheLogLevel level, const char* message) {

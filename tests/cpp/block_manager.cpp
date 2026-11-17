@@ -10,6 +10,7 @@
 #include "continuous_batching/scheduler.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/runtime/core.hpp"
+#include "prefix_digest_registry.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
 
@@ -622,6 +623,92 @@ TEST(TestBlockManager, SequenceHashRollbackAndForkMatchFreshSequences) {
     EXPECT_EQ(sequence->get_hash(12, 3), original_la_hash);
     EXPECT_EQ(sequence->get_hash(12, 4), fresh_original->get_hash(12, 4));
     EXPECT_EQ(sequence->get_hash(12, 3), fresh_original->get_hash(12, 3));
+}
+
+TEST(TestBlockManager, SequenceDigestChainsThePrefixAndDoesNotDependOnTheCallOrder) {
+    auto group_a = create_sequence_group({0, 1, 2, 3, 4, 5, 6, 7}, 31);
+    auto group_same = create_sequence_group({0, 1, 2, 3, 4, 5, 6, 7}, 32);
+    auto group_other_prefix = create_sequence_group({9, 9, 9, 9, 4, 5, 6, 7}, 33);
+    auto a = group_a->get_running_sequences().at(0);
+    auto same = group_same->get_running_sequences().at(0);
+    auto other_prefix = group_other_prefix->get_running_sequences().at(0);
+
+    // The second block holds the same tokens in both sequences, so only the chained prefix can tell them apart.
+    EXPECT_NE(a->get_digest(8, 4), other_prefix->get_digest(8, 4));
+    EXPECT_NE(a->get_digest(4, 4), other_prefix->get_digest(4, 4));
+    // A partial block has its own digest.
+    EXPECT_NE(a->get_digest(6, 4), a->get_digest(8, 4));
+    EXPECT_NE(a->get_digest(5, 4), a->get_digest(6, 4));
+
+    // Asking for the last block first, then the first one, gives what a fresh sequence gives block by block.
+    EXPECT_EQ(same->get_digest(8, 4), a->get_digest(8, 4));
+    EXPECT_EQ(same->get_digest(4, 4), a->get_digest(4, 4));
+    EXPECT_EQ(same->get_digest(6, 4), a->get_digest(6, 4));
+    EXPECT_EQ(a->get_digest(8, 4), a->get_digest(8, 4));
+
+    // Block sizes do not share digests.
+    EXPECT_NE(a->get_digest(6, 3), a->get_digest(6, 2));
+    EXPECT_THROW(a->get_digest(0, 4), ov::Exception);
+    EXPECT_THROW(a->get_digest(1, 0), ov::Exception);
+}
+
+TEST(TestBlockManager, SequenceDigestRollbackAndForkMatchFreshSequences) {
+    const std::vector<int64_t> prompt = {0, 1, 2, 3};
+    const std::vector<int64_t> original_suffix = {4, 5, 6, 7, 8, 9, 10, 11};
+    const std::vector<int64_t> divergent_suffix = {40, 41, 42, 43, 44};
+    auto sequence_group = create_sequence_group(prompt, 34);
+    auto sequence = sequence_group->get_running_sequences().at(0);
+    for (const int64_t token : original_suffix) {
+        sequence->append_token(token, 0.0f);
+    }
+    const ov::genai::ContentHash original_digest = sequence->get_digest(12, 4);
+    auto forked_sequence = sequence_group->fork_sequence(sequence);
+
+    forked_sequence->remove_last_tokens(5);
+    for (const int64_t token : divergent_suffix) {
+        forked_sequence->append_token(token, 0.0f);
+    }
+
+    std::vector<int64_t> divergent_identity(prompt);
+    divergent_identity.insert(divergent_identity.end(), original_suffix.begin(), original_suffix.begin() + 3);
+    divergent_identity.insert(divergent_identity.end(), divergent_suffix.begin(), divergent_suffix.end());
+    auto fresh_divergent_group = create_sequence_group(divergent_identity, 35);
+    auto fresh_divergent = fresh_divergent_group->get_running_sequences().at(0);
+
+    EXPECT_EQ(forked_sequence->get_digest(12, 4), fresh_divergent->get_digest(12, 4));
+    EXPECT_EQ(forked_sequence->get_digest(12, 3), fresh_divergent->get_digest(12, 3));
+    EXPECT_NE(forked_sequence->get_digest(12, 4), original_digest);
+    EXPECT_EQ(sequence->get_digest(12, 4), original_digest);
+}
+
+TEST(TestBlockManager, PrefixDigestsAreRecordedOnlyWhileALeaseExistsAndNeverChangeTheHash) {
+    // Tokens no other test uses, so that nothing else can have recorded these hashes.
+    const std::vector<int64_t> tokens = {70011, 70012, 70013, 70014, 70015, 70016, 70017, 70018};
+    auto group_without = create_sequence_group(tokens, 36);
+    auto group_with = create_sequence_group(tokens, 37);
+    auto without_lease = group_without->get_running_sequences().at(0);
+    auto with_lease = group_with->get_running_sequences().at(0);
+    auto& registry = ov::genai::PrefixDigestRegistry::instance();
+
+    ASSERT_FALSE(ov::genai::PrefixDigestRegistry::enabled());
+    const size_t hash = without_lease->get_hash(8, 4);
+    EXPECT_FALSE(registry.find(hash).has_value());
+
+    {
+        ov::genai::PrefixDigestRegistry::Lease lease;
+        EXPECT_TRUE(ov::genai::PrefixDigestRegistry::enabled());
+        EXPECT_EQ(with_lease->get_hash(8, 4), hash) << "the in-memory hash must not depend on digest recording";
+        EXPECT_EQ(registry.find(hash), with_lease->get_digest(8, 4));
+        const auto partial_hash = with_lease->get_hash(6, 4);
+        EXPECT_EQ(registry.find(partial_hash), with_lease->get_digest(6, 4));
+
+        const auto found = registry.find_many({hash, partial_hash, 12345});
+        ASSERT_EQ(found.size(), 3u);
+        EXPECT_EQ(found[0], with_lease->get_digest(8, 4));
+        EXPECT_EQ(found[1], with_lease->get_digest(6, 4));
+        EXPECT_FALSE(found[2].has_value());
+    }
+    EXPECT_FALSE(ov::genai::PrefixDigestRegistry::enabled());
 }
 
 TEST(TestBlockManager, SequenceHashEmbeddingRollbackMatchesFreshSequence) {

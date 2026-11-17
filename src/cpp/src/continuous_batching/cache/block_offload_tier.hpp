@@ -24,6 +24,7 @@
 #include "continuous_batching/cache/kv_cache_store.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "logger.hpp"
+#include "prefix_digest_registry.hpp"
 
 namespace ov::genai {
 
@@ -123,6 +124,10 @@ public:
         OPENVINO_ASSERT(m_store->get_block_size() == m_cache_manager.get_block_layout().get_slot_size(),
                         Traits::kKind, " store block size does not match the cache block layout");
         m_track_chains = m_store->is_plugin_backed();
+        if (m_track_chains) {
+            // A store that outlives this process is keyed by the 128-bit digest, which Sequence records on request.
+            m_digest_lease.emplace();
+        }
         m_self_evicting = m_store->evicts_itself();
         m_max_links = std::max<std::size_t>(65536, 8 * m_store->get_capacity_blocks());
         m_known_free_blocks = m_store->get_num_free_blocks();
@@ -173,8 +178,9 @@ public:
         if (!m_track_chains) {
             return;
         }
+        const std::optional<ContentHash> digest = PrefixDigestRegistry::instance().find(hash);
         std::lock_guard<std::mutex> lock(m_mutex);
-        record_link_locked(hash, parent_hash, has_parent);
+        record_link_locked(hash, parent_hash, has_parent, digest);
     }
 
     bool contains(std::size_t hash) const override {
@@ -207,8 +213,19 @@ public:
             reclaim_epoch = m_reclaim_epoch;
         }
         std::vector<bool> in_store(chain.size(), false);
+        // The digests are resolved here, once, and pinned with the chain links below, so later requests for these
+        // blocks name them by the same key even if the registry has moved on.
+        std::vector<std::optional<ContentHash>> digests(chain.size());
+        if (m_digest_lease) {
+            digests = PrefixDigestRegistry::instance().find_many(chain);
+        }
+        std::vector<PrefixKey> keys;
+        keys.reserve(chain.size());
+        for (std::size_t i = 0; i < chain.size(); ++i) {
+            keys.push_back(PrefixKey{chain[i], digests[i]});
+        }
         try {
-            in_store = m_store->has_blocks(chain);
+            in_store = m_store->has_blocks_by_key(keys);
         } catch (const std::exception& error) {
             GENAI_WARN("%s store probe failed: %s", Traits::kKind, error.what());
         }
@@ -229,7 +246,7 @@ public:
             }
             present[i] = stored || m_entries.find(chain[i]) != m_entries.end() || find_queued(chain[i]) != nullptr;
             if (m_track_chains) {
-                record_link_locked(chain[i], i > 0 ? chain[i - 1] : 0, i > 0);
+                record_link_locked(chain[i], i > 0 ? chain[i - 1] : 0, i > 0, digests[i]);
             }
         }
         return present;
@@ -302,6 +319,7 @@ public:
         const std::size_t max_blocks =
             std::max<std::size_t>(1, max_prefetch_bytes / std::max<std::size_t>(1, m_store->get_block_size()));
         std::vector<std::size_t> wanted;
+        std::vector<PrefixKey> wanted_keys;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             for (const std::size_t hash : hashes) {
@@ -315,6 +333,7 @@ public:
                 if (m_self_evicting || m_entries.find(hash) != m_entries.end() ||
                     m_store_hits.find(hash) != m_store_hits.end()) {
                     wanted.push_back(hash);
+                    wanted_keys.push_back(PrefixKey{hash, digest_locked(hash)});
                 }
             }
         }
@@ -327,7 +346,7 @@ public:
         bool read_succeeded = true;
         const auto started = std::chrono::steady_clock::now();
         try {
-            found = m_store->read_blocks(wanted, data);
+            found = m_store->read_blocks_by_key(wanted_keys, data);
         } catch (const std::exception& error) {
             // Nothing was read ahead, so load_into reports these blocks as misses.
             GENAI_WARN("%s prefetch failed: %s", Traits::kKind, error.what());
@@ -367,14 +386,21 @@ public:
      * @return false if @p hash has no entry, in which case @p block_data is left untouched.
      */
     bool read(std::size_t hash, std::vector<uint8_t>& block_data) const {
+        PrefixKey key{hash, std::nullopt};
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             if (const QueuedStore* queued = find_queued(hash)) {
                 block_data = queued->data;
                 return true;
             }
+            key.digest = digest_locked(hash);
         }
-        return m_store->read_block(hash, block_data);
+        std::vector<std::vector<uint8_t>> blocks;
+        if (!m_store->read_blocks_by_key({key}, blocks).at(0)) {
+            return false;
+        }
+        block_data = std::move(blocks[0]);
+        return true;
     }
 
     std::size_t get_num_entries() const {
@@ -405,10 +431,12 @@ private:
     /// A block whose contents are already copied out but not yet on disk.
     struct QueuedStore {
         std::size_t hash = 0;
+        // The 128-bit digest behind hash, when known; a plugin store addresses the block by it.
+        std::optional<ContentHash> digest;
         // The writer thread drops the oldest entry to make room for this block.
         bool needs_reclaim = false;
         // The prefix chain from block 0 up to this block, probed right before the write. Empty when not tracked.
-        std::vector<std::size_t> chain;
+        std::vector<PrefixKey> chain;
         std::vector<uint8_t> data;
     };
 
@@ -416,12 +444,17 @@ private:
     struct ChainLink {
         std::size_t parent = 0;
         bool has_parent = false;
+        std::optional<ContentHash> digest;
     };
 
-    void record_link_locked(std::size_t hash, std::size_t parent, bool has_parent) {
-        const auto [it, inserted] = m_links.try_emplace(hash, ChainLink{parent, has_parent});
+    void record_link_locked(std::size_t hash,
+                            std::size_t parent,
+                            bool has_parent,
+                            const std::optional<ContentHash>& digest) {
+        const auto [it, inserted] = m_links.try_emplace(hash, ChainLink{parent, has_parent, digest});
         if (!inserted) {
-            it->second = ChainLink{parent, has_parent};
+            const std::optional<ContentHash> known = it->second.digest;
+            it->second = ChainLink{parent, has_parent, digest ? digest : known};
             return;
         }
         m_link_order.push_back(hash);
@@ -471,6 +504,7 @@ private:
 
         QueuedStore queued;
         queued.hash = hash;
+        queued.digest = digest_locked(hash);
         queued.needs_reclaim = needs_reclaim;
         if (m_track_chains) {
             queued.chain = chain_to_locked(hash);
@@ -522,17 +556,19 @@ private:
             std::vector<bool> skipped(batch.size(), false);
 
             // Room is made here rather than when queueing, so the plugin is dropped from without any host lock held.
-            std::vector<std::size_t> reclaimed_hashes;
+            std::vector<PrefixKey> reclaimed_keys;
             for (std::size_t i = 0; i < batch.size(); ++i) {
                 if (!batch[i]->needs_reclaim) {
                     continue;
                 }
                 --m_pending_reclaims;
                 // Pausing may have started after the block was queued, and then no entry may be replaced.
-                const std::optional<std::size_t> oldest_hash =
-                    m_reclamation_paused ? std::nullopt : pop_oldest_entry_locked();
-                if (oldest_hash.has_value()) {
-                    reclaimed_hashes.push_back(*oldest_hash);
+                std::optional<PrefixKey> oldest;
+                if (!m_reclamation_paused) {
+                    oldest = pop_oldest_entry_locked();
+                }
+                if (oldest.has_value()) {
+                    reclaimed_keys.push_back(*oldest);
                     ++m_known_free_blocks;
                 } else {
                     skipped[i] = true;
@@ -542,15 +578,15 @@ private:
             bool capacity_rejected = false;
             const auto write_started = std::chrono::steady_clock::now();
             lock.unlock();
-            for (const std::size_t reclaimed_hash : reclaimed_hashes) {
+            for (const PrefixKey& reclaimed : reclaimed_keys) {
                 try {
-                    m_store->drop_block(reclaimed_hash);
+                    m_store->drop_block_by_key(reclaimed);
                 } catch (const std::exception& error) {
-                    GENAI_WARN("%s drop failed for hash %zu: %s", Traits::kKind, reclaimed_hash, error.what());
+                    GENAI_WARN("%s drop failed for hash %zu: %s", Traits::kKind, reclaimed.hash, error.what());
                 }
             }
             try {
-                std::vector<std::size_t> hashes;
+                std::vector<PrefixKey> keys;
                 std::vector<const std::vector<uint8_t>*> data;
                 std::vector<std::size_t> to_write;
                 for (std::size_t i = 0; i < batch.size(); ++i) {
@@ -559,23 +595,23 @@ private:
                     }
                     if (!batch[i]->chain.empty()) {
                         // Every write is preceded by a probe of its chain from block 0, so the store can place the block.
-                        const std::vector<bool> present = m_store->has_blocks(batch[i]->chain);
+                        const std::vector<bool> present = m_store->has_blocks_by_key(batch[i]->chain);
                         // No index here knows what a self-evicting store holds, so the probe also tells whether to skip.
                         already_present[i] = m_self_evicting && !present.empty() && present.back();
                     }
                     if (!already_present[i]) {
                         to_write.push_back(i);
-                        hashes.push_back(batch[i]->hash);
+                        keys.push_back(PrefixKey{batch[i]->hash, batch[i]->digest});
                         data.push_back(&batch[i]->data);
                     }
                 }
                 if (!to_write.empty()) {
-                    const std::vector<bool> written = m_store->write_blocks(hashes, data);
+                    const std::vector<bool> written = m_store->write_blocks_by_key(keys, data);
                     for (std::size_t i = 0; i < to_write.size(); ++i) {
                         stored[to_write[i]] = written[i];
                         if (!written[i]) {
                             capacity_rejected = true;
-                            GENAI_WARN("%s store ran out of capacity after reservation for hash %zu", Traits::kKind, hashes[i]);
+                            GENAI_WARN("%s store ran out of capacity after reservation for hash %zu", Traits::kKind, keys[i].hash);
                         }
                     }
                 }
@@ -603,13 +639,14 @@ private:
             std::size_t num_stored = 0;
             for (std::size_t i = 0; i < batch.size(); ++i) {
                 const std::size_t hash = m_queued_stores.front().hash;
+                const std::optional<ContentHash> digest = m_queued_stores.front().digest;
                 const bool needs_reclaim = m_queued_stores.front().needs_reclaim;
                 m_queued_stores.pop_front();
                 if (already_present[i]) {
                     ++m_statistics.num_already_present;
                 } else if (stored[i]) {
                     ++num_stored;
-                    publish(hash, needs_reclaim);
+                    publish(hash, digest, needs_reclaim);
                 } else {
                     ++m_statistics.num_failed;
                 }
@@ -621,18 +658,32 @@ private:
     }
 
     /// @return The chain from block 0 up to @p hash as far as it is known, in order.
-    std::vector<std::size_t> chain_to_locked(std::size_t hash) const {
-        std::vector<std::size_t> reversed;
+    std::vector<PrefixKey> chain_to_locked(std::size_t hash) const {
+        std::vector<PrefixKey> reversed;
         std::size_t current = hash;
         for (std::size_t steps = 0; steps <= m_links.size(); ++steps) {
-            reversed.push_back(current);
+            reversed.push_back(PrefixKey{current, digest_locked(current)});
             const auto it = m_links.find(current);
             if (it == m_links.end() || !it->second.has_parent) {
                 break;
             }
             current = it->second.parent;
         }
-        return std::vector<std::size_t>(reversed.rbegin(), reversed.rend());
+        return std::vector<PrefixKey>(reversed.rbegin(), reversed.rend());
+    }
+
+    /// @return The digest of @p hash as pinned by a probe, a link or an entry, else what Sequence recorded last.
+    std::optional<ContentHash> digest_locked(std::size_t hash) const {
+        if (!m_digest_lease) {
+            return std::nullopt;
+        }
+        if (const auto link = m_links.find(hash); link != m_links.end() && link->second.digest) {
+            return link->second.digest;
+        }
+        if (const auto entry = m_entries.find(hash); entry != m_entries.end() && entry->second) {
+            return entry->second;
+        }
+        return PrefixDigestRegistry::instance().find(hash);
     }
 
     void remember_store_hit_locked(std::size_t hash) {
@@ -643,19 +694,21 @@ private:
     }
 
     /// Removes the oldest entry from the index. The store still has to drop it, which must happen without a lock.
-    /// @return The hash of the removed entry, or nothing if no entry exists.
-    std::optional<std::size_t> pop_oldest_entry_locked() {
+    /// @return The key of the removed entry, or nothing if no entry exists.
+    std::optional<PrefixKey> pop_oldest_entry_locked() {
         if (m_insertion_order.empty()) {
             return std::nullopt;
         }
         const std::size_t oldest_hash = m_insertion_order.front();
-        OPENVINO_ASSERT(m_entries.find(oldest_hash) != m_entries.end(),
+        const auto entry = m_entries.find(oldest_hash);
+        OPENVINO_ASSERT(entry != m_entries.end(),
                         Traits::kKind, " index and insertion order are out of sync");
+        const PrefixKey key{oldest_hash, entry->second};
         m_insertion_order.pop_front();
-        m_entries.erase(oldest_hash);
+        m_entries.erase(entry);
         ++m_reclaim_epoch;
         m_store_hits.erase(oldest_hash);
-        return oldest_hash;
+        return key;
     }
 
     const QueuedStore* find_queued(std::size_t hash) const {
@@ -667,14 +720,14 @@ private:
         return nullptr;
     }
 
-    void publish(std::size_t hash, bool reclaimed) {
+    void publish(std::size_t hash, const std::optional<ContentHash>& digest, bool reclaimed) {
         if (m_self_evicting) {
             // Nothing to index: the store alone knows whether the block is still there.
             ++m_statistics.num_stored;
             return;
         }
         m_insertion_order.push_back(hash);
-        m_entries.insert(hash);
+        m_entries[hash] = digest;
         ++m_statistics.num_stored;
         if (reclaimed) {
             ++m_statistics.num_replaced;
@@ -688,7 +741,8 @@ private:
 
     CacheManagerT& m_cache_manager;
     std::unique_ptr<IKVCacheStore> m_store;
-    std::unordered_set<std::size_t> m_entries;
+    // Stored blocks this tier knows of, with the digest each was stored under so it can be dropped by the same key.
+    std::unordered_map<std::size_t, std::optional<ContentHash>> m_entries;
     // Hashes the latest probes found in the store; the store itself is never asked about a single block.
     std::unordered_set<std::size_t> m_store_hits;
     // Chain positions of published blocks, kept only for a plugin store, which wants the chain before a write.
@@ -696,6 +750,8 @@ private:
     std::deque<std::size_t> m_link_order;
     std::size_t m_max_links = 0;
     bool m_track_chains = false;
+    // Held for a plugin store, so that Sequence records the digests it is keyed by.
+    std::optional<PrefixDigestRegistry::Lease> m_digest_lease;
     // The store drops blocks by its own policy, so no index of its content is kept here and nothing is reclaimed.
     bool m_self_evicting = false;
     bool m_store_completed_blocks = false;

@@ -45,15 +45,20 @@ struct AbiKVCacheStore::WriteBatch {
 };
 
 namespace {
-// KNOWN LIMITATION: Sequence::_make_hash() (sequence_group.cpp) already folds the full 128-bit
-// ContentHash digest down to a single size_t via XOR before it ever reaches this layer, so the
-// value mirrored into both halves below carries only 64 bits of real identity, not the 128 the
-// wire struct's width implies; distinct digests that fold to the same size_t alias here too.
-// Fixing this requires widening Sequence::get_hash()/the prefix-cache hash maps and the snapshot
-// file format to carry ContentHash end to end, which is out of scope for this change.
-OvKVCacheContentHash to_abi_hash(size_t hash) {
-    return OvKVCacheContentHash{static_cast<uint64_t>(hash), static_cast<uint64_t>(hash)};
+
+// A block whose digest is unknown (see PrefixKey::wire_id) is addressed by its size_t hash mirrored into both halves,
+// which carries only 64 bits of identity. A block with a digest carries all 128.
+OvKVCacheContentHash to_abi_hash(const PrefixKey& key) {
+    const ContentHash id = key.wire_id();
+    return OvKVCacheContentHash{id.lo, id.hi};
 }
+
+// Seed of the witness of a block: both halves of the key, so a block returned for another key fails the check.
+uint64_t witness_seed(const PrefixKey& key) {
+    const ContentHash id = key.wire_id();
+    return id.lo ^ (id.hi * 0x9E3779B97F4A7C15ull);
+}
+
 }  // namespace
 
 AbiKVCacheStore::AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
@@ -105,33 +110,39 @@ AbiKVCacheStore::~AbiKVCacheStore() {
     }
 }
 
-OvKVCacheBlockKey AbiKVCacheStore::make_key(const std::string& group, size_t hash) {
+OvKVCacheBlockKey AbiKVCacheStore::make_key(const std::string& group, const PrefixKey& prefix_key) {
     OvKVCacheBlockKey key{};
     key.group = group.c_str();
     key.group_len = static_cast<uint32_t>(group.size());
-    key.hash = to_abi_hash(hash);
+    key.hash = to_abi_hash(prefix_key);
     return key;
 }
 
-bool AbiKVCacheStore::has_block(size_t hash) const {
-    if (m_abandoned) {
-        return false;
+std::vector<PrefixKey> AbiKVCacheStore::to_keys(const std::vector<size_t>& hashes) {
+    std::vector<PrefixKey> keys;
+    keys.reserve(hashes.size());
+    for (const size_t hash : hashes) {
+        keys.push_back(PrefixKey{hash, std::nullopt});
     }
-    const OvKVCacheBlockKey key = make_key(m_group, hash);
-    uint8_t present = 0;
-    const OvKVCacheStatus status = m_vtable->has_blocks(m_store, &key, &present, 1);
-    OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store has_blocks failed with status ", status);
-    return present != 0;
+    return keys;
+}
+
+bool AbiKVCacheStore::has_block(size_t hash) const {
+    return has_blocks_by_key({PrefixKey{hash, std::nullopt}})[0];
 }
 
 std::vector<bool> AbiKVCacheStore::has_blocks(const std::vector<size_t>& chain) const {
+    return has_blocks_by_key(to_keys(chain));
+}
+
+std::vector<bool> AbiKVCacheStore::has_blocks_by_key(const std::vector<PrefixKey>& chain) const {
     if (chain.empty() || m_abandoned) {
         return std::vector<bool>(chain.size(), false);
     }
     std::vector<OvKVCacheBlockKey> keys;
     keys.reserve(chain.size());
-    for (const size_t hash : chain) {
-        keys.push_back(make_key(m_group, hash));
+    for (const PrefixKey& key : chain) {
+        keys.push_back(make_key(m_group, key));
     }
     std::vector<uint8_t> present(chain.size(), 0);
     const OvKVCacheStatus status = m_vtable->has_blocks(m_store, keys.data(), present.data(), keys.size());
@@ -145,8 +156,13 @@ bool AbiKVCacheStore::write_block(size_t hash, const std::vector<uint8_t>& data)
 
 std::vector<bool> AbiKVCacheStore::write_blocks(const std::vector<size_t>& hashes,
                                                 const std::vector<const std::vector<uint8_t>*>& data) {
-    OPENVINO_ASSERT(hashes.size() == data.size(), "ABI store write_blocks needs one buffer per hash");
-    const size_t count = hashes.size();
+    return write_blocks_by_key(to_keys(hashes), data);
+}
+
+std::vector<bool> AbiKVCacheStore::write_blocks_by_key(const std::vector<PrefixKey>& keys,
+                                                       const std::vector<const std::vector<uint8_t>*>& data) {
+    OPENVINO_ASSERT(keys.size() == data.size(), "ABI store write_blocks needs one buffer per key");
+    const size_t count = keys.size();
     std::vector<bool> written(count, false);
     if (count == 0 || m_abandoned) {
         return written;
@@ -163,10 +179,10 @@ std::vector<bool> AbiKVCacheStore::write_blocks(const std::vector<size_t>& hashe
     for (size_t i = 0; i < count; ++i) {
         OPENVINO_ASSERT(data[i]->size() == m_block_size, "ABI store block size mismatch");
         const std::vector<uint8_t>& source = m_use_async ? batch->owned_data[i] : *data[i];
-        // Seeding with the key's hash binds the witness to the key it was written under, so a store that
+        // Seeding with the key binds the witness to the key it was written under, so a store that
         // returns a different (but internally valid) block for a read of this key is still caught below.
-        batch->digests[i] = compute_content_hash(source.data(), source.size(), static_cast<uint64_t>(hashes[i]));
-        batch->requests[i].key = make_key(batch->group, hashes[i]);
+        batch->digests[i] = compute_content_hash(source.data(), source.size(), witness_seed(keys[i]));
+        batch->requests[i].key = make_key(batch->group, keys[i]);
         batch->requests[i].source = source.data();
         batch->requests[i].bytes = source.size();
         batch->requests[i].witness.data = &batch->digests[i];
@@ -201,7 +217,12 @@ bool AbiKVCacheStore::read_block(size_t hash, std::vector<uint8_t>& data) const 
 
 std::vector<bool> AbiKVCacheStore::read_blocks(const std::vector<size_t>& hashes,
                                                std::vector<std::vector<uint8_t>>& data) const {
-    const size_t count = hashes.size();
+    return read_blocks_by_key(to_keys(hashes), data);
+}
+
+std::vector<bool> AbiKVCacheStore::read_blocks_by_key(const std::vector<PrefixKey>& keys,
+                                                      std::vector<std::vector<uint8_t>>& data) const {
+    const size_t count = keys.size();
     std::vector<bool> found(count, false);
     data.assign(count, {});
     if (count == 0 || m_abandoned) {
@@ -211,7 +232,7 @@ std::vector<bool> AbiKVCacheStore::read_blocks(const std::vector<size_t>& hashes
     // Read into scratch buffers so a not-found or failed read leaves nothing half filled.
     auto batch = std::make_shared<ReadBatch>(m_group, count, m_block_size);
     for (size_t i = 0; i < count; ++i) {
-        batch->requests[i].key = make_key(batch->group, hashes[i]);
+        batch->requests[i].key = make_key(batch->group, keys[i]);
         batch->requests[i].target.kind = OV_KVCACHE_TARGET_HOST;
         batch->requests[i].target.base = batch->scratch[i].data();
         batch->requests[i].target.bytes = batch->scratch[i].size();
@@ -235,14 +256,14 @@ std::vector<bool> AbiKVCacheStore::read_blocks(const std::vector<size_t>& hashes
         OPENVINO_ASSERT(batch->results[i].bytes_read == scratch.size(), "ABI store returned a short read");
 
         const ContentHash expected_witness =
-            compute_content_hash(scratch.data(), scratch.size(), static_cast<uint64_t>(hashes[i]));
+            compute_content_hash(scratch.data(), scratch.size(), witness_seed(keys[i]));
         if (batch->results[i].witness.len != sizeof(expected_witness) ||
             std::memcmp(&expected_witness, &batch->witnesses[i], sizeof(expected_witness)) != 0) {
             // A corrupted or mismatched block is quarantined: dropped from the store and served as a miss, so the
             // request recomputes it instead of failing.
             GENAI_WARN("KV cache store plugin returned a block whose witness does not match; dropping it and "
                        "treating it as a miss");
-            const OvKVCacheBlockKey key = make_key(m_group, hashes[i]);
+            const OvKVCacheBlockKey key = make_key(m_group, keys[i]);
             const OvKVCacheStatus drop_status = m_vtable->drop_blocks(m_store, &key, 1);
             if (drop_status != OV_KVCACHE_OK) {
                 GENAI_WARN("KV cache store plugin could not drop a block that failed its witness check (status %d)",
@@ -327,10 +348,14 @@ OvKVCacheStatus AbiKVCacheStore::run_writes(const std::shared_ptr<WriteBatch>& b
 }
 
 void AbiKVCacheStore::drop_block(size_t hash) {
+    drop_block_by_key(PrefixKey{hash, std::nullopt});
+}
+
+void AbiKVCacheStore::drop_block_by_key(const PrefixKey& prefix_key) {
     if (m_abandoned) {
         return;
     }
-    const OvKVCacheBlockKey key = make_key(m_group, hash);
+    const OvKVCacheBlockKey key = make_key(m_group, prefix_key);
     const OvKVCacheStatus status = m_vtable->drop_blocks(m_store, &key, 1);
     OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store drop_blocks failed with status ", status);
 }
