@@ -761,6 +761,7 @@ class TestQwen3TTSPipelineBase:
         result = genai_qwen3_tts_base_pipe.generate(prompt, **generation_properties)
         genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
 
+        assert result.perf_metrics.get_tokenization_duration().mean > 0
         assert result.output_sample_rate == SAMPLE_RATE, (
             f"GenAI output sample rate mismatch for mode={mode}, language={language}: "
             f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
@@ -1116,34 +1117,56 @@ def test_qwen3_tts_continuous_batching_handle_stop_and_cancel(
 
 
 @pytest.mark.speech_generation
-def test_qwen3_tts_sync_cb_batch_with_shared_ref_audio(
-    tiny_qwen3_tts_base_ov_path: Path,
+@pytest.mark.parametrize(
+    "model_fixture,variant",
+    [
+        pytest.param("tiny_qwen3_tts_base_ov_path", "base-xvector", id="base-xvector"),
+        pytest.param("tiny_qwen3_tts_base_ov_path", "base-icl", id="base-icl"),
+        pytest.param("tiny_qwen3_tts_customvoice_ov_path", "customvoice", id="customvoice"),
+        pytest.param("tiny_qwen3_tts_voicedesign_ov_path", "voice-design", id="voice-design"),
+    ],
+)
+def test_qwen3_tts_sync_pa_batch_variants_and_metrics(
+    request: pytest.FixtureRequest,
+    model_fixture: str,
+    variant: str,
 ):
     language = "English"
+    model_path = request.getfixturevalue(model_fixture)
     prompts = [
         LANGUAGE_TEST_TEXTS[language]["prompt"],
         LANGUAGE_TEST_TEXTS[language]["prompt"] + " Again.",
     ]
+    properties = {
+        "language": language,
+        "do_sample": False,
+        "subtalker_dosample": False,
+        "max_new_tokens": 8,
+        "non_streaming_mode": True,
+    }
+    if variant.startswith("base-"):
+        properties["ref_audio"] = ov.Tensor(_make_ref_audio())
+    if variant == "base-icl":
+        properties["ref_text"] = LANGUAGE_TEST_TEXTS[language]["reference_text"]
+    elif variant == "customvoice":
+        properties["speaker"] = LANGUAGE_TEST_TEXTS[language]["customvoice_speaker"]
+    elif variant == "voice-design":
+        properties["instruct"] = LANGUAGE_TEST_TEXTS[language]["instruct"]
+
     pipe = ov_genai.Text2SpeechPipeline(
-        str(tiny_qwen3_tts_base_ov_path),
+        str(model_path),
         "CPU",
         ATTENTION_BACKEND="PA",
     )
-    result = pipe.generate(
-        prompts,
-        language=language,
-        ref_audio=ov.Tensor(_make_ref_audio()),
-        ref_text=LANGUAGE_TEST_TEXTS[language]["reference_text"],
-        do_sample=False,
-        subtalker_dosample=False,
-        max_new_tokens=8,
-        non_streaming_mode=True,
-    )
+    result = pipe.generate(prompts, **properties)
 
     assert len(result.speeches) == len(prompts)
     assert result.output_sample_rate == SAMPLE_RATE
-    assert result.speaker_embedding
-    assert result.ref_codec_ids
+    assert result.perf_metrics.get_tokenization_duration().mean > 0
+    if variant.startswith("base-"):
+        assert result.speaker_embedding
+    if variant == "base-icl":
+        assert result.ref_codec_ids
     for speech in result.speeches:
         waveform = np.asarray(speech.data, dtype=np.float32).reshape(-1)
         assert waveform.size > 0
@@ -1353,6 +1376,7 @@ class TestQwen3TTSPipelineCustomVoice:
         result = genai_qwen3_tts_customvoice_pipe.generate(**generation_kwargs)
         genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
 
+        assert result.perf_metrics.get_tokenization_duration().mean > 0
         assert result.output_sample_rate == SAMPLE_RATE, (
             f"GenAI CustomVoice sample rate mismatch for language={language}: "
             f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
@@ -1402,6 +1426,7 @@ class TestQwen3TTSPipelineVoiceDesign:
         )
         genai_speech = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
 
+        assert result.perf_metrics.get_tokenization_duration().mean > 0
         assert result.output_sample_rate == SAMPLE_RATE, (
             f"GenAI VoiceDesign sample rate mismatch for language={language}: "
             f"expected={SAMPLE_RATE}, actual={result.output_sample_rate}"
