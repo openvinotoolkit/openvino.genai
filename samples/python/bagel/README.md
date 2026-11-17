@@ -51,5 +51,14 @@ python bagel.py BAGEL-7B-MoT-ov-int4 CPU vqa "What do these images have in commo
 python bagel.py BAGEL-7B-MoT-ov-int4 CPU edit "Put the cat from the first image on the sofa of the second" cat.jpg sofa.jpg
 ```
 
+The images can also be consecutive frames of a video, oldest first, for example from a robot camera. Say in the prompt
+that they are consecutive frames, then ask for the next action (`vqa`) or for the next frame (`edit`, which outputs the
+size of the last frame):
+
+```sh
+python bagel.py BAGEL-7B-MoT-ov-int4 CPU vqa "The images above are consecutive frames from a robot camera, ordered from oldest to newest. The task of the robot is: put the white mug on the left plate. Based on the motion across the frames, what should the robot arm do next? Answer with one short imperative sentence describing only the next action." frame_0.png frame_1.png frame_2.png
+python bagel.py BAGEL-7B-MoT-ov-int4 CPU edit "Generate the next frame of this robot video. In the next frame the robot arm lifts the white mug. Keep the camera viewpoint, the scene and all other objects unchanged." frame_0.png frame_1.png frame_2.png
+```
+
 On NPU the language, vision and VAE models run through NPUW (`NPUW_BAGEL`), which compiles a static variant of a model
 the first time an input size is used, so the first run is slower than the next ones.
