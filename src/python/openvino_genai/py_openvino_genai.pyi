@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'CacheOffloadConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -1234,6 +1234,136 @@ class CacheEvictionConfig:
         ...
     @snapkv_window_size.setter
     def snapkv_window_size(self, arg0: typing.SupportsInt) -> None:
+        ...
+class CacheOffloadConfig:
+    """
+    
+        Configuration of the KV cache disk offload backend.
+    
+        Offloaded blocks are rediscovered through the prefix-cache block hash, so offload requires
+        SchedulerConfig.enable_prefix_caching and is currently not supported together with
+        SchedulerConfig.use_cache_eviction.
+    
+        Parameters:
+        :param kv_cache_dir: existing directory on the SSD where the offloaded KV cache files are stored, which is also the
+            directory a store plugin keeps its files under. When empty, the system temporary directory is used.
+        :type kv_cache_dir: str
+    
+        :param capacity_bytes: upper bound of the offload file size in bytes. The usable slot count is derived from this.
+        :type capacity_bytes: int
+    
+        :param ssd_cache_capacity_gb: upper bound of the SSD space used for the KV cache, in GB. When greater than 0 it
+            takes the place of capacity_bytes, which then has to stay 0.
+        :type ssd_cache_capacity_gb: int
+    
+        :param dram_cache_capacity_gb: upper bound of the DRAM used for the KV cache, in GB. Handed to a store plugin as the
+            dram_cache_capacity_gb property; the in-tree file store has no DRAM tier and ignores it.
+        :type dram_cache_capacity_gb: int
+    
+        :param reuse_ssd_cache: whether a store plugin loads the cache that an earlier run left in kv_cache_dir for the same model
+            (True, default) or purges it when opening the store (False). Handed to the plugin as the reuse_ssd_cache
+            property; the in-tree file store ignores it.
+        :type reuse_ssd_cache: bool
+    
+        :param debug_log_path: directory for the debug logs of a store plugin, handed to it as the debug_log_path property
+            when not empty.
+        :type debug_log_path: str
+    
+        :param linear_attention_capacity_bytes: upper bound of the linear attention state offload file size in bytes,
+            in a separate file from the KV cache offload file. When 0 (default), linear attention cache offload is
+            disabled even if the model has linear attention layers.
+        :type linear_attention_capacity_bytes: int
+    
+        :param buffer_slots: number of staging buffers reserved for transfers.
+        :type buffer_slots: int
+    
+        :param use_page_cache: whether the offload file may go through the OS page cache. Direct I/O is not implemented yet.
+        :type use_page_cache: bool
+    
+        :param store_library_path: path to a third-party KV cache store plugin shared library implementing the ABI
+            declared in openvino/genai/c/kv_cache_store_provider_abi.h. Empty (default) uses the in-tree file store
+            directly, with no plugin ABI involved. Ignored unless allow_untrusted_store_plugin is true.
+        :type store_library_path: str
+    
+        :param store_provider_name: provider name to select from the plugin module. Empty uses the module's first provider.
+        :type store_provider_name: str
+    
+        :param allow_untrusted_store_plugin: must be explicitly set to load store_library_path. Defaults to false so
+            that no third-party code is ever loaded without an explicit opt-in.
+        :type allow_untrusted_store_plugin: bool
+    
+        :param store_properties: plugin-specific key/value settings handed to the store plugin when it opens a store, next
+            to the ones the host always passes (block_size_bytes, device, dram_cache_capacity_gb, reuse_ssd_cache and
+            debug_log_path, which cannot be overridden).
+        :type store_properties: dict[str, str]
+    
+        :param store_completed_blocks: also store every block as soon as the forward pass that completed it has finished
+            (chunk store), instead of only when the block is about to be overwritten. A background thread writes the
+            copied block, so generation does not wait for the store. Defaults to false.
+        :type store_completed_blocks: bool
+    
+        :param store_timeout_ms: longest wait, in milliseconds, for one asynchronous batch of a store plugin. A batch that
+            is not done by then is cancelled and counted as a cache miss. Only plugins that advertise asynchronous I/O
+            can be timed out. Must be greater than 0.
+        :type store_timeout_ms: int
+    """
+    allow_untrusted_store_plugin: bool
+    debug_log_path: str
+    kv_cache_dir: str
+    reuse_ssd_cache: bool
+    store_completed_blocks: bool
+    store_library_path: str
+    store_provider_name: str
+    use_page_cache: bool
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, kv_cache_dir: str = '', capacity_bytes: typing.SupportsInt = 0, buffer_slots: typing.SupportsInt = 2, use_page_cache: bool = True, linear_attention_capacity_bytes: typing.SupportsInt = 0, store_library_path: str = '', store_provider_name: str = '', allow_untrusted_store_plugin: bool = False, store_completed_blocks: bool = False, store_properties: collections.abc.Mapping[str, str] = {}, ssd_cache_capacity_gb: typing.SupportsInt = 0, dram_cache_capacity_gb: typing.SupportsInt = 0, reuse_ssd_cache: bool = True, debug_log_path: str = '', store_timeout_ms: typing.SupportsInt = 10000) -> None:
+        ...
+    def to_string(self) -> str:
+        ...
+    @property
+    def buffer_slots(self) -> int:
+        ...
+    @buffer_slots.setter
+    def buffer_slots(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def capacity_bytes(self) -> int:
+        ...
+    @capacity_bytes.setter
+    def capacity_bytes(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def dram_cache_capacity_gb(self) -> int:
+        ...
+    @dram_cache_capacity_gb.setter
+    def dram_cache_capacity_gb(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def linear_attention_capacity_bytes(self) -> int:
+        ...
+    @linear_attention_capacity_bytes.setter
+    def linear_attention_capacity_bytes(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def ssd_cache_capacity_gb(self) -> int:
+        ...
+    @ssd_cache_capacity_gb.setter
+    def ssd_cache_capacity_gb(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def store_properties(self) -> dict[str, str]:
+        ...
+    @store_properties.setter
+    def store_properties(self, arg0: collections.abc.Mapping[str, str]) -> None:
+        ...
+    @property
+    def store_timeout_ms(self) -> int:
+        ...
+    @store_timeout_ms.setter
+    def store_timeout_ms(self, arg0: typing.SupportsInt) -> None:
         ...
 class ChatHistory:
     """
@@ -4484,10 +4614,12 @@ class SchedulerConfig:
         sparse_attention_config     Sparse attention configuration struct.
     """
     cache_eviction_config: CacheEvictionConfig
+    cache_offload_config: CacheOffloadConfig
     dynamic_split_fuse: bool
     enable_prefix_caching: bool
     sparse_attention_config: SparseAttentionConfig
     use_cache_eviction: bool
+    use_cache_offload: bool
     use_sparse_attention: bool
     def __init__(self) -> None:
         ...
