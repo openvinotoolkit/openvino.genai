@@ -339,6 +339,7 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
         OPENVINO_ASSERT(image_padding_id >= 0, "GGUF LLaVA requires a vocabulary padding token");
         vlm.config.image_token_id = image_padding_id;
         vlm.config.add_eos_token = add_eos_token;
+        vlm.config.image_token_is_placeholder = true;
     }
     if (vlm.find("audio_embeddings")) {
         const auto token = result.tokenizer.encode(vlm.config.audio_token, add_special_tokens(false)).input_ids;

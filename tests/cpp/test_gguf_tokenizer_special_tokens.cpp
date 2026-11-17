@@ -333,6 +333,7 @@ TEST(GGUFMultimodal, LlavaUnknownTextTokensRemainTextEmbeddings) {
     auto models = gemma4_models();
     models.config.model_type = VLMModelType::LLAVA;
     models.config.image_token_id = 6;
+    models.config.image_token_is_placeholder = true;
     InputsEmbedderLLaVA embedder(models, tokenizer, "CPU", {});
     embedder.set_prompt_formatting(PromptFormatting::Raw);
     ov::Tensor pixels(ov::element::f32, {1, 2, 4});
@@ -422,6 +423,7 @@ TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
                     models.config.model_type = VLMModelType::LLAVA;
                     models.config.image_token_id = 3;
                     models.config.add_eos_token = add_eos;
+                    models.config.image_token_is_placeholder = true;
                     TestEmbedder embedder(models, tokenizer, "CPU", {});
                     embedder.set_prompt_formatting(mode == 2 ? PromptFormatting::AlreadyTemplated
                                                              : PromptFormatting::Raw);
