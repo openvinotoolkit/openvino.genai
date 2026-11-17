@@ -5,13 +5,10 @@ import shutil
 import subprocess  # nosec B404
 import sys
 
-from functools import cache
 from pathlib import Path
 from typing import Any, Callable, Dict
 
-from huggingface_hub import snapshot_download
-
-from ov_utils import AtomicDownloadManager, get_ov_cache_dir, retry_request  # noqa
+from ov_utils import AtomicDownloadManager, get_ov_cache_dir, retry_request, snapshot_download_once  # noqa
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -156,14 +153,6 @@ def get_ov_cache_converted_models_dir():
     return get_ov_cache_dir() / "converted_models"
 
 
-@cache
-def hub_snapshot(model: str) -> str:
-    """Local snapshot for a Hub model id: loading by id calls the Hub API on every load."""
-    if Path(model).exists():
-        return model
-    return retry_request(lambda: snapshot_download(model))
-
-
 def convert_text_model(
     model_id: str,
     dir_name: str,
@@ -210,7 +199,7 @@ def convert_model(model_name: str) -> str:
     def convert(temp_path: Path) -> None:
         if "--weight-format" not in convert_args:
             convert_args.extend(["--weight-format", "fp16"])
-        source_model = hub_snapshot(MODELS[model_id]["name"])
+        source_model = snapshot_download_once(MODELS[model_id]["name"])
         command = [
             *_export_tool(source_model),
             "--model",
@@ -268,7 +257,7 @@ def run_wwb(args: list[str], env=None):
     args = list(args)
     for i, arg in enumerate(args[:-1]):
         if arg in ("--base-model", "--target-model"):
-            args[i + 1] = hub_snapshot(str(args[i + 1]))
+            args[i + 1] = snapshot_download_once(str(args[i + 1]))
     command = ["wwb"] + args
     base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
     if env:

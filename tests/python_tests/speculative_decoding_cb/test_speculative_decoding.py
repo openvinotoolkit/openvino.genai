@@ -17,7 +17,6 @@ import numpy as np
 import openvino as ov
 import openvino.properties.hint as hints
 import pytest
-from huggingface_hub import snapshot_download
 from openvino_genai import (
     ContinuousBatchingPipeline,
     GenerationConfig,
@@ -41,7 +40,7 @@ from test_vlm_pipeline import (
 from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.hugging_face import download_and_convert_model, export_with_optimum_cli, sanitize_model_id
-from utils.network import retry_request
+from utils.network import snapshot_download_once
 from utils.ov_genai_pipelines import dict_to_scheduler_config
 
 QWEN3 = "optimum-intel-internal-testing/tiny-random-qwen3"
@@ -97,7 +96,7 @@ def model_pair(request: pytest.FixtureRequest) -> ModelPair:
     draft_path = get_ov_cache_converted_models_dir() / sanitize_model_id(draft)
     AtomicDownloadManager(draft_path).execute(
         lambda temp_path: export_with_optimum_cli(
-            retry_request(lambda: snapshot_download(draft)),
+            snapshot_download_once(draft),
             "text-generation-with-past",
             temp_path,
             trust_remote_code=True,

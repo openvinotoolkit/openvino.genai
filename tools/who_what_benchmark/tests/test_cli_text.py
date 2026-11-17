@@ -12,6 +12,7 @@ from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfi
 
 from test_cli_image import get_similarity
 from conftest import convert_text_model, run_wwb
+from ov_utils import snapshot_download_once
 
 
 logging.basicConfig(level=logging.INFO)
@@ -28,9 +29,8 @@ gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
 
 def _convert_base(model_id, temp_path):
     from optimum.exporters.openvino.convert import export_tokenizer
-    from huggingface_hub import snapshot_download
 
-    model_local = snapshot_download(model_id)
+    model_local = snapshot_download_once(model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_local)
     base_model = OVModelForCausalLM.from_pretrained(model_local)
     base_model.save_pretrained(temp_path)
@@ -40,9 +40,8 @@ def _convert_base(model_id, temp_path):
 
 def _convert_int8(model_id, temp_path):
     from optimum.exporters.openvino.convert import export_tokenizer
-    from huggingface_hub import snapshot_download
 
-    model_local = snapshot_download(model_id)
+    model_local = snapshot_download_once(model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_local)
     target_model = OVModelForCausalLM.from_pretrained(
         model_local, quantization_config=OVWeightQuantizationConfig(bits=8)
@@ -308,9 +307,8 @@ sd_draft_model_id = "xf2022/tiny-random-qwen3-eagle3"
 
 def _convert_draft(model_id, temp_path):
     from optimum.exporters.openvino.convert import export_tokenizer
-    from huggingface_hub import snapshot_download
 
-    model_local = snapshot_download(model_id)
+    model_local = snapshot_download_once(model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_local, trust_remote_code=True)
     base_model = OVModelForCausalLM.from_pretrained(model_local, trust_remote_code=True, ignore_mismatched_sizes=True)
     base_model.save_pretrained(temp_path)

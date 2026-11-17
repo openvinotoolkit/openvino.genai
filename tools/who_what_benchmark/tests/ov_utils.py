@@ -13,7 +13,7 @@ sys.path.append(str(Path(__file__).resolve().parents[3] / "tests" / "python_test
 
 from utils.atomic_download import AtomicDownloadManager  # noqa: E402
 from utils.constants import get_ov_cache_dir  # noqa: E402, F401
-from utils.network import retry_request  # noqa: E402
+from utils.network import retry_request, snapshot_download_once  # noqa: E402, F401
 
 
 def get_hf_cli_command() -> str:

@@ -49,7 +49,6 @@ import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 from optimum.intel.utils.import_utils import is_optimum_version
-from huggingface_hub import snapshot_download
 from openvino_genai import (
     VLMPipeline,
     Tokenizer,
@@ -64,7 +63,7 @@ from openvino_genai import (
     draft_model,
 )
 
-from utils.network import retry_request
+from utils.network import snapshot_download_once, retry_request
 from utils.generation_config import (
     get_beam_search,
     get_multinomial_all_parameters,
@@ -479,7 +478,7 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = retry_request(lambda: snapshot_download(model_id))
+        model_cached = snapshot_download_once(model_id)
         if native_genai_cli_model_type(model_cached) is not None:
             # genai-cli converts the model natively (IRs, tokenizers and processor files) with the transformers
             # version it pins, so the installed transformers and optimum-intel are not involved.
@@ -2175,7 +2174,7 @@ def test_model_tags_representation(
     prompt = "Describe"
 
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    model_cached = snapshot_download_once(model_id)  # required to avoid HF rate limits
     if model_id == "qnguyen3/nanoLLaVA":
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         messages = [{"role": "user", "content": f"{ov_pipe_model.get_media_tag(modality_type)(0)}{prompt}"}]
@@ -2620,8 +2619,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=N
     ov_pipe = ov_pipe_model.pipeline
 
     model_id = ov_pipe_model.model_id
-    model_path = Path(model_id)
-    model_cached = str(model_path) if model_path.is_dir() else snapshot_download(model_id)
+    model_cached = snapshot_download_once(model_id)
     model_path = _get_ov_model(model_id)
     optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
 
