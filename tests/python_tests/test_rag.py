@@ -1184,6 +1184,16 @@ def test_rerank_constructors(rerank_model):
     )
 
 
+@pytest.mark.parametrize("rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
+def test_rerank_empty_documents(rerank_model):
+    pipeline = TextRerankPipeline(rerank_model.models_path, "CPU")
+    with pytest.raises(RuntimeError, match="should not be empty"):
+        pipeline.rerank("query", [])
+    with pytest.raises(RuntimeError, match="should not be empty"):
+        pipeline.start_rerank_async("query", [])
+    assert len(pipeline.rerank("query", ["document"])) == 1
+
+
 @pytest.mark.parametrize("rerank_model", RERANK_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize("query", ["What are the main features of Intel Core Ultra processors?"])
 @pytest.mark.parametrize(
