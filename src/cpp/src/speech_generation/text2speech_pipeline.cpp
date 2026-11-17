@@ -79,6 +79,12 @@ SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
                    "Expected SpeechT5 architecture metadata or Kokoro-specific model layout");
 }
 
+ov::genai::SchedulerConfig get_tts_latency_oriented_scheduler_config() {
+    ov::genai::SchedulerConfig scheduler_config = ov::genai::utils::get_latency_oriented_scheduler_config();
+    scheduler_config.enable_prefix_caching = false;
+    return scheduler_config;
+}
+
 class Qwen3TTSSyncContinuousBatchingAdapter : public ov::genai::Text2SpeechPipelineImpl {
 public:
     Qwen3TTSSyncContinuousBatchingAdapter(const std::filesystem::path& models_path,
@@ -184,7 +190,7 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
         } else if (explicitly_requires_pa) {
             auto [device_properties, scheduler_config] = utils::extract_scheduler_config(
                 pipeline_properties,
-                utils::get_latency_oriented_scheduler_config());
+                get_tts_latency_oriented_scheduler_config());
             m_impl = std::make_shared<Qwen3TTSSyncContinuousBatchingAdapter>(
                 root_dir,
                 device,
@@ -197,7 +203,7 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
                     root_dir,
                     device,
                     pipeline_properties,
-                    utils::get_latency_oriented_scheduler_config());
+                    get_tts_latency_oriented_scheduler_config());
                 std::cout << "[Qwen3-TTS] Selected PA backend (default)." << std::endl;
             } catch (const ov::Exception& exception) {
                 utils::log_paged_attention_fallback(exception);
