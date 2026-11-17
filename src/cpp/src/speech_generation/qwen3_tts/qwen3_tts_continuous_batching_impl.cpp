@@ -157,6 +157,10 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     const std::string& text,
     const ov::Tensor& speaker_embedding,
     const SpeechGenerationConfig& generation_config) {
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        _throw_if_failed();
+    }
     const auto request_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(generation_config.num_return_sequences == 1,
                     "Qwen3-TTS continuous batching does not support beam search / parallel sampling "
