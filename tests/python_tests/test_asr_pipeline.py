@@ -23,10 +23,16 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs, get_default_llm_properties
+from utils.constants import (
+    NPUW_CPU_PROPERTIES,
+    get_ov_cache_converted_models_dir,
+    extra_generate_kwargs,
+    get_default_llm_properties,
+)
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 from typing import Any, Literal
 from difflib import SequenceMatcher
 
@@ -105,7 +111,9 @@ def get_whisper_models_list(tiny_only=False):
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER, attention_backend=None):
+def read_asr_model(
+    params, word_timestamps=False, pipeline_type=PipelineType.WHISPER, attention_backend=None, device="CPU"
+):
     model_id, path = params
     if model_id == QWEN3_ASR_MODEL_ID:
         skip_if_qwen3_asr_package_is_unavailable()
@@ -196,7 +204,11 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
         )
     else:
         pipeline_cls = get_pipeline_cls(pipeline_type)
-        genai_pipe = pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False)
+        if device == "NPU":
+            properties.update(NPUW_CPU_PROPERTIES, MAX_PROMPT_LEN=1024, MIN_RESPONSE_LEN=256)
+        else:
+            properties["ENABLE_MMAP"] = False
+        genai_pipe = pipeline_cls(path, device, **properties)
 
     return (
         model_id,
@@ -417,6 +429,16 @@ QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS = [
     ),
 ]
 
+QWEN3_ASR_NPU_PIPELINE = (QWEN3_ASR_MODEL_ID, PipelineType.ASR, {"device": "NPU"})
+QWEN3_ASR_NPU_MARKS = [pytest.mark.qwen3_asr_npu, pytest.mark.skipif(**should_skip_npuw_tests())]
+QWEN3_ASR_NPU_PARAMS = [
+    pytest.param(
+        QWEN3_ASR_NPU_PIPELINE,
+        id=f"{get_model_pipeline_pair_id(QWEN3_ASR_NPU_PIPELINE)}-NPUW-CPU",
+        marks=QWEN3_ASR_NPU_MARKS,
+    )
+]
+
 
 @pytest.fixture
 def pipelines_fixture(request):
@@ -505,10 +527,43 @@ def test_asr_config_constructor(model_descr, pipeline_type):
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params(
+        [
+            (model_id, pipeline_type)
+            for model_id, _ in get_whisper_models_list(tiny_only=True)
+            for pipeline_type in (PipelineType.WHISPER, PipelineType.ASR)
+        ]
+    )
+    + QWEN3_ASR_NPU_PARAMS,
+    indirect=True,
+)
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-def test_asr_constructors(model_descr, sample_from_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+def test_asr_constructors(pipelines_fixture, sample_from_dataset, tmp_path, request):
+    hf_pipe, genai_pipe, model_id, pipeline_type = pipelines_fixture
+    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+
+    if request.node.get_closest_marker("qwen3_asr_npu"):
+        _, path, _, _ = read_asr_model((model_id, path), pipeline_type=pipeline_type, device="NPU")
+        blob = tmp_path / "qwen3_asr_decoder.blob"
+        audio = np.zeros(3200, dtype=np.float32).tolist()
+        generation = {"language": "English", "max_new_tokens": 8}
+        exported = ov_genai.ASRPipeline(
+            path, "NPU", **NPUW_CPU_PROPERTIES,
+            MAX_PROMPT_LEN=128, MIN_RESPONSE_LEN=64, BLOB_PATH=str(blob), EXPORT_BLOB=True,
+        )
+        expected = exported.generate(audio, **generation)
+        assert blob.is_file()
+        del exported
+        imported = ov_genai.ASRPipeline(
+            path, "NPU", **NPUW_CPU_PROPERTIES,
+            BLOB_PATH=str(blob), WEIGHTS_PATH=str(path / "openvino_decoder_model.bin"),
+        )
+        actual = imported.generate(audio, **generation)
+        assert actual.texts == expected.texts
+        assert actual.languages == expected.languages
+        return
 
     expected = hf_pipe(sample_from_dataset)["text"]
 
@@ -523,10 +578,36 @@ def test_asr_constructors(model_descr, sample_from_dataset, pipeline_type):
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params(
+        [
+            (model_id, pipeline_type)
+            for model_id, _ in get_whisper_models_list(tiny_only=True)
+            for pipeline_type in (PipelineType.WHISPER, PipelineType.ASR)
+        ]
+    )
+    + QWEN3_ASR_NPU_PARAMS,
+    indirect=True,
+)
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+def test_max_new_tokens(pipelines_fixture, sample_from_dataset, request):
+    hf_pipe, genai_pipe, _, _ = pipelines_fixture
+
+    if request.node.get_closest_marker("qwen3_asr_npu"):
+        audio = sample_from_dataset[:3200]
+        expected = genai_pipe.generate(audio, language="English", max_new_tokens=8)
+        config = genai_pipe.get_generation_config()
+        config.language = "English"
+        config.max_new_tokens = 8
+        actual = genai_pipe.generate(audio, config)
+        assert actual.texts == expected.texts
+        assert actual.languages == expected.languages
+        with pytest.raises(RuntimeError, match=r"requested .* new tokens.*KV-cache can accommodate only"):
+            genai_pipe.generate(audio, language="English", max_new_tokens=1_000_000, ignore_eos=True)
+        with pytest.raises(RuntimeError, match="does not support beam search"):
+            genai_pipe.generate(audio, language="English", max_new_tokens=8, num_beams=2)
+        return
 
     expected = hf_pipe(sample_from_dataset, max_new_tokens=10)
 
@@ -1097,12 +1178,13 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
             (FUN_ASR_MODEL_ID, PipelineType.ASR),
         ]
     )
-    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS
+    + QWEN3_ASR_NPU_PARAMS,
     indirect=True,
 )
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_perf_metrics(sample_from_dataset, pipelines_fixture, request):
+def test_perf_metrics(pipelines_fixture, sample_from_dataset, request):
     _, genai_pipe, model_id, pipeline_type = pipelines_fixture
     # Qwen3-ASR split export extracts mel features inside the audio encoding stage.
     has_features_extraction = request.node.get_closest_marker("qwen3_asr_split_export") is None
@@ -1244,10 +1326,11 @@ def streamer_for_test(request):
             (SENSEVOICE_SMALL_TINY_MODEL_ID, PipelineType.ASR),
         ]
     )
-    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
+    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS
+    + QWEN3_ASR_NPU_PARAMS,
     indirect=True,
 )
-def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
+def test_streamers(pipelines_fixture, sample_from_dataset, streamer_for_test):
     _, genai_pipe, model_id, pipeline_type = pipelines_fixture
 
     generate_kwargs = {}
@@ -1302,19 +1385,66 @@ def test_qwen3_asr_streamer_rejects_multi_chunk_audio(pipelines_fixture):
         genai_pipe.generate(audio, language="English", max_new_tokens=1, streamer=lambda subword: False)
 
 
-@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS, indirect=True)
-def test_qwen3_asr_split_multi_chunk_audio(pipelines_fixture):
-    _, genai_pipe, _, _ = pipelines_fixture
-    audio = make_deterministic_audio(1210 * 16000)
+@pytest.mark.parametrize(
+    "pipelines_fixture,audio_case",
+    [
+        pytest.param(param.values[0], "split", id=param.id, marks=param.marks)
+        for param in QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS
+    ]
+    + [
+        pytest.param(
+            QWEN3_ASR_NPU_PIPELINE,
+            audio_case,
+            id=f"{get_model_pipeline_pair_id(QWEN3_ASR_NPU_PIPELINE)}-NPUW-CPU-{audio_case}",
+            marks=QWEN3_ASR_NPU_MARKS,
+        )
+        for audio_case in ("full", "partial", "two-full", "boundary")
+    ],
+    indirect=["pipelines_fixture"],
+)
+def test_qwen3_asr_multi_chunk_audio(pipelines_fixture, audio_case):
+    _, genai_pipe, model_id, pipeline_type = pipelines_fixture
 
-    results = [genai_pipe.generate(audio, language="English", max_new_tokens=4) for _ in range(2)]
+    if audio_case == "split":
+        audio = make_deterministic_audio(1210 * 16000)
+        generation = {"language": "English", "max_new_tokens": 4}
+        expected_encode_calls = 2
+        expected = None
+    else:
+        model_path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+        _, model_path, _, cpu_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type)
+        with open(model_path / "config.json", encoding="utf-8") as file:
+            model_config = json.load(file)
+        with open(model_path / "preprocessor_config.json", encoding="utf-8") as file:
+            preprocessor = json.load(file)
+        if audio_case == "boundary":
+            sampling_rate = preprocessor["sampling_rate"]
+            audio = np.full(66 * sampling_rate, 0.01, dtype=np.float32)
+            audio[62 * sampling_rate : 63 * sampling_rate] = 0.0
+            expected_encode_calls = 2
+            expected = None
+        else:
+            chunk_frames = 2 * model_config["thinker_config"]["audio_config"].get("n_window", 100)
+            factor = {"full": 1.0, "partial": 1.5, "two-full": 2.0}[audio_case]
+            samples = int(chunk_frames * preprocessor["hop_length"] * factor)
+            reference = np.asarray(get_audio_dataset(False)[0], dtype=np.float32)
+            assert reference.size > 0
+            repetitions = (samples + reference.size - 1) // reference.size
+            audio = np.tile(reference, repetitions)[:samples]
+            expected_encode_calls = 1
+            expected = cpu_pipe.generate(audio, language="English", max_new_tokens=8, do_sample=False)
+        generation = {"language": "English", "max_new_tokens": 8, "do_sample": False}
 
-    # Repeated calls must not leak state or metrics between generate() calls.
+    results = [genai_pipe.generate(audio, **generation) for _ in range(2)]
     assert results[0].texts == results[1].texts
+    assert results[0].languages == results[1].languages
+    if expected is not None:
+        assert results[0].texts == expected.texts
+        assert results[0].languages == expected.languages
     for result in results:
         assert len(result.texts) == 1
         asr_raw_metrics = result.perf_metrics.asr_raw_metrics
-        assert len(asr_raw_metrics.encode_inference_durations) == 2
+        assert len(asr_raw_metrics.encode_inference_durations) == expected_encode_calls
         assert len(asr_raw_metrics.decode_inference_durations) > 0
         assert result.perf_metrics.get_inference_duration().mean > 0
 
