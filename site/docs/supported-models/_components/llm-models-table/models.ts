@@ -991,7 +991,7 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
-    architecture: 'NemotronH',
+    architecture: 'NemotronHForCausalLM',
     models: [
       {
         name: 'NemotronH',
