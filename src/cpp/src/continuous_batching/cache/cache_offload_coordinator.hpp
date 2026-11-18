@@ -146,10 +146,7 @@ public:
         const std::lock_guard<std::mutex> warm_lock(m_warm_mutex);
         if (m_kv != nullptr && kv_block_manager != nullptr) {
             KVCacheOffloadCache::ScopedReclamationPause keep_entries(*m_kv);
-            kv_block_manager->warm_prefix_cache(sequence_group,
-                                                *m_kv,
-                                                std::numeric_limits<size_t>::max(),
-                                                begin_device_phase);
+            kv_block_manager->warm_prefix_cache(sequence_group, *m_kv, max_processed_tokens, begin_device_phase);
         }
         if (m_la != nullptr && la_block_manager != nullptr) {
             // A hybrid restore never goes past the last prompt token or the KV prefix that is in memory, so a

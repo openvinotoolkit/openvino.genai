@@ -83,7 +83,7 @@ struct CacheOffloadConfig {
     /**
      * Plugin-specific key/value settings handed to the store plugin when it opens a store, next to the ones the host
      * always passes (`block_size_bytes`, `device`, `dram_cache_capacity_gb`, `reuse_ssd_cache` and `debug_log_path`;
-     * those cannot be overridden). The host does not interpret them.
+     * setting one of those here is rejected, use the matching field instead). The host does not interpret them.
      */
     std::map<std::string, std::string> store_properties;
 

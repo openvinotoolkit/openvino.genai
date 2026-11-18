@@ -114,12 +114,17 @@ std::unique_ptr<IKVCacheStore> make_default_store(const KVCacheDiskLayout& layou
     return std::make_unique<FileKVCacheStore>(std::move(backend));
 }
 
-/// Returns nullptr (after logging why) on any failure - never throws, never falls back itself.
+/// Returns nullptr (after logging why) when the plugin cannot be used, and never falls back itself. Throws on a config error.
 std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& layout,
                                                      const CacheOffloadConfig& config,
                                                      const std::string& device,
                                                      const std::string& group,
                                                      size_t block_tokens) {
+    for (const auto& [key, value] : config.store_properties) {
+        OPENVINO_ASSERT(key != "block_size_bytes" && key != "device" && key != "dram_cache_capacity_gb" &&
+                            key != "reuse_ssd_cache" && key != "debug_log_path",
+                        "KV cache store property '", key, "' is set by the host; use the matching CacheOffloadConfig field");
+    }
     void* handle = load_library(config.store_library_path);
     if (handle == nullptr) {
         GENAI_WARN("Failed to load KV cache store plugin '%s'", config.store_library_path.c_str());
@@ -171,11 +176,6 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
         properties.push_back({"debug_log_path", config.debug_log_path.c_str()});
     }
     for (const auto& [key, value] : config.store_properties) {
-        if (key == "block_size_bytes" || key == "device" || key == "dram_cache_capacity_gb" ||
-            key == "reuse_ssd_cache" || key == "debug_log_path") {
-            GENAI_WARN("KV cache store property '%s' is set by the host and cannot be overridden; ignoring it", key.c_str());
-            continue;
-        }
         properties.push_back({key.c_str(), value.c_str()});
     }
 
@@ -210,7 +210,7 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
     if (result.vtable->struct_bytes < store_sync_end || result.vtable->destroy == nullptr ||
         result.vtable->has_blocks == nullptr || result.vtable->read_blocks == nullptr ||
         result.vtable->write_blocks == nullptr || result.vtable->drop_blocks == nullptr ||
-        result.vtable->stats == nullptr) {
+        result.vtable->flush == nullptr || result.vtable->stats == nullptr) {
         GENAI_WARN("KV cache store plugin '%s' returned a store vtable missing required synchronous entries",
                    config.store_library_path.c_str());
         // destroy itself may sit past struct_bytes in a truncated vtable; only call it when that is not the case.

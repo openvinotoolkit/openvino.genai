@@ -243,31 +243,13 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToRe
     std::filesystem::remove_all(directory);
 }
 
-// The settings the host owns reach the plugin from their own fields, so a store_properties entry cannot undo them.
-TEST(TestStoreRegistry, StorePropertiesCannotOverrideReuseSsdCache) {
-    const std::optional<std::string> library_path = find_sample_plugin_library();
-    if (!library_path.has_value()) {
-        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+// The settings the host owns reach the plugin from their own fields, so naming one in store_properties is an error.
+TEST(TestStoreRegistry, StorePropertiesNamingAHostOwnedSettingAreRejected) {
+    for (const char* key : {"block_size_bytes", "device", "dram_cache_capacity_gb", "reuse_ssd_cache", "debug_log_path"}) {
+        CacheOffloadConfig config = make_config();
+        config.store_library_path = "this_library_does_not_exist_anywhere.dll";
+        config.allow_untrusted_store_plugin = true;
+        config.store_properties = {{key, "x"}};
+        EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv"), ov::Exception) << key;
     }
-
-    const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_reuse_ssd_cache_override_test";
-    std::filesystem::remove_all(directory);
-    CacheOffloadConfig config = make_config();
-    config.kv_cache_dir = directory.string();
-    config.store_library_path = *library_path;
-    config.store_provider_name = "sample-persistent-file";
-    config.allow_untrusted_store_plugin = true;
-    config.store_properties = {{"reuse_ssd_cache", "false"}, {"dram_cache_capacity_gb", "7"}};
-
-    {
-        auto first = open_kv_cache_store(make_layout(), config, "CPU", "kv");
-        ASSERT_NE(first, nullptr);
-        ASSERT_TRUE(first->is_plugin_backed());
-        ASSERT_TRUE(first->write_block(1, make_block(/*seed=*/5)));
-    }
-    auto second = open_kv_cache_store(make_layout(), config, "CPU", "kv");
-    ASSERT_NE(second, nullptr);
-    ASSERT_TRUE(second->is_plugin_backed());
-    EXPECT_TRUE(second->has_block(1));
-    std::filesystem::remove_all(directory);
 }

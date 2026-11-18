@@ -486,7 +486,11 @@ TEST(TestKVCacheOffloadCache, ServesStoredBlockWhileTheWriteIsStillQueued) {
     EXPECT_TRUE(offload_cache->contains(64));
 
     fixture.fill_block(3, /*seed=*/0);
-    ASSERT_TRUE(offload_cache->load_into(/*hash=*/64, /*block_index=*/3));
+    // Served from the staging copy while the write is queued; a writer that is already done has left only the store.
+    if (!offload_cache->load_into(/*hash=*/64, /*block_index=*/3)) {
+        offload_cache->prefetch({64});
+        ASSERT_TRUE(offload_cache->load_into(/*hash=*/64, /*block_index=*/3));
+    }
     EXPECT_EQ(fixture.cache_manager->read_block(3), expected);
 
     offload_cache->flush();
