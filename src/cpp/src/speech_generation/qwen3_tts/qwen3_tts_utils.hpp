@@ -34,7 +34,11 @@ constexpr const char* CODE_PREDICTOR_NAME = "openvino_code_predictor_model.xml";
 constexpr const char* CODEC_ENCODER_NAME = "openvino_codec_encoder.xml";
 
 // Constants used for static-window decoder chunking (NPU/GPU).
-constexpr int64_t DECODER_CHUNK_SIZE = 231;      // effective (non-overlapping) codes fed per chunk
+// The static window is sized for audio streaming: the default streaming schedule needs
+// audio_chunk_frames (32) + audio_chunk_left_context_frames (100) = 132 frames. Measured on GPU/NPU, decode
+// latency is linear in the window, so this is ~2x cheaper per call than the previous 256 window, and the
+// offline path below only pays ~10% more decoder work per second of audio.
+constexpr int64_t DECODER_CHUNK_SIZE = 107;      // effective (non-overlapping) codes fed per chunk (offline path)
 constexpr int64_t DECODER_LEFT_CONTEXT = 25;     // prior-chunk codes prepended for continuity
 constexpr int64_t DECODER_WINDOW_LEN = DECODER_CHUNK_SIZE + DECODER_LEFT_CONTEXT;  // static decoder window
 constexpr int64_t DECODER_BLEND_FRAMES = 13;      // middle region of DECODER_LEFT_CONTEXT that is cross-faded.

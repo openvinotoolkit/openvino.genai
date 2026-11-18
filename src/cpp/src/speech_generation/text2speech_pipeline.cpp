@@ -15,6 +15,7 @@
 #include "kokoro_tts_model.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_audio_streaming.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_continuous_batching_pipeline_impl.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_model.hpp"
 #include "speecht5_tts_model.hpp"
@@ -100,6 +101,19 @@ public:
     ov::genai::Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                                   const ov::Tensor& speaker_embedding,
                                                   const ov::genai::SpeechGenerationConfig& generation_config) override {
+        return generate(texts, speaker_embedding, generation_config, std::monostate{});
+    }
+
+    ov::genai::Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                                  const ov::Tensor& speaker_embedding,
+                                                  const ov::genai::SpeechGenerationConfig& generation_config,
+                                                  const ov::genai::OmniSpeechStreamerVariant& streamer) override {
+        using namespace ov::genai::qwen3_tts;
+        // end() must run exactly once on every exit path, including validation errors below.
+        SpeechStreamerEndGuard streamer_guard(streamer);
+        const bool streaming = is_speech_streamer_active(streamer);
+        OPENVINO_ASSERT(!streaming || texts.size() == 1,
+                        "Audio output streaming supports exactly one input text per generate() call.");
         ov::genai::Text2SpeechDecodedResults result;
         result.output_sample_rate = m_cb_impl->get_output_sample_rate();
 
@@ -115,11 +129,66 @@ public:
         for (const auto& text : texts) {
             const uint64_t request_id = m_next_request_id.fetch_add(1, std::memory_order_relaxed);
             handles.push_back(
-                m_cb_impl->add_request(request_id, text, shared_speaker_embedding, shared_generation_config));
+                streaming ? m_cb_impl->add_streaming_request(request_id, text, shared_speaker_embedding,
+                                                             shared_generation_config)
+                          : m_cb_impl->add_request(request_id, text, shared_speaker_embedding,
+                                                   shared_generation_config));
         }
+
+        // Streaming: deliver chunks to the user's streamer on this thread between scheduler steps.
+        std::vector<float> streamed_samples;
+        ov::Tensor streamed_speaker_embedding, streamed_ref_codec_ids;
+        bool stopped_by_streamer = false;
+        auto drain_stream = [&]() {
+            auto& handle = handles.front();
+            while (!stopped_by_streamer && handle->can_read()) {
+                auto chunk = handle->read();
+                if (chunk.speaker_embedding) streamed_speaker_embedding = chunk.speaker_embedding;
+                if (chunk.ref_codec_ids) streamed_ref_codec_ids = chunk.ref_codec_ids;
+                const size_t n = chunk.waveform ? chunk.waveform.get_size() : 0;
+                if (n == 0) {
+                    continue;
+                }
+                const float* data = chunk.waveform.data<const float>();
+                streamed_samples.insert(streamed_samples.end(), data, data + n);
+                ov::Tensor out(ov::element::f32, ov::Shape{1, 1, n});
+                std::copy(data, data + n, out.data<float>());
+                if (write_to_speech_streamer(streamer, out) != ov::genai::StreamingStatus::RUNNING) {
+                    stopped_by_streamer = true;
+                    handle->stop();  // keep stepping below so the scheduler releases the request
+                }
+            }
+        };
 
         while (m_cb_impl->has_non_finished_requests()) {
             m_cb_impl->step();
+            if (streaming) {
+                drain_stream();
+            }
+        }
+        if (streaming) {
+            drain_stream();
+            streamer_guard.end();
+            auto& handle = handles.front();
+            OPENVINO_ASSERT(handle->get_status() != ov::genai::GenerationStatus::IGNORED,
+                            "Qwen3-TTS request ran out of KV-cache memory. "
+                            "Increase SchedulerConfig.cache_size or reduce the batch size.");
+            ov::Tensor wav(ov::element::f32, ov::Shape{streamed_samples.size()});
+            std::copy(streamed_samples.begin(), streamed_samples.end(), wav.data<float>());
+            const auto request_metrics = handle->get_perf_metrics();
+            result.perf_metrics.num_generated_samples += wav.get_size();
+            result.perf_metrics.raw_metrics.tokenization_durations.insert(
+                result.perf_metrics.raw_metrics.tokenization_durations.end(),
+                request_metrics.raw_metrics.tokenization_durations.begin(),
+                request_metrics.raw_metrics.tokenization_durations.end());
+            result.speeches.push_back(std::move(wav));
+            result.speaker_embedding = streamed_speaker_embedding;
+            result.ref_codec_ids = streamed_ref_codec_ids;
+            result.perf_metrics.raw_metrics.generate_durations.emplace_back(
+                ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - generation_start));
+            result.perf_metrics.evaluate_statistics();
+            m_perf_metrics = result.perf_metrics;
+            return result;
         }
 
         for (auto& handle : handles) {
@@ -223,7 +292,18 @@ Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::s
     SpeechGenerationConfig request_config = m_speech_gen_config;
     request_config.update_generation_config(properties);
     request_config.validate();
-    return m_impl->generate(texts, speaker_embedding, request_config);
+    // Audio streamer may be passed as the `speech_streamer` property.
+    return m_impl->generate(texts, speaker_embedding, request_config, utils::get_speech_streamer_from_map(properties));
+}
+
+Text2SpeechDecodedResults Text2SpeechPipeline::generate(
+    const std::vector<std::string>& texts,
+    const ov::Tensor& speaker_embedding,
+    const std::optional<SpeechGenerationConfig>& generation_config,
+    const OmniSpeechStreamerVariant& streamer) {
+    const SpeechGenerationConfig request_config = generation_config.has_value() ? *generation_config : m_speech_gen_config;
+    request_config.validate();
+    return m_impl->generate(texts, speaker_embedding, request_config, streamer);
 }
 
 Text2SpeechDecodedResults Text2SpeechPipeline::generate(

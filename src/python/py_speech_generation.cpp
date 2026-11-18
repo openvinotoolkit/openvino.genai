@@ -110,6 +110,23 @@ auto speech_generation_config_docstring = R"(
     :param ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
     :type ref_codec_ids: openvino.Tensor
 
+    Qwen3-TTS audio output streaming (only used when ``speech_streamer`` is passed to ``generate``).
+    One codec frame is 1920 samples (80 ms at 24 kHz).
+    :param audio_first_chunk_frames: size of the first streamed chunk in codec frames. It alone determines
+                                     time-to-first-audio. Following chunks double in size until they reach
+                                     ``audio_chunk_frames``. Must be >= 1. Default 4.
+    :type audio_first_chunk_frames: int
+
+    :param audio_chunk_frames: largest streamed chunk in codec frames. Set equal to
+                               ``audio_first_chunk_frames`` for fixed-size chunks. Must be >= 1. Default 32.
+    :type audio_chunk_frames: int
+
+    :param audio_chunk_left_context_frames: earlier codec frames decoded together with each chunk (their samples
+                                            are dropped) so chunk seams match a full decode. The codec decoder
+                                            has a 72-frame sliding-window attention, so values >= ~72 are
+                                            needed to closely match a full decode. Default 100.
+    :type audio_chunk_left_context_frames: int
+
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -162,6 +179,15 @@ auto text_to_speech_generate_docstring = R"(
     :param generation_config: speech generation configuration override
     :type generation_config: SpeechGenerationConfig or None
 
+    :param speech_streamer: Qwen3-TTS only. Callback or OmniSpeechStreamerBase that receives audio chunks
+                            (float32 ov.Tensor of shape [1, 1, N], 24 kHz) while generation is running.
+                            The callback may return StreamingStatus (or bool: True stops generation) to stop
+                            or cancel early. Streaming supports a single input text per call. The full
+                            waveform is still returned in the result. Chunk sizes are controlled by
+                            ``audio_first_chunk_frames``, ``audio_chunk_frames`` and
+                            ``audio_chunk_left_context_frames``.
+    :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] | OmniSpeechStreamerBase | None
+
     :param kwargs: arbitrary keyword arguments with keys corresponding to SpeechGenerationConfig fields.
     :type kwargs: dict
 
@@ -190,6 +216,7 @@ py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
                                             const std::vector<std::string>& texts,
                                             py::object speaker_embedding,
                                             const std::optional<SpeechGenerationConfig>& generation_config,
+                                            const pyutils::PyBindOmniSpeechStreamerVariant& py_speech_streamer,
                                             const py::kwargs& kwargs) {
     // TTS config should be initialized from generation_config.json in case of only kwargs provided.
     // If full config was provided then rely on it as a base config.
@@ -201,10 +228,12 @@ py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
                                                 ov::Tensor() :
                                                 speaker_embedding.cast<ov::Tensor>();
 
+    const auto speech_streamer = pyutils::py_speech_streamer_to_streamer(py_speech_streamer);
+
     ov::genai::Text2SpeechDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res = pipe.generate(texts, speaker_embedding_tensor, updated_config);
+        res = pipe.generate(texts, speaker_embedding_tensor, updated_config, speech_streamer);
     }
     return py::cast(res);
 }
@@ -263,6 +292,9 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("ref_text", &SpeechGenerationConfig::ref_text)
         .def_readwrite("ref_audio", &SpeechGenerationConfig::ref_audio)
         .def_readwrite("ref_codec_ids", &SpeechGenerationConfig::ref_codec_ids)
+        .def_readwrite("audio_first_chunk_frames", &SpeechGenerationConfig::audio_first_chunk_frames)
+        .def_readwrite("audio_chunk_frames", &SpeechGenerationConfig::audio_chunk_frames)
+        .def_readwrite("audio_chunk_left_context_frames", &SpeechGenerationConfig::audio_chunk_left_context_frames)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -307,12 +339,14 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::string& text,
                py::object speaker_embedding,
                const std::optional<SpeechGenerationConfig>& generation_config,
+               const pyutils::PyBindOmniSpeechStreamerVariant& speech_streamer,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
                 return call_text2speech_common_generate(
                     pipe,
                     std::vector<std::string>{text},
                     speaker_embedding,
                     generation_config,
+                    speech_streamer,
                     kwargs);
             },
             py::arg("text"),
@@ -321,6 +355,8 @@ void init_speech_generation_pipeline(py::module_& m) {
             "vector representing the unique characteristics of a speaker's voice.",
             py::arg("generation_config") = std::nullopt,
             "generation_config",
+            py::arg("speech_streamer") = std::monostate(),
+            "optional callback or OmniSpeechStreamerBase receiving audio chunks during generation (Qwen3-TTS only).",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def(
@@ -329,8 +365,10 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::vector<std::string>& texts,
                py::object speaker_embedding,
                const std::optional<SpeechGenerationConfig>& generation_config,
+               const pyutils::PyBindOmniSpeechStreamerVariant& speech_streamer,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                return call_text2speech_common_generate(pipe, texts, speaker_embedding, generation_config, kwargs);
+                return call_text2speech_common_generate(
+                    pipe, texts, speaker_embedding, generation_config, speech_streamer, kwargs);
             },
             py::arg("texts"),
             "a list of input texts for which to generate speeches.",
@@ -338,6 +376,8 @@ void init_speech_generation_pipeline(py::module_& m) {
             "vector representing the unique characteristics of a speaker's voice.",
             py::arg("generation_config") = std::nullopt,
             "generation_config",
+            py::arg("speech_streamer") = std::monostate(),
+            "optional callback or OmniSpeechStreamerBase receiving audio chunks during generation (Qwen3-TTS only).",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)

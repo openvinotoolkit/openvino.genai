@@ -26,6 +26,12 @@ public:
                                        const std::string& text,
                                        const ov::Tensor& speaker_embedding,
                                        const SpeechGenerationConfig& generation_config) override;
+    // Like add_request(), but the handle receives audio incrementally: each SpeechGenerationHandle::read()
+    // returns the chunk(s) decoded since the previous read (chunking per generation_config.audio_chunk_*).
+    SpeechGenerationHandle add_streaming_request(uint64_t request_id,
+                                                 const std::string& text,
+                                                 const ov::Tensor& speaker_embedding,
+                                                 const SpeechGenerationConfig& generation_config);
     void prepare_shared_voice_inputs(ov::Tensor& speaker_embedding,
                                     SpeechGenerationConfig& generation_config);
 

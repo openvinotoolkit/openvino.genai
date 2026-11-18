@@ -1245,6 +1245,67 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer(const std::vecto
     return chunks_audio;
 }
 
+std::vector<float> Qwen3TTSCodecEngine::decode_speech_chunk(const std::vector<int64_t>& codes,
+                                                            size_t begin_frame,
+                                                            size_t end_frame,
+                                                            size_t left_context_frames) {
+    OPENVINO_ASSERT(begin_frame <= end_frame, "decode_speech_chunk: begin_frame must not exceed end_frame");
+    OPENVINO_ASSERT(codes.size() % m_decoder_num_quantizers == 0 &&
+                        end_frame * m_decoder_num_quantizers <= codes.size(),
+                    "decode_speech_chunk: frame range is outside the provided codes");
+    const size_t chunk_frames = end_frame - begin_frame;
+    if (chunk_frames == 0) {
+        return {};
+    }
+
+    size_t ctx = std::min(begin_frame, left_context_frames);
+    size_t padded_len = chunk_frames + ctx;
+    if (m_decoder_static) {
+        const size_t window = static_cast<size_t>(DECODER_WINDOW_LEN);
+        // The decoder's sliding-window attention is 72 frames: never trade more context than that away to
+        // fit a chunk. A chunk too large for the window is decoded in pieces instead.
+        constexpr size_t kMinUsefulContext = 72;
+        const size_t max_piece = window - std::min({left_context_frames, kMinUsefulContext, window - 1});
+        if (chunk_frames > max_piece) {
+            std::vector<float> samples;
+            samples.reserve(chunk_frames * m_decoder_upsample);
+            for (size_t b = begin_frame; b < end_frame; b += max_piece) {
+                auto piece = decode_speech_chunk(codes, b, std::min(b + max_piece, end_frame), left_context_frames);
+                samples.insert(samples.end(), piece.begin(), piece.end());
+            }
+            return samples;
+        }
+        ctx = std::min(ctx, window - chunk_frames);
+        padded_len = window;
+    }
+    const size_t span = ctx + chunk_frames;
+    const size_t src_frame0 = begin_frame - ctx;
+
+    ov::Tensor audio_codes(ov::element::i64, ov::Shape{1, m_decoder_num_quantizers, padded_len});
+    int64_t* dst = audio_codes.data<int64_t>();
+    if (padded_len != span) {
+        std::fill_n(dst, m_decoder_num_quantizers * padded_len, int64_t{0});
+    }
+    const int64_t* src = codes.data() + src_frame0 * m_decoder_num_quantizers;
+    for (size_t t = 0; t < span; ++t) {
+        for (size_t q = 0; q < m_decoder_num_quantizers; ++q) {
+            dst[q * padded_len + t] = src[t * m_decoder_num_quantizers + q];
+        }
+    }
+
+    m_speech_tokenizer_decoder.set_tensor("audio_codes", audio_codes);
+    run_and_time([&]{ m_speech_tokenizer_decoder.infer(); }, roles::SPEECH_TOKENIZER_DECODER, m_perf_ms, m_perf_calls);
+    const auto out = m_speech_tokenizer_decoder.get_tensor("waveform");
+    OPENVINO_ASSERT(out.get_element_type() == ov::element::f32, "Speech tokenizer decoder output is expected to be f32");
+
+    const size_t offset = ctx * m_decoder_upsample;
+    const size_t count = chunk_frames * m_decoder_upsample;
+    OPENVINO_ASSERT(offset + count <= out.get_size(),
+                    "Speech tokenizer decoder produced fewer samples than the chunk's real code length");
+    const float* out_ptr = out.data<const float>();
+    return std::vector<float>(out_ptr + offset, out_ptr + offset + count);
+}
+
 std::vector<bool> Qwen3TTSCodecEngine::compute_suppress_tokens() const {
     std::vector<bool> suppress_tokens(m_ids.talker_vocab_size, false);
     const size_t suppress_begin = m_ids.talker_vocab_size > 1024 ? (m_ids.talker_vocab_size - 1024) : 0;

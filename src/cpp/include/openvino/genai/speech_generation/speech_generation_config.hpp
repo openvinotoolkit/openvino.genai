@@ -104,6 +104,22 @@ public:
     // Expected shape: [T, G] or [1, T, G].
     ov::Tensor ref_codec_ids;
 
+    // Audio output streaming (Qwen3-TTS). Only used when a speech streamer is passed to generate().
+    // One codec frame is 1920 samples (80 ms at 24 kHz).
+    //
+    // Chunk schedule: the first chunk has `audio_first_chunk_frames` frames, and every following chunk
+    // doubles in size until it reaches `audio_chunk_frames`. The first chunk alone determines
+    // time-to-first-audio, while the larger later chunks amortize the left-context re-decode cost.
+    // Set both to the same value for fixed-size chunks.
+    size_t audio_first_chunk_frames = 4;
+    size_t audio_chunk_frames = 32;
+
+    // Number of earlier codec frames decoded together with each streamed chunk (their samples are
+    // dropped) so chunk seams see the history a full decode would. The codec decoder has a
+    // 72-frame sliding-window attention, so values >= ~72 are needed to closely match a full decode;
+    // 0 decodes every chunk alone (audible seams). Costs decoder work per chunk, see the schedule above.
+    size_t audio_chunk_left_context_frames = 100;
+
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
     template <typename... Properties>
@@ -133,6 +149,10 @@ static constexpr ov::Property<bool> subtalker_dosample{"subtalker_dosample"};
 static constexpr ov::Property<uint32_t> subtalker_top_k{"subtalker_top_k"};
 static constexpr ov::Property<float> subtalker_top_p{"subtalker_top_p"};
 static constexpr ov::Property<float> subtalker_temperature{"subtalker_temperature"};
+
+static constexpr ov::Property<size_t> audio_first_chunk_frames{"audio_first_chunk_frames"};
+static constexpr ov::Property<size_t> audio_chunk_frames{"audio_chunk_frames"};
+static constexpr ov::Property<size_t> audio_chunk_left_context_frames{"audio_chunk_left_context_frames"};
 
 static constexpr ov::Property<std::string> ref_text{"ref_text"};
 static constexpr ov::Property<ov::Tensor> ref_audio{"ref_audio"};

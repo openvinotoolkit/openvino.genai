@@ -29,6 +29,16 @@ SpeechGenerationHandle Qwen3TTSContinuousBatchingPipelineImpl::add_request(uint6
     return handle;
 }
 
+SpeechGenerationHandle Qwen3TTSContinuousBatchingPipelineImpl::add_streaming_request(
+    uint64_t request_id,
+    const std::string& text,
+    const ov::Tensor& speaker_embedding,
+    const SpeechGenerationConfig& generation_config) {
+    auto handle = m_impl->add_speech_request(request_id, text, speaker_embedding, generation_config, true);
+    m_impl->report_perf_if_drained();
+    return handle;
+}
+
 void Qwen3TTSContinuousBatchingPipelineImpl::prepare_shared_voice_inputs(
     ov::Tensor& speaker_embedding,
     SpeechGenerationConfig& generation_config) {

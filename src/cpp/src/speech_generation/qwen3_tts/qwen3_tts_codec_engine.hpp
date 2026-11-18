@@ -147,6 +147,20 @@ public:
 
     std::vector<float> decode_speech_tokenizer(const std::vector<int64_t>& codes);
 
+    // Streaming decode: converts frames [begin_frame, end_frame) of the frame-major `codes`
+    // ([T, num_quantizers] flattened) into samples. Up to `left_context_frames` earlier frames are
+    // decoded as history and their samples dropped, so the result has exactly
+    // (end_frame - begin_frame) * upsample samples. Only left context is used (no look-ahead and no
+    // rewriting of earlier output), so every returned sample is final. On the static (NPU/GPU)
+    // decoder the context is clamped to fit the fixed window and the tail is zero-padded.
+    std::vector<float> decode_speech_chunk(const std::vector<int64_t>& codes,
+                                           size_t begin_frame,
+                                           size_t end_frame,
+                                           size_t left_context_frames);
+    size_t decoder_samples_per_frame() const {
+        return m_decoder_upsample;
+    }
+
     std::vector<bool> compute_suppress_tokens() const;
     std::vector<int64_t> make_speaker_and_codec_prefill_ids(const std::string& language,
                                                             const std::string& speaker) const;

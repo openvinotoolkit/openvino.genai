@@ -39,6 +39,9 @@ SpeechGenerationConfig::SpeechGenerationConfig(const std::filesystem::path& json
         read_json_param(data, "subtalker_top_p", subtalker_top_p);
         read_json_param(data, "subtalker_temperature", subtalker_temperature);
         read_json_param(data, "ref_text", ref_text);
+        read_json_param(data, "audio_first_chunk_frames", audio_first_chunk_frames);
+        read_json_param(data, "audio_chunk_frames", audio_chunk_frames);
+        read_json_param(data, "audio_chunk_left_context_frames", audio_chunk_left_context_frames);
     }
     validate();
 }
@@ -62,6 +65,9 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
     read_anymap_param(config_map, "subtalker_top_p", subtalker_top_p);
     read_anymap_param(config_map, "subtalker_temperature", subtalker_temperature);
     read_anymap_param(config_map, "ref_text", ref_text);
+    read_anymap_param(config_map, "audio_first_chunk_frames", audio_first_chunk_frames);
+    read_anymap_param(config_map, "audio_chunk_frames", audio_chunk_frames);
+    read_anymap_param(config_map, "audio_chunk_left_context_frames", audio_chunk_left_context_frames);
     read_anymap_param(config_map, "ref_audio", ref_audio);
     read_anymap_param(config_map, "ref_codec_ids", ref_codec_ids);
 
@@ -70,6 +76,8 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
 
 void SpeechGenerationConfig::validate() const {
     OPENVINO_ASSERT(speed > 0.0f, "speed must be positive");
+    OPENVINO_ASSERT(audio_first_chunk_frames >= 1, "audio_first_chunk_frames must be >= 1");
+    OPENVINO_ASSERT(audio_chunk_frames >= 1, "audio_chunk_frames must be >= 1");
     OPENVINO_ASSERT(minlenratio >= 0.0f, "minlenratio must be non-negative");
     OPENVINO_ASSERT(maxlenratio > minlenratio, "maxlenratio must be greater than minlenratio");
     OPENVINO_ASSERT(0.0f <= threshold && threshold <= 1.0f, "threshold must be in the range [0; 1]");

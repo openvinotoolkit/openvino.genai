@@ -13,6 +13,7 @@
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "sequence_group.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_audio_streaming.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_codec_engine.hpp"
 #include "speech_generation/speech_generation_stream.hpp"
 
@@ -43,7 +44,8 @@ public:
     SpeechGenerationHandle add_speech_request(uint64_t request_id,
                                               const std::string& text,
                                               const ov::Tensor& speaker_embedding,
-                                              const SpeechGenerationConfig& generation_config);
+                                              const SpeechGenerationConfig& generation_config,
+                                              bool stream_audio = false);
     void prepare_shared_voice_inputs(ov::Tensor& speaker_embedding,
                                     SpeechGenerationConfig& generation_config);
 
@@ -69,6 +71,10 @@ private:
         ov::Tensor trailing_text_hidden;
         ov::Tensor ref_codec_ids;
         std::vector<int64_t> all_codes;
+        // Set only for audio-streaming requests: decodes finished chunks as frames arrive and pushes
+        // them to `stream` (consumed incrementally via SpeechGenerationHandle::read()).
+        std::optional<qwen3_tts::AudioChunker> chunker;
+        size_t streamed_samples = 0;
         SpeechGenerationStream::Ptr stream;
     };
 
@@ -77,6 +83,7 @@ private:
                            const Sequence::Ptr& sequence,
                            RequestState& state,
                            const std::vector<int64_t>* generated_groups = nullptr);
+    void push_audio_chunk(RequestState& state, const std::vector<float>& samples);
     void finalize_request(const SequenceGroup::Ptr& sequence_group, RequestState& state);
 
     Qwen3TTSCodecEngine m_engine;

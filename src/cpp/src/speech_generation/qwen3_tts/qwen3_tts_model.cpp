@@ -6,6 +6,7 @@
 #include <chrono>
 
 #include "openvino/genai/perf_metrics.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_audio_streaming.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_utils.hpp"
 #include "utils.hpp"
 
@@ -85,6 +86,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
                                                             const ov::Tensor& trailing_text_hidden,
                                                             const SpeechGenerationConfig& generation_config,
                                                             const std::vector<bool>& suppress_tokens,
+                                                            const OmniSpeechStreamerVariant& streamer,
                                                             const ov::Tensor& ref_codec_ids,
                                                             std::optional<MicroSeconds> tokenization_duration) {
     Text2SpeechDecodedResults result;
@@ -123,6 +125,27 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     std::mt19937 subtalker_rng(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed)
                                                              : std::random_device{}());
     size_t absolute_pos = talker_prefill.get_shape()[1];
+
+    // Audio output streaming: decode codec frames in small chunks while the talker keeps running.
+    const bool streaming = is_speech_streamer_active(streamer);
+    std::optional<AudioChunker> chunker;
+    std::vector<float> streamed_waveform;
+    bool stopped_by_streamer = false;
+    if (streaming) {
+        chunker.emplace(m_engine,
+                        generation_config.audio_first_chunk_frames,
+                        generation_config.audio_chunk_frames,
+                        generation_config.audio_chunk_left_context_frames,
+                        ref_codec_ids);
+    }
+    auto emit_chunk = [&](const std::vector<float>& samples) {
+        if (samples.empty()) {
+            return StreamingStatus::RUNNING;
+        }
+        streamed_waveform.insert(streamed_waveform.end(), samples.begin(), samples.end());
+        return write_to_speech_streamer(streamer, make_chunk_tensor(samples));
+    };
+
     for (size_t step = 0; step < max_steps; ++step) {
         int64_t token = m_engine.sample_token_from_logits(logits, generation_config, generated_main, suppress_tokens, talker_rng);
         if (token == m_engine.ids().codec_eos_token_id) {
@@ -135,6 +158,16 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
 
         auto groups = m_engine.generate_codec_groups(past_hidden, token, generation_config, subtalker_rng);
         all_codes.insert(all_codes.end(), groups.begin(), groups.end());
+        if (chunker) {
+            chunker->push_frame(groups);
+            if (chunker->chunk_ready()) {
+                const auto status = emit_chunk(chunker->take_pending());
+                if (status != StreamingStatus::RUNNING) {
+                    stopped_by_streamer = true;
+                    break;
+                }
+            }
+        }
 
         auto token_embed = m_engine.infer_embedding(m_engine.talker_embedding(), groups[0]);
         OPENVINO_ASSERT(token_embed.get_shape().size() == 3 && token_embed.get_shape()[2] == hidden,
@@ -184,9 +217,14 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         ++absolute_pos;
     }
 
-    auto waveform = ref_codec_ids
-        ? m_engine.decode_speech_tokenizer_with_reference(ref_codec_ids, all_codes)
-        : m_engine.decode_speech_tokenizer(all_codes);
+    if (chunker && !stopped_by_streamer) {
+        emit_chunk(chunker->take_pending());  // flush the tail
+    }
+
+    auto waveform = streaming
+        ? std::move(streamed_waveform)
+        : (ref_codec_ids ? m_engine.decode_speech_tokenizer_with_reference(ref_codec_ids, all_codes)
+                         : m_engine.decode_speech_tokenizer(all_codes));
 
     ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
     if (!waveform.empty()) {
@@ -205,7 +243,12 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
 
 Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>& texts,
                                                  const ov::Tensor& speaker_embedding,
-                                                 const SpeechGenerationConfig& generation_config) {
+                                                 const SpeechGenerationConfig& generation_config,
+                                                 const OmniSpeechStreamerVariant& streamer) {
+    // Constructed first so end() is called exactly once on every exit path, including validation errors.
+    SpeechStreamerEndGuard streamer_guard(streamer);
+    OPENVINO_ASSERT(!is_speech_streamer_active(streamer) || texts.size() == 1,
+                    "Audio output streaming supports exactly one input text per generate() call.");
     Text2SpeechDecodedResults result;
     result.output_sample_rate = m_engine.output_sample_rate();
 
@@ -290,7 +333,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         result.ref_codec_ids = resolved_ref_code;
 
         for (const auto& text : texts) {
-            auto decoded = generate_voice_clone(text, prompt, generation_config);
+            auto decoded = generate_voice_clone(text, prompt, generation_config, streamer);
             result.speeches.insert(result.speeches.end(), decoded.speeches.begin(), decoded.speeches.end());
             result.perf_metrics.num_generated_samples += decoded.perf_metrics.num_generated_samples;
             result.perf_metrics.raw_metrics.tokenization_durations.insert(
@@ -322,7 +365,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
                                               language, speaker, base_model);
 
         auto decoded = decode_from_prefill(prefill.talker_prefill, prefill.tts_pad, prefill.trailing_text_hidden,
-                                          generation_config, suppress_tokens);
+                                          generation_config, suppress_tokens, streamer);
         result.speeches.insert(result.speeches.end(), decoded.speeches.begin(), decoded.speeches.end());
         result.perf_metrics.num_generated_samples += decoded.perf_metrics.num_generated_samples;
     }
@@ -339,7 +382,8 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
 
 Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& text,
                                                              const Qwen3VoiceClonePrompt& prompt,
-                                                             const SpeechGenerationConfig& generation_config) {
+                                                             const SpeechGenerationConfig& generation_config,
+                                                             const OmniSpeechStreamerVariant& streamer) {
     std::vector<bool> suppress_tokens = m_engine.compute_suppress_tokens();
     const auto voice_clone_prefill = m_engine.build_voice_clone_prefill(text,
                                                                         prompt.ref_text,
@@ -351,6 +395,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
                                voice_clone_prefill.prefill.trailing_text_hidden,
                                generation_config,
                                suppress_tokens,
+                               streamer,
                                voice_clone_prefill.ref_codec_ids,
                                voice_clone_prefill.tokenization_duration);
 }

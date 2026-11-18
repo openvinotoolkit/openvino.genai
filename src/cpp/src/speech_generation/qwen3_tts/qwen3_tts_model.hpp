@@ -34,7 +34,14 @@ public:
 
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding,
-                                       const SpeechGenerationConfig& generation_config) override;
+                                       const SpeechGenerationConfig& generation_config) override {
+        return generate(texts, speaker_embedding, generation_config, std::monostate{});
+    }
+
+    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                       const ov::Tensor& speaker_embedding,
+                                       const SpeechGenerationConfig& generation_config,
+                                       const OmniSpeechStreamerVariant& streamer) override;
 
     ov::Shape get_speaker_embedding_shape() const override;
 
@@ -46,13 +53,15 @@ private:
 
     Text2SpeechDecodedResults generate_voice_clone(const std::string& text,
                                                    const Qwen3VoiceClonePrompt& prompt,
-                                                   const SpeechGenerationConfig& generation_config);
+                                                   const SpeechGenerationConfig& generation_config,
+                                                   const OmniSpeechStreamerVariant& streamer);
 
     Text2SpeechDecodedResults decode_from_prefill(const ov::Tensor& talker_prefill,
                                                   const ov::Tensor& tts_pad,
                                                   const ov::Tensor& trailing_text_hidden,
                                                   const SpeechGenerationConfig& generation_config,
                                                   const std::vector<bool>& suppress_tokens,
+                                                  const OmniSpeechStreamerVariant& streamer,
                                                   const ov::Tensor& ref_codec_ids = ov::Tensor{},
                                                   std::optional<MicroSeconds> tokenization_duration = std::nullopt);
 

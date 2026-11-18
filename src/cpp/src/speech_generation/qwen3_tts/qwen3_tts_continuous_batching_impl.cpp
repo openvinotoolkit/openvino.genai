@@ -158,7 +158,8 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     uint64_t request_id,
     const std::string& text,
     const ov::Tensor& speaker_embedding,
-    const SpeechGenerationConfig& generation_config) {
+    const SpeechGenerationConfig& generation_config,
+    bool stream_audio) {
     {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         _throw_if_failed();
@@ -307,6 +308,13 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     state.trailing_text_hidden = prefill.trailing_text_hidden;
     state.ref_codec_ids = effective_ref_codec_ids;
     state.stream = SpeechGenerationStream::create();
+    if (stream_audio) {
+        state.chunker.emplace(m_engine,
+                              generation_config.audio_first_chunk_frames,
+                              generation_config.audio_chunk_frames,
+                              generation_config.audio_chunk_left_context_frames,
+                              effective_ref_codec_ids);
+    }
     SpeechGenerationStream::Ptr stream = state.stream;
 
     m_request_state.emplace(request_id, std::move(state));
@@ -535,6 +543,12 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_fra
 
     const std::vector<int64_t>& groups = *generated_groups;
     state.all_codes.insert(state.all_codes.end(), groups.begin(), groups.end());
+    if (state.chunker) {
+        state.chunker->push_frame(groups);
+        if (state.chunker->chunk_ready()) {
+            push_audio_chunk(state, state.chunker->take_pending());
+        }
+    }
 
     auto token_embed = m_engine.infer_embedding(m_engine.talker_embedding(), groups[0]);
     float* token_embed_ptr = token_embed.data<float>();
@@ -569,12 +583,33 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_fra
     sequence->append_position_ids(make_position_ids_decode(position_id));
 }
 
+void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::push_audio_chunk(RequestState& state,
+                                                                                  const std::vector<float>& samples) {
+    if (samples.empty()) {
+        return;
+    }
+    SpeechGenerationOutput chunk;
+    chunk.waveform = ov::Tensor(ov::element::f32, ov::Shape{samples.size()});
+    std::copy(samples.begin(), samples.end(), chunk.waveform.data<float>());
+    chunk.output_sample_rate = m_engine.output_sample_rate();
+    state.streamed_samples += samples.size();
+    state.stream->push(std::move(chunk));
+}
+
 void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_request(
     const SequenceGroup::Ptr& sequence_group,
     RequestState& state) {
-    auto waveform = state.ref_codec_ids
-        ? m_engine.decode_speech_tokenizer_with_reference(state.ref_codec_ids, state.all_codes)
-        : m_engine.decode_speech_tokenizer(state.all_codes);
+    // Streaming requests have already delivered everything but the tail; the final output carries
+    // only that tail, so the concatenation of all reads equals the full waveform.
+    std::vector<float> waveform;
+    if (state.chunker) {
+        waveform = state.chunker->take_pending();
+        state.streamed_samples += waveform.size();
+    } else {
+        waveform = state.ref_codec_ids
+            ? m_engine.decode_speech_tokenizer_with_reference(state.ref_codec_ids, state.all_codes)
+            : m_engine.decode_speech_tokenizer(state.all_codes);
+    }
 
     ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
     if (!waveform.empty()) {
@@ -589,7 +624,7 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
     output.ref_codec_ids = state.ref_codec_ids;
 
     SpeechGenerationPerfMetrics perf_metrics;
-    perf_metrics.num_generated_samples = wav_tensor.get_size();
+    perf_metrics.num_generated_samples = state.chunker ? state.streamed_samples : wav_tensor.get_size();
     perf_metrics.num_prefix_cache_hit_tokens = sequence_group->get_num_prefix_cache_hit_tokens();
     perf_metrics.raw_metrics.generate_durations.emplace_back(
         PerfMetrics::get_microsec(std::chrono::steady_clock::now() - state.start_time));

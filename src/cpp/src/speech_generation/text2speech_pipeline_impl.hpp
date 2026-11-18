@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
@@ -24,6 +25,17 @@ public:
     virtual Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                                const ov::Tensor& speaker_embedding,
                                                const SpeechGenerationConfig& generation_config) = 0;
+
+    /// @brief Streaming variant: audio chunks are delivered to `streamer` while generation runs.
+    /// Backends without audio-streaming support reject an active streamer.
+    virtual Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                               const ov::Tensor& speaker_embedding,
+                                               const SpeechGenerationConfig& generation_config,
+                                               const OmniSpeechStreamerVariant& streamer) {
+        OPENVINO_ASSERT(std::holds_alternative<std::monostate>(streamer),
+                        "Audio output streaming is not supported by this text-to-speech backend.");
+        return generate(texts, speaker_embedding, generation_config);
+    }
 
     virtual SpeechGenerationPerfMetrics get_performance_metrics();
 

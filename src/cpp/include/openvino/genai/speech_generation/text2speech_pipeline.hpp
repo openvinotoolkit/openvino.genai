@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 
@@ -118,6 +119,34 @@ public:
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        const std::optional<SpeechGenerationConfig>& generation_config = std::nullopt);
+
+    /**
+     * Generates speech for a single text and streams audio chunks to `streamer` while generation is running.
+     *
+     * Each chunk is a float32 PCM tensor of shape [1, 1, N] at `output_sample_rate`. Chunk size and decoder
+     * history are controlled by `SpeechGenerationConfig::audio_chunk_frames` and
+     * `audio_chunk_left_context_frames`. The streamer is called on the thread that runs generate().
+     * Returning StreamingStatus::STOP or CANCEL from the streamer ends generation early; audio already
+     * streamed is kept in the result. `OmniSpeechStreamerBase::end()` is always called exactly once.
+     * The returned result still contains the full concatenated waveform.
+     * @param text input text for which to generate speech
+     * @param speaker_embedding Optional speaker embedding tensor
+     * @param generation_config Optional speech generation configuration override
+     * @param streamer callback or OmniSpeechStreamerBase receiving audio chunks
+     * @note Streaming is currently supported for Qwen3-TTS only.
+     */
+    Text2SpeechDecodedResults generate(const std::string& text,
+                                       const ov::Tensor& speaker_embedding,
+                                       const std::optional<SpeechGenerationConfig>& generation_config,
+                                       const OmniSpeechStreamerVariant& streamer) {
+        return generate(std::vector<std::string>{text}, speaker_embedding, generation_config, streamer);
+    }
+
+    /// Streaming variant for a list of texts; streaming currently requires exactly one text.
+    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                       const ov::Tensor& speaker_embedding,
+                                       const std::optional<SpeechGenerationConfig>& generation_config,
+                                       const OmniSpeechStreamerVariant& streamer);
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
