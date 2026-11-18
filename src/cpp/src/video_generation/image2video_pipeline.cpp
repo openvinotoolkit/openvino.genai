@@ -3,32 +3,45 @@
 
 #include "openvino/genai/video_generation/image2video_pipeline.hpp"
 #include "json_utils.hpp"
+#include "video_generation/ltx2_pipeline.hpp"
 #include "video_generation/ltx_pipeline.hpp"
 
 using namespace ov::genai;
 
+namespace {
+
+void check_image2video_model(const std::filesystem::path& models_path, const std::string& class_name) {
+    OPENVINO_ASSERT(class_name == "LTXPipeline" || class_name == "LTX2Pipeline",
+                    "Unsupported image to video generation pipeline '", class_name,
+                    "'. Expected an LTX-Video or LTX-2 model.");
+    OPENVINO_ASSERT(std::filesystem::exists(models_path / "vae_encoder"),
+                    "Image2VideoPipeline requires a 'vae_encoder' directory in ",
+                    models_path,
+                    ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
+}
+
+}  // namespace
+
 Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& model_path) {
     const std::string class_name = utils::get_class_name(model_path);
-    OPENVINO_ASSERT(class_name == "LTXPipeline",
-                    "Unsupported image to video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
-    OPENVINO_ASSERT(std::filesystem::exists(model_path / "vae_encoder"),
-                    "Image2VideoPipeline requires a 'vae_encoder' directory in ",
-                    model_path,
-                    ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
-    m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::IMAGE_2_VIDEO, model_path);
+    check_image2video_model(model_path, class_name);
+    if (class_name == "LTX2Pipeline") {
+        m_impl = std::make_shared<LTX2Pipeline>(VideoPipelineType::IMAGE_2_VIDEO, model_path);
+    } else {
+        m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::IMAGE_2_VIDEO, model_path);
+    }
 }
 
 Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& models_path,
                                           const std::string& device,
                                           const ov::AnyMap& properties) {
     const std::string class_name = utils::get_class_name(models_path);
-    OPENVINO_ASSERT(class_name == "LTXPipeline",
-                    "Unsupported image to video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
-    OPENVINO_ASSERT(std::filesystem::exists(models_path / "vae_encoder"),
-                    "Image2VideoPipeline requires a 'vae_encoder' directory in ",
-                    models_path,
-                    ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
-    m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::IMAGE_2_VIDEO, models_path, device, properties);
+    check_image2video_model(models_path, class_name);
+    if (class_name == "LTX2Pipeline") {
+        m_impl = std::make_shared<LTX2Pipeline>(VideoPipelineType::IMAGE_2_VIDEO, models_path, device, properties);
+    } else {
+        m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::IMAGE_2_VIDEO, models_path, device, properties);
+    }
 }
 
 Image2VideoPipeline::Image2VideoPipeline(std::shared_ptr<VideoPipeline> impl) : m_impl(std::move(impl)) {}
@@ -78,6 +91,12 @@ VideoGenerationResult Image2VideoPipeline::generate(const ov::Tensor& image,
                                                      const std::string& positive_prompt,
                                                      const ov::AnyMap& properties) {
     return m_impl->generate(image, positive_prompt, properties);
+}
+
+VideoGenerationResult Image2VideoPipeline::generate(const std::vector<VideoCondition>& images,
+                                                     const std::string& positive_prompt,
+                                                     const ov::AnyMap& properties) {
+    return m_impl->generate(nullptr, images, positive_prompt, properties);
 }
 
 VideoGenerationResult Image2VideoPipeline::decode(const ov::Tensor& latent) {

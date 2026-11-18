@@ -77,6 +77,20 @@ AutoencoderKLLTX2Video::AutoencoderKLLTX2Video(const std::filesystem::path& vae_
     compile(device, properties);
 }
 
+AutoencoderKLLTX2Video::AutoencoderKLLTX2Video(const std::filesystem::path& vae_encoder_path,
+                                               const std::filesystem::path& vae_decoder_path)
+    : AutoencoderKLLTX2Video(vae_decoder_path) {
+    m_encoder_model = utils::singleton_core().read_model(vae_encoder_path / "openvino_model.xml");
+}
+
+AutoencoderKLLTX2Video::AutoencoderKLLTX2Video(const std::filesystem::path& vae_encoder_path,
+                                               const std::filesystem::path& vae_decoder_path,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties)
+    : AutoencoderKLLTX2Video(vae_encoder_path, vae_decoder_path) {
+    compile(device, properties);
+}
+
 AutoencoderKLLTX2Video::AutoencoderKLLTX2Video(const AutoencoderKLLTX2Video&) = default;
 
 AutoencoderKLLTX2Video AutoencoderKLLTX2Video::clone() {
@@ -90,8 +104,60 @@ AutoencoderKLLTX2Video AutoencoderKLLTX2Video::clone() {
     } else {
         cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
     }
+    if (m_encoder_model) {
+        cloned.m_encoder_model = m_encoder_model->clone();
+    } else if (m_encoder_request) {
+        cloned.m_encoder_request = m_encoder_request.get_compiled_model().create_infer_request();
+    }
 
     return cloned;
+}
+
+bool AutoencoderKLLTX2Video::has_encoder() const {
+    return m_encoder_model != nullptr || static_cast<bool>(m_encoder_request);
+}
+
+ov::Tensor AutoencoderKLLTX2Video::encode(const ov::Tensor& sample) {
+    OPENVINO_ASSERT(has_encoder(),
+                    "AutoencoderKLLTX2Video was created without a VAE encoder. Pass 'vae_encoder_path' to the constructor.");
+    OPENVINO_ASSERT(m_encoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
+
+    m_encoder_request.set_input_tensor(sample);
+    m_encoder_request.infer();
+
+    const ov::Tensor output = m_encoder_request.get_output_tensor();
+    const ov::Shape output_shape = output.get_shape();
+    OPENVINO_ASSERT(output_shape.size() == 5, "VAE encoder output expected to be [B, C, F, H, W]");
+    OPENVINO_ASSERT(output.get_element_type() == ov::element::f32,
+                    "VAE encoder output expected to be f32, got ", output.get_element_type());
+    const std::string output_name = m_encoder_request.get_compiled_model().output(0).get_any_name();
+    const size_t channels = m_config.latent_channels;
+    if (output_name == "latent_parameters") {
+        // [mean, logvar] along the channels; the mean is the mode diffusers conditions on ('argmax')
+        OPENVINO_ASSERT(output_shape[1] == 2 * channels,
+                        "VAE encoder 'latent_parameters' expected ", 2 * channels, " channels, got ", output_shape[1]);
+    } else {
+        OPENVINO_ASSERT(output_shape[1] == channels,
+                        "VAE encoder output expected ", channels, " channels, got ", output_shape[1]);
+    }
+
+    const size_t batch = output_shape[0];
+    const size_t spatial = output_shape[2] * output_shape[3] * output_shape[4];
+    ov::Tensor latent(ov::element::f32, {batch, channels, output_shape[2], output_shape[3], output_shape[4]});
+    const float* src = output.data<const float>();
+    float* dst = latent.data<float>();
+    const auto& mean = m_config.latents_mean_data;
+    const auto& std_data = m_config.latents_std_data;
+    for (size_t b = 0; b < batch; ++b) {
+        for (size_t c = 0; c < channels; ++c) {
+            const float* in = src + (b * output_shape[1] + c) * spatial;
+            float* out = dst + (b * channels + c) * spatial;
+            for (size_t i = 0; i < spatial; ++i) {
+                out[i] = (in[i] - mean[c]) * m_config.scaling_factor / std_data[c];
+            }
+        }
+    }
+    return latent;
 }
 
 const AutoencoderKLLTX2Video::Config& AutoencoderKLLTX2Video::get_config() const {
@@ -104,6 +170,14 @@ AutoencoderKLLTX2Video& AutoencoderKLLTX2Video::compile(const std::string& devic
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Auto encoder KL LTX2 video decoder model");
     m_decoder_request = compiled_model.create_infer_request();
     m_decoder_model.reset();
+
+    if (m_encoder_model) {
+        ov::CompiledModel encoder = utils::singleton_core().compile_model(m_encoder_model, device, properties);
+        ov::genai::utils::print_compiled_model_properties(encoder, "Auto encoder KL LTX2 video encoder model");
+        OPENVINO_ASSERT(encoder.outputs().size() == 1, "AutoencoderKLLTX2Video encoder model is expected to have a single output");
+        m_encoder_request = encoder.create_infer_request();
+        m_encoder_model.reset();
+    }
 
     return *this;
 }

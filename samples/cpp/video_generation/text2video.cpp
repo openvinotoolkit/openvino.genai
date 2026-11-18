@@ -36,6 +36,9 @@ int main(int32_t argc, char* argv[]) try {
         ov::genai::callback(progress_bar),
         ov::genai::frame_rate(frame_rate),
         ov::genai::guidance_scale(3)
+        // LTX-2.5 can rewrite a short prompt into the detailed description it was trained on, with the prompt
+        // enhancer it ships (off by default). To opt in:
+        // , ov::genai::enable_prompt_enhancement(true)
     );
 
     save_video("genai_video.avi", output.video, frame_rate);

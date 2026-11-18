@@ -344,6 +344,7 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
              py::arg("height"),
              py::arg("width"),
              py::arg("audio_num_frames"),
+             py::arg("per_frame_timestep") = false,
              R"(
                 Reshapes the model for specific input dimensions.
                 batch_size (int): Batch size.
@@ -351,6 +352,8 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
                 height (int): Video height.
                 width (int): Video width.
                 audio_num_frames (int): Number of audio latent frames.
+                per_frame_timestep (bool): Size the timestep for one value per latent frame, as image and video
+                    conditioning pass it.
             )")
         .def("set_hidden_states",
              &ov::genai::LTX2VideoTransformer3DModel::set_hidden_states,
@@ -367,19 +370,22 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
                 const ov::Tensor& audio_latent,
                 float timestep,
                 bool isolate_modalities,
-                const std::vector<int64_t>& spatio_temporal_guidance_blocks) {
+                const std::vector<int64_t>& spatio_temporal_guidance_blocks,
+                const std::vector<float>& frame_timestep_scales) {
                  py::gil_scoped_release rel;
                  return self.infer(video_latent,
                                    audio_latent,
                                    timestep,
                                    isolate_modalities,
-                                   spatio_temporal_guidance_blocks);
+                                   spatio_temporal_guidance_blocks,
+                                   frame_timestep_scales);
              },
              py::arg("video_latent"),
              py::arg("audio_latent"),
              py::arg("timestep"),
              py::arg("isolate_modalities") = false,
              py::arg("spatio_temporal_guidance_blocks") = std::vector<int64_t>{},
+             py::arg("frame_timestep_scales") = std::vector<float>{},
              R"(
                 Performs joint video and audio inference.
                 video_latent (ov.Tensor): Packed video latent tensor.
@@ -389,6 +395,8 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
                     (LTX-2.3 modality isolation guidance).
                 spatio_temporal_guidance_blocks (list[int]): Transformer block indices to perturb
                     (LTX-2.3 Spatio-Temporal Guidance). Out-of-range indices are ignored.
+                frame_timestep_scales (list[float]): Per latent frame, the factor of `timestep` its tokens get
+                    (1 - conditioning mask). Empty gives every token `timestep`.
                 Returns: Tuple of video and audio velocity predictions.
             )");
 }
@@ -417,6 +425,38 @@ void init_autoencoder_kl_ltx2_video(py::module_& m) {
                         py::arg("device"),
                         R"(
             AutoencoderKLLTX2Video class constructor.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+                   .def(py::init([](const std::filesystem::path& vae_encoder_path,
+                                    const std::filesystem::path& vae_decoder_path) {
+                            return std::make_unique<ov::genai::AutoencoderKLLTX2Video>(vae_encoder_path,
+                                                                                       vae_decoder_path);
+                        }),
+                        py::arg("vae_encoder_path"),
+                        py::arg("vae_decoder_path"),
+                        R"(
+            AutoencoderKLLTX2Video class constructor with a VAE encoder, for image and video conditioning.
+            vae_encoder_path (os.PathLike): VAE encoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
+        )")
+                   .def(py::init([](const std::filesystem::path& vae_encoder_path,
+                                    const std::filesystem::path& vae_decoder_path,
+                                    const std::string& device,
+                                    const py::kwargs& kwargs) {
+                            return std::make_unique<ov::genai::AutoencoderKLLTX2Video>(
+                                vae_encoder_path,
+                                vae_decoder_path,
+                                device,
+                                pyutils::kwargs_to_any_map(kwargs));
+                        }),
+                        py::arg("vae_encoder_path"),
+                        py::arg("vae_decoder_path"),
+                        py::arg("device"),
+                        R"(
+            AutoencoderKLLTX2Video class constructor with a VAE encoder.
+            vae_encoder_path (os.PathLike): VAE encoder directory.
             vae_decoder_path (os.PathLike): VAE decoder directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
@@ -469,6 +509,17 @@ void init_autoencoder_kl_ltx2_video(py::module_& m) {
                 Decodes latent video to pixel space.
                 latent (ov.Tensor): Latent video tensor.
                 Returns: Decoded video tensor.
+            )")
+        .def("has_encoder", &ov::genai::AutoencoderKLLTX2Video::has_encoder)
+        .def("encode",
+             &ov::genai::AutoencoderKLLTX2Video::encode,
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("sample"),
+             R"(
+                Encodes a video [B, 3, F, H, W] in [-1, 1] to normalized latents, taking the mean of the latent
+                distribution.
+                sample (ov.Tensor): f32 video tensor.
+                Returns: Latent video tensor [B, C, (F - 1) / 8 + 1, H / 32, W / 32].
             )");
 }
 

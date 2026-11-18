@@ -300,6 +300,22 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps_with_mu(const double mu, con
         sigmas.push_back(static_cast<float>(s));
     }
 
+    set_shifted_sigmas(std::move(sigmas), mu);
+}
+
+void FlowMatchEulerDiscreteScheduler::set_timesteps_from_sigmas(const std::vector<float>& sigmas, const double mu) {
+    OPENVINO_ASSERT(!sigmas.empty(), "Custom sigmas must not be empty");
+    m_timesteps.clear();
+    m_sigmas.clear();
+
+    m_num_inference_steps = sigmas.size();
+    m_strength = 1.0f;
+
+    set_shifted_sigmas(sigmas, mu);
+}
+
+// Shifts a schedule the way diffusers' 'set_timesteps' does whether it built the sigmas or was given them
+void FlowMatchEulerDiscreteScheduler::set_shifted_sigmas(std::vector<float> sigmas, const double mu) {
     const float shift = m_config.shift;
 
     if (m_config.use_dynamic_shifting) {
