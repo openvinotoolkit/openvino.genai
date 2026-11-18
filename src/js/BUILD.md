@@ -160,6 +160,7 @@ If you don't want to set up the Python environment, or you would like to run the
 - `EMBEDDING_MODEL_PATH` - Path to the text embedding model
 - `MULTIMODAL_EMBEDDINGS_MODEL_PATH` - Path to the multimodal embedding model
 - `RERANK_MODEL_PATH` - Path to the reranking model
+- `VIDEO_GENERATION_MODEL_PATH` - Path to the video generation model
 
 3. Run the tests:
 ```sh

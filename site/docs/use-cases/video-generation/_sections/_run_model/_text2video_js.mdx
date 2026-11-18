@@ -1,0 +1,28 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import cv from '@u4/opencv4nodejs';
+import { Text2VideoPipeline } from 'openvino-genai-node';
+
+const pipeline = await Text2VideoPipeline(modelPath, '${props.device || 'CPU'}');
+const { video } = await pipeline.generate(prompt);
+
+// Save the first video as an AVI file with MJPG-encoded frames
+const [, numFrames, height, width] = video.getShape();
+const frameSize = height * width * 3;
+const videoData = video.data;
+const fourcc = cv.VideoWriter.fourcc('MJPG');
+const writer = new cv.VideoWriter('genai_video.avi', fourcc, 25, new cv.Size(width, height));
+
+for (let f = 0; f < numFrames; f++) {
+  const offset = videoData.byteOffset + f * frameSize;
+  const rgbData = Buffer.from(videoData.buffer, offset, frameSize);
+  const frame = new cv.Mat(rgbData, height, width, cv.CV_8UC3);
+  writer.write(frame.cvtColor(cv.COLOR_RGB2BGR)); // OpenCV expects frames in BGR order
+}
+
+writer.release();
+`}
+</CodeBlock>
+
+For exact comparisons across bindings, compare `video.data` before encoding, or use matching OpenCV versions and `VideoWriter` backends. Set `OPENCV_VIDEOIO_PRIORITY_LIST=CV_MJPEG` before starting Node.js to select OpenCV's built-in MJPEG writer. Older versions such as OpenCV 4.6 have a [known MJPEG truncation bug](https://github.com/opencv/opencv/pull/24209), so matching the backend alone does not guarantee identical encoded output.
