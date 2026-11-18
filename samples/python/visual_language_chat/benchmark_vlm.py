@@ -98,6 +98,11 @@ def main():
 
     args = parser.parse_args()
 
+    if args.num_iter < 1:
+        parser.error("--num_iter must be positive")
+    if args.num_warmup < 0:
+        parser.error("--num_warmup must be non-negative")
+
     if args.device == "NPU" and args.draft_model:
         parser.error("--draft_model is not supported when --device is NPU for vlm")
 
