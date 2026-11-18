@@ -121,6 +121,30 @@ TEST(GGUFTokenizer, BpeUserDefinedTokensRemainVisibleWhenSkippingControlTokens) 
     }
 }
 
+TEST(GGUFTokenizer, Gemma4PreservesMetaspaceInAtomicTokens) {
+    auto config = byte_level_bpe_config("qwen35");
+    config.config["model"] = std::string("gemma4");
+    config.config["tokens"] =
+        std::vector<std::string>{"<|endoftext|>", "a", "b", "▁", "▁▁", "<▁>", "<ctl▁>", "▁a"};
+    const std::vector<int32_t> types{3, 1, 1, 1, 1, 4, 3, 1};
+    ov::Tensor type_tensor(ov::element::i32, {types.size()});
+    std::memcpy(type_tensor.data(), types.data(), type_tensor.get_byte_size());
+    config.config["token_type"] = type_tensor;
+
+    ov::genai::GGUFTokenizer tokenizer(config);
+    auto encoded = tokenizer.encode("a<▁>b", ov::genai::add_special_tokens(false));
+    const std::vector<int64_t> expected_ids{1, 5, 2};
+    ASSERT_EQ(encoded.input_ids.get_size(), expected_ids.size());
+    EXPECT_EQ(std::vector<int64_t>(encoded.input_ids.data<int64_t>(),
+                                   encoded.input_ids.data<int64_t>() + encoded.input_ids.get_size()),
+              expected_ids);
+
+    const std::vector<int64_t> ids{7, 5, 3, 6, 4, 2};
+    EXPECT_EQ(tokenizer.decode(ids), " a<▁>   b");
+    EXPECT_EQ(tokenizer.decode(ids, ov::genai::skip_special_tokens(true)), " a<▁>   b");
+    EXPECT_EQ(tokenizer.decode(ids, ov::genai::skip_special_tokens(false)), " a<▁> <ctl▁>  b");
+}
+
 TEST(GGUFTokenizer, Qwen35ChatTemplateUndefinedTestsArePatched) {
     ov::genai::GGUFTokenizer tokenizer(byte_level_bpe_config("qwen35"));
     ov::genai::ChatHistory history({{{"role", "user"}, {"content", "a"}}});
