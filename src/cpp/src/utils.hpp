@@ -61,6 +61,8 @@ struct GenerationFinishInfo
 {
     EncodedResults results;
     GenerationStatus streaming_finish_status;
+    // Speech decoded in the language model stream (LFM3-Omni), [1, 1, samples]; empty otherwise.
+    ov::Tensor speech_waveform;
 };
 
 // A request finishes with GenerationStatus::IGNORED when the scheduler could not fit it within
