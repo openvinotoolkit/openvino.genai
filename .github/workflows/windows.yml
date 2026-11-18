@@ -27,7 +27,8 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: C:/mount/caches/huggingface/win
+  HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
+  HF_HUB_DISABLE_XET: "1"
   HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/b53e4e21/
   OPENVINO_LOG_LEVEL: 1  # Windows fails with out of memory because of too verbose logging
@@ -711,6 +712,9 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -758,6 +762,9 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -812,6 +819,9 @@ jobs:
       OPENVINO_LOG_LEVEL: 1
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -901,6 +911,9 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -984,6 +997,9 @@ jobs:
       NODE_VERSION: ${{ matrix.nodejs-version }}
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
