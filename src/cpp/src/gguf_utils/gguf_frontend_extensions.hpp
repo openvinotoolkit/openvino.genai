@@ -9,17 +9,10 @@
 #include "openvino/frontend/extension/decoder_transformation.hpp"
 #include "openvino/frontend/extension/telemetry.hpp"
 #include "openvino/frontend/gguf/extension/architecture.hpp"
-#include "openvino/frontend/gguf/extension/genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
 #include "openvino/genai/extensions.hpp"
 
 namespace ov::genai {
-
-inline void validate_gguf_extension(const std::shared_ptr<ov::Extension>& object) {
-    OPENVINO_ASSERT(!std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(object),
-                    "A GenAIExtension cannot be passed through the 'extensions' property because GenAI "
-                    "adapts GGUF models after conversion.");
-}
 
 inline ExtensionList resolve_gguf_extensions(const ExtensionList& extensions) {
     ExtensionList resolved;
@@ -31,13 +24,11 @@ inline ExtensionList resolve_gguf_extensions(const ExtensionList& extensions) {
             std::vector<std::shared_ptr<ov::Extension>> objects;
             reinterpret_cast<CreateExtensions>(get_symbol(library, "create_extensions"))(objects);
             for (const auto& object : objects) {
-                validate_gguf_extension(object);
                 auto owner =
                     std::make_shared<std::pair<std::shared_ptr<void>, std::shared_ptr<ov::Extension>>>(library, object);
                 resolved.emplace_back(std::shared_ptr<ov::Extension>(owner, object.get()));
             }
         } else {
-            validate_gguf_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
             resolved.push_back(extension);
         }
     }

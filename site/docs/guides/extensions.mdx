@@ -162,8 +162,7 @@ This forwarding is supported only when `GGUF_READER` is set to `FRONTEND`; the d
 
 Frontend extensions can customize operation conversion or graph transformations.
 Build extension libraries against the OpenVINO version used by GenAI. GenAI adapts the
-converted model to its pipeline interface; passing a `GenAIExtension` through the
-`extensions` property with the GGUF frontend is rejected.
+converted model to its pipeline interface after conversion.
 
 ## Notes
 
