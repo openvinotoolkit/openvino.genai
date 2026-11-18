@@ -114,13 +114,13 @@ Both routes require rank-2 `position_ids` and the standard language embedding in
 For a LLaVA checkpoint without
 a chat template, provide its formatted prompt and set `apply_chat_template=False` when generating.
 
-Other language/projector pairs are rejected.
-The supported pairs still depend on the OpenVINO frontend version. Paged attention is selected
-using the existing backend rules; request `ATTENTION_BACKEND="SDPA"` explicitly when needed.
+These pairs depend on the OpenVINO frontend version. Compatibility checks cannot confirm that two
+files come from the same checkpoint, so use its matching projector. Paged attention is selected using
+the existing backend rules; request `ATTENTION_BACKEND="SDPA"` explicitly when needed.
 
 ## Load models with extensions
 
-Pass `extensions` to the pipeline constructor to load GGUF frontend extensions. `LLMPipeline`
-and `ContinuousBatchingPipeline` require `GGUF_READER="FRONTEND"`; `VLMPipeline` registers the
-same extensions on its language and projector frontends. See [Extensions](./extensions.mdx#use-extensions-with-the-gguf-frontend)
-for Python and C++ examples and the supported extension types.
+Pass `extensions` to `VLMPipeline` to register them with OpenVINO Core and with both the language
+and projector GGUF frontends before loading. See [Extensions](./extensions.mdx) for examples.
+A supplied `GenAIExtension` is ignored because GenAI adapts the converted models separately.
+Extensions do not add support for otherwise unsupported language/projector pairs.

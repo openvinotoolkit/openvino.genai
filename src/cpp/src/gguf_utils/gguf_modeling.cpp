@@ -16,7 +16,6 @@
 #include "openvino/frontend/gguf/frontend.hpp"
 
 #include "gguf_utils/building_blocks.hpp"
-#include "gguf_utils/gguf_frontend_extensions.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 #include "utils.hpp"
@@ -143,18 +142,25 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path,
-                                                        const ov::genai::ExtensionList& extensions,
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(ov::frontend::gguf::FrontEnd& frontend,
+                                                        const std::string& model_path,
                                                         const ov::frontend::gguf::GenAIAdaptOptions& options) {
-    ov::frontend::gguf::FrontEnd frontend;
-    ov::genai::register_gguf_extensions(frontend, extensions);
     return ov::frontend::gguf::adapt_to_genai(frontend.convert(frontend.load(model_path)), options);
+}
+
+std::shared_ptr<ov::Model> get_gguf_language_model(const ov::frontend::gguf::ModelMap& models,
+                                                   const std::string& model_path) {
+    const auto language = models.find("language");
+    OPENVINO_ASSERT(language != models.end() && language->second,
+                    "GGUF file '",
+                    model_path,
+                    "' does not contain a language model; expected a decoder GGUF, not an mmproj file.");
+    return language->second;
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
-                                            bool use_legacy_reader,
-                                            const ov::genai::ExtensionList& extensions) {
+                                            bool use_legacy_reader) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     std::shared_ptr<ov::Model> model;
@@ -180,13 +186,8 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        auto models = convert_gguf_with_frontend(model_path, extensions);
-        auto language = models.find("language");
-        OPENVINO_ASSERT(language != models.end() && language->second,
-                        "GGUF file '",
-                        model_path,
-                        "' does not contain a language model; expected a decoder GGUF, not an mmproj file.");
-        model = language->second;
+        ov::frontend::gguf::FrontEnd frontend;
+        model = get_gguf_language_model(convert_gguf_with_frontend(frontend, model_path), model_path);
     }
 
     if (enable_save_ov_model) {

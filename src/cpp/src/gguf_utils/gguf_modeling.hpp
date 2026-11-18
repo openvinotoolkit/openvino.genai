@@ -7,15 +7,21 @@
 
 #include "openvino/frontend/gguf/adapt_to_genai.hpp"
 #include "openvino/openvino.hpp"
-#include "openvino/genai/extensions.hpp"
 
-/// \brief Load a .gguf file with the OpenVINO GGUF frontend and adapt it to GenAI.
+namespace ov::frontend::gguf {
+class FrontEnd;
+}
+
+/// \brief Load a .gguf file with the given GGUF frontend and adapt it to GenAI.
 ///
 /// Returns the named models from ov::frontend::gguf::adapt_to_genai, e.g. "language" for a
-/// decoder or the encoders of an mmproj file. User extensions are registered on the frontend.
-ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path,
-                                                        const ov::genai::ExtensionList& extensions = {},
+/// decoder or the encoders of an mmproj file.
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(ov::frontend::gguf::FrontEnd& frontend,
+                                                        const std::string& model_path,
                                                         const ov::frontend::gguf::GenAIAdaptOptions& options = {});
+
+std::shared_ptr<ov::Model> get_gguf_language_model(const ov::frontend::gguf::ModelMap& models,
+                                                   const std::string& model_path);
 
 /// \brief Convert a .gguf file into an ov::Model.
 ///
@@ -27,5 +33,4 @@ ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model
 ///                              callers must build the tokenizer from the .gguf path instead.
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
-                                            bool use_legacy_reader = false,
-                                            const ov::genai::ExtensionList& extensions = {});
+                                            bool use_legacy_reader = false);

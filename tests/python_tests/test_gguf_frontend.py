@@ -580,30 +580,15 @@ def test_gguf_vlm_attention_backends_and_images(gguf_vlm_pipelines):
         ]
 
 
-@pytest.mark.parametrize(
-    "pipeline_class,with_tokenizer",
-    [
-        (pipeline, with_tokenizer)
-        for pipeline in [genai.LLMPipeline, genai.ContinuousBatchingPipeline, genai.VLMPipeline]
-        for with_tokenizer in ([False] if pipeline == genai.VLMPipeline else [False, True])
-    ],
-)
-def test_gguf_frontend_extensions(tiny_gguf_vlm_model, pipeline_class, with_tokenizer):
+def test_gguf_vlm_language_frontend_extensions(tiny_gguf_vlm_model):
     language, projector = tiny_gguf_vlm_model
-    args = [str(language)]
-    if with_tokenizer:
-        args.append(genai.Tokenizer(language))
-    if pipeline_class == genai.ContinuousBatchingPipeline:
-        args.append(genai.SchedulerConfig())
-    args.append("CPU")
-    properties = {"GGUF_READER": "FRONTEND", "extensions": [get_extension_lib_path()]}
-    if pipeline_class == genai.VLMPipeline:
-        properties["mmproj_path"] = str(projector)
     with pytest.raises(RuntimeError, match="GGUF frontend extension was invoked"):
-        if pipeline_class == genai.ContinuousBatchingPipeline and not with_tokenizer:
-            pipeline_class(*args, properties)
-        else:
-            pipeline_class(*args, **properties)
+        genai.VLMPipeline(
+            language,
+            "CPU",
+            mmproj_path=str(projector),
+            extensions=[get_extension_lib_path()],
+        )
 
 
 def test_gguf_projector_frontend_extensions(tiny_gguf_vlm_model):

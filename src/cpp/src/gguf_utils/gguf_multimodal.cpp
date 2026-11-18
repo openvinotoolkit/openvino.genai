@@ -8,17 +8,44 @@
 #include <sstream>
 
 #include "gguf_clip_adapter.hpp"
-#include "gguf_frontend_extensions.hpp"
 #include "gguf_modeling.hpp"
 #include "gguf_tokenizer.hpp"
 #include "gguf_utils.hpp"
+#include "openvino/frontend/gguf/adapt_to_genai.hpp"
+#include "openvino/frontend/gguf/extension/genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
+#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/gguf.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
 namespace {
 using nlohmann::json;
+
+void register_vlm_gguf_extensions(ov::frontend::gguf::FrontEnd& frontend, const ExtensionList& extensions) {
+    const auto add_extension = [&](const std::shared_ptr<ov::Extension>& object) {
+        // Adaptation is applied after conversion, not through GenAIExtension.
+        if (!std::dynamic_pointer_cast<ov::frontend::gguf::GenAIExtension>(object))
+            frontend.add_extension(object);
+    };
+
+    for (const auto& extension : extensions) {
+        if (const auto* path = std::get_if<std::filesystem::path>(&extension)) {
+            auto library = load_shared_object(*path);
+            using CreateExtensions = void (*)(std::vector<std::shared_ptr<ov::Extension>>&);
+            std::vector<std::shared_ptr<ov::Extension>> objects;
+            reinterpret_cast<CreateExtensions>(get_symbol(library, "create_extensions"))(objects);
+            for (const auto& object : objects) {
+                // Keep the library loaded for the extension's lifetime.
+                auto owner =
+                    std::make_shared<std::pair<std::shared_ptr<void>, std::shared_ptr<ov::Extension>>>(library, object);
+                add_extension(std::shared_ptr<ov::Extension>(owner, object.get()));
+            }
+        } else {
+            add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
+        }
+    }
+}
 
 class MmprojMetadata {
 public:
@@ -235,20 +262,18 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
             },
             extension);
     }
-    auto language_models = convert_gguf_with_frontend(language.string(),
-                                                      extensions,
+    gguf::FrontEnd language_frontend;
+    register_vlm_gguf_extensions(language_frontend, extensions);
+    const auto language_path = language.string();
+    auto language_models = convert_gguf_with_frontend(language_frontend,
+                                                      language_path,
                                                       {gguf::pass::AdaptToGenAI::InputMode::EMBEDS_TO_LOGITS});
-    const auto language_model = language_models.find("language");
-    OPENVINO_ASSERT(language_model != language_models.end() && language_model->second,
-                    "GGUF file '",
-                    language.string(),
-                    "' does not contain a language model; expected a decoder GGUF, not an mmproj file.");
-    result.language = language_model->second;
+    result.language = get_gguf_language_model(language_models, language_path);
     result.language->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     auto tokenizer_metadata = take_gguf_tokenizer_metadata(result.language);
     result.stop_token_ids = gguf_stop_token_ids(tokenizer_metadata);
     gguf::FrontEnd projector_frontend;
-    register_gguf_extensions(projector_frontend, extensions);
+    register_vlm_gguf_extensions(projector_frontend, extensions);
     auto combined = projector_frontend.convert(projector_frontend.load(mmproj));
     const MmprojMetadata meta(combined);
     auto encoders = gguf::adapt_to_genai(combined);
