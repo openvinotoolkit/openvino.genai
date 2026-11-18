@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import logging as log
 import sys
+from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput
 
 MAX_INPUT_TXT_IN_LOG = 1024
 
@@ -59,6 +60,8 @@ def print_metrics(
         output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
     if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
+    if "end_to_end_token_throughput" in iter_data:
+        output_str += "End-to-end token throughput: {:.2f} tokens/s, ".format(iter_data["end_to_end_token_throughput"])
     if tts_audio is not None:
         output_str += "RTF: {}, ".format(f"{tts_audio['rtf']:.4f}" if tts_audio["rtf"] >= 0 else "N/A")
     if prefill_time and prefill_time != "":
@@ -332,6 +335,7 @@ def output_avg_statis_tokens(
         avg_input_size = 0
         input_sizes = []
         index_num = 0
+        input_iter_data_list = []
 
         if latency_unit is None:
             latency_unit = 'token' if is_text_gen else 'step'
@@ -356,6 +360,7 @@ def output_avg_statis_tokens(
                 else:
                     avg_input_size += iter_data["input_size"] if iter_data["input_size"] != "" else 0
                 index_num = index_num + 1
+                input_iter_data_list.append(iter_data)
         if index_num > 0:
             avg_1st_token_latency = avg_1st_token_latency / index_num
             avg_2nd_tokens_latency = avg_2nd_tokens_latency / index_num
@@ -413,6 +418,9 @@ def output_avg_statis_tokens(
                         prefix, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput
                     )
                 )
+            end_to_end_token_throughput = get_end_to_end_token_throughput(input_iter_data_list)
+            if end_to_end_token_throughput is not None:
+                inputs_dict[iter_idx] += f", End-to-end token throughput: {end_to_end_token_throughput:.2f} tokens/s"
 
 
 def print_average(

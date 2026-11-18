@@ -8,7 +8,35 @@
 #include <math.h>
 
 #include "openvino/genai/c/whisper_pipeline.h"
-#include "whisper_utils.h"
+#include "audio_utils.h"
+
+#define CHECK_STATUS(return_status)                                                                       \
+    if (return_status != OK) {                                                                            \
+        const char* error_msg = "Unknown error";                                                          \
+        switch (return_status) {                                                                          \
+        case INVALID_C_PARAM:                                                                             \
+            error_msg = "Invalid parameter";                                                              \
+            break;                                                                                        \
+        case NOT_FOUND:                                                                                   \
+            error_msg = "Not found";                                                                      \
+            break;                                                                                        \
+        case OUT_OF_BOUNDS:                                                                               \
+            error_msg = "Out of bounds";                                                                  \
+            break;                                                                                        \
+        case UNEXPECTED:                                                                                  \
+            error_msg = "Unexpected error";                                                               \
+            break;                                                                                        \
+        case NOT_IMPLEMENTED:                                                                             \
+            error_msg = "Not implemented";                                                                \
+            break;                                                                                        \
+        case UNKNOW_EXCEPTION:                                                                            \
+            error_msg = "Unknown exception";                                                              \
+            break;                                                                                        \
+        }                                                                                                 \
+        fprintf(stderr, "[ERROR] %s (status code: %d) at line %d\n", error_msg, return_status, __LINE__); \
+        exit_code = EXIT_FAILURE;                                                                         \
+        goto err;                                                                                         \
+    }
 
 #define SAMPLE_RATE_TOLERANCE 0.5f
 
@@ -70,7 +98,8 @@ int main(int argc, char* argv[]) {
 
     CHECK_STATUS(ov_genai_whisper_pipeline_get_generation_config(pipeline, &config));
     CHECK_STATUS(ov_genai_whisper_generation_config_set_task(config, "transcribe"));
-    CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, true));
+    // Uncomment to also print segment-level timestamps.
+    // CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, true));
     CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));
 
     CHECK_STATUS(ov_genai_whisper_decoded_results_get_string(results, NULL, &output_size));

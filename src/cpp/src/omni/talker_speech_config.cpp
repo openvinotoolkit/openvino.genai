@@ -41,16 +41,19 @@ OmniTalkerSpeechConfig::OmniTalkerSpeechConfig(const std::filesystem::path& mode
 const std::vector<std::string>& omni_talker_speech_config_keys() {
     // Single source of truth. Keep in sync with update_omni_talker_speech_config below.
     static const std::vector<std::string> keys{"return_audio",
+                                               "output_mode",
                                                "speaker",
                                                "speaker_embedding",
                                                "audio_chunk_frames",
+                                               "audio_chunk_left_context_frames",
                                                "max_new_tokens",
                                                "rng_seed",
                                                "talker_temperature",
                                                "talker_top_k",
                                                "talker_repetition_penalty",
                                                "cp_temperature",
-                                               "cp_top_k"};
+                                               "cp_top_k",
+                                               "cp_repetition_penalty"};
     return keys;
 }
 
@@ -63,6 +66,7 @@ void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::
     using ov::genai::utils::read_anymap_param;
 
     read_anymap_param(properties, "return_audio", config.return_audio);
+    read_anymap_param(properties, "output_mode", config.output_mode);
     if (properties.count("speaker_embedding")) {
         ov::Tensor tensor;
         read_anymap_param(properties, "speaker_embedding", tensor);
@@ -78,6 +82,7 @@ void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::
     }
 
     read_anymap_param(properties, "audio_chunk_frames", config.audio_chunk_frames);
+    read_anymap_param(properties, "audio_chunk_left_context_frames", config.audio_chunk_left_context_frames);
     read_anymap_param(properties, "max_new_tokens", config.max_new_tokens);
     read_anymap_param(properties, "rng_seed", config.rng_seed);
 
@@ -86,6 +91,7 @@ void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::
     read_anymap_param(properties, "talker_repetition_penalty", config.talker_repetition_penalty);
     read_anymap_param(properties, "cp_temperature", config.cp_temperature);
     read_anymap_param(properties, "cp_top_k", config.cp_top_k);
+    read_anymap_param(properties, "cp_repetition_penalty", config.cp_repetition_penalty);
 }
 
 void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
@@ -106,6 +112,10 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
                         "[1, 1, talker_hidden_size], got ",
                         shape);
     }
+    OPENVINO_ASSERT(
+        config.output_mode == SpeechOutputMode::INTERLEAVED || config.output_mode == SpeechOutputMode::SPEECH_ONLY,
+        "OmniTalkerSpeechConfig: output_mode must be INTERLEAVED or SPEECH_ONLY, got ",
+        static_cast<int>(config.output_mode));
     if (config.talker_temperature) {
         OPENVINO_ASSERT(*config.talker_temperature > 0.0f,
                         "OmniTalkerSpeechConfig: talker_temperature must be > 0, got ",
@@ -131,6 +141,11 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
                         "OmniTalkerSpeechConfig: cp_top_k must be >= 1, got ",
                         *config.cp_top_k);
     }
+    if (config.cp_repetition_penalty) {
+        OPENVINO_ASSERT(*config.cp_repetition_penalty > 0.0f,
+                        "OmniTalkerSpeechConfig: cp_repetition_penalty must be > 0, got ",
+                        *config.cp_repetition_penalty);
+    }
     OPENVINO_ASSERT(config.audio_chunk_frames >= 1,
                     "OmniTalkerSpeechConfig: audio_chunk_frames must be >= 1, got ",
                     config.audio_chunk_frames);
@@ -138,6 +153,11 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
     OPENVINO_ASSERT(config.audio_chunk_frames <= kAudioChunkFramesUpperBound,
                     "OmniTalkerSpeechConfig: audio_chunk_frames is unreasonably large: ",
                     config.audio_chunk_frames,
+                    ". Max allowed: ",
+                    kAudioChunkFramesUpperBound);
+    OPENVINO_ASSERT(config.audio_chunk_left_context_frames <= kAudioChunkFramesUpperBound,
+                    "OmniTalkerSpeechConfig: audio_chunk_left_context_frames is unreasonably large: ",
+                    config.audio_chunk_left_context_frames,
                     ". Max allowed: ",
                     kAudioChunkFramesUpperBound);
 }
@@ -183,6 +203,12 @@ ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig&
     // on the AnyMap path.
     validate_omni_talker_speech_config(out.config);
     return out;
+}
+
+void reject_in_stream_speech_fields(const OmniTalkerSpeechConfig& config) {
+    OPENVINO_ASSERT(config.output_mode == SpeechOutputMode::INTERLEAVED,
+                    "Talker: output_mode applies to models that emit text and speech in one stream (LFM3-Omni)");
+    OPENVINO_ASSERT(!config.cp_repetition_penalty, "Talker: cp_repetition_penalty applies to LFM3-Omni only");
 }
 
 }  // namespace genai
