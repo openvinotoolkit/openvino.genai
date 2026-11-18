@@ -66,6 +66,8 @@ Qwen3.5 MoE and Muse Glimmer checkpoints into language/projector GGUF pairs unde
 `~/gguf_models/genai_vlm_tests/`. They cover CPU image, video and Gemma-4 audio
 generation with SDPA and PA. Image/streaming and chat checks reuse `test_vlm_pipeline.py`
 helpers; these VLM checks cover integration and backend agreement, not Optimum output parity.
+A Gemma-3 regression covers truncated image slots, chat-cache resets and cancellation;
+adapter tests cover language-model overrides in SDPA and prompt-lookup pipelines.
 A strict xfail tracks pending Muse Glimmer video handling.
 
 This suite validates GenAI integration rather than standalone frontend translation.

@@ -548,7 +548,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     auto backend_properties = properties;
     if (extract_prompt_lookup_from_config(backend_properties)) {
         auto effective_config = generation_config;
-        extract_adapters_from_properties(backend_properties, &effective_config.adapters);
+        update_adapters_from_properties(utils::get_model_properties(backend_properties, "language_model", device),
+                                        effective_config.adapters);
         if (effective_config.adapters)
             effective_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_impl = std::make_shared<PromptLookupImpl>(language_model,

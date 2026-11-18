@@ -888,3 +888,197 @@ def test_gguf_vlm_language_properties(tiny_gguf_vlm_model, option):
         pipe.generate("Describe the image.", images=[image], **config).texts
         == baseline.generate("Describe the image.", images=[image], **config).texts
     )
+
+
+@pytest.mark.parametrize("prompt_lookup", [False, True])
+@pytest.mark.parametrize("top_level", ["absent", "empty", "active"])
+def test_gguf_vlm_language_adapter_overlay(tiny_gguf_vlm_model, tmp_path, prompt_lookup, top_level):
+    from safetensors.numpy import save_file
+
+    language, projector = tiny_gguf_vlm_model
+    frontend = ov.frontend.FrontEndManager().load_by_framework("gguf")
+    model = frontend.convert(frontend.load(str(language)))
+    head = next(
+        op for op in model.get_ops() if op.get_type_name() == "MatMul" and "result_output" in op.get_friendly_name()
+    )
+    vocab_size, hidden_size = head.input(1).get_shape()
+    weights = np.zeros((vocab_size, 1), dtype=np.float32)
+    weights[1000] = 1000
+    weights[1001] = -1000
+    adapter_path = tmp_path / "language_adapter.safetensors"
+    save_file(
+        {
+            "base_model.model.logits.lora_A.weight": np.ones((1, hidden_size), dtype=np.float32),
+            "base_model.model.logits.lora_B.weight": weights,
+        },
+        str(adapter_path),
+    )
+    adapter = genai.AdapterConfig(genai.Adapter(str(adapter_path)), 1.0, genai.AdapterConfig.Mode.MODE_DYNAMIC)
+    empty_adapter = genai.AdapterConfig()
+    properties = {
+        **reference_properties(),
+        "ATTENTION_BACKEND": "PA" if prompt_lookup else "SDPA",
+        "prompt_lookup": prompt_lookup,
+        "mmproj_path": str(projector),
+    }
+    baseline = genai.VLMPipeline(language, "CPU", **properties)
+    active = genai.VLMPipeline(language, "CPU", adapters=adapter, **properties)
+    role_adapter = empty_adapter if top_level == "active" else adapter
+    if top_level != "absent":
+        properties["adapters"] = adapter if top_level == "active" else empty_adapter
+    properties["MODEL_PROPERTIES"] = {"language_model": {"adapters": role_adapter}}
+    pipe = genai.VLMPipeline(language, "CPU", **properties)
+    defaults = pipe.get_generation_config()
+    assert defaults.adapters is not None
+    assert len(defaults.adapters.get_adapters()) == (0 if top_level == "active" else 1)
+
+    image = ov.Tensor(np.zeros((1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 4, "do_sample": False, "ignore_eos": True}
+    if prompt_lookup:
+        config.update(num_assistant_tokens=3, max_ngram_size=3)
+    without_adapter = baseline.generate("Describe.", images=[image], **config).texts
+    with_adapter = active.generate("Describe.", images=[image], **config).texts
+    assert with_adapter != without_adapter
+    assert pipe.generate("Describe.", images=[image], **config).texts == (
+        without_adapter if top_level == "active" else with_adapter
+    )
+    if top_level != "active":
+        assert pipe.generate("Describe.", images=[image], adapters=empty_adapter, **config).texts == without_adapter
+        assert pipe.generate("Describe.", images=[image], **config).texts == with_adapter
+
+
+def test_gguf_vlm_gemma3_partial_image_chat_cache(tiny_gguf_vlm_model, tmp_path):
+    from gguf import GGUFReader, GGUFWriter
+
+    language, projector = tiny_gguf_vlm_model
+    test_language = tmp_path / "language.gguf"
+    test_projector = tmp_path / "projector.gguf"
+    # Keep retained image slots visible to attention and make the tiny projector image-sensitive.
+    for source, target in ((language, test_language), (projector, test_projector)):
+        reader = GGUFReader(source)
+        writer = GGUFWriter(target, reader.fields["general.architecture"].contents(), endianess=reader.endianess)
+        for name, field in reader.fields.items():
+            if name.startswith("GGUF.") or name == "general.architecture":
+                continue
+            value = field.contents()
+            if name == "tokenizer.ggml.add_bos_token":
+                value = False
+            elif name == "gemma3.attention.sliding_window":
+                value = 16384
+            writer.add_key_value(name, value, field.types[0], field.types[1] if len(field.types) > 1 else None)
+        for tensor in reader.tensors:
+            data = tensor.data
+            if tensor.name == "mm.input_projection.weight":
+                assert data.shape == (8, 8)
+                data = np.eye(8, dtype=data.dtype)
+            writer.add_tensor(tensor.name, data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_tensors_to_file()
+        writer.close()
+
+    pipe = genai.VLMPipeline(
+        test_language,
+        "CPU",
+        mmproj_path=str(test_projector),
+        GGUF_READER="FRONTEND",
+        ATTENTION_BACKEND="SDPA",
+        INFERENCE_NUM_THREADS=2,
+        **reference_properties(),
+    )
+    tokenizer = pipe.get_tokenizer()
+
+    def encode(text):
+        return tokenizer.encode(text, add_special_tokens=False).input_ids.data.reshape(-1).copy()
+
+    start, pad, end = "<start_of_image>", "<pad>", "<end_of_image>"
+    prompt = start + "Describe."
+    image = ov.Tensor(np.random.default_rng(42).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    history = genai.ChatHistory([{"role": "user", "content": prompt}])
+    raw_count = len(encode(tokenizer.apply_chat_template(history, True)))
+    first = pipe.generate(history, images=[image], max_new_tokens=1, do_sample=False, ignore_eos=True)
+    patches = first.perf_metrics.get_num_input_tokens() - raw_count - 1
+    assert patches >= 2
+    history.append({"role": "assistant", "content": first.texts[0]})
+
+    def normalized_history(user_text):
+        return genai.ChatHistory(
+            [
+                {"role": "user", "content": start + pad * patches + end + "Describe."},
+                {"role": "assistant", "content": first.texts[0]},
+                {"role": "user", "content": user_text},
+            ]
+        )
+
+    short = encode(tokenizer.apply_chat_template(normalized_history("<start_of_turn>"), True))
+    start_pos = np.flatnonzero(short == encode(start)[0])[0]
+    desired_drop = int(start_pos + 1 + patches // 2)
+    filler = "<start_of_turn>" * (8192 + desired_drop - len(short) + 1)
+    retained = encode(tokenizer.apply_chat_template(normalized_history(filler), True))
+    pad_id = encode(pad)[0]
+    assert len(retained) == 8192 and retained[0] == pad_id
+    assert 0 < np.argmax(retained != pad_id) < patches
+
+    history.append({"role": "user", "content": filler})
+    config = dict(max_new_tokens=1, do_sample=True, top_k=8, rng_seed=7, logprobs=1, ignore_eos=True)
+    cached_history = pipe.generate(history, **config)
+    pipe.finish_chat()
+    full_history = pipe.generate(history, **config)
+    pipe.finish_chat()
+
+    pipe.start_chat()
+    first_legacy = pipe.generate(prompt, images=[image], max_new_tokens=1, do_sample=False, ignore_eos=True)
+    assert first_legacy.texts == first.texts
+    cached_legacy = pipe.generate(filler, **config)
+    pipe.finish_chat()
+    for result in (cached_history, cached_legacy):
+        assert result.texts == full_history.texts
+        np.testing.assert_allclose(result.scores, full_history.scores, rtol=1e-6, atol=1e-6)
+
+    cancelled_image = ov.Tensor(np.zeros((1, 48, 64, 3), dtype=np.uint8))
+    next_image = ov.Tensor(np.full((1, 48, 64, 3), 255, dtype=np.uint8))
+
+    def generate_after_optional_cancel(cancel):
+        pipe.start_chat()
+        pipe.generate(prompt, images=[image], max_new_tokens=1, do_sample=False, ignore_eos=True)
+        if cancel:
+            cancelled = pipe.generate(
+                "Discard.",
+                images=[cancelled_image],
+                max_new_tokens=8,
+                ignore_eos=True,
+                streamer=lambda _: genai.StreamingStatus.CANCEL,
+            )
+            assert cancelled.perf_metrics.get_num_generated_tokens() < 8
+        result = pipe.generate("Next.", images=[next_image], **config)
+        pipe.finish_chat()
+        return result
+
+    after_cancel = generate_after_optional_cancel(True)
+    without_cancel = generate_after_optional_cancel(False)
+    assert after_cancel.texts == without_cancel.texts
+    np.testing.assert_allclose(after_cancel.scores, without_cancel.scores, rtol=1e-6, atol=1e-6)
+
+
+def test_gguf_vlm_gemma3_chat_image_slice_metrics(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
+    pipe = genai.VLMPipeline(
+        language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND="SDPA", **reference_properties()
+    )
+    image = ov.Tensor(np.zeros((1, 48, 64, 3), dtype=np.uint8))
+    history = genai.ChatHistory([{"role": "user", "content": "Describe."}])
+    config = dict(max_new_tokens=1, do_sample=False, ignore_eos=True)
+    first = pipe.generate(history, images=[image], **config)
+    assert first.perf_metrics.vlm_raw_metrics.per_image_slice_counts == [1]
+
+    history.append({"role": "assistant", "content": first.texts[0]})
+    history.append({"role": "user", "content": "Describe again."})
+    second = pipe.generate(history, **config)
+    assert second.perf_metrics.vlm_raw_metrics.per_image_slice_counts == []
+    assert second.perf_metrics.get_total_image_slice_count() == 0
+
+    history.append({"role": "assistant", "content": second.texts[0]})
+    history.append({"role": "user", "content": "Describe the next image."})
+    third = pipe.generate(history, images=[image], **config)
+    assert third.perf_metrics.vlm_raw_metrics.per_image_slice_counts == [1]
+    pipe.finish_chat()

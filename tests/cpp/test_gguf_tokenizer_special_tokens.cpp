@@ -400,6 +400,109 @@ TEST(GGUFMultimodal, Gemma3LiteralPadsRemainTextAfterCacheClipping) {
     }
 }
 
+TEST(GGUFMultimodal, Gemma3ImageMaskSurvivesLeftTruncation) {
+    using namespace ov::genai;
+    for (bool templated : {false, true}) {
+        SCOPED_TRACE(templated);
+        auto parameters = sentencepiece_config();
+        parameters.config.at("add_bos_token").as<ov::Tensor>().data<bool>()[0] = false;
+        GGUFTokenizer tokenizer(parameters);
+        auto models = gemma4_models();
+        models.config.model_type = VLMModelType::GEMMA3;
+        models.config.image_soft_token = "<pad>";
+        models.config.image_separator = "";
+        ov::Tensor first(ov::element::f32, {1, 4, 4});
+        ov::Tensor second(ov::element::f32, {1, 2, 4});
+        for (size_t i = 0; i < first.get_size(); ++i)
+            first.data<float>()[i] = float(10 + i);
+        for (size_t i = 0; i < second.get_size(); ++i)
+            second.data<float>()[i] = float(30 + i);
+        const std::vector<EncodedImage> images{{first}, {second}};
+        InputsEmbedderGemma3 normalizer(models, tokenizer, "CPU", {});
+        const auto normalized = normalizer.normalize_prompt(
+            "<start_of_image>" + std::string(templated ? 8182 : 8183, 'a') + "<start_of_image><pad>",
+            0,
+            images);
+        const auto rendered =
+            templated
+                ? tokenizer.apply_chat_template({{{"role", "user"}, {"content", normalized.unified_prompt}}}, true)
+                : normalized.unified_prompt;
+        const auto ids = tokenizer.encode(rendered, add_special_tokens(false)).input_ids;
+        const auto* data = ids.data<const int64_t>();
+        ASSERT_EQ(ids.get_size(), 8192);
+        ASSERT_EQ(std::vector<int64_t>(data, data + 4), (std::vector<int64_t>{3, 3, 3, 7}));
+        const size_t second_start = ids.get_size() - (templated ? 6 : 5);
+        ASSERT_EQ(std::vector<int64_t>(data + second_start, data + second_start + 5),
+                  (std::vector<int64_t>{6, 3, 3, 7, 3}));
+        for (size_t skip : {size_t(0), size_t(1), size_t(3)}) {
+            SCOPED_TRACE(skip);
+            InputsEmbedderGemma3 embedder(models, tokenizer, "CPU", {});
+            embedder.set_prompt_formatting(templated ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
+            embedder.set_add_special_tokens(false);
+            if (skip) {
+                embedder.start_chat("");
+                embedder.get_cache_state().get_state().assign(data, data + skip);
+            }
+            VLMPerfMetrics metrics;
+            const auto merged = embedder.get_inputs_embeds(templated && skip ? rendered : normalized.unified_prompt,
+                                                           images,
+                                                           metrics,
+                                                           true,
+                                                           normalized.images_sequence);
+            const auto& types = embedder.get_lm_extra_inputs().at("token_type_ids");
+            ASSERT_EQ(merged.get_shape(), (ov::Shape{1, ids.get_size() - skip, 4}));
+            ASSERT_EQ(types.get_shape(), (ov::Shape{1, ids.get_size() - skip}));
+            ASSERT_EQ(metrics.raw_metrics.tokenization_durations.size(), 1);
+            for (size_t token = skip; token < ids.get_size(); ++token) {
+                const bool first_image = token < 3;
+                const bool second_image = token > second_start && token <= second_start + 2;
+                EXPECT_EQ(types.data<const int64_t>()[token - skip], int64_t(first_image || second_image));
+                for (size_t component = 0; component < 4; ++component) {
+                    float expected = .25f;
+                    if (first_image)
+                        expected = first.data<const float>()[(token + 1) * 4 + component];
+                    else if (second_image)
+                        expected = second.data<const float>()[(token - second_start - 1) * 4 + component];
+                    EXPECT_FLOAT_EQ(merged.data<const float>()[(token - skip) * 4 + component], expected);
+                }
+            }
+        }
+    }
+}
+
+TEST(GGUFMultimodal, Gemma3LeadingLiteralPadIsNotAnImageAfterTruncation) {
+    using namespace ov::genai;
+    auto parameters = sentencepiece_config();
+    parameters.config.at("add_bos_token").as<ov::Tensor>().data<bool>()[0] = false;
+    GGUFTokenizer tokenizer(parameters);
+    auto models = gemma4_models();
+    models.config.model_type = VLMModelType::GEMMA3;
+    models.config.image_soft_token = "<pad>";
+    models.config.image_separator = "";
+    ov::Tensor pixels(ov::element::f32, {1, 4, 4});
+    std::fill_n(pixels.data<float>(), pixels.get_size(), 9.f);
+    const std::vector<EncodedImage> images{{pixels}};
+    InputsEmbedderGemma3 embedder(models, tokenizer, "CPU", {});
+    embedder.set_prompt_formatting(PromptFormatting::Raw);
+    embedder.set_add_special_tokens(false);
+    const auto normalized =
+        embedder.normalize_prompt("aa<pad><end_of_image>" + std::string(8184, 'a') + "<start_of_image>", 0, images);
+    const auto ids = tokenizer.encode(normalized.unified_prompt, add_special_tokens(false)).input_ids;
+    const auto* data = ids.data<const int64_t>();
+    ASSERT_EQ(ids.get_size(), 8192);
+    ASSERT_EQ(std::vector<int64_t>(data, data + 2), (std::vector<int64_t>{3, 7}));
+    VLMPerfMetrics metrics;
+    const auto merged =
+        embedder.get_inputs_embeds(normalized.unified_prompt, images, metrics, true, normalized.images_sequence);
+    const auto& types = embedder.get_lm_extra_inputs().at("token_type_ids");
+    EXPECT_EQ(types.data<const int64_t>()[0], 0);
+    EXPECT_FLOAT_EQ(merged.data<const float>()[0], .25f);
+    for (size_t token = ids.get_size() - 5; token < ids.get_size() - 1; ++token) {
+        EXPECT_EQ(types.data<const int64_t>()[token], 1);
+        EXPECT_FLOAT_EQ(merged.data<const float>()[token * 4], 9.f);
+    }
+}
+
 TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
     using namespace ov::genai;
     struct TestEmbedder : InputsEmbedderLLaVA {

@@ -96,7 +96,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
     std::weak_ptr<ChatHistoryInternalState> m_active_history;
-    // It stores encoded images, videos and vision count in case when m_use_full_chat_history is true
+    // Gemma3 also retains image history for KV-cache realignment.
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::vector<ov::genai::EncodedVideo> m_encoded_videos;
     std::vector<ov::genai::EncodedAudio> m_encoded_audios;
@@ -310,14 +310,15 @@ public:
         m_inputs_embedder = std::move(embedder);
         const auto kv_pos = utils::get_kv_axes_pos(language_model);
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+        auto lm_properties = utils::get_model_properties(*filtered_properties, "language_model", device);
+        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
+        lm_properties.erase(AdaptersProperty::name());
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model."));
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
-        compile_language_model(language_model,
-                               device,
-                               utils::get_model_properties(*filtered_properties, "language_model", device));
+        compile_language_model(language_model, device, lm_properties);
         finalize_initialization(language_model, kv_pos);
     }
 
@@ -538,6 +539,7 @@ public:
         const auto history_image_sequence_before = m_history_image_sequence.size();
         const auto history_video_sequence_before = m_history_video_sequence.size();
         const auto history_audio_sequence_before = m_history_audio_sequence.size();
+        const bool keep_history_images = m_use_full_chat_history || m_vlm_config.model_type == VLMModelType::GEMMA3;
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
 
@@ -545,16 +547,19 @@ public:
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
             PerfMetrics::emplace_duration(raw_counters.chat_template_durations, template_start);
 
-            if (m_use_full_chat_history) {
+            if (m_use_full_chat_history)
                 m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
 
+            if (keep_history_images) {
                 m_encoded_images.reserve(m_encoded_images.size() + encoded_images.size());
                 m_encoded_images.insert(m_encoded_images.end(), encoded_images.begin(), encoded_images.end());
                 m_history_image_sequence.insert(m_history_image_sequence.end(),
                                                 image_sequence.begin(), image_sequence.end());
                 image_sequence = m_history_image_sequence;
                 encoded_images = m_encoded_images;
+            }
 
+            if (m_use_full_chat_history) {
                 m_encoded_videos.reserve(m_encoded_videos.size() + encoded_videos.size());
                 m_encoded_videos.insert(m_encoded_videos.end(), encoded_videos.begin(), encoded_videos.end());
                 m_history_video_sequence.insert(m_history_video_sequence.end(),
@@ -573,7 +578,8 @@ public:
 
                 m_inputs_embedder->start_chat(m_system_message);
             } else {
-                vlm_utils::rebase_media_sequence(image_sequence, m_image_id);
+                if (!keep_history_images)
+                    vlm_utils::rebase_media_sequence(image_sequence, m_image_id);
                 vlm_utils::rebase_media_sequence(video_sequence, m_video_id);
                 vlm_utils::rebase_media_sequence(audio_sequence, m_audio_id);
             }
@@ -635,11 +641,13 @@ public:
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
             } else {
                 m_history.pop_back();
-                if (m_use_full_chat_history) {
+                if (keep_history_images) {
                     OPENVINO_ASSERT(new_image_count <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
                     m_encoded_images.resize(m_encoded_images.size() - new_image_count);
                     m_history_image_sequence.resize(history_image_sequence_before);
+                }
 
+                if (m_use_full_chat_history) {
                     OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
                     m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
                     m_history_video_sequence.resize(history_video_sequence_before);
@@ -656,11 +664,13 @@ public:
             cache_state.reset_state();
         }
 
-        if (!(m_is_chat_conversation && m_use_full_chat_history)) {
+        if (!(m_is_chat_conversation && keep_history_images)) {
             m_encoded_images.clear();
+            m_history_image_sequence.clear();
+        }
+        if (!(m_is_chat_conversation && m_use_full_chat_history)) {
             m_encoded_videos.clear();
             m_encoded_audios.clear();
-            m_history_image_sequence.clear();
             m_history_video_sequence.clear();
             m_history_audio_sequence.clear();
             m_history_vision_count.clear();
@@ -846,15 +856,14 @@ public:
 
         ov::genai::utils::GenerationFinishInfo generation_finish_info;
 
-        const auto& images_embeds = use_full_history
-            ? processed_chat_data.encoded_images
-            : processed_chat_data.new_encoded_images;
+        const bool use_full_image_history = use_full_history || m_vlm_config.model_type == VLMModelType::GEMMA3;
+        const auto& images_embeds =
+            use_full_image_history ? processed_chat_data.encoded_images : processed_chat_data.new_encoded_images;
         const auto& videos_embeds = use_full_history
             ? processed_chat_data.encoded_videos
             : processed_chat_data.new_encoded_videos;
-        const auto& image_seq = use_full_history
-            ? processed_chat_data.image_sequence
-            : processed_chat_data.new_image_sequence;
+        const auto& image_seq =
+            use_full_image_history ? processed_chat_data.image_sequence : processed_chat_data.new_image_sequence;
         const auto& video_seq = use_full_history
             ? processed_chat_data.video_sequence
             : processed_chat_data.new_video_sequence;
@@ -868,7 +877,9 @@ public:
             ? processed_chat_data.vision_counts
             : std::vector<std::pair<std::size_t, std::size_t>>{ {video_seq.size(), image_seq.size()} };
 
-        vlm_utils::update_image_slice_counts(perf_metrics, images_embeds);
+        vlm_utils::update_image_slice_counts(
+            perf_metrics,
+            use_full_history ? processed_chat_data.encoded_images : processed_chat_data.new_encoded_images);
 
         generation_finish_info = prepare_inputs_and_generate(
             templated_history,
