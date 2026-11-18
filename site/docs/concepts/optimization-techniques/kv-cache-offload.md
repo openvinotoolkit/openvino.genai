@@ -50,7 +50,7 @@ The default store is a file that belongs to one pipeline instance: it is created
 
 Reuse across processes, for example after a restart, needs two more settings:
 
-* A **persistent store plugin** that keeps its blocks beyond the process, set with `store_library_path` and `allow_untrusted_store_plugin=True`. The plugin implements the C ABI declared in [kv_cache_store_provider_abi.h](../../../../src/cpp/include/openvino/genai/c/kv_cache_store_provider_abi.h); [samples/c/kv_cache_store_plugin](../../../../samples/c/kv_cache_store_plugin/README.md) is a reference implementation. A plugin that cannot be loaded is reported in the log, and the pipeline falls back to the default store. `reuse_ssd_cache` tells the plugin whether to keep what an earlier run left in `kv_cache_dir`.
+* A **persistent store plugin** that keeps its blocks beyond the process, set with `store_library_path` and `allow_untrusted_store_plugin=True`. The plugin implements the C ABI declared in [kv_cache_store_provider_abi.h](../../../../src/cpp/include/openvino/genai/c/kv_cache_store_provider_abi.h); [samples/c/kv_cache_store_plugin](../../../../samples/c/kv_cache_store_plugin/sample_kv_cache_store_plugin.c) is a reference implementation. A plugin that cannot be loaded is reported in the log, and the pipeline falls back to the default store. `reuse_ssd_cache` tells the plugin whether to keep what an earlier run left in `kv_cache_dir`.
 * `store_completed_blocks=True`, which stores every block right after the forward pass that completed it instead of only when it is about to be overwritten. Without it, a block that was never evicted is not in the store when the process ends.
 
 Blocks are stored under a name derived from the model, the device and the cache layout, so a store written for another model or device is not reused.
@@ -75,4 +75,4 @@ For models with linear attention layers (see [Hybrid Attention Models Cache](./h
 
 * [Prefix Caching](./prefix-caching.md)
 * [Continuous Batching](./continuous-batching.md)
-* [KV cache store plugin sample](../../../../samples/c/kv_cache_store_plugin/README.md)
+* [KV cache store plugin sample](../../../../samples/c/kv_cache_store_plugin/sample_kv_cache_store_plugin.c)

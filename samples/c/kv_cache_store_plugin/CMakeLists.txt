@@ -24,7 +24,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 install(TARGETS sample_kv_cache_store_plugin
-        LIBRARY DESTINATION samples_bin/
-        RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+        EXCLUDE_FROM_ALL
+        LIBRARY DESTINATION samples_bin/
+        RUNTIME DESTINATION samples_bin/)

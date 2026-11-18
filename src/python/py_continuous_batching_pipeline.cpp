@@ -638,6 +638,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const py::kwargs& kwargs
             ) -> std::shared_ptr<GenerationHandleImpl> {
                 const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+                py::gil_scoped_release rel;
                 return pipe.add_request(
                     request_id,
                     prompt,
@@ -662,6 +663,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const ov::Tensor& input_ids,
                const ov::genai::GenerationConfig& generation_config
             ) -> std::shared_ptr<GenerationHandleImpl> {
+                py::gil_scoped_release rel;
                 return pipe.add_request(request_id, input_ids, generation_config);
             },
             py::arg("request_id"),
@@ -675,6 +677,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::string& prompt,
                const ov::genai::GenerationConfig& generation_config
             ) -> std::shared_ptr<GenerationHandleImpl> {
+                py::gil_scoped_release rel;
                 return pipe.add_request(request_id, prompt, generation_config);
             },
             py::arg("request_id"),
@@ -692,6 +695,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const py::kwargs& kwargs
             ) -> std::shared_ptr<GenerationHandleImpl> {
                 const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+                py::gil_scoped_release rel;
                 return pipe.add_request(
                     request_id,
                     prompt,
@@ -715,6 +719,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<ov::Tensor>& images,
                const ov::genai::GenerationConfig& generation_config
             ) -> std::shared_ptr<GenerationHandleImpl> {
+                py::gil_scoped_release rel;
                 return pipe.add_request(request_id, prompt, images, generation_config);
             },
             py::arg("request_id"),
