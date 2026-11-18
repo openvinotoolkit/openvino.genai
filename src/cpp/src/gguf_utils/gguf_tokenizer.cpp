@@ -153,10 +153,10 @@ bool is_skipped_on_decode(int32_t token_type) {
 
 std::string quote_meta(const std::string& str) {
     std::string result = "(";
-    
-    // todo: add also utf validate
     for (char c : str) {
-        if (!std::isalnum(c) && c != '_') {
+        const auto byte = static_cast<unsigned char>(c);
+        // Escaping UTF-8 bytes of non-ASCII characters would break the regex.
+        if (byte < 0x80 && !std::isalnum(byte) && c != '_') {
             result += '\\';
         }
         result += c;
@@ -389,12 +389,17 @@ std::vector<uint8_t> apply_unicode_to_bytes(const std::string& token) {
     return res;
 }
 
-std::vector<std::vector<uint8_t>> parse_bbpe_vocab(const std::vector<std::string>& vocab, bool byte_encode = true) {
+std::vector<std::vector<uint8_t>> parse_bbpe_vocab(const std::vector<std::string>& vocab,
+                                                   const ov::Tensor& token_types,
+                                                   bool byte_encode = true) {
     std::vector<std::vector<uint8_t>> res;
-    for (const auto& token : vocab) {
+    const int32_t* types = token_types.data<int32_t>();
+    for (size_t i = 0; i < vocab.size(); ++i) {
+        const auto& token = vocab[i];
         // gpt2 uses GPT-2 unicode->byte decoding; gemma4's raw-UTF8 vocab is taken verbatim.
-        res.push_back(byte_encode ? apply_unicode_to_bytes(token)
-                                  : std::vector<uint8_t>(token.begin(), token.end()));
+        // Atomic tokens are stored as literal UTF-8 text, as in llama.cpp.
+        const bool literal = !byte_encode || is_atomic_token(types[i]);
+        res.push_back(literal ? std::vector<uint8_t>(token.begin(), token.end()) : apply_unicode_to_bytes(token));
     }
     return res;
 }
@@ -408,7 +413,11 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
     if (auto val = std::get_if<std::vector<std::string>>(&tokenizer_config.at("tokens"))) {
         vocab_from_config = *val;
     }
-    auto vocab = parse_bbpe_vocab(vocab_from_config, byte_encode);
+    ov::Tensor token_types{};
+    if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("token_type"))) {
+        token_types = *val;
+    }
+    auto vocab = parse_bbpe_vocab(vocab_from_config, token_types, byte_encode);
     auto vocab_const = create_string_constant(vocab);
 
     inputs.insert(inputs.end(), vocab_const.begin(), vocab_const.end());
@@ -441,15 +450,6 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
     inputs.insert(inputs.end(), right_merges_const.begin(), right_merges_const.end());
 
     // 3. Extract special tokens
-    ov::Tensor token_types{};
-    std::vector<std::string> tokens{};
-    if (auto val = std::get_if<std::vector<std::string>>(&tokenizer_config.at("tokens"))) {
-        tokens = *val;
-    }
-    if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("token_type"))) {
-        token_types = *val;
-    }
-
     std::vector<std::vector<uint8_t>> special_tokens;
     std::vector<int32_t> special_token_indices;
 
@@ -1011,7 +1011,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         // decoding of the vocab; gemma4 uses the raw-UTF8 vocab (and undoes the metaspace
         // afterwards, below).
         const bool byte_encode = (effective_model != "gemma4");
-        auto vocab = parse_bbpe_vocab(tokens, byte_encode);
+        auto vocab = parse_bbpe_vocab(tokens, token_types, byte_encode);
         ov::OutputVector const_vocab = create_string_constant(vocab);
         OutputVector detokenizer_outputs = {detokenizer_input};
         detokenizer_outputs.insert(detokenizer_outputs.end(), const_vocab.begin(), const_vocab.end());
