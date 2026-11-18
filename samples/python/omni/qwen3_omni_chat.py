@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Qwen3-Omni multimodal chat sample.
+Omni multimodal chat sample for Qwen3-Omni and LFM3-Omni.
 
-Preview: the Qwen3-Omni API (OmniPipeline and related types) is a preview feature
+Preview: the OmniPipeline API (OmniPipeline and related types) is a preview feature
 and is subject to change in future releases.
 
 Demonstrates text + image + audio + video -> text + speech output using the ChatHistory API.
@@ -95,12 +95,12 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
     return Tensor(np.array(frames)), video_metadata
 
 
-# Qwen3-Omni speech output is 24kHz mono PCM.
+# Qwen3-Omni and LFM3-Omni speech output is 24kHz mono PCM.
 SPEECH_SAMPLE_RATE = 24000
 
 
 def save_speech(decoded_results: openvino_genai.OmniDecodedResults, file_name: str) -> None:
-    """Save the first speech waveform to a WAV file. Speech output is optional (talker mode)."""
+    """Save the first speech waveform to a WAV file. Speech output is optional."""
     if not decoded_results.speech_result.waveforms:
         return
     waveform = np.array(decoded_results.speech_result.waveforms[0].data).reshape(-1)
@@ -108,7 +108,7 @@ def save_speech(decoded_results: openvino_genai.OmniDecodedResults, file_name: s
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Qwen3-Omni multimodal chat")
+    parser = argparse.ArgumentParser(description="Qwen3-Omni and LFM3-Omni multimodal chat")
     parser.add_argument("model_dir", help="Path to the OpenVINO model directory")
     parser.add_argument(
         "image_dir",
@@ -130,17 +130,17 @@ def main() -> None:
 
     pipe = openvino_genai.OmniPipeline(args.model_dir, "CPU")
 
-    # Two configs: text_config drives the thinker text decode; talker_speech_config drives the
-    # talker + speech output. Speech output is hardcoded on here to show the multimodal path.
+    # Two configs: text_config drives the text decode; talker_speech_config drives the speech
+    # output. Speech output is hardcoded on here to show the multimodal path.
     # Set talker_speech_config.return_audio = False to get text-only responses.
     text_config = openvino_genai.GenerationConfig()
     text_config.max_new_tokens = 256
 
     talker_speech_config = openvino_genai.OmniTalkerSpeechConfig(args.model_dir)
     talker_speech_config.return_audio = True
-    # Leaving speaker empty selects the model's default voice. Available voices vary by checkpoint
+    # Leaving speaker empty selects the model's default voice. Qwen3-Omni voices vary by checkpoint
     # (e.g. MoE exposes "Ethan", "Chelsie", "Aiden", "Cherry"); the full list is in
-    # talker_config.speaker_id of the model's config.json.
+    # talker_config.speaker_id of the model's config.json. LFM3-Omni takes the voice from the system prompt.
 
     video_tensor, video_metadata = read_video(args.video)
     videos = [video_tensor]
