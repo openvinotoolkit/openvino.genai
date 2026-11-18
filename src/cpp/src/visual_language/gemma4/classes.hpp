@@ -18,14 +18,24 @@ namespace ov::genai {
 
 class VisionEncoderGemma4 : public VisionEncoder {
 public:
-    using VisionEncoder::VisionEncoder;
+    VisionEncoderGemma4(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+
+    VisionEncoderGemma4(const ModelsMap& models_map,
+                        const std::filesystem::path& config_dir_path,
+                        const std::string& device,
+                        const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
 
 private:
+    void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties);
+
     EncodedImage encode_with_config(const ov::Tensor& image, const ProcessorConfig& config);
+
+    // Pooling of the encoder output on CPU. It exists when the encoder runs on NPU with static shapes.
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_pooler;
 };
 
 class InputsEmbedderGemma4 : public InputsEmbedder::IInputsEmbedder {

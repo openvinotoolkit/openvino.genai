@@ -143,6 +143,7 @@ PROMPTS: list[str] = [
 ]
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
+MODEL_GEMMA4 = "optimum-intel-internal-testing/tiny-random-gemma4"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 MODEL_QWEN35_MTP = "optimum-intel-internal-testing/tiny-random-qwen3.5-mtp"
@@ -1720,6 +1721,25 @@ def test_vlm_npu_gemma3_vision_encoder(cat_tensor):
     cpu_pipe = VLMPipeline(models_path, "CPU")
     npuw_pipe = VLMPipeline(models_path, "CPU", config=properties)
     # NPUW runs the encoder on CPU here, so greedy output must match the default CPU pipeline exactly.
+    generation_config = _setup_generation_config(cpu_pipe, max_new_tokens=10, do_sample=False)
+
+    cpu_res = cpu_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    npuw_res = npuw_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    assert npuw_res.texts[0] == cpu_res.texts[0]
+
+
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_vlm_npu_gemma4_vision_encoder(cat_tensor):
+    models_path = _get_ov_model(MODEL_GEMMA4)
+    # DEVICE puts the padded encoder body on NPU with a static shape, its pooling runs on CPU.
+    properties = {
+        "MODEL_PROPERTIES": {
+            "vision_embeddings": {"DEVICE": "NPU", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"},
+        }
+    }
+
+    cpu_pipe = VLMPipeline(models_path, "CPU")
+    npuw_pipe = VLMPipeline(models_path, "CPU", config=properties)
     generation_config = _setup_generation_config(cpu_pipe, max_new_tokens=10, do_sample=False)
 
     cpu_res = cpu_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)

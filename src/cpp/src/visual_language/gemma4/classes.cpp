@@ -13,6 +13,10 @@
 #include <string_view>
 
 #include "logger.hpp"
+#include "openvino/op/matmul.hpp"
+#include "openvino/op/parameter.hpp"
+#include "openvino/pass/constant_folding.hpp"
+#include "openvino/pass/manager.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
@@ -147,6 +151,81 @@ size_t get_num_valid_soft_tokens(const PatchExtractionConfig& patch_config,
     return num_patches_h * num_patches_w;
 }
 
+// The patch count that the encoder is compiled for, or `default_capacity` when its pixel_values is dynamic.
+size_t get_patches_capacity(ov::InferRequest& encoder, size_t default_capacity) {
+    const ov::PartialShape pixel_values_shape = encoder.get_compiled_model().input("pixel_values").get_partial_shape();
+    return pixel_values_shape[1].is_static() ? static_cast<size_t>(pixel_values_shape[1].get_length())
+                                             : default_capacity;
+}
+
+struct SplitVisionModel {
+    std::shared_ptr<ov::Model> encoder;
+    std::shared_ptr<ov::Model> pooler;
+};
+
+// With pixel_values and image_position_ids padded to `num_patches`, everything before the pooler MatMul has static
+// shapes. The pooling and the selection of the valid soft tokens that follow have a data-dependent output size, so
+// they are split into a separate model.
+SplitVisionModel split_at_pooler(const std::shared_ptr<ov::Model>& model, size_t num_patches, size_t patch_dim) {
+    model->reshape(
+        {{"pixel_values", ov::PartialShape{1, static_cast<int64_t>(num_patches), static_cast<int64_t>(patch_dim)}},
+         {"image_position_ids", ov::PartialShape{1, static_cast<int64_t>(num_patches), 2}}});
+
+    // The pooler MatMul is the first one with a dynamic output and a static rank 3 input, the encoder hidden states.
+    std::shared_ptr<ov::op::v0::MatMul> pooler_matmul;
+    size_t hidden_input = 0;
+    for (const auto& node : model->get_ordered_ops()) {
+        const auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(node);
+        if (!matmul || matmul->get_output_partial_shape(0).is_static()) {
+            continue;
+        }
+        for (size_t i = 0; i < 2 && !pooler_matmul; ++i) {
+            const auto& shape = matmul->get_input_partial_shape(i);
+            if (shape.is_static() && shape.size() == 3) {
+                pooler_matmul = matmul;
+                hidden_input = i;
+            }
+        }
+        if (pooler_matmul) {
+            break;
+        }
+    }
+    OPENVINO_ASSERT(pooler_matmul,
+                    "Gemma4 vision embeddings model has no pooler MatMul with static hidden states "
+                    "to split the model at");
+
+    const ov::Output<ov::Node> hidden = pooler_matmul->input_value(hidden_input);
+    const std::string pooler_matmul_name = pooler_matmul->get_friendly_name();
+
+    auto pooler = model->clone();
+    std::shared_ptr<ov::Node> cloned_matmul;
+    for (const auto& node : pooler->get_ordered_ops()) {
+        if (node->get_friendly_name() == pooler_matmul_name) {
+            cloned_matmul = node;
+            break;
+        }
+    }
+    OPENVINO_ASSERT(cloned_matmul, "Cannot find the pooler MatMul ", pooler_matmul_name, " in the cloned model");
+
+    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(hidden.get_element_type(), hidden.get_shape());
+    hidden_states->output(0).set_names({"hidden_states"});
+    cloned_matmul->input(hidden_input).replace_source_output(hidden_states->output(0));
+    pooler->add_parameters({hidden_states});
+
+    // pixel_values only feeds ShapeOf, which is constant once the shapes are static.
+    const auto pixel_values =
+        ov::as_type_ptr<ov::op::v0::Parameter>(pooler->input("pixel_values").get_node_shared_ptr());
+    ov::pass::Manager manager;
+    manager.register_pass<ov::pass::ConstantFolding>();
+    manager.run_passes(pooler);
+    pooler->remove_parameter(pixel_values);
+    pooler->validate_nodes_and_infer_types();
+
+    auto encoder =
+        std::make_shared<ov::Model>(ov::OutputVector{hidden}, model->get_parameters(), model->get_friendly_name());
+    return {encoder, pooler};
+}
+
 /**
  * @brief Populates video metadata and computes frame sampling indices.
  */
@@ -213,6 +292,63 @@ int64_t get_gemma4_token_type(int64_t input_id,
 
 namespace ov::genai {
 
+VisionEncoderGemma4::VisionEncoderGemma4(const std::filesystem::path& model_dir,
+                                         const std::string& device,
+                                         const ov::AnyMap properties)
+    : VisionEncoder(model_dir, ConfigOnlyTag{}) {
+    compile(utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml"), device, properties);
+}
+
+VisionEncoderGemma4::VisionEncoderGemma4(const ModelsMap& models_map,
+                                         const std::filesystem::path& config_dir_path,
+                                         const std::string& device,
+                                         const ov::AnyMap properties)
+    : VisionEncoder(models_map, config_dir_path, ConfigOnlyTag{}) {
+    const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
+    compile(utils::singleton_core().read_model(model_str, weights), device, properties);
+}
+
+void VisionEncoderGemma4::compile(std::shared_ptr<ov::Model> model,
+                                  const std::string& device,
+                                  const ov::AnyMap& properties) {
+    auto compile_device = device;
+    // DEVICE in the encoder's own model properties picks its device and makes those properties the only ones it gets.
+    auto role_properties = utils::get_role_properties(properties, "vision_embeddings");
+    if (const auto device_it = role_properties.find("DEVICE"); device_it != role_properties.end()) {
+        compile_device = device_it->second.as<std::string>();
+        role_properties.erase(device_it);
+        if (compile_device == "NPU") {
+            utils::set_config_default(role_properties, "NPU_USE_NPUW", std::string("YES"));
+            // The encoder gets one image padded to the largest patch count per request, so its shape can be static.
+            // The pooling after it has a data-dependent output size and runs on CPU.
+            const auto patch_dim =
+                static_cast<size_t>(model->input("pixel_values").get_partial_shape()[2].get_length());
+            const auto num_patches = get_patch_extraction_config(m_processor_config, patch_dim).max_patches;
+            auto split = split_at_pooler(model, num_patches, patch_dim);
+            model = split.encoder;
+
+            auto pooler_model =
+                utils::singleton_core().compile_model(split.pooler,
+                                                      "CPU",
+                                                      ov::AnyMap{ov::hint::inference_precision(ov::element::f32)});
+            m_ireq_queue_pooler = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+                pooler_model.get_property(ov::optimal_number_of_infer_requests),
+                [&pooler_model]() -> ov::InferRequest {
+                    return pooler_model.create_infer_request();
+                });
+        }
+    } else {
+        role_properties = utils::get_model_properties(properties, "vision_embeddings", compile_device);
+    }
+    auto compiled_model = utils::singleton_core().compile_model(model, compile_device, role_properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
+    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+}
+
 EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
     return encode_with_config(image, config);
@@ -247,19 +383,25 @@ EncodedImage VisionEncoderGemma4::encode_with_config(const ov::Tensor& image, co
     ov::InferRequest& encoder = infer_request_guard.get();
     const size_t patch_dim = get_static_pixel_values_patch_dim(encoder);
     const PatchExtractionConfig patch_config = get_patch_extraction_config(config, patch_dim);
+    const size_t num_patches = get_patches_capacity(encoder, patch_config.max_patches);
     const size_t num_patches_h = target_height / patch_config.patch_size;
     const size_t num_patches_w = target_width / patch_config.patch_size;
+    OPENVINO_ASSERT(num_patches_h * num_patches_w <= num_patches,
+                    "Gemma4 image has ",
+                    num_patches_h * num_patches_w,
+                    " patches, but the vision embeddings model is compiled for ",
+                    num_patches);
 
-    ov::Tensor pixel_values(ov::element::f32, {1, patch_config.max_patches, patch_config.patch_dim});
+    ov::Tensor pixel_values(ov::element::f32, {1, num_patches, patch_config.patch_dim});
     float* pv_data = pixel_values.data<float>();
-    std::fill(pv_data, pv_data + patch_config.max_patches * patch_config.patch_dim, 0.0f);
+    std::fill(pv_data, pv_data + num_patches * patch_config.patch_dim, 0.0f);
 
     extract_patches(float_image, patch_config.patch_size, pv_data, num_patches_h, num_patches_w);
 
     // 6. Compute 2D patch position IDs and pad unused positions with -1
-    ov::Tensor image_position_ids(ov::element::i64, {1, patch_config.max_patches, 2});
+    ov::Tensor image_position_ids(ov::element::i64, {1, num_patches, 2});
     int64_t* pos_data = image_position_ids.data<int64_t>();
-    std::fill(pos_data, pos_data + patch_config.max_patches * 2, int64_t{-1});
+    std::fill(pos_data, pos_data + num_patches * 2, int64_t{-1});
 
     for (size_t py = 0; py < num_patches_h; py++) {
         for (size_t px = 0; px < num_patches_w; px++) {
@@ -275,7 +417,18 @@ EncodedImage VisionEncoderGemma4::encode_with_config(const ov::Tensor& image, co
     encoder.infer();
 
     // 8. Output shape is [num_soft_tokens, hidden_size] or [1, max_soft_tokens, hidden_size].
-    const ov::Tensor& infer_output = encoder.get_output_tensor();
+    ov::Tensor infer_output = encoder.get_output_tensor();
+    if (m_ireq_queue_pooler) {
+        // The encoder output is the hidden states; the pooling that selects the valid soft tokens runs on CPU.
+        CircularBufferQueueElementGuard<ov::InferRequest> pooler_guard(m_ireq_queue_pooler.get());
+        ov::InferRequest& pooler = pooler_guard.get();
+        pooler.set_tensor("hidden_states", infer_output);
+        pooler.set_tensor("image_position_ids", image_position_ids);
+        pooler.infer();
+        const ov::Tensor pooled = pooler.get_output_tensor();
+        infer_output = ov::Tensor(pooled.get_element_type(), pooled.get_shape());
+        pooled.copy_to(infer_output);
+    }
     const ov::Shape& output_shape = infer_output.get_shape();
     OPENVINO_ASSERT(output_shape.size() == 3 || output_shape.size() == 2,
                     "Gemma4 vision embeddings output rank must be 2 or 3, got ",
