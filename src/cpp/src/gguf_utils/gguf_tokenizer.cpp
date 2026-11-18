@@ -1007,11 +1007,28 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         packed[0].get_tensor().add_names({"string_output"});
         detokenizer = std::make_shared<Model>(packed, ParameterVector{detokenizer_input}, "detokenizer");
     } else {
-        // BPE detokenizer: VocabDecoder + FuzeRagged + UTF8Validate. gpt2 uses GPT-2 byte
-        // decoding of the vocab; gemma4 uses the raw-UTF8 vocab (and undoes the metaspace
-        // afterwards, below).
+        // BPE detokenizer: VocabDecoder + FuzeRagged + UTF8Validate.
         const bool byte_encode = (effective_model != "gemma4");
         auto vocab = parse_bbpe_vocab(tokens, token_types, byte_encode);
+        if (effective_model == "gemma4") {
+            // Unescape ordinary pieces before concatenation, preserving literal atomic tokens.
+            const std::string metaspace = "\xe2\x96\x81";
+            for (size_t i = 0; i < tokens.size(); ++i) {
+                if (is_atomic_token(token_types_data[i])) {
+                    continue;
+                }
+                auto pos = tokens[i].find(metaspace);
+                if (pos == std::string::npos) {
+                    continue;
+                }
+                auto piece = tokens[i];
+                do {
+                    piece.replace(pos, metaspace.size(), " ");
+                    pos = piece.find(metaspace, pos + 1);
+                } while (pos != std::string::npos);
+                vocab[i].assign(piece.begin(), piece.end());
+            }
+        }
         ov::OutputVector const_vocab = create_string_constant(vocab);
         OutputVector detokenizer_outputs = {detokenizer_input};
         detokenizer_outputs.insert(detokenizer_outputs.end(), const_vocab.begin(), const_vocab.end());
@@ -1039,15 +1056,6 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         ov::OutputVector inputs_for_utf8_validate(outputs_fused_ragged.begin(), outputs_fused_ragged.end());
         auto outputs_utf8_validate =
             create_func("UTF8Validate", inputs_for_utf8_validate, {{"replace_mode", true}});
-        if (effective_model == "gemma4") {
-            // Undo the metaspace: U+2581 -> space, on the decoded ragged string.
-            const std::string metaspace = "\xe2\x96\x81";
-            ov::OutputVector norm_inputs(outputs_utf8_validate.begin(),
-                                         outputs_utf8_validate.begin() + 3);
-            norm_inputs.push_back(u8_string_constant(metaspace));
-            norm_inputs.push_back(u8_string_constant(" "));
-            outputs_utf8_validate = create_func("RegexNormalization", norm_inputs, {{"global_replace", true}});
-        }
         auto packed_output = create_func("StringTensorPack", outputs_utf8_validate, {});
         packed_output[0].get_tensor().add_names({"string_output"});
         detokenizer = std::make_shared<Model>(packed_output, ParameterVector{detokenizer_input}, "detokenizer");
