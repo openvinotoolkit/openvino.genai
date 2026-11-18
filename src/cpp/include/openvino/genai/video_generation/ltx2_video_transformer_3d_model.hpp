@@ -99,17 +99,28 @@ public:
     /// Guidance). Indices outside the model's block range are ignored. Requires a 'stg_perturbation_mask'
     /// input. Both arguments are no-ops at their defaults, which reproduce LTX-2.0 behaviour.
     /// @returns A pair of video and audio velocity predictions
+    /// @param frame_timestep_scales Per latent frame of the video sequence, the factor of `timestep` its tokens
+    /// get, e.g. 1 - conditioning mask for image and video conditions (0 keeps a frame clean). The frames split the
+    /// sequence evenly. Empty gives every token `timestep`. Exports with a grouped timestep (optimum-intel's
+    /// 'ltx2_grouped_timestep') take one value per frame, older ones one per token.
     std::pair<ov::Tensor, ov::Tensor> infer(const ov::Tensor& video_latent,
                                             const ov::Tensor& audio_latent,
                                             float timestep,
                                             bool isolate_modalities = false,
-                                            const std::vector<int64_t>& stg_blocks = {});
+                                            const std::vector<int64_t>& stg_blocks = {},
+                                            const std::vector<float>& frame_timestep_scales = {});
 
+    /// @param per_frame_timestep Size 'timestep' for one value per latent frame, as image and video conditioning
+    /// pass it, instead of one shared value
     LTX2VideoTransformer3DModel& reshape(int64_t batch_size,
                                          int64_t num_frames,
                                          int64_t height,
                                          int64_t width,
-                                         int64_t audio_num_frames);
+                                         int64_t audio_num_frames,
+                                         bool per_frame_timestep = false);
+
+    /// @brief Whether the model takes one timestep per latent frame and broadcasts it over the frame's tokens
+    bool has_grouped_timestep() const;
 
     size_t get_expected_batch_size() const;
 
@@ -133,6 +144,7 @@ private:
     bool m_has_cross_modality_gate = false;
     bool m_has_stg_perturbation_mask = false;
     bool m_external_rope = false;
+    bool m_grouped_timestep = false;
     size_t m_num_stg_blocks = 0;
 };
 

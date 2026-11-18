@@ -1017,6 +1017,23 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr& sequenc
     return dropped_seq_ids;
 }
 
+// Greedy and multinomial counterpart of the beam search n-gram ban (Hugging Face's NoRepeatNGramLogitsProcessor):
+// tokens that would repeat an n-gram of the prompt and the generated text are banned before any other transform
+void ban_repeated_ngrams(Logits& logits, const SequenceGroup& sequence_group, const Sequence& sequence, size_t ngram_size) {
+    if (ngram_size == std::numeric_limits<size_t>::max()) {
+        return;
+    }
+    std::vector<int64_t> full_text{sequence_group.get_prompt_ids()};
+    const auto& generated_ids = sequence.get_generated_ids();
+    full_text.insert(full_text.end(), generated_ids.begin(), generated_ids.end());
+    if (full_text.size() > 1 && full_text.size() >= ngram_size) {
+        const auto tail_start = full_text.end() - ptrdiff_t(ngram_size) + 1;
+        for (int64_t banned_token : kmp_search(full_text, {tail_start, full_text.end()})) {
+            logits.m_data[banned_token] = -std::numeric_limits<float>::infinity();
+        }
+    }
+}
+
 void append_sampled_token(const Token& sampled_token, const Sequence::Ptr& sequence, LogitProcessor& logit_processor) {
     logit_processor.register_new_generated_token(sampled_token.m_index);
     sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
@@ -1338,6 +1355,7 @@ void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
             }
 
             auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, 0);
+            ban_repeated_ngrams(logit_vector, *sequence_group, *running_sequence, sampling_params.no_repeat_ngram_size);
             logit_processor.update_generated_len(generated_len);
             logit_processor.apply(logit_vector);
             std::optional<SamplingDistribution> distribution;

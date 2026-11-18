@@ -23,6 +23,8 @@
 #include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
+#include "openvino/genai/video_generation/generation_config.hpp"
+#include "openvino/genai/video_generation/video_condition.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -264,6 +266,18 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 videos_metadata.push_back(item.cast<ov::genai::VideoMetadata>());
             }
             return videos_metadata;
+        } else if (property_name == ov::genai::conditions.name()) {
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<ov::genai::VideoCondition> conditions;
+            for (const auto& item : property_list) {
+                OPENVINO_ASSERT(py::isinstance<ov::genai::VideoCondition>(item),
+                                "Incorrect value in \"" + property_name + "\". Expected VideoCondition.");
+                conditions.push_back(item.cast<ov::genai::VideoCondition>());
+            }
+            return conditions;
+        } else if (property_name == ov::genai::sigmas.name()) {
+            // A float list would become std::vector<double>, which does not convert to the config's floats
+            return py_obj.cast<std::vector<float>>();
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT };

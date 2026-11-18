@@ -32,6 +32,11 @@ public:
         OPENVINO_THROW("Scheduler doesn't support `set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength)` method");
     }
 
+    /// Sets a custom schedule of sigmas, decreasing, without the final 0
+    virtual void set_timesteps_from_sigmas(const std::vector<float>& sigmas, const double mu) {
+        OPENVINO_THROW("Scheduler doesn't support custom sigmas");
+    }
+
     virtual void set_timesteps_with_mu(const double mu, const size_t num_inference_steps, const float strength) {
         OPENVINO_THROW("Scheduler doesn't support `set_timesteps_with_mu` method");
     }

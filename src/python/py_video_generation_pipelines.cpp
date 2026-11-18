@@ -10,6 +10,8 @@
 
 #include "openvino/genai/video_generation/image2video_pipeline.hpp"
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+#include "openvino/genai/video_generation/video2video_pipeline.hpp"
+#include "openvino/genai/video_generation/video_condition.hpp"
 #include "py_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
@@ -42,7 +44,12 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("audio_modality_scale", &ov::genai::VideoGenerationConfig::audio_modality_scale)
         .def_readwrite("audio_guidance_rescale", &ov::genai::VideoGenerationConfig::audio_guidance_rescale)
         .def_readwrite("spatio_temporal_guidance_blocks",
-                       &ov::genai::VideoGenerationConfig::spatio_temporal_guidance_blocks);
+                       &ov::genai::VideoGenerationConfig::spatio_temporal_guidance_blocks)
+        .def_readwrite("sigmas", &ov::genai::VideoGenerationConfig::sigmas)
+        .def_readwrite("noise_scale", &ov::genai::VideoGenerationConfig::noise_scale)
+        .def_readwrite("edit_num_steps", &ov::genai::VideoGenerationConfig::edit_num_steps)
+        .def_readwrite("enable_prompt_enhancement", &ov::genai::VideoGenerationConfig::enable_prompt_enhancement)
+        .def_readwrite("system_prompt", &ov::genai::VideoGenerationConfig::system_prompt);
 
     py::class_<ov::genai::VideoGenerationResult>(m, "VideoGenerationResult")
         .def_readonly("video", &ov::genai::VideoGenerationResult::video)
@@ -111,6 +118,25 @@ void init_video_generation_pipelines(py::module_& m) {
             },
             py::arg("prompt"));
 
+    py::class_<ov::genai::VideoCondition>(m,
+                                          "VideoCondition",
+                                          "Frames that a generated LTX-2 video must contain at a latent frame index.")
+        .def(py::init([](const ov::Tensor& frames, int64_t index, float strength) {
+                 return ov::genai::VideoCondition{frames, index, strength};
+             }),
+             py::arg("frames"),
+             py::arg("index") = 0,
+             py::arg("strength") = 1.0f,
+             R"(
+                frames (ov.Tensor): u8 RGB frames [F, H, W, 3] or an image [H, W, 3].
+                index (int): Latent frame index of the first frame (8 video frames per latent frame, negative values
+                    count from the end).
+                strength (float): 1.0 keeps the frames as they are, lower values let the model change them.
+            )")
+        .def_readwrite("frames", &ov::genai::VideoCondition::frames)
+        .def_readwrite("index", &ov::genai::VideoCondition::index)
+        .def_readwrite("strength", &ov::genai::VideoCondition::strength);
+
     py::class_<ov::genai::Image2VideoPipeline>(m, "Image2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
@@ -175,6 +201,23 @@ void init_video_generation_pipelines(py::module_& m) {
             },
             py::arg("image"),
             py::arg("prompt"))
+        .def(
+            "generate",
+            [](ov::genai::Image2VideoPipeline& pipe,
+               const std::vector<ov::genai::VideoCondition>& images,
+               const std::string& prompt,
+               const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                ov::genai::VideoGenerationResult result;
+                {
+                    py::gil_scoped_release rel;
+                    result = pipe.generate(images, prompt, properties);
+                }
+                return result;
+            },
+            py::arg("images"),
+            py::arg("prompt"),
+            "Generates a video through one or more images (VideoCondition) placed at latent frame indices. LTX-2 only.")
         .def("decode",
              [](ov::genai::Image2VideoPipeline& pipe, const ov::Tensor& latent) {
                  py::gil_scoped_release rel;
@@ -182,4 +225,80 @@ void init_video_generation_pipelines(py::module_& m) {
              },
              py::arg("latent"))
         .def("get_performance_metrics", &ov::genai::Image2VideoPipeline::get_performance_metrics);
+
+    py::class_<ov::genai::Video2VideoPipeline>(m, "Video2VideoPipeline")
+        .def(py::init([](const std::filesystem::path& models_path) {
+                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                 return std::make_unique<ov::genai::Video2VideoPipeline>(models_path);
+             }),
+             py::arg("models_path"))
+        .def(
+            py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
+                ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                return std::make_unique<ov::genai::Video2VideoPipeline>(models_path,
+                                                                        device,
+                                                                        pyutils::kwargs_to_any_map(kwargs));
+            }),
+            py::arg("models_path"),
+            py::arg("device"))
+        .def("get_generation_config",
+             &ov::genai::Video2VideoPipeline::get_generation_config,
+             py::return_value_policy::copy)
+        .def("set_generation_config", &ov::genai::Video2VideoPipeline::set_generation_config, py::arg("config"))
+        .def("reshape",
+             &ov::genai::Video2VideoPipeline::reshape,
+             py::arg("num_videos_per_prompt"),
+             py::arg("num_frames"),
+             py::arg("height"),
+             py::arg("width"),
+             py::arg("guidance_scale"))
+        .def(
+            "compile",
+            [](ov::genai::Video2VideoPipeline& pipe, const std::string& device, const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                pipe.compile(device, properties);
+            },
+            py::arg("device"))
+        .def(
+            "compile",
+            [](ov::genai::Video2VideoPipeline& pipe,
+               const std::string& text_encode_device,
+               const std::string& denoise_device,
+               const std::string& vae_device,
+               const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                pipe.compile(text_encode_device, denoise_device, vae_device, properties);
+            },
+            py::arg("text_encode_device"),
+            py::arg("denoise_device"),
+            py::arg("vae_device"))
+        .def(
+            "generate",
+            [](ov::genai::Video2VideoPipeline& pipe,
+               const ov::Tensor& video,
+               const std::string& prompt,
+               const py::kwargs& kwargs) {
+                auto properties = pyutils::kwargs_to_any_map(kwargs);
+                ov::genai::VideoGenerationResult result;
+                {
+                    py::gil_scoped_release rel;
+                    result = pipe.generate(video, prompt, properties);
+                }
+                return result;
+            },
+            py::arg("video"),
+            py::arg("prompt"),
+            R"(
+                Generates video(s) from a source video [F, H, W, 3] u8: edited with 'noise_scale' and / or
+                'edit_num_steps', conditioned with 'conditions' (a list of VideoCondition), or both.
+            )")
+        .def("decode",
+             [](ov::genai::Video2VideoPipeline& pipe, const ov::Tensor& latent) {
+                 py::gil_scoped_release rel;
+                 return pipe.decode(latent);
+             },
+             py::arg("latent"))
+        .def("get_performance_metrics", &ov::genai::Video2VideoPipeline::get_performance_metrics);
 }

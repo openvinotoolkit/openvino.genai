@@ -1,10 +1,12 @@
 # OpenVINO GenAI Video Generation Python Samples
 
-These samples showcase the use of OpenVINO's inference capabilities for video generation tasks. The samples feature `openvino_genai.Text2VideoPipeline` for generating videos from text prompts, and `openvino_genai.Image2VideoPipeline` for generating videos with text prompts combined with conditioning images, using models like LTX-Video.
+These samples showcase the use of OpenVINO's inference capabilities for video generation tasks. The samples feature `openvino_genai.Text2VideoPipeline` for generating videos from text prompts, `openvino_genai.Image2VideoPipeline` for generating videos with text prompts combined with conditioning images, and `openvino_genai.Video2VideoPipeline` for editing and prolonging videos, using models like LTX-Video and LTX-2.
 The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
 
  - [`text2video.py`](./text2video.py) demonstrates basic text to video generation.
  - [`image2video.py`](./image2video.py) demonstrates image-conditioned video generation.
+ - [`ltx2_image2video.py`](./ltx2_image2video.py) demonstrates LTX-2 video generation from a first image, and optionally a last one.
+ - [`ltx2_video2video.py`](./ltx2_video2video.py) demonstrates LTX-2 video editing and prolonging.
  - [`taylorseer_text2video.py`](./taylorseer_text2video.py) demonstrates text to video generation with TaylorSeer caching optimization for improved performance. LTX-Video model is supported only.
 
 ## Table of Contents
@@ -59,6 +61,18 @@ optimum-cli export openvino --model diffusers/LTX-2.3-Diffusers --task text-to-v
 ```
 
 LTX-2.3 generates a synchronized audio track, so [`text2video.py`](./text2video.py) also writes `genai_audio.wav`. Its guidance defaults are read from the converted model and need no configuration; see the [generation config](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html) for the `stg_scale` / `modality_scale` knobs that control the extra guidance passes.
+
+### For LTX-2.5
+
+```sh
+optimum-cli export openvino --model Lightricks/LTX-2.5-Diffusers ltx_2_5_ov
+```
+
+The export contains everything the text-to-video, image-to-video and video-to-video pipelines need. LTX-2.5 ships a distilled transformer, so the pipelines default to its recipe: 8 fixed `sigmas`, with classifier-free, spatio-temporal and modality guidance off. When `num_frames` is not given, the model's duration head chooses it from the prompt.
+
+LTX-2.5 also ships a prompt enhancer, a small Gemma 4 VLM that rewrites a short prompt into the detailed description the model was trained on, also looking at the conditioning image for image-to-video. It is off by default; pass `enable_prompt_enhancement=True` to `generate()`, or `--enhance-prompt` to the LTX-2 samples. `system_prompt` replaces its default instructions.
+
+Image and video conditioning needs an export made with optimum-intel's `use_cross_timestep=True` tracing of the LTX-2 transformer.
 
 ## Sample Descriptions
 
@@ -116,6 +130,34 @@ pip install -r ../../deployment-requirements.txt
   ```bash
   wget -O overture-creations.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png
   python image2video.py ./ltx_video_ov_i2v/FP32 overture-creations.png "A golden retriever in a sunlit bedroom slowly stands up, stretches its front paws forward, yawns wide showing pink tongue, then turns its head to look at the camera, ears perking up alertly, tail beginning to wag, warm afternoon window light, cinematic shallow depth of field, smooth handheld camera motion, photorealistic, detailed fur"
+  ```
+
+### LTX-2 Image to Video Sample (`ltx2_image2video.py`)
+
+- **Description:**
+  Video generation through a first image and optionally a last one with LTX-2, LTX-2.3 or LTX-2.5. The images are re-encoded as single H.264 frames first (CRF 33, or 18 for LTX-2.5), as the diffusers pipelines do: the models were trained on such conditions. This needs `diffusers` or `av` (`pip install av`); pass `--crf 0` to skip it.
+
+- **Output:** `genai_video.avi` and `genai_audio.wav`.
+
+- **Run Command:**
+  ```bash
+  python ltx2_image2video.py model_dir prompt first_image [--last-image LAST_IMAGE] [--num-frames NUM_FRAMES] [--crf CRF] [--enhance-prompt]
+  ```
+
+### LTX-2 Video to Video Sample (`ltx2_video2video.py`)
+
+- **Description:**
+  Video editing and prolonging with LTX-2, LTX-2.3 or LTX-2.5:
+  - `--edit-steps N` edits the whole video: it is noised to the level of the N-th last step of the schedule, and only those N steps run, e.g. 4 of LTX-2.5's 8. The prompt describes the edited video.
+  - `--prolong-to F` continues the video to F frames: its last `--context-frames` frames are kept at the start of the output.
+
+  Both can be combined. The soundtrack is generated anew; the source audio is not used.
+
+- **Output:** `genai_video.avi` and `genai_audio.wav`.
+
+- **Run Command:**
+  ```bash
+  python ltx2_video2video.py model_dir video prompt [--edit-steps N] [--prolong-to F] [--context-frames C] [--enhance-prompt]
   ```
 
 ### LoRA Text to Video Sample (`lora_text2video.py`)

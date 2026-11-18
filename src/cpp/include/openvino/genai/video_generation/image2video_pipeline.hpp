@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+#include "openvino/genai/video_generation/video_condition.hpp"
 
 namespace ov::genai {
 
@@ -111,6 +112,26 @@ public:
         const std::string& positive_prompt,
         Properties&&... properties) {
         return generate(image, positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    /**
+     * Generates video(s) through one or more images placed at given positions, e.g. a first and a last frame
+     * (LTX-2 models, diffusers' LTX2ConditionPipeline).
+     * @param images Images with their latent frame indices and strengths, see 'VideoCondition'
+     * @param positive_prompt Prompt to guide video generation
+     * @param properties Generation parameters (see VideoGenerationConfig).
+     * @returns VideoGenerationResult with video tensor shaped as [num_videos_per_prompt, num_frames, height, width, 3]
+     */
+    VideoGenerationResult generate(const std::vector<VideoCondition>& images,
+                                   const std::string& positive_prompt,
+                                   const ov::AnyMap& properties = {});
+
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<VideoGenerationResult, Properties...> generate(
+        const std::vector<VideoCondition>& images,
+        const std::string& positive_prompt,
+        Properties&&... properties) {
+        return generate(images, positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
     /**

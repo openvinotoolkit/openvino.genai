@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'SpeechOutputMode', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'SpeechOutputMode', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'Video2VideoPipeline', 'VideoCondition', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -920,6 +920,22 @@ class AutoencoderKLLTX2Video:
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, vae_encoder_path: os.PathLike | str | bytes, vae_decoder_path: os.PathLike | str | bytes) -> None:
+        """
+                    AutoencoderKLLTX2Video class constructor with a VAE encoder, for image and video conditioning.
+                    vae_encoder_path (os.PathLike): VAE encoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
+        """
+    @typing.overload
+    def __init__(self, vae_encoder_path: os.PathLike | str | bytes, vae_decoder_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                    AutoencoderKLLTX2Video class constructor with a VAE encoder.
+                    vae_encoder_path (os.PathLike): VAE encoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
     def compile(self, device: str, **kwargs) -> AutoencoderKLLTX2Video:
         """
                         Compiles the model.
@@ -932,7 +948,16 @@ class AutoencoderKLLTX2Video:
                         latent (ov.Tensor): Latent video tensor.
                         Returns: Decoded video tensor.
         """
+    def encode(self, sample: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        """
+                        Encodes a video [B, 3, F, H, W] in [-1, 1] to normalized latents, taking the mean of the latent
+                        distribution.
+                        sample (ov.Tensor): f32 video tensor.
+                        Returns: Latent video tensor [B, C, (F - 1) / 8 + 1, H / 32, W / 32].
+        """
     def get_config(self) -> AutoencoderKLLTX2Video.Config:
+        ...
+    def has_encoder(self) -> bool:
         ...
     def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt) -> AutoencoderKLLTX2Video:
         """
@@ -2478,8 +2503,14 @@ class Image2VideoPipeline:
         ...
     def decode(self, latent: openvino._pyopenvino.Tensor) -> VideoGenerationResult:
         ...
+    @typing.overload
     def generate(self, image: openvino._pyopenvino.Tensor, prompt: str, **kwargs) -> VideoGenerationResult:
         ...
+    @typing.overload
+    def generate(self, images: collections.abc.Sequence[VideoCondition], prompt: str, **kwargs) -> VideoGenerationResult:
+        """
+        Generates a video through one or more images (VideoCondition) placed at latent frame indices. LTX-2 only.
+        """
     def get_generation_config(self) -> VideoGenerationConfig:
         ...
     def get_performance_metrics(self) -> VideoGenerationPerfMetrics:
@@ -3146,7 +3177,7 @@ class LTX2VideoTransformer3DModel:
         """
         Returns whether the export has an input with this exact name.
         """
-    def infer(self, video_latent: openvino._pyopenvino.Tensor, audio_latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat, isolate_modalities: bool = False, spatio_temporal_guidance_blocks: collections.abc.Sequence[typing.SupportsInt] = []) -> tuple[openvino._pyopenvino.Tensor, openvino._pyopenvino.Tensor]:
+    def infer(self, video_latent: openvino._pyopenvino.Tensor, audio_latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat, isolate_modalities: bool = False, spatio_temporal_guidance_blocks: collections.abc.Sequence[typing.SupportsInt] = [], frame_timestep_scales: collections.abc.Sequence[typing.SupportsFloat] = []) -> tuple[openvino._pyopenvino.Tensor, openvino._pyopenvino.Tensor]:
         """
                         Performs joint video and audio inference.
                         video_latent (ov.Tensor): Packed video latent tensor.
@@ -3156,9 +3187,11 @@ class LTX2VideoTransformer3DModel:
                             (LTX-2.3 modality isolation guidance).
                         spatio_temporal_guidance_blocks (list[int]): Transformer block indices to perturb
                             (LTX-2.3 Spatio-Temporal Guidance). Out-of-range indices are ignored.
+                        frame_timestep_scales (list[float]): Per latent frame, the factor of `timestep` its tokens get
+                            (1 - conditioning mask). Empty gives every token `timestep`.
                         Returns: Tuple of video and audio velocity predictions.
         """
-    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt) -> LTX2VideoTransformer3DModel:
+    def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, audio_num_frames: typing.SupportsInt, per_frame_timestep: bool = False) -> LTX2VideoTransformer3DModel:
         """
                         Reshapes the model for specific input dimensions.
                         batch_size (int): Batch size.
@@ -3166,6 +3199,8 @@ class LTX2VideoTransformer3DModel:
                         height (int): Video height.
                         width (int): Video width.
                         audio_num_frames (int): Number of audio latent frames.
+                        per_frame_timestep (bool): Size the timestep for one value per latent frame, as image and video
+                            conditioning pass it.
         """
     def set_hidden_states(self, tensor_name: str, tensor: openvino._pyopenvino.Tensor) -> None:
         """
@@ -7040,10 +7075,64 @@ class VLMRawPerfMetrics:
     @property
     def vision_encoding_durations(self) -> list[float]:
         ...
+class Video2VideoPipeline:
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes) -> None:
+        ...
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def compile(self, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        ...
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> VideoGenerationResult:
+        ...
+    def generate(self, video: openvino._pyopenvino.Tensor, prompt: str, **kwargs) -> VideoGenerationResult:
+        """
+                        Generates video(s) from a source video [F, H, W, 3] u8: edited with 'noise_scale' and / or
+                        'edit_num_steps', conditioned with 'conditions' (a list of VideoCondition), or both.
+        """
+    def get_generation_config(self) -> VideoGenerationConfig:
+        ...
+    def get_performance_metrics(self) -> VideoGenerationPerfMetrics:
+        ...
+    def reshape(self, num_videos_per_prompt: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, guidance_scale: typing.SupportsFloat) -> None:
+        ...
+    def set_generation_config(self, config: VideoGenerationConfig) -> None:
+        ...
+class VideoCondition:
+    """
+    Frames that a generated LTX-2 video must contain at a latent frame index.
+    """
+    frames: openvino._pyopenvino.Tensor
+    def __init__(self, frames: openvino._pyopenvino.Tensor, index: typing.SupportsInt = 0, strength: typing.SupportsFloat = 1.0) -> None:
+        """
+                        frames (ov.Tensor): u8 RGB frames [F, H, W, 3] or an image [H, W, 3].
+                        index (int): Latent frame index of the first frame (8 video frames per latent frame, negative values
+                            count from the end).
+                        strength (float): 1.0 keeps the frames as they are, lower values let the model change them.
+        """
+    @property
+    def index(self) -> int:
+        ...
+    @index.setter
+    def index(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def strength(self) -> float:
+        ...
+    @strength.setter
+    def strength(self, arg0: typing.SupportsFloat) -> None:
+        ...
 class VideoGenerationConfig:
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
+    enable_prompt_enhancement: bool
     generator: Generator
     negative_prompt: str | None
+    system_prompt: str | None
     taylorseer_config: openvino_genai.py_openvino_genai.TaylorSeerCacheConfig | None
     def __init__(self) -> None:
         ...
@@ -7070,6 +7159,12 @@ class VideoGenerationConfig:
         ...
     @audio_stg_scale.setter
     def audio_stg_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def edit_num_steps(self) -> int | None:
+        ...
+    @edit_num_steps.setter
+    def edit_num_steps(self, arg0: typing.SupportsInt | None) -> None:
         ...
     @property
     def frame_rate(self) -> float | None:
@@ -7108,6 +7203,12 @@ class VideoGenerationConfig:
     def modality_scale(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
+    def noise_scale(self) -> float | None:
+        ...
+    @noise_scale.setter
+    def noise_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
     def num_frames(self) -> int:
         ...
     @num_frames.setter
@@ -7124,6 +7225,12 @@ class VideoGenerationConfig:
         ...
     @num_videos_per_prompt.setter
     def num_videos_per_prompt(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def sigmas(self) -> list[float] | None:
+        ...
+    @sigmas.setter
+    def sigmas(self, arg0: collections.abc.Sequence[typing.SupportsFloat] | None) -> None:
         ...
     @property
     def spatio_temporal_guidance_blocks(self) -> list[int] | None:

@@ -206,6 +206,7 @@ LTX2VideoTransformer3DModel::Config::Config(const std::filesystem::path& config_
 LTX2VideoTransformer3DModel::LTX2VideoTransformer3DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
+    m_grouped_timestep = m_model->has_rt_info("ltx2_grouped_timestep");
 }
 
 LTX2VideoTransformer3DModel::LTX2VideoTransformer3DModel(const std::filesystem::path& root_dir,
@@ -327,7 +328,8 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
                                                                      const ov::Tensor& audio_latent,
                                                                      float timestep,
                                                                      bool isolate_modalities,
-                                                                     const std::vector<int64_t>& stg_blocks) {
+                                                                     const std::vector<int64_t>& stg_blocks,
+                                                                     const std::vector<float>& frame_timestep_scales) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
 
     m_request.set_tensor("hidden_states", video_latent);
@@ -340,12 +342,30 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
     // original [B, S] contract, since their graph may reshape the modulation to the full sequence length.
     OPENVINO_ASSERT(m_timestep_rank == 1 || m_timestep_rank == 2,
                     "LTX2 transformer expects a rank-1 or rank-2 'timestep' input, got rank ", m_timestep_rank);
-    ov::Shape timestep_shape{latent_shape[0]};
-    if (m_timestep_rank == 2) {
-        timestep_shape = {latent_shape[0], m_external_rope ? 1 : latent_shape[1]};
+    ov::Tensor timestep_tensor;
+    if (frame_timestep_scales.empty()) {
+        ov::Shape timestep_shape{latent_shape[0]};
+        if (m_timestep_rank == 2) {
+            timestep_shape = {latent_shape[0], m_external_rope ? 1 : latent_shape[1]};
+        }
+        timestep_tensor = ov::Tensor(ov::element::f32, timestep_shape);
+        std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timestep);
+    } else {
+        OPENVINO_ASSERT(m_timestep_rank == 2, "Per-frame timesteps need a transformer with a rank-2 'timestep' input");
+        const size_t groups = frame_timestep_scales.size();
+        OPENVINO_ASSERT(latent_shape[1] % groups == 0,
+                        "The video sequence of ", latent_shape[1], " tokens does not split into ", groups, " frames");
+        // One value per frame, or repeated over each frame's tokens for exports without a grouped timestep
+        const size_t tokens_per_value = m_grouped_timestep ? 1 : latent_shape[1] / groups;
+        timestep_tensor = ov::Tensor(ov::element::f32, {latent_shape[0], groups * tokens_per_value});
+        float* data = timestep_tensor.data<float>();
+        for (size_t b = 0; b < latent_shape[0]; ++b) {
+            for (size_t g = 0; g < groups; ++g) {
+                std::fill_n(data, tokens_per_value, timestep * frame_timestep_scales[g]);
+                data += tokens_per_value;
+            }
+        }
     }
-    ov::Tensor timestep_tensor(ov::element::f32, timestep_shape);
-    std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timestep);
     m_request.set_tensor("timestep", timestep_tensor);
 
     if (m_has_audio_timestep) {
@@ -392,7 +412,8 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
                                                                   int64_t num_frames,
                                                                   int64_t height,
                                                                   int64_t width,
-                                                                  int64_t audio_num_frames) {
+                                                                  int64_t audio_num_frames,
+                                                                  bool per_frame_timestep) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
     const int64_t patch_size = m_config.patch_size;
@@ -421,7 +442,9 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
             const auto timestep_rank = name_to_shape[input_name].rank().get_length();
             OPENVINO_ASSERT(timestep_rank == 1 || timestep_rank == 2,
                             "LTX2 transformer expects a rank-1 or rank-2 'timestep' input, got rank ", timestep_rank);
-            if (timestep_rank == 2) {
+            if (timestep_rank == 2 && per_frame_timestep) {
+                name_to_shape[input_name] = {batch_size, m_grouped_timestep ? latent_num_frames : video_sequence_length};
+            } else if (timestep_rank == 2) {
                 name_to_shape[input_name] = {
                     batch_size, utils::has_input(m_model, "video_rotary_cos") ? 1 : video_sequence_length};
             } else {
@@ -456,4 +479,8 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
     m_model->reshape(name_to_shape);
 
     return *this;
+}
+
+bool LTX2VideoTransformer3DModel::has_grouped_timestep() const {
+    return m_grouped_timestep;
 }
