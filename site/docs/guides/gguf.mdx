@@ -52,6 +52,8 @@ Replace `model.gguf` with the path to your downloaded model. For a base model wi
 
 The pipeline constructs its tokenizer from the frontend's model metadata. You can also construct `genai.GGUFTokenizer("model.gguf")` independently, without exporting tokenizer IR files. In C++, include `<openvino/genai/gguf.hpp>` and use `ov::genai::GGUFTokenizer`. The existing `Tokenizer("model.gguf")` path also remains supported.
 
+For GGUF BPE tokenizers, `skip_special_tokens=True` removes control tokens but preserves user-defined tokens, such as Qwen reasoning and tool-call delimiters. These classifications come from GGUF metadata and may differ from the original tokenizer.
+
 ```python
 import openvino_genai as genai
 

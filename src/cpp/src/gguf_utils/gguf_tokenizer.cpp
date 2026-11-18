@@ -1000,7 +1000,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
 
         std::vector<int32_t> special_token_ids;
         for (size_t i = 0; i < token_types.get_size(); ++i) {
-            if (is_special_token(token_types.data<int32_t>()[i]))
+            if (token_types.data<int32_t>()[i] == 3)
                 special_token_ids.push_back(static_cast<int32_t>(i));
         }
 
