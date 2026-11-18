@@ -20,9 +20,7 @@ namespace genai {
 const std::vector<std::string>& omni_talker_speech_config_keys();
 
 /// @brief Populate fields of `config` from an AnyMap (kwargs-style properties).
-/// Recognized keys: return_audio, speaker, speaker_embedding (legacy alias),
-/// audio_chunk_frames, audio_chunk_left_context_frames, max_new_tokens, rng_seed,
-/// talker_temperature, talker_top_k, talker_repetition_penalty, cp_temperature, cp_top_k.
+/// Recognized keys are the ones omni_talker_speech_config_keys() returns; speaker_embedding is a legacy alias.
 /// Unrecognized keys are ignored — callers that share the property bag with other
 /// consumers (e.g. OmniPipeline mixes in GenerationConfig keys) rely on this.
 void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::AnyMap& properties);
@@ -37,6 +35,10 @@ bool is_omni_talker_speech_config_key(const std::string& key);
 /// checked here — the caller (OmniPipelineImpl) handles those separately.
 /// @throws ov::Exception if config is invalid.
 void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config);
+
+/// @brief Reject fields of the in-stream speech decoder (LFM3-Omni) for a model with a separate talker.
+/// @throws ov::Exception if output_mode or cp_repetition_penalty is set.
+void reject_in_stream_speech_fields(const OmniTalkerSpeechConfig& config);
 
 /// @brief Resolve a talker property-bag into a typed config plus optional streamer.
 /// Starts from `base` (the caller's default), overlays recognized `properties`, and rejects
