@@ -24,6 +24,7 @@ struct OPENVINO_GENAI_EXPORTS TalkerPerfMetrics {
 
     /// Total speech generation time in milliseconds (autoregressive token prediction + vocoding).
     /// Vocoding = converting neural codec tokens to PCM waveform, not WAV file I/O.
+    /// LFM3-Omni decodes text and speech in one loop, so its value is the whole generate() call.
     float generation_time_ms = 0;
 };
 
