@@ -61,7 +61,9 @@ void reject_in_stream_speech_request(const OmniTalkerSpeechConfig& talker_speech
 
 TalkerResults TalkerBase::generate(const std::shared_ptr<OmniTextSourceBase>& /* text_source */,
                                    const OmniTalkerSpeechConfig& /* talker_speech_config */,
-                                   const OmniSpeechStreamerVariant& /* speech_streamer */) {
+                                   const OmniSpeechStreamerVariant& speech_streamer) {
+    // OmniSpeechStreamerBase promises end() also for a call that fails before any speech is decoded.
+    SpeechStreamerGuard streamer_guard(speech_streamer, is_speech_streamer_active(speech_streamer));
     // A default could be written — drain the bridge, reassemble it into the layout the
     // VLMDecodedResults overload expects, forward to it — but it would be a lie by omission. That
     // default cannot speak before the thinker finishes: this interface's only inference entry point

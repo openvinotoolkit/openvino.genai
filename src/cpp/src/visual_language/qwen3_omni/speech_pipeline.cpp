@@ -1328,6 +1328,11 @@ TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input
             }
         }
 
+        // The budget is spent, so the next input would never be used: don't wait for its text token.
+        if (all_codes.size() == talker_max_tokens) {
+            break;
+        }
+
         auto* next_data = next_input.data<float>();
         auto* cp_data = cp_embed_sum.data<float>();
         for (size_t i = 0; i < hidden_size; i++) {
@@ -1335,7 +1340,7 @@ TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input
         }
 
         // One text row per step, in lockstep with `step`: the loop takes exactly one row per
-        // iteration and never skips this point (both breaks above leave the function). The supply
+        // iteration and never skips this point (every break above leaves the loop). The supply
         // pads itself past the end of the text, so there is nothing to bound here.
         const auto* trail_data = trailing.row(step);
         if (!trail_data) {

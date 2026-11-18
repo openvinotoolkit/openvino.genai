@@ -983,8 +983,8 @@ public:
     void end() {
         if (m_streamer) {
             write(m_sequence->get_generated_ids().size());
-            m_streamer->end();
-            m_streamer.reset();
+            // Released first, so an end() that throws is not followed by abandon() in the destructor.
+            std::exchange(m_streamer, nullptr)->end();
         }
     }
 
@@ -1169,6 +1169,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     // Build the bridge forwarder after add_request so the sequence it follows exists.
     OmniStepForwarder omni_forwarder(omni_streamer, all_requests);
     omni_streamer.reset();
+    // The last step finishes the request before the bridge sees its tokens, and cancel() cannot undo that.
+    bool cancelled_by_omni_streamer = false;
 
     streamer_ptr->start();
     m_sampler->clear_structured_output_compile_times();
@@ -1194,6 +1196,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             switch (omni_forwarder.flush()) {
             case StreamingStatus::CANCEL:
                 generation->cancel();
+                cancelled_by_omni_streamer = true;
                 break;
             case StreamingStatus::STOP:
                 generation->stop();
@@ -1236,7 +1239,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     // Closed before the text streamer: joining that one waits on user callbacks, which must neither
     // delay the talker's last read nor, by throwing, abandon a finished run. A cancelled response is
     // dropped, so the talker must not voice it to its end.
-    if (generation->get_status() == GenerationStatus::CANCEL) {
+    if (cancelled_by_omni_streamer || generation->get_status() == GenerationStatus::CANCEL) {
         omni_forwarder.abandon();
     } else {
         omni_forwarder.end();

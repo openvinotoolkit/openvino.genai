@@ -489,7 +489,8 @@ void init_omni_pipeline(py::module_& m) {
                     [](TalkerBase& self,
                        const std::shared_ptr<OmniTextSourceBase>& text_source,
                        const OmniTalkerSpeechConfig& talker_speech_config,
-                       const ov::genai::OmniSpeechStreamerVariant& speech_streamer) {
+                       const pyutils::PyBindOmniSpeechStreamerVariant& py_speech_streamer) {
+                        const auto speech_streamer = pyutils::py_speech_streamer_to_streamer(py_speech_streamer);
                         ov::genai::TalkerResults res;
                         {
                             py::gil_scoped_release rel;

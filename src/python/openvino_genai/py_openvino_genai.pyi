@@ -5619,7 +5619,7 @@ class TalkerBase:
         Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.
         """
     @typing.overload
-    def generate(self, text_source: OmniTextSourceBase, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], StreamingStatus] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
+    def generate(self, text_source: OmniTextSourceBase, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], int | None] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
         """
                                 Run speech generation against the read end of a thinker -> talker bridge,
                                 consuming the thinker's steps as they arrive so speech starts before text
