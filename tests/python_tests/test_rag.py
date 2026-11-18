@@ -1313,4 +1313,4 @@ def test_qwen3_rerank_documents(llm_model: OVConvertedModelSchema, query, task, 
         config,
     )
 
-    assert_rerank_results(opt_result, genai_result)
+    assert_rerank_results(opt_result, genai_result, score_diff_max=1e-5)

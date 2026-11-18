@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
 #include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "helper.hpp"
 
@@ -105,4 +106,54 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     // check that cache does not increase if new blocks were not allocated
     cache_manager->allocate_cache_if_needed(block_manager.get_total_block_count());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 200 * block_size_in_bytes);
+}
+
+namespace {
+
+SchedulerConfig make_prefix_caching_config(size_t cache_size, size_t num_kv_blocks) {
+    SchedulerConfig config;
+    config.cache_size = cache_size;
+    config.num_kv_blocks = num_kv_blocks;
+    config.enable_prefix_caching = true;
+    return config;
+}
+
+}  // namespace
+
+TEST(TestCacheManager, hidden_states_take_their_share_of_cache_size) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, 12)).create_infer_request();
+    const auto unlimited_memory = [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    };
+    const KVCacheManager kv_cache_manager(request);
+    const size_t block_size = kv_cache_manager.get_block_size();
+    const size_t kv_block_bytes = kv_cache_manager.get_block_size_in_bytes();
+    ASSERT_EQ(kv_block_bytes % block_size, 0);
+    // Hidden states as large per token as KV, so each block costs twice its KV size.
+    const size_t hidden_state_bytes_per_token = kv_block_bytes / block_size;
+    const size_t budget_bytes = 1024ULL * 1024ULL * 1024ULL;
+
+    SchedulerConfig kv_only = make_prefix_caching_config(1, 0);
+    CacheOrchestrator::create(request, kv_only, unlimited_memory);
+    SchedulerConfig with_hidden_states = make_prefix_caching_config(1, 0);
+    CacheOrchestrator::create(request, with_hidden_states, unlimited_memory, hidden_state_bytes_per_token);
+
+    EXPECT_EQ(kv_only.num_kv_blocks, budget_bytes / kv_block_bytes);
+    EXPECT_EQ(with_hidden_states.num_kv_blocks, budget_bytes / (2 * kv_block_bytes));
+}
+
+TEST(TestCacheManager, hidden_states_count_against_available_memory_for_explicit_kv_blocks) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, 12)).create_infer_request();
+    constexpr size_t num_kv_blocks = 16;
+    const size_t kv_bytes = num_kv_blocks * KVCacheManager(request).get_block_size_in_bytes();
+    const auto exactly_kv_memory = [kv_bytes](const std::string&, size_t) {
+        return kv_bytes;
+    };
+
+    SchedulerConfig kv_only = make_prefix_caching_config(0, num_kv_blocks);
+    EXPECT_NO_THROW(CacheOrchestrator::create(request, kv_only, exactly_kv_memory));
+    SchedulerConfig with_hidden_states = make_prefix_caching_config(0, num_kv_blocks);
+    EXPECT_THROW(CacheOrchestrator::create(request, with_hidden_states, exactly_kv_memory, 1), ov::Exception);
 }

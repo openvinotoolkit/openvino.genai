@@ -1,7 +1,25 @@
 import Link from '@docusaurus/Link';
 import React from 'react';
 import { BaseModelsTable, LinksCell } from '../base-models-table';
-import { VLM_MODELS } from './models';
+import { VLM_MODELS, VLMModel } from './models';
+
+const GENAI_CLI_GUIDE = '/docs/guides/model-preparation/convert-to-openvino#genai-cli';
+
+const ModelNameCell = ({ name, notesLink, genaiCliOnly }: VLMModel) => (
+  <td>
+    {name}
+    {notesLink && (
+      <>
+        &nbsp;(<Link href={notesLink}>Notes</Link>)
+      </>
+    )}
+    {genaiCliOnly && (
+      <>
+        &nbsp;(<Link href={GENAI_CLI_GUIDE}>genai-cli only</Link>)
+      </>
+    )}
+  </td>
+);
 
 export default function VLMModelsTable(): React.JSX.Element {
   const headers = ['Architecture', 'Models', 'Example HuggingFace Models'];
@@ -12,27 +30,13 @@ export default function VLMModelsTable(): React.JSX.Element {
         <td rowSpan={models.length}>
           <code>{architecture}</code>
         </td>
-        <td>
-          {models[0].name}
-          {models[0].notesLink && (
-            <>
-              &nbsp;(<Link href={models[0].notesLink}>Notes</Link>)
-            </>
-          )}
-        </td>
+        <ModelNameCell {...models[0]} />
         <LinksCell links={models[0].links} />
       </tr>
-      {models.slice(1).map(({ name, links, notesLink }) => (
-        <tr key={name}>
-          <td>
-            {name}
-            {notesLink && (
-              <>
-                &nbsp;(<Link href={notesLink}>Notes</Link>)
-              </>
-            )}
-          </td>
-          <LinksCell links={links} />
+      {models.slice(1).map((model) => (
+        <tr key={model.name}>
+          <ModelNameCell {...model} />
+          <LinksCell links={model.links} />
         </tr>
       ))}
     </>
