@@ -129,8 +129,26 @@ ov::OutputVector add_ragged_dimension(const ov::OutputVector& inputs) {
     return res;
 }
 
-bool is_special_token(int32_t token_type) {
-    return token_type == 3 || token_type == 4;
+// GGUF token_type values (llama_token_type). convert_hf_to_gguf.py maps Hugging Face added tokens
+// with special=true to CONTROL and other added tokens to USER_DEFINED.
+enum GGUFTokenType : int32_t {
+    GGUF_TOKEN_NORMAL = 1,
+    GGUF_TOKEN_UNKNOWN = 2,
+    GGUF_TOKEN_CONTROL = 3,
+    GGUF_TOKEN_USER_DEFINED = 4,
+    GGUF_TOKEN_UNUSED = 5,
+    GGUF_TOKEN_BYTE = 6,
+};
+
+// Tokens matched as a whole during encoding instead of being split by the model.
+bool is_atomic_token(int32_t token_type) {
+    return token_type == GGUF_TOKEN_CONTROL || token_type == GGUF_TOKEN_USER_DEFINED;
+}
+
+// Tokens removed by skip_special_tokens, as in llama.cpp token_to_piece() and Hugging Face
+// decoding. USER_DEFINED tokens such as </think> stay visible.
+bool is_skipped_on_decode(int32_t token_type) {
+    return token_type == GGUF_TOKEN_CONTROL || token_type == GGUF_TOKEN_UNKNOWN;
 }
 
 std::string quote_meta(const std::string& str) {
@@ -436,7 +454,7 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
     std::vector<int32_t> special_token_indices;
 
     for (size_t i = 0; i < vocab.size(); ++i) {
-        if (is_special_token(token_types.data<int32_t>()[i])) {
+        if (is_atomic_token(token_types.data<int32_t>()[i])) {
             special_tokens.push_back(vocab[i]);
             special_token_indices.push_back(static_cast<int32_t>(i));
         }
@@ -738,7 +756,7 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
     std::vector<std::vector<uint8_t>> special_pieces;
     std::vector<int32_t> special_ids;
     for (size_t i = 0; i < vocab.size(); ++i) {
-        if (is_special_token(token_types[i])) {
+        if (is_atomic_token(token_types[i])) {
             special_pieces.emplace_back(vocab[i].begin(), vocab[i].end());
             special_ids.push_back(static_cast<int32_t>(i));
         }
@@ -818,7 +836,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
     const auto token_types_data = token_types.data<int32_t>();
 
     for (size_t i = 0; i < tokens.size(); ++i) {
-        if (is_special_token(token_types_data[i])) {
+        if (is_atomic_token(token_types_data[i])) {
             special_tokens.push_back(tokens[i]);
         }
     }
@@ -1000,7 +1018,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
 
         std::vector<int32_t> special_token_ids;
         for (size_t i = 0; i < token_types.get_size(); ++i) {
-            if (token_types.data<int32_t>()[i] == 3)
+            if (is_skipped_on_decode(token_types.data<int32_t>()[i]))
                 special_token_ids.push_back(static_cast<int32_t>(i));
         }
 
