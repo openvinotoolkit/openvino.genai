@@ -35,3 +35,22 @@ def test_cli_dtype_reaches_hf_loader(monkeypatch, dtype_name, expected_dtype):
 
     model_loaders.load_model("text", "dummy-model", use_hf=args.hf, torch_dtype=args.torch_dtype)
     assert model_class.from_pretrained.call_args.kwargs["torch_dtype"] is expected_dtype
+
+
+def test_unify_floating_dtype_casts_mixed_model():
+    model = torch.nn.Sequential(torch.nn.Linear(2, 2), torch.nn.Linear(2, 2).to(torch.bfloat16))
+    model = model_loaders._unify_floating_dtype(model, torch.float32)
+    assert {p.dtype for p in model.parameters()} == {torch.float32}
+
+
+@pytest.mark.parametrize("dtype", [None, "auto"])
+def test_unify_floating_dtype_keeps_model_without_explicit_dtype(dtype):
+    model = torch.nn.Sequential(torch.nn.Linear(2, 2), torch.nn.Linear(2, 2).to(torch.bfloat16))
+    model = model_loaders._unify_floating_dtype(model, dtype)
+    assert {p.dtype for p in model.parameters()} == {torch.float32, torch.bfloat16}
+
+
+def test_unify_floating_dtype_skips_float8_storage():
+    model = torch.nn.Sequential(torch.nn.Linear(2, 2), torch.nn.Linear(2, 2).to(torch.float8_e4m3fn))
+    model = model_loaders._unify_floating_dtype(model, torch.float32)
+    assert torch.float8_e4m3fn in {p.dtype for p in model.parameters()}
