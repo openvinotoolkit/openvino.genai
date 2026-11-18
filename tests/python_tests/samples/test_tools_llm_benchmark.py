@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-import re
 import json
 import pytest
 import sys
@@ -17,6 +16,8 @@ from utils.constants import get_ov_cache_converted_models_dir
 from utils.kokoro_test_assets import prepare_tiny_kokoro_model_path
 from utils.kokoro_test_assets import prepare_tiny_kokoro_ov_path
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
+
+import re
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
