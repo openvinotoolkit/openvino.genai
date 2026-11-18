@@ -11,6 +11,7 @@
 
 #include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "continuous_batching/cache/store_registry.hpp"
+#include "store_plugin_locator.hpp"
 
 using namespace ov::genai;
 
@@ -51,52 +52,8 @@ void expect_store_is_usable(IKVCacheStore& store) {
     EXPECT_EQ(actual, expected);
 }
 
-/// A handful of relative candidates for openvino_genai's own shared library, which also exports
-/// the store ABI entry symbol (see abi_file_store_provider.cpp). Used to exercise a genuinely
-/// separate, dynamically loaded module without needing a dedicated mock-plugin build target.
-std::optional<std::string> find_self_as_plugin_library() {
-#ifdef _WIN32
-    const char* candidates[] = {
-        "../../openvino_genai/openvino_genai.dll",
-        "../openvino_genai/openvino_genai.dll",
-        "openvino_genai/openvino_genai.dll",
-    };
-#else
-    const char* candidates[] = {
-        "../../openvino_genai/libopenvino_genai.so",
-        "../openvino_genai/libopenvino_genai.so",
-        "openvino_genai/libopenvino_genai.so",
-    };
-#endif
-    for (const char* candidate : candidates) {
-        if (std::filesystem::exists(candidate)) {
-            return std::filesystem::absolute(candidate).string();
-        }
-    }
-    return std::nullopt;
-}
-
-/// Candidates for samples/c/kv_cache_store_plugin's build output: a genuinely standalone,
-/// independently built reference plugin (see that directory), not merely our own library acting
-/// as one. Only built when the superbuild has ENABLE_SAMPLES on.
-std::optional<std::string> find_sample_plugin_library() {
-#ifdef _WIN32
-    const char* candidates[] = {
-        "../../samples/c/kv_cache_store_plugin/RelWithDebInfo/sample_kv_cache_store_plugin.dll",
-        "../../samples/c/kv_cache_store_plugin/sample_kv_cache_store_plugin.dll",
-    };
-#else
-    const char* candidates[] = {
-        "../../samples/c/kv_cache_store_plugin/libsample_kv_cache_store_plugin.so",
-    };
-#endif
-    for (const char* candidate : candidates) {
-        if (std::filesystem::exists(candidate)) {
-            return std::filesystem::absolute(candidate).string();
-        }
-    }
-    return std::nullopt;
-}
+using ov::genai::test::find_sample_plugin_library;
+using ov::genai::test::find_self_as_plugin_library;
 
 }  // namespace
 

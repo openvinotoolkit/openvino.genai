@@ -686,6 +686,8 @@ jobs:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/arm64/Release/libopenvino_tokenizers.dylib"
+          KV_CACHE_STORE_SAMPLE_PLUGIN: "${{ env.INSTALL_DIR }}/samples_bin/libsample_kv_cache_store_plugin.dylib"
+          KV_CACHE_STORE_SELF_PLUGIN: "${{ env.INSTALL_DIR }}/runtime/lib/arm64/Release/libopenvino_genai.dylib"
 
       - name: Test C++ Tools
         run: |

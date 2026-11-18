@@ -13,8 +13,10 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "store_plugin_locator.hpp"
 
 using namespace ov::genai;
+using ov::genai::test::find_sample_plugin_library;
 
 namespace {
 
@@ -57,28 +59,6 @@ std::string repeat(const std::string& phrase, size_t times) {
         result += phrase;
     }
     return result;
-}
-
-/// Candidates for samples/c/kv_cache_store_plugin's build output (same search pattern as
-/// tests/cpp/store_registry.cpp). Only built when the superbuild has ENABLE_SAMPLES on.
-std::optional<std::string> find_sample_plugin_library() {
-#ifdef _WIN32
-    const char* candidates[] = {
-        "../../samples/c/kv_cache_store_plugin/RelWithDebInfo/sample_kv_cache_store_plugin.dll",
-        "../../samples/c/kv_cache_store_plugin/sample_kv_cache_store_plugin.dll",
-    };
-#else
-    const char* candidates[] = {
-        "../../samples/c/kv_cache_store_plugin/libsample_kv_cache_store_plugin.so",
-        "../../samples/c/kv_cache_store_plugin/libsample_kv_cache_store_plugin.dylib",
-    };
-#endif
-    for (const char* candidate : candidates) {
-        if (std::filesystem::exists(candidate)) {
-            return std::filesystem::absolute(candidate).string();
-        }
-    }
-    return std::nullopt;
 }
 
 std::vector<int64_t> generate_ids(ContinuousBatchingPipeline& pipeline,

@@ -879,6 +879,8 @@ jobs:
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           OFFLOAD_E2E_MODEL: "${{ env.HF_HOME }}/ov_test_models/tiny-random-Phi3ForCausalLM"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
+          KV_CACHE_STORE_SAMPLE_PLUGIN: "${{ env.INSTALL_DIR }}/samples_bin/libsample_kv_cache_store_plugin.so"
+          KV_CACHE_STORE_SELF_PLUGIN: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_genai.so"
 
       - name: Test Continuous Batching Tools
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
