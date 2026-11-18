@@ -65,7 +65,7 @@
 
 - name: Video generation
   # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
-  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/a741933e8f55cf90368c19ec4b7f0a4d98c26519.tar.gz"
+  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8.tar.gz"
   marker: video_generation
   cmd: tests/python_tests/samples
   runner: aks-win-4-cores-8gb-test
@@ -83,6 +83,17 @@
 
 - name: Qwen3-Omni
   marker: qwen3_omni
+  cmd: tests/python_tests/samples
+  runner: aks-win-8-cores-16gb-test
+  components:
+    - VLM_samples
+
+- name: LFM3-Omni
+  extra_cmd: |
+    # The LFM3-Omni export is in huggingface/optimum-intel#2087, which is not merged yet. Re-pin when it is.
+    python -m pip install transformers==5.20.2
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@a68683c981a89cf840d33aa5d9dacf7a712c9440"
+  marker: lfm3_omni
   cmd: tests/python_tests/samples
   runner: aks-win-8-cores-16gb-test
   components:

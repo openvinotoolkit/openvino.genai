@@ -204,14 +204,16 @@ USE_CASES = {
                 "smolvlm",
                 "qwen3-vl",
                 "qwen3-5",
+                "qwen4-exp",
                 "videochat-flash-qwen",
                 "gemma4",
+                "mistral3",
             ]
         ),
         UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "speech_to_text": [
-        UseCaseSpeech2Text(["whisper", "qwen3-asr", "fun-asr"]),
+        UseCaseSpeech2Text(["whisper", "qwen3-asr", "fun-asr", "sense-voice"]),
         UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "image_cls": [UseCaseImageCls(["vit"])],
@@ -301,6 +303,7 @@ USE_CASES = {
     "text_rerank": [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     "text_to_speech": [
         UseCaseTextToSpeech(["speecht5", "kokoro"]),
+        UseCaseTextToSpeech(["qwen3-tts"], tokenizer_cls=AutoProcessor),
         UseCaseTextToSpeech(["qwen3-omni"], ov_cls=OVModelForMultimodalLM, tokenizer_cls=AutoProcessor),
     ],
 }

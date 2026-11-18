@@ -2,8 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import csv
+import json
 import pytest
+import shutil
 import sys
+import wave
+import numpy as np
 from pathlib import Path
 
 from test_utils import run_sample
@@ -88,6 +93,8 @@ video_generation_i2v_json = [
     }
 ]
 
+VLM_DATASET_QUESTION = "Describe the image in details."
+
 
 @pytest.fixture(scope="module")
 def tiny_kokoro_ov_path() -> Path:
@@ -102,6 +109,126 @@ def tiny_kokoro_speaker_embedding_file_path(tiny_kokoro_ov_path: Path) -> str:
     if not voice_bin_path.exists():
         raise FileNotFoundError(f"Missing tiny Kokoro speaker embedding file at {voice_bin_path}")
     return str(voice_bin_path)
+
+
+@pytest.fixture(scope="module")
+def qwen3_reference_audio_wav_path(tmp_path_factory) -> str:
+    output_dir = tmp_path_factory.mktemp("qwen3_tts_ref_audio")
+    wav_path = output_dir / "reference_24k.wav"
+    _write_reference_wav(wav_path, 24000)
+    return str(wav_path)
+
+
+def _write_reference_wav(path: Path, sample_rate_hz: int, frequency_hz: float = 220.0) -> None:
+    samples = sample_rate_hz
+    timeline = np.arange(samples, dtype=np.float32) / np.float32(sample_rate_hz)
+    waveform = 0.12 * np.sin(2.0 * np.pi * frequency_hz * timeline) + 0.05 * np.sin(
+        2.0 * np.pi * (frequency_hz * 2.0) * timeline + 0.4
+    )
+    pcm = np.asarray(np.clip(waveform, -1.0, 1.0) * 32767.0, dtype=np.int16)
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate_hz)
+        wav_file.writeframes(pcm.tobytes())
+
+
+@pytest.fixture(scope="module")
+def qwen3_tts_base_prompt_file(tmp_path_factory) -> str:
+    prompt_dir = tmp_path_factory.mktemp("qwen3_tts_base_prompt_file")
+    _write_reference_wav(prompt_dir / "ref_0.wav", 24000, 220.0)
+    _write_reference_wav(prompt_dir / "ref_1.wav", 24000, 246.0)
+    _write_reference_wav(prompt_dir / "ref_2.wav", 24000, 261.0)
+
+    prompts = [
+        {
+            "prompt": "Hello OpenVINO GenAI from base prompt-file entry zero.",
+            "speech_language": "English",
+            "speech_ref_audio": "ref_0.wav",
+            "speech_ref_text": "Reference transcript for the first entry.",
+        },
+        {
+            "prompt": "Second entry uses ref audio but no reference text.",
+            "speech_language": "Auto",
+            "speech_ref_audio": "ref_1.wav",
+        },
+        {
+            "prompt": "Third entry uses both reference audio and text again.",
+            "speech_language": "English",
+            "speech_ref_audio": "ref_2.wav",
+            "speech_ref_text": "Reference transcript for the third entry.",
+        },
+    ]
+
+    prompt_file_path = prompt_dir / "qwen3_tts_base_prompt_file.jsonl"
+    with open(prompt_file_path, "w", encoding="utf-8") as prompt_file:
+        for item in prompts:
+            prompt_file.write(json.dumps(item) + "\n")
+    return str(prompt_file_path)
+
+
+@pytest.fixture(scope="module")
+def qwen3_tts_customvoice_prompt_file(tmp_path_factory) -> str:
+    prompt_dir = tmp_path_factory.mktemp("qwen3_tts_customvoice_prompt_file")
+    prompts = [
+        {
+            "prompt": "CustomVoice entry with Serena, and no speech instruction.",
+            "speech_language": "English",
+            "speech_voice": "serena",
+        },
+        {
+            "prompt": "CustomVoice entry with Ryan and also using speech instruction.",
+            "speech_language": "Auto",
+            "speech_voice": "Ryan",
+            "speech_instruct": "Use a more energetic pace while keeping pronunciation precise.",
+        },
+    ]
+
+    prompt_file_path = prompt_dir / "qwen3_tts_customvoice_prompt_file.jsonl"
+    with open(prompt_file_path, "w", encoding="utf-8") as prompt_file:
+        for item in prompts:
+            prompt_file.write(json.dumps(item) + "\n")
+    return str(prompt_file_path)
+
+
+@pytest.fixture(scope="module")
+def qwen3_tts_voicedesign_prompt_file(tmp_path_factory) -> str:
+    prompt_dir = tmp_path_factory.mktemp("qwen3_tts_voicedesign_prompt_file")
+    prompts = [
+        {
+            "prompt": "VoiceDesign entry one for a balanced narration style.",
+            "speech_language": "English",
+            "speech_instruct": "Female, mid-twenties, warm and articulate with medium tempo.",
+        },
+        {
+            "prompt": "VoiceDesign entry two for a younger expressive style.",
+            "speech_language": "Auto",
+            "speech_instruct": "Male, late teens, confident and expressive with slightly faster pacing.",
+        },
+    ]
+
+    prompt_file_path = prompt_dir / "qwen3_tts_voicedesign_prompt_file.jsonl"
+    with open(prompt_file_path, "w", encoding="utf-8") as prompt_file:
+        for item in prompts:
+            prompt_file.write(json.dumps(item) + "\n")
+    return str(prompt_file_path)
+
+
+TEXT_DATASET_QUESTIONS = [
+    "Why is the Sun yellow?",
+    "What is OpenVINO?",
+    "Tell me the plot of Mulan.",
+]
+
+
+@pytest.fixture(scope="module")
+def text_dataset_dir(tmp_path_factory) -> str:
+    # Local dataset directory: `datasets` takes the split name (train) from the file name
+    dataset_dir = tmp_path_factory.mktemp("llm_bench_text_dataset")
+    with open(dataset_dir / "train.jsonl", "w", encoding="utf-8") as dataset_file:
+        for idx, question in enumerate(TEXT_DATASET_QUESTIONS):
+            dataset_file.write(json.dumps({"id": idx, "question": question}) + "\n")
+    return str(dataset_dir)
 
 
 def optimum_supports_ltx2() -> bool:
@@ -328,9 +455,10 @@ class TestBenchmarkLLM:
         ] + sample_args
         run_sample(benchmark_py_command)
 
-
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "inpainting"]])
+    @pytest.mark.parametrize(
+        "sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--model-type", "image-inpainting"]]
+    )
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["overture-creations.png"], indirect=True)
     @pytest.mark.parametrize("download_mask_image", ["overture-creations-mask.png"], indirect=True)
@@ -362,9 +490,10 @@ class TestBenchmarkLLM:
         ] + sample_args
         run_sample(benchmark_py_command)
 
-
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "image-to-image"]])
+    @pytest.mark.parametrize(
+        "sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--model-type", "image-to-image"]]
+    )
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
     @pytest.mark.parametrize(
@@ -419,8 +548,8 @@ class TestBenchmarkLLM:
                     "cpu",
                     "-n",
                     "1",
-                    "--task",
-                    "text_to_speech",
+                    "--model-type",
+                    "speech-generation",
                     "--genai",
                     "--speech_language",
                     "en-us",
@@ -435,8 +564,8 @@ class TestBenchmarkLLM:
                     "cpu",
                     "-n",
                     "1",
-                    "--task",
-                    "text_to_speech",
+                    "--model-type",
+                    "speech-generation",
                     "--genai",
                     "--speech_voice",
                     "tiny_voice",
@@ -453,8 +582,8 @@ class TestBenchmarkLLM:
                     "cpu",
                     "-n",
                     "1",
-                    "--task",
-                    "text_to_speech",
+                    "--model-type",
+                    "speech-generation",
                     "--optimum",
                     "--speech_voice",
                     "tiny_voice",
@@ -511,15 +640,92 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
+    @pytest.mark.sensevoice
+    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
+    @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
+    @pytest.mark.parametrize("convert_model", ["tiny-random-sense-voice-small"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["3283_1447_000.tar.gz"], indirect=True)
+    def test_python_tool_llm_benchmark_sensevoice(
+        self, convert_model, download_test_content, media_file, sample_args, tmp_path
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        report_csv = tmp_path / "report.csv"
+        report_json = tmp_path / "report.json"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            Path(download_test_content) / media_file,
+            "--report",
+            report_csv,
+            "--report_json",
+            report_json,
+        ] + sample_args
+        result = run_sample(benchmark_py_command)
+        assert "model_type: sense-voice" in result.stdout
+        assert "Output size: " in result.stdout
+        assert "End-to-end token throughput: " in result.stdout
+        assert any(
+            "[Average]" in line and "End-to-end token throughput: " in line for line in result.stdout.splitlines()
+        )
+
+        perfdata = json.loads(report_json.read_text())["perfdata"]
+        measured = [entry for entry in perfdata["results"] if entry["iteration"] != 0]
+        for entry in perfdata["results"]:
+            assert entry["throughput_token_count"] == entry["output_size"]
+            assert entry["end_to_end_token_throughput"] >= 0
+        assert perfdata["results_averaged"]["end_to_end_token_throughput"] == pytest.approx(
+            sum(entry["throughput_token_count"] for entry in measured)
+            / sum(entry["generation_time"] for entry in measured),
+            rel=1e-3,
+        )
+
+        with open(report_csv, newline="") as f:
+            rows = {row["iteration"]: row for row in csv.DictReader(f)}
+        for iteration in ["0", "1", "avg", "mini", "median"]:
+            assert rows[iteration]["throughput_token_count"] != ""
+            assert float(rows[iteration]["end_to_end_token_throughput(tokens/s)"]) >= 0
+
+    @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["bge-small-en-v1.5"], indirect=True)
-    @pytest.mark.parametrize("sample_args", [
-        ["-d", "cpu", "-n", "2", "--task", "text_embed"],
-        ["-d", "cpu", "-n", "2", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean", "--task", "text_embed"], 
-        ["-d", "cpu", "-n", "2", "--optimum", "--task", "text_embed"],
-        ["-d", "cpu", "-n", "1", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean", "--optimum", "--task", "text_embed"],
-    ])
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "2", "--model-type", "embedding"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "2",
+                "--embedding_max_length",
+                "128",
+                "--embedding_normalize",
+                "--embedding_pooling",
+                "mean",
+                "--model-type",
+                "embedding",
+            ],
+            ["-d", "cpu", "-n", "2", "--optimum", "--model-type", "embedding"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "--embedding_max_length",
+                "128",
+                "--embedding_normalize",
+                "--embedding_pooling",
+                "mean",
+                "--optimum",
+                "--model-type",
+                "embedding",
+            ],
+        ],
+    )
     def test_python_tool_llm_benchmark_text_embeddings(self, convert_model, sample_args):
-        benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
@@ -527,15 +733,40 @@ class TestBenchmarkLLM:
         ] + sample_args
         run_sample(benchmark_py_command)
 
-
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["Qwen3-Embedding-0.6B"], indirect=True)
-    @pytest.mark.parametrize("sample_args", [
-        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token"],
-        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token", "--optimum"],
-    ])
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "2",
+                "--model-type",
+                "embedding",
+                "--embedding_padding_side",
+                "left",
+                "--embedding_pooling",
+                "last_token",
+            ],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "2",
+                "--model-type",
+                "embedding",
+                "--embedding_padding_side",
+                "left",
+                "--embedding_pooling",
+                "last_token",
+                "--optimum",
+            ],
+        ],
+    )
     def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, convert_model, sample_args):
-        benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
@@ -549,8 +780,8 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "--task", "text_embed"],
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding", "--optimum"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_vl_embedding_text(self, convert_model, sample_args):
@@ -569,12 +800,12 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--prompt", "Represent this image"],
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--prompt", "Represent this image", "--optimum"],
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--prompt", "Represent this image", "-bs", "2"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding", "--prompt", "Represent this image"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding", "--prompt", "Represent this image", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding", "--prompt", "Represent this image", "-bs", "2"],
             # media-only: no --prompt, embedding is computed for the image alone
-            ["-d", "cpu", "-n", "1", "--task", "text_embed"],
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding", "--optimum"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_vl_embedding_image(
@@ -597,14 +828,14 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "8", "--prompt", "Represent this video"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding", "-vf", "8", "--prompt", "Represent this video"],
             [
                 "-d",
                 "cpu",
                 "-n",
                 "1",
-                "--task",
-                "text_embed",
+                "--model-type",
+                "embedding",
                 "-vf",
                 "8",
                 "--prompt",
@@ -612,7 +843,7 @@ class TestBenchmarkLLM:
                 "--optimum",
             ],
             # media-only: no --prompt, embedding is computed for the video alone
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "8"],
+            ["-d", "cpu", "-n", "1", "--model-type", "embedding", "-vf", "8"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_vl_embedding_video(
@@ -631,14 +862,40 @@ class TestBenchmarkLLM:
 
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["ms-marco-TinyBERT-L2-v2"], indirect=True)
-    @pytest.mark.parametrize("sample_args", [
-        ["-d", "cpu", "-n", "2", "--task", "text_rerank"],
-        ["-d", "cpu", "-n", "2", "--reranking_max_length", "10", "--reranking_top_n", "1", "--task", "text_rerank"],
-        ["-d", "cpu", "-n", "2", "--optimum", "--task", "text_rerank"],
-        ["-d", "cpu", "-n", "1", "--reranking_max_length", "10", "--reranking_top_n", "1", "--optimum", "--task", "text_rerank"]
-    ])
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "2", "--model-type", "text-reranking"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "2",
+                "--reranking_max_length",
+                "10",
+                "--reranking_top_n",
+                "1",
+                "--model-type",
+                "text-reranking",
+            ],
+            ["-d", "cpu", "-n", "2", "--optimum", "--model-type", "text-reranking"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "--reranking_max_length",
+                "10",
+                "--reranking_top_n",
+                "1",
+                "--optimum",
+                "--model-type",
+                "text-reranking",
+            ],
+        ],
+    )
     def test_python_tool_llm_benchmark_text_reranking(self, convert_model, sample_args):
-        benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
@@ -646,29 +903,30 @@ class TestBenchmarkLLM:
         ] + sample_args
         run_sample(benchmark_py_command)
 
-
     @pytest.mark.samples
     @pytest.mark.parametrize("model_id", ["Qwen/Qwen3-Reranker-0.6B"])
-    @pytest.mark.parametrize("sample_args", [
-        ["-d", "cpu", "-n", "1", "--task", "text_rerank", "--optimum"],
-    ])
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "--model-type", "text-reranking", "--optimum"],
+        ],
+    )
     def test_python_tool_llm_benchmark_text_reranking_qwen3(self, model_id, sample_args):
         from utils.hugging_face import download_and_convert_model
+
         model_schema = download_and_convert_model(model_id)
-        benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
-        benchmark_py_command = [
-            sys.executable,
-            benchmark_script,
-            "-m", model_schema.models_path
-        ] + sample_args
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [sys.executable, benchmark_script, "-m", model_schema.models_path] + sample_args
         run_sample(benchmark_py_command)
 
-
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args", [
-        ["-d", "cpu", "-n", "1"],
-        ["-d", "cpu", "-n", "1", "-f", "pt"],
-    ])
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1"],
+            ["-d", "cpu", "-n", "1", "-f", "pt"],
+        ],
+    )
     def test_python_tool_llm_benchmark_gguf_format(self, sample_args):
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         gguf_model = GGUF_MODEL_LIST[0]
@@ -846,8 +1104,8 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "text-to-video", "--optimum"],
-            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "text-to-video", "--genai"],
+            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--model-type", "text-to-video", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--model-type", "text-to-video", "--genai"],
         ],
     )
     @pytest.mark.parametrize("convert_model", ["tiny-random-ltx-video"], indirect=True)
@@ -870,14 +1128,262 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--genai"],
+        ],
+        ids=["optimum", "genai"],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_base(self, qwen3_reference_audio_wav_path, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_ref_audio",
+            qwen3_reference_audio_wav_path,
+            "--speech_ref_text",
+            "This is a tiny random reference transcript for benchmark testing.",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-customvoice"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--genai"],
+        ],
+        ids=["optimum", "genai"],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_customvoice(self, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_voice",
+            "serena",
+            "--speech_instruct",
+            "Speak with clear articulation and a friendly, professional tone.",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-voicedesign"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--genai"],
+        ],
+        ids=["optimum", "genai"],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_voicedesign(self, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_instruct",
+            "Some voice design instruct prompt",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts"], indirect=True)
+    def test_python_tool_llm_benchmark_qwen3_tts_base_pt(self, download_model, qwen3_reference_audio_wav_path):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            download_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-f",
+            "pt",
+            "-ic",
+            "20",
+            "--model-type",
+            "speech-generation",
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_ref_audio",
+            qwen3_reference_audio_wav_path,
+            "--speech_ref_text",
+            "This is a tiny random reference transcript for benchmark testing.",
+        ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts-customvoice"], indirect=True)
+    def test_python_tool_llm_benchmark_qwen3_tts_customvoice_pt(self, download_model):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            download_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-f",
+            "pt",
+            "-ic",
+            "20",
+            "--model-type",
+            "speech-generation",
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_voice",
+            "serena",
+            "--speech_instruct",
+            "Speak with clear articulation and a friendly, professional tone.",
+        ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-tts-voicedesign"], indirect=True)
+    def test_python_tool_llm_benchmark_qwen3_tts_voicedesign_pt(self, download_model):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            download_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-f",
+            "pt",
+            "-ic",
+            "20",
+            "--model-type",
+            "speech-generation",
+            "--prompt",
+            "Hello OpenVINO GenAI",
+            "--speech_language",
+            "English",
+            "--speech_instruct",
+            "Some voice design instruct prompt",
+        ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--genai"],
+        ],
+        ids=["genai"],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_base_prompt_file(
+        self, convert_model, qwen3_tts_base_prompt_file, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-pf",
+            qwen3_tts_base_prompt_file,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-customvoice"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--genai"],
+        ],
+        ids=["genai"],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_customvoice_prompt_file(
+        self, convert_model, qwen3_tts_customvoice_prompt_file, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-pf",
+            qwen3_tts_customvoice_prompt_file,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.llm_bench_qwen3_tts
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-tts-voicedesign"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "20", "--model-type", "speech-generation", "--genai"],
+        ],
+        ids=["genai"],
+    )
+    def test_python_tool_llm_benchmark_qwen3_tts_voicedesign_prompt_file(
+        self, convert_model, qwen3_tts_voicedesign_prompt_file, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-pf",
+            qwen3_tts_voicedesign_prompt_file,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
     @pytest.mark.transformers_higher_v5_1
     @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "visual_text_gen", "--optimum"],
-            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "visual_text_gen", "--genai"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--model-type", "visual-text", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--model-type", "visual-text", "--genai"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_omni_visual_text_gen(
@@ -903,8 +1409,8 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--optimum"],
-            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--genai"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--model-type", "speech-recognition", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--model-type", "speech-recognition", "--genai"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_omni_speech_to_text(
@@ -929,8 +1435,8 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "text_to_speech", "--optimum"],
-            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "text_to_speech", "--genai"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--model-type", "speech-generation", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--model-type", "speech-generation", "--genai"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_omni_text_to_speech(self, convert_model, sample_args):
@@ -952,7 +1458,7 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "-ic", "4", "-f", "pt", "--task", "visual_text_gen"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "-f", "pt", "--model-type", "visual-text"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_omni_moe_pt_visual_text_gen(
@@ -983,15 +1489,15 @@ class TestBenchmarkLLM:
                 "1",
                 "-ic",
                 "10",
-                "--task",
-                "text_gen_chat",
+                "--model-type",
+                "text-chat",
                 "--optimum",
                 "-p",
                 "Why the Sun is yellow?",
                 "--chat_iter",
                 "2",
             ],
-            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text_gen_chat", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--model-type", "text-chat", "--optimum"],
             [
                 "-d",
                 "cpu",
@@ -999,15 +1505,15 @@ class TestBenchmarkLLM:
                 "1",
                 "-ic",
                 "10",
-                "--task",
-                "text_gen_chat",
+                "--model-type",
+                "text-chat",
                 "--genai",
                 "-p",
                 "Why the Sun is yellow?",
                 "--chat_iter",
                 "3",
             ],
-            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text_gen_chat", "--genai"],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--model-type", "text-chat", "--genai"],
         ],
     )
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen2"], indirect=True)
@@ -1024,6 +1530,85 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen2"], indirect=True)
+    @pytest.mark.parametrize("backend", ["--genai", "--optimum"])
+    def test_python_tool_llm_benchmark_llm_dataset(self, convert_model, text_dataset_dir, backend):
+        num_samples = 2
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "10",
+            "--model-type",
+            "text",
+            backend,
+            "--dataset",
+            text_dataset_dir,
+            "--dataset_split",
+            "train",
+            "--dataset_column",
+            "text=question",
+            "--dataset_samples",
+            str(num_samples),
+        ]
+        result = run_sample(benchmark_py_command)
+        assert f"prompt nums: {num_samples}," in result.stdout
+        for question in TEXT_DATASET_QUESTIONS[:num_samples]:
+            assert f"Input text: {question}" in result.stdout
+        assert TEXT_DATASET_QUESTIONS[num_samples] not in result.stdout
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["tiny-random-llava"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
+    @pytest.mark.parametrize("backend", ["--genai", "--optimum"])
+    def test_python_tool_llm_benchmark_vlm_dataset(self, convert_model, download_test_content, backend, tmp_path):
+        # Local image folder dataset: `datasets` loads the images into the `image` column
+        # and the other columns from metadata.jsonl, the split name is train
+        dataset_dir = tmp_path / "vlm_dataset"
+        dataset_dir.mkdir()
+        shutil.copy(download_test_content, dataset_dir / "cat.png")
+        with open(dataset_dir / "metadata.jsonl", "w", encoding="utf-8") as metadata_file:
+            metadata_file.write(json.dumps({"file_name": "cat.png", "question": VLM_DATASET_QUESTION}) + "\n")
+
+        num_samples = 1
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "4",
+            "--model-type",
+            "visual-text",
+            backend,
+            "--dataset",
+            dataset_dir,
+            "--dataset_split",
+            "train",
+            "--dataset_column",
+            "question",
+            "image",
+            "--dataset_samples",
+            str(num_samples),
+        ]
+        result = run_sample(benchmark_py_command)
+        assert f"prompt nums: {num_samples}," in result.stdout
+        # The logged input has the question and the image from the dataset
+        assert f"Input text: {{'prompt': '{VLM_DATASET_QUESTION}', 'media': <PIL." in result.stdout
+
+    @pytest.mark.samples
     @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
     @pytest.mark.parametrize(
         "convert_model, sample_args",
@@ -1036,7 +1621,7 @@ class TestBenchmarkLLM:
                     "-n",
                     "1",
                     "--optimum",
-                    "--task",
+                    "--model-type",
                     "image-to-video",
                     "--num_steps",
                     "5",
@@ -1056,7 +1641,7 @@ class TestBenchmarkLLM:
                     "-n",
                     "1",
                     "--genai",
-                    "--task",
+                    "--model-type",
                     "image-to-video",
                     "--num_steps",
                     "5",
@@ -1092,8 +1677,8 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "image-to-video", "--optimum"],
-            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "image-to-video", "--genai"],
+            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--model-type", "image-to-video", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--model-type", "image-to-video", "--genai"],
         ],
     )
     @pytest.mark.parametrize("convert_model", ["tiny-random-ltx-video"], indirect=True)
@@ -1161,8 +1746,8 @@ class TestBenchmarkLLM:
             "1",
             "-ic",
             "4",
-            "--task",
-            "text_gen",
+            "--model-type",
+            "text",
             "-p",
             "Why is the Sun yellow?",
         ] + sample_args
@@ -1182,15 +1767,15 @@ class TestBenchmarkLLM:
                 "1",
                 "-ic",
                 "10",
-                "--task",
-                "visual_text_gen_chat",
+                "--model-type",
+                "visual-text-chat",
                 "--optimum",
                 "-p",
                 "Describe these image in detail",
                 "--chat_iter",
                 "2",
             ],
-            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen_chat", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--model-type", "visual-text-chat", "--optimum"],
             [
                 "-d",
                 "cpu",
@@ -1198,15 +1783,15 @@ class TestBenchmarkLLM:
                 "1",
                 "-ic",
                 "10",
-                "--task",
-                "visual_text_gen_chat",
+                "--model-type",
+                "visual-text-chat",
                 "--genai",
                 "-p",
                 "Describe these image in detail",
                 "--chat_iter",
                 "3",
             ],
-            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen_chat", "--genai"],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--model-type", "visual-text-chat", "--genai"],
         ],
     )
     @pytest.mark.parametrize("download_test_content", ["cat"], indirect=True)

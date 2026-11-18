@@ -990,4 +990,17 @@ export const LLM_MODELS: LLMModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'NemotronHForCausalLM',
+    models: [
+      {
+        name: 'NemotronH',
+        links: [
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16',
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16',
+        ],
+      },
+    ],
+  },
 ];
