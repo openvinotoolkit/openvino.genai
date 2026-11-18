@@ -102,22 +102,22 @@ TEST(GGUFTokenizer, BpeUserDefinedTokensRemainVisibleWhenSkippingControlTokens) 
         auto config = byte_level_bpe_config("qwen35");
         config.config["model"] = model;
         config.config["tokens"] =
-            std::vector<std::string>{"<|endoftext|>", "a", "b", "<think>", "</think>", "<|tool_call|>"};
-        const std::vector<int32_t> types{3, 1, 1, 4, 4, 3};
+            std::vector<std::string>{"<|endoftext|>", "a", "b", "<think>", "</think>", "<|tool_call|>", "<é>"};
+        const std::vector<int32_t> types{3, 1, 1, 4, 4, 3, 4};
         ov::Tensor type_tensor(ov::element::i32, {types.size()});
         std::memcpy(type_tensor.data(), types.data(), type_tensor.get_byte_size());
         config.config["token_type"] = type_tensor;
 
         ov::genai::GGUFTokenizer tokenizer(config);
-        auto encoded = tokenizer.encode("a<think></think><|tool_call|>b", ov::genai::add_special_tokens(false));
-        const std::vector<int64_t> ids{1, 3, 4, 5, 2};
+        auto encoded = tokenizer.encode("a<think></think><é><|tool_call|>b", ov::genai::add_special_tokens(false));
+        const std::vector<int64_t> ids{1, 3, 4, 6, 5, 2};
         ASSERT_EQ(encoded.input_ids.get_size(), ids.size());
         EXPECT_EQ(std::vector<int64_t>(encoded.input_ids.data<int64_t>(),
                                        encoded.input_ids.data<int64_t>() + encoded.input_ids.get_size()),
                   ids);
-        EXPECT_EQ(tokenizer.decode(ids), "a<think></think>b");
-        EXPECT_EQ(tokenizer.decode(ids, ov::genai::skip_special_tokens(true)), "a<think></think>b");
-        EXPECT_EQ(tokenizer.decode(ids, ov::genai::skip_special_tokens(false)), "a<think></think><|tool_call|>b");
+        EXPECT_EQ(tokenizer.decode(ids), "a<think></think><é>b");
+        EXPECT_EQ(tokenizer.decode(ids, ov::genai::skip_special_tokens(true)), "a<think></think><é>b");
+        EXPECT_EQ(tokenizer.decode(ids, ov::genai::skip_special_tokens(false)), "a<think></think><é><|tool_call|>b");
     }
 }
 
