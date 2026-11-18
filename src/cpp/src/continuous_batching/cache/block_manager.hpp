@@ -2840,13 +2840,17 @@ public:
                 completed_blocks.push_back(std::move(block));
             }
             const size_t content_length = (logical_block_idx + 1) * m_block_size;
-            const uint64_t hash = sequence->get_hash(content_length, m_block_size);
             if (completed_blocks[0]->has_published_hash()) {
-                if (completed_blocks[0]->get_hash() == hash) {
-                    completed_published_blocks.emplace_back(hash, std::move(completed_blocks));
+                // A stop-string trim can leave a block past the positions that get_hash() can identify.
+                if (content_length <= sequence->get_prefix_identity_length()) {
+                    const uint64_t published_hash = completed_blocks[0]->get_hash();
+                    if (published_hash == sequence->get_hash(content_length, m_block_size)) {
+                        completed_published_blocks.emplace_back(published_hash, std::move(completed_blocks));
+                    }
                 }
                 continue;
             }
+            const uint64_t hash = sequence->get_hash(content_length, m_block_size);
             const auto content_length_it = m_cached_hash_to_content_length.find(hash);
             OPENVINO_ASSERT(content_length_it == m_cached_hash_to_content_length.end() ||
                                 content_length_it->second == content_length,

@@ -890,6 +890,26 @@ TEST(TestBlockManager, PrefixCachingRollbackUnregistersInvalidatedBoundaryBefore
     block_manager.free_sequence(divergent_restore_group->get_running_sequences().front()->get_id());
 }
 
+TEST(TestBlockManager, PublishingCompletedBlocksIgnoresPublishedBlocksPastATrimmedSequence) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(8, true, block_size);
+
+    auto sequence_group = create_sequence_group(std::vector<int64_t>{0, 1, 2, 3}, 60);
+    const auto sequence = sequence_group->get_running_sequences().front();
+    for (const int64_t token : std::vector<int64_t>{4, 5, 6, 7}) {
+        sequence->append_token(token, 0.0f);
+    }
+    sequence_group->schedule_tokens(8);
+    block_manager.append_slots(sequence_group);
+    sequence_group->finish_iteration();
+
+    // A stop-string trim leaves the second block past the positions that get_hash() can identify.
+    sequence->remove_last_tokens(4);
+    EXPECT_NO_THROW(block_manager.publish_completed_blocks(sequence, 4, 8));
+
+    block_manager.free_sequence(sequence->get_id());
+}
+
 TEST(TestBlockManager, PrefixCachingRollbackPreservesIdentityBackedBySharedOwner) {
     constexpr size_t block_size = 4;
     ov::genai::BlockManager block_manager(10, true, block_size);
