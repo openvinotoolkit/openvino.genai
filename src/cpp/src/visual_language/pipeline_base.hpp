@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "omni/speech_streamer_utils.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 
@@ -23,18 +26,42 @@ class VLMPipeline::VLMBackend : public ov::genai::VLMPipelineBase {
 protected:
     VLMBackend();
 
-    // Audio streamer extracted from AnyMap, forwarded to speech pipeline
-    OmniSpeechStreamerVariant m_pending_speech_streamer = std::monostate{};
-
-    // RAII guard to reset the audio streamer on scope exit (exception-safe)
-    struct AudioStreamerGuard {
-        OmniSpeechStreamerVariant& streamer_ref;
-        ~AudioStreamerGuard() {
-            streamer_ref = std::monostate{};
-        }
+    /// @brief Speech output requested in the AnyMap generate(), decoded in the language model stream (LFM3-Omni).
+    struct SpeechRequest {
+        OmniTalkerSpeechConfig config;
+        OmniSpeechStreamerVariant streamer;
     };
 
+    /// @brief Throws unless the language model emits speech frames itself, this backend decodes them, and the
+    /// config fits the model.
+    virtual void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const;
+
+    /// @brief The typed generate() with the speech request of the AnyMap generate(). The default ignores the request:
+    /// check_speech_in_stream() has already rejected speech for backends that cannot decode it.
+    virtual VLMDecodedResults generate_with_speech(const std::string& prompt,
+                                                   const std::vector<ov::Tensor>& images,
+                                                   const std::vector<ov::Tensor>& videos,
+                                                   const std::vector<ov::Tensor>& audios,
+                                                   const std::vector<VideoMetadata>& videos_metadata,
+                                                   const GenerationConfig& generation_config,
+                                                   const StreamerVariant& streamer,
+                                                   const std::optional<SpeechRequest>& speech_request);
+    virtual VLMDecodedResults generate_with_speech(const ChatHistory& history,
+                                                   const std::vector<ov::Tensor>& images,
+                                                   const std::vector<ov::Tensor>& videos,
+                                                   const std::vector<ov::Tensor>& audios,
+                                                   const std::vector<VideoMetadata>& videos_metadata,
+                                                   const GenerationConfig& generation_config,
+                                                   const StreamerVariant& streamer,
+                                                   const std::optional<SpeechRequest>& speech_request);
+
     GenerationConfig resolve_generation_config(const ov::AnyMap& config_map);
+
+private:
+    /// @brief Reads talker_speech_config and, when it requests audio, speech_streamer from AnyMap. A request for audio
+    /// is validated by check_speech_request(), so the caller already guards the streamer when the config is rejected.
+    static std::optional<SpeechRequest> read_speech_request(const ov::AnyMap& config_map);
+    void check_speech_request(const SpeechRequest& speech_request) const;
 
 public:
     ~VLMBackend() override;

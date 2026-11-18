@@ -8,6 +8,7 @@
 #include <filesystem>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/omni/talker_results.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
@@ -32,6 +33,10 @@ public:
     // Outer index is per return sequence, aligned with intermediate_hidden_states;
     // inner is prompt tokens followed by that sequence's generated tokens.
     std::vector<std::vector<int64_t>> full_token_ids;
+
+    /// Speech output. VLMPipeline fills it only for LFM3-Omni when talker_speech_config.return_audio is true;
+    /// empty for other models. OmniPipeline also fills it for Qwen3-Omni. Preview API: subject to change.
+    TalkerResults speech_result;
 };
 
 /**
