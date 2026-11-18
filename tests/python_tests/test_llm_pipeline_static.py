@@ -495,8 +495,8 @@ def test_readonly_input_tensor(npu_model: LLMPipeline):
 
 
 # The NPU PA front-end on CPU: NPUW_PA routes LLMPipeline on NPU to the
-# continuous batching pipeline, whose PA model the front-end runs.
-NPUW_PA_CONFIG: dict = {"NPU_USE_NPUW": "YES", "NPUW_PA": "YES", "NPUW_DEVICES": "CPU", "NPUW_F16IC": "NO"}
+# continuous batching pipeline, whose PA model the front-end runs. NPU_USE_NPUW defaults to YES there.
+NPUW_PA_CONFIG: dict = {"NPUW_PA": "YES", "NPUW_DEVICES": "CPU", "NPUW_F16IC": "NO"}
 
 # A batch of two prompts, which only the continuous batching route accepts on NPU.
 NPUW_PA_PROMPTS: list[str] = ["What is OpenVINO?", "Why do LLM servers batch requests?"]
@@ -551,6 +551,12 @@ def test_npuw_pa_off_keeps_the_stateful_pipeline(llm_model: OVConvertedModelSche
         ),
         pytest.param(NPUW_PA_CONFIG, True, "NPUW_PA=YES does not support speculative decoding", id="draft_model"),
         pytest.param(NPUW_PA_CONFIG | {"NPUW_PA": "MAYBE"}, False, "'NPUW_PA' must be 'YES' or 'NO'", id="bad_value"),
+        pytest.param(
+            NPUW_PA_CONFIG | {"NPU_USE_NPUW": "NO"},
+            False,
+            "NPUW_PA=YES runs on NPUW, but NPU_USE_NPUW is NO",
+            id="npuw_off",
+        ),
         pytest.param(
             DEFAULT_CONFIG | {"ATTENTION_BACKEND": "PA"},
             False,

@@ -57,6 +57,8 @@ bool use_npuw_pa(const std::string& device,
     }
     OPENVINO_ASSERT(properties.count(ov::genai::utils::DRAFT_MODEL_ARG_NAME) == 0,
                     "NPUW_PA=YES does not support speculative decoding. Remove the draft model or NPUW_PA.");
+    OPENVINO_ASSERT(model_properties.count("NPU_USE_NPUW") == 0 || ov::genai::utils::is_npuw_enabled(model_properties),
+                    "NPUW_PA=YES runs on NPUW, but NPU_USE_NPUW is NO. Remove NPU_USE_NPUW or NPUW_PA.");
     OPENVINO_ASSERT(attention_backend == ov::genai::PA_BACKEND,
                     "NPUW_PA=YES needs ATTENTION_BACKEND=PA, but ATTENTION_BACKEND is '",
                     attention_backend,
@@ -297,6 +299,8 @@ ov::genai::LLMPipeline::LLMPipeline(
         // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
         auto [device_properties, scheduler_config] =
             utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        // NPUW_PA is an NPUW option, so NPUW is on by default, as for the stateful NPU pipeline
+        utils::set_config_default(device_properties, "NPU_USE_NPUW", std::string{"YES"});
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
                                                               tokenizer,
                                                               scheduler_config,
@@ -367,6 +371,8 @@ ov::genai::LLMPipeline::LLMPipeline(
         // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
         auto [device_properties, scheduler_config] =
             utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        // NPUW_PA is an NPUW option, so NPUW is on by default, as for the stateful NPU pipeline
+        utils::set_config_default(device_properties, "NPU_USE_NPUW", std::string{"YES"});
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
                                                               tokenizer,
                                                               scheduler_config,
@@ -425,6 +431,8 @@ ov::genai::LLMPipeline::LLMPipeline(
         // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
         auto [device_properties, scheduler_config] =
             utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        // NPUW_PA is an NPUW option, so NPUW is on by default, as for the stateful NPU pipeline
+        utils::set_config_default(device_properties, "NPU_USE_NPUW", std::string{"YES"});
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
                                                               tokenizer,
                                                               scheduler_config,
