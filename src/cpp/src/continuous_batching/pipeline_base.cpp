@@ -299,7 +299,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
         PerfMetrics::emplace_duration(perf_metrics.raw_metrics.generate_durations, start_time);
-        // Reevaluate taking into accound tokenization/detokenization times.
+        // Reevaluate taking into account tokenization/detokenization times.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 

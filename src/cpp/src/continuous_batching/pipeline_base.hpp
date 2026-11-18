@@ -165,7 +165,7 @@ public:
     virtual void step() = 0;
 
     /**
-     * Performs monolitic generation based on encoded prompts
+     * Performs monolithic generation based on encoded prompts
      */
     virtual std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
@@ -176,7 +176,7 @@ public:
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) = 0;
 
     /**
-     * Performs monolitic generation based on text prompts
+     * Performs monolithic generation based on text prompts
      */
     std::vector<GenerationResult> generate(
         const std::vector<std::string>& prompts,
@@ -220,7 +220,7 @@ public:
 
 
     /**
-     * Performs monolitic generation based on ChatHistory objects
+     * Performs monolithic generation based on ChatHistory objects
      */
     std::vector<GenerationResult> generate(
         const std::vector<ChatHistory>& histories,

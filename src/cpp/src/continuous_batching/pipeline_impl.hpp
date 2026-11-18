@@ -92,7 +92,7 @@ protected:
     void _fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits);
 
     /**
-     * Performs KV cache eviction is enabled / requireed
+     * Performs KV cache eviction is enabled / required
      */
     void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const ContinuousBatchingScheduler::Output& scheduler_output);
 

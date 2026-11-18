@@ -151,7 +151,7 @@ public:
         }
     }
 
-    void decrease_generated_token_occurance(int64_t token_id) {
+    void decrease_generated_token_occurrence(int64_t token_id) {
         auto it = m_unique_generated_token_ids->find(token_id);
         OPENVINO_ASSERT(it != m_unique_generated_token_ids->end() && it->second > 0);
         // Repetition and presence penalties apply to every token in the map, whatever its count.
