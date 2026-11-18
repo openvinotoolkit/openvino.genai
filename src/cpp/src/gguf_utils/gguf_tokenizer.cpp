@@ -145,10 +145,10 @@ bool is_atomic_token(int32_t token_type) {
     return token_type == GGUF_TOKEN_CONTROL || token_type == GGUF_TOKEN_USER_DEFINED;
 }
 
-// Tokens removed by skip_special_tokens, as in llama.cpp token_to_piece() and Hugging Face
-// decoding. USER_DEFINED tokens such as </think> stay visible.
+// Tokens removed by skip_special_tokens. USER_DEFINED tokens such as </think> stay visible,
+// as in llama.cpp token_to_piece().
 bool is_skipped_on_decode(int32_t token_type) {
-    return token_type == GGUF_TOKEN_CONTROL || token_type == GGUF_TOKEN_UNKNOWN;
+    return token_type == GGUF_TOKEN_CONTROL;
 }
 
 std::string quote_meta(const std::string& str) {

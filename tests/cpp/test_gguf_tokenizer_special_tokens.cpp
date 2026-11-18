@@ -102,8 +102,8 @@ TEST(GGUFTokenizer, BpeUserDefinedTokensRemainVisibleWhenSkippingControlTokens) 
         auto config = byte_level_bpe_config("qwen35");
         config.config["model"] = model;
         config.config["tokens"] =
-            std::vector<std::string>{"<|endoftext|>", "a", "b", "<think>", "</think>", "<|tool_call|>", "<unk>"};
-        const std::vector<int32_t> types{3, 1, 1, 4, 4, 3, 2};
+            std::vector<std::string>{"<|endoftext|>", "a", "b", "<think>", "</think>", "<|tool_call|>"};
+        const std::vector<int32_t> types{3, 1, 1, 4, 4, 3};
         ov::Tensor type_tensor(ov::element::i32, {types.size()});
         std::memcpy(type_tensor.data(), types.data(), type_tensor.get_byte_size());
         config.config["token_type"] = type_tensor;
@@ -118,7 +118,6 @@ TEST(GGUFTokenizer, BpeUserDefinedTokensRemainVisibleWhenSkippingControlTokens) 
         EXPECT_EQ(tokenizer.decode(ids), "a<think></think>b");
         EXPECT_EQ(tokenizer.decode(ids, ov::genai::skip_special_tokens(true)), "a<think></think>b");
         EXPECT_EQ(tokenizer.decode(ids, ov::genai::skip_special_tokens(false)), "a<think></think><|tool_call|>b");
-        EXPECT_EQ(tokenizer.decode(std::vector<int64_t>{1, 6, 2}, ov::genai::skip_special_tokens(true)), "ab");
     }
 }
 
