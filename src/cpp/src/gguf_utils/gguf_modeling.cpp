@@ -1,23 +1,23 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <map>
-#include <vector>
-#include <string>
-#include <iostream>
+#include "gguf_utils/gguf_modeling.hpp"
+
 #include <chrono>
+#include <iostream>
+#include <map>
+#include <openvino/openvino.hpp>
 #include <sstream>
 #include <stdexcept>
-
-#include <openvino/openvino.hpp>
-#include "openvino/runtime/core.hpp"
-#include "openvino/opsets/opset13.hpp"
-#include "openvino/frontend/gguf/adapt_to_genai.hpp"
-#include "openvino/frontend/gguf/frontend.hpp"
+#include <string>
+#include <vector>
 
 #include "gguf_utils/building_blocks.hpp"
-#include "gguf_utils/gguf_modeling.hpp"
 #include "gguf_utils/gguf_utils.hpp"
+#include "openvino/frontend/gguf/adapt_to_genai.hpp"
+#include "openvino/frontend/gguf/frontend.hpp"
+#include "openvino/opsets/opset13.hpp"
+#include "openvino/runtime/core.hpp"
 #include "utils.hpp"
 
 using namespace ov;

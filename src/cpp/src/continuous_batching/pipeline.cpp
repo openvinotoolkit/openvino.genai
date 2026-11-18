@@ -552,21 +552,21 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
         if (effective_config.adapters)
             effective_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_impl = std::make_shared<PromptLookupImpl>(language_model,
-                                                   embedder,
-                                                   tokenizer,
-                                                   scheduler_config,
-                                                   device,
-                                                   backend_properties,
-                                                   generation_config);
+                                                    embedder,
+                                                    tokenizer,
+                                                    scheduler_config,
+                                                    device,
+                                                    backend_properties,
+                                                    generation_config);
         m_impl->set_config(effective_config);
     } else {
         m_impl = std::make_shared<ContinuousBatchingImpl>(language_model,
-                                                      embedder,
-                                                      tokenizer,
-                                                      scheduler_config,
-                                                      device,
-                                                      backend_properties,
-                                                      generation_config);
+                                                          embedder,
+                                                          tokenizer,
+                                                          scheduler_config,
+                                                          device,
+                                                          backend_properties,
+                                                          generation_config);
     }
     m_impl->m_load_time_ms = get_load_time(start);
 }

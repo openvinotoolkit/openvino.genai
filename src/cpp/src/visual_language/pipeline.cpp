@@ -322,13 +322,13 @@ public:
     }
 
     static std::shared_ptr<VLMBackend> create_from_models(const std::shared_ptr<ov::Model>& language_model,
-                                                         const VLMModels& models,
-                                                         const Tokenizer& tokenizer,
-                                                         const GenerationConfig& generation_config,
-                                                         const std::string& device,
-                                                         const ov::AnyMap& properties,
-                                                         const ov::AnyMap& user_properties,
-                                                         const std::string& attention_backend) {
+                                                          const VLMModels& models,
+                                                          const Tokenizer& tokenizer,
+                                                          const GenerationConfig& generation_config,
+                                                          const std::string& device,
+                                                          const ov::AnyMap& properties,
+                                                          const ov::AnyMap& user_properties,
+                                                          const std::string& attention_backend) {
         const auto scheduled =
             utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         const auto& plugin_properties = scheduled.first;
@@ -1281,13 +1281,13 @@ VLMPipeline::VLMPipeline(
 #ifdef ENABLE_GGUF
         const auto models = read_gguf_multimodal(models_dir, device, properties);
         m_pimpl = VLMPipelineImpl::create_from_models(models.language,
-                                                    models.vlm,
-                                                    models.tokenizer,
-                                                    models.generation_config(),
-                                                    device,
-                                                    properties,
-                                                    user_properties,
-                                                    attention_backend);
+                                                      models.vlm,
+                                                      models.tokenizer,
+                                                      models.generation_config(),
+                                                      device,
+                                                      properties,
+                                                      user_properties,
+                                                      attention_backend);
         utils::log_attention_backend(m_pimpl->get_attention_backend());
         m_pimpl->set_load_time(
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time)
