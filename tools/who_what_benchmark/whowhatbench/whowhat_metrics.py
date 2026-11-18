@@ -105,6 +105,12 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
             raise ValueError("GT and prediction data are inconsistent. Prediction data is a list, but GT is a string.")
         a_indexes = tokenizer.encode(a_answer, return_tensors="pt").squeeze().tolist()
         b_indexes = tokenizer.encode(b_answer, return_tensors="pt").squeeze().tolist()
+        # squeeze() turns a single token into a plain int; make it a list before the
+        # empty checks below, which call len() and would treat token id 0 as empty.
+        if isinstance(a_indexes, int):
+            a_indexes = [a_indexes]
+        if isinstance(b_indexes, int):
+            b_indexes = [b_indexes]
         if not a_indexes and not b_indexes:
             sdt_list.append(0)
             fdt_list.append(0)
@@ -121,10 +127,6 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
             sdtn_list.append(1)
             fdt_max.append(0)
         else:
-            if isinstance(a_indexes, int):
-                a_indexes = list([a_indexes])
-            if isinstance(b_indexes, int):
-                b_indexes = list([b_indexes])
             fdt_max.append(len(a_indexes))
 
             matcher = SequenceMatcher(None, a_indexes, b_indexes)
