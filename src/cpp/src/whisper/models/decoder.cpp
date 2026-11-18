@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <limits>
 
-#include "statefull_decoder.hpp"
+#include "stateful_decoder.hpp"
 #include "whisper/whisper_utils.hpp"
 
 namespace ov::genai {
@@ -15,11 +15,11 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
                                                           const ov::AnyMap& properties,
                                                           const ov::PartialShape& lhs_shape,
                                                           const bool decompose_cross_attention_spda_ops) {
-    return std::make_shared<WhisperStatefullDecoder>(models_path,
-                                                     device,
-                                                     properties,
-                                                     lhs_shape,
-                                                     decompose_cross_attention_spda_ops);
+    return std::make_shared<WhisperStatefulDecoder>(models_path,
+                                                    device,
+                                                    properties,
+                                                    lhs_shape,
+                                                    decompose_cross_attention_spda_ops);
 }
 
 std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& encoder_hidden_state,

@@ -145,7 +145,7 @@ class OptimumTextGenerationChatAdapter(ChatGenerationAdapter):
         self.generation_args = None
         self.chat_history = []
         # transformers manage kv_cache via past_key_values
-        # for optimum-intel statefull model ((),)
+        # for optimum-intel stateful model ((),)
         self.past_key_values = None
         self.tokenized_history: list = []
 
