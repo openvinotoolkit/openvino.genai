@@ -1,10 +1,14 @@
+export type VLMModel = {
+  name: string;
+  links: string[];
+  notesLink?: string;
+  // The model is converted by genai-cli only, optimum-cli does not support it yet.
+  genaiCliOnly?: boolean;
+};
+
 type VLMModelType = {
   architecture: string;
-  models: Array<{
-    name: string;
-    links: string[];
-    notesLink?: string;
-  }>;
+  models: VLMModel[];
 };
 
 export const VLM_MODELS: VLMModelType[] = [
@@ -39,6 +43,16 @@ export const VLM_MODELS: VLMModelType[] = [
         name: 'LFM3-VL',
         links: ['https://huggingface.co/LiquidAI/LFM3-VL-2B'],
         notesLink: '#lfm3-vl-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'LFM3Omni',
+    models: [
+      {
+        name: 'LFM3-Omni',
+        links: ['https://huggingface.co/LiquidAI/LFM3-Omni-2B'],
+        notesLink: '#lfm3-omni-notes',
       },
     ],
   },
@@ -154,6 +168,17 @@ export const VLM_MODELS: VLMModelType[] = [
         name: 'MiniCPM-V-4.6',
         links: ['https://huggingface.co/openbmb/MiniCPM-V-4.6'],
         notesLink: '#minicpmv4_6-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'Molmo2ForConditionalGeneration',
+    models: [
+      {
+        name: 'Molmo2',
+        links: ['https://huggingface.co/allenai/MolmoWeb-4B'],
+        notesLink: '#molmo2-notes',
+        genaiCliOnly: true,
       },
     ],
   },

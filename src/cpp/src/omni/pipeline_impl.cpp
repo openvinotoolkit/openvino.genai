@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "omni/speech_streamer_utils.hpp"
 #include "openvino/core/except.hpp"
 #include "omni/channel.hpp"
 
@@ -124,8 +125,9 @@ void enforce_text_config_compatible_with_audio(const GenerationConfig& text_conf
                     "); the talker consumes a single hidden-state stream");
 }
 
-/// @brief Body shared by both generate() overloads, which differ only in whether the thinker is fed
-/// a raw prompt or a ChatHistory — VLMPipelineBase overloads on exactly that and nothing else.
+/// @brief Body shared by both generate() overloads for a model with a separate talker and for
+/// text-only requests. The overloads differ only in whether the thinker is fed a raw prompt or a
+/// ChatHistory — VLMPipelineBase overloads on exactly that and nothing else.
 template <typename Prompt>
 OmniDecodedResults generate_impl(const std::shared_ptr<VLMPipelineBase>& vlm,
                                  const std::shared_ptr<TalkerBase>& talker,
@@ -138,13 +140,6 @@ OmniDecodedResults generate_impl(const std::shared_ptr<VLMPipelineBase>& vlm,
                                  const OmniTalkerSpeechConfig& talker_speech_config,
                                  const StreamerVariant& streamer,
                                  const OmniSpeechStreamerVariant& speech_streamer) {
-    validate_omni_talker_speech_config(talker_speech_config);
-    enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
-
-    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                    "OmniPipeline: videos_metadata size (", videos_metadata.size(),
-                    ") must match videos size (", videos.size(), ") or be empty");
-
     if (talker_speech_config.return_audio) {
         GenerationConfig text_cfg = text_config;
         text_cfg.return_omni_outputs = true;
@@ -183,10 +178,64 @@ OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipeli
     assert_omni_capable();
 }
 
+OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipelineBase>& vlm) : m_vlm{vlm} {
+    OPENVINO_ASSERT(m_vlm, "OmniPipeline: VLM pointer is null");
+}
+
+OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate_speech_in_stream(
+    const std::function<VLMDecodedResults(const ov::AnyMap&)>& generate,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const std::vector<ov::Tensor>& audios,
+    const GenerationConfig& text_config,
+    const OmniTalkerSpeechConfig& talker_speech_config,
+    const StreamerVariant& streamer,
+    const OmniSpeechStreamerVariant& speech_streamer) {
+    VLMDecodedResults vlm_result = generate(ov::AnyMap{
+        ov::genai::images(images),
+        ov::genai::videos(videos),
+        ov::genai::videos_metadata(videos_metadata),
+        ov::genai::audios(audios),
+        ov::genai::generation_config(text_config),
+        ov::genai::streamer(streamer),
+        ov::genai::talker_speech_config(talker_speech_config),
+        ov::genai::speech_streamer(speech_streamer),
+    });
+    OmniDecodedResults omni_result;
+    static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
+    return omni_result;
+}
+
+void OmniPipeline::OmniPipelineImpl::validate_request(const GenerationConfig& text_config,
+                                                      const OmniTalkerSpeechConfig& talker_speech_config,
+                                                      const std::vector<ov::Tensor>& videos,
+                                                      const std::vector<VideoMetadata>& videos_metadata,
+                                                      const OmniSpeechStreamerVariant& speech_streamer) const {
+    try {
+        validate_omni_talker_speech_config(talker_speech_config);
+        enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
+        OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                        "OmniPipeline: videos_metadata size (", videos_metadata.size(),
+                        ") must match videos size (", videos.size(), ") or be empty");
+        // Checked before the VLM runs, so a request the talker rejects does not stream its text answer first.
+        if (talker_speech_config.return_audio && m_talker) {
+            reject_in_stream_speech_fields(talker_speech_config);
+        }
+    } catch (...) {
+        // OmniSpeechStreamerBase promises end() also for a call that fails before any speech is decoded.
+        if (talker_speech_config.return_audio && is_speech_streamer_active(speech_streamer)) {
+            end_speech_streamer(speech_streamer);
+        }
+        throw;
+    }
+}
+
 void OmniPipeline::OmniPipelineImpl::assert_omni_capable() const {
     OPENVINO_ASSERT(
         m_vlm->is_audio_output_enabled(),
-        "OmniPipeline requires a Qwen3-Omni model with audio output enabled (config.json: enable_audio_output=true)");
+        "OmniPipeline(vlm, talker) requires a Qwen3-Omni model with audio output enabled (config.json: "
+        "enable_audio_output=true). LFM3-Omni has no separate talker: use OmniPipeline(models_path, device, properties).");
     OPENVINO_ASSERT(
         m_vlm->supports_hidden_states_collection(),
         "OmniPipeline speech output requires the continuous-batching backend, but the loaded VLM uses the SDPA "
@@ -203,6 +252,15 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
                                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
+    validate_request(text_config, talker_speech_config, videos, videos_metadata, speech_streamer);
+
+    if (talker_speech_config.return_audio && !m_talker) {
+        return generate_speech_in_stream(
+            [&](const ov::AnyMap& properties) {
+                return m_vlm->generate(prompt, properties);
+            },
+            images, videos, videos_metadata, audios, text_config, talker_speech_config, streamer, speech_streamer);
+    }
     return generate_impl(m_vlm, m_talker, prompt, images, videos, videos_metadata, audios, text_config,
                          talker_speech_config, streamer, speech_streamer);
 }
@@ -216,6 +274,15 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
                                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
+    validate_request(text_config, talker_speech_config, videos, videos_metadata, speech_streamer);
+
+    if (talker_speech_config.return_audio && !m_talker) {
+        return generate_speech_in_stream(
+            [&](const ov::AnyMap& properties) {
+                return m_vlm->generate(history, properties);
+            },
+            images, videos, videos_metadata, audios, text_config, talker_speech_config, streamer, speech_streamer);
+    }
     // The history reaches the VLM as a history: applying the chat template here and routing the
     // resulting string through the prompt overload would place image and audio tags outside the
     // user message and change the Thinker output.

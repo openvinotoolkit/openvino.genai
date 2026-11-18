@@ -648,6 +648,7 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *        thinker generates an <|im_start|> token.
  *        Interaction with stop_strings: a token reaches the talker only once no stop string can
  *        remove it, which delays speech by the token length of the longest stop string.
+ *        Has no effect on LFM3-Omni: it has no talker and decodes speech together with the text.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:

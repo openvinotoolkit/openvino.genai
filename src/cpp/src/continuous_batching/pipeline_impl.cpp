@@ -131,16 +131,16 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config,
-    bool is_validation_mode_enabled)
-    : ContinuousBatchingImpl(model,
-                             tokenizer,
-                             scheduler_config,
-                             device,
-                             properties,
-                             generation_config,
-                             is_validation_mode_enabled) {
+    bool is_validation_mode_enabled) {
+    m_tokenizer = tokenizer;
+    m_generation_config = generation_config;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
     m_inputs_embedder = inputs_embedder;
-    
+
+    prepare_model_for_paged_attention(model, scheduler_config);
+    initialize_pipeline(model, scheduler_config, device, properties);
+    m_sampler->set_suppressed_token_ids(inputs_embedder->get_suppressed_token_ids());
+
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
@@ -189,8 +189,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
-        m_adapter_controller =
-            AdapterController(model, *m_generation_config.adapters, device);  // TODO: Make the prefix name configurable
+        set_foreign_tensor_name_prefix(*m_generation_config.adapters,
+                                      m_inputs_embedder ? m_inputs_embedder->get_lora_tensor_prefix() : std::nullopt);
+        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
@@ -226,6 +227,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     auto cache_orchestrator =
         CacheOrchestrator::create(infer_request, normalized_config, get_available_memory, hidden_state_bytes_per_token);
     m_num_decoder_layers = cache_orchestrator->get_num_kv_layers();
+
+    if (cache_orchestrator->has_kv_cache()) {
+        const auto& kv_cache_manager = static_cast<const KVCacheManager&>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
+        // Sparse attention selects KV blocks by logical index, so blocks can't be evicted or skipped.
+        OPENVINO_ASSERT(!kv_cache_manager.has_qsa_index_caches()
+            || (!normalized_config.use_cache_eviction && !normalized_config.use_sparse_attention),
+            "SchedulerConfig use_cache_eviction and use_sparse_attention must be false for models with sparse attention"
+            ", got use_cache_eviction=", normalized_config.use_cache_eviction,
+            ", use_sparse_attention=", normalized_config.use_sparse_attention);
+    }
 
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
@@ -339,6 +350,10 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params_copy.validate();
+    // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
+    OPENVINO_ASSERT(!sampling_params_copy.is_beam_search() || !m_inputs_embedder ||
+                        m_inputs_embedder->get_suppressed_token_ids().empty(),
+                    "Beam search is not supported for this model because it has suppressed token ids");
     size_t prompt_len;
     if (input_ids.get_shape().size() > 1) {
         prompt_len = input_ids.get_shape()[1];

@@ -88,6 +88,18 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     // Setting mistral3 (pixtral) config params
     read_json_param(parsed, "size.longest_edge", longest_edge);
     OPENVINO_ASSERT(longest_edge > 0, "longest_edge must be positive, got ", longest_edge);
+
+    read_processor_options(parsed);
+}
+
+void ov::genai::ProcessorConfig::read_processor_options(const nlohmann::json& processor_config) {
+    using ov::genai::utils::read_json_param;
+    // Setting molmo2 processor options
+    read_json_param(processor_config, "image_use_col_tokens", image_use_col_tokens);
+    read_json_param(processor_config, "use_single_crop_col_tokens", use_single_crop_col_tokens);
+    read_json_param(processor_config, "use_single_crop_start_token", use_single_crop_start_token);
+    read_json_param(processor_config, "video_use_col_tokens", video_use_col_tokens);
+    read_json_param(processor_config, "use_frame_special_tokens", use_frame_special_tokens);
 }
 
 ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path)

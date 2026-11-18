@@ -173,6 +173,7 @@ char generation_config_docstring[] = R"(
                         The generated text is unchanged, and with the same OmniTalkerSpeechConfig.rng_seed so is the waveform,
                         unless the thinker generates an <|im_start|> token. With stop_strings, a token reaches the talker only
                         once no stop string can remove it, which delays speech by the token length of the longest stop string.
+                        Has no effect on LFM3-Omni: it has no talker and decodes speech together with the text.
                         (default: false)
 
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
