@@ -25,6 +25,8 @@
 #include "sampling/sampling_distribution.hpp"
 #include "sampling/sampler.hpp"
 #include "speech_generation/qwen3_tts/mel_preprocess.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_audio_streaming.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_stream_decoder.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_utils.hpp"
 #include "utils.hpp"
 #include "openvino/pass/stateful_to_stateless.hpp"
@@ -149,9 +151,31 @@ Qwen3TTSCodecEngine::Qwen3TTSCodecEngine(const std::filesystem::path& models_pat
     {
         auto [decoder_device, decoder_properties] = resolve_component_target(device, base_properties, roles::SPEECH_TOKENIZER_DECODER);
         const auto decoder_path = models_path / CODEC_DECODER_NAME;
+        // Explicit-state streaming decoder: selected by OV_GENAI_QWEN_TTS_STREAM_DECODER and compiled here, not at
+        // generate() time, since compiling can take a long time (e.g. on NPU). When present it also serves the
+        // offline (non-streamed) decode, so the stateless decoder is compiled only when it is not selected.
+        const std::string stream_decoder_mode = qwen_stream_decoder_mode();
+        const auto stream_decoder_path = models_path / STREAM_DECODER_NAME;
+        if (stream_decoder_mode != "stateless") {
+            if (std::filesystem::exists(stream_decoder_path)) {
+                m_stream_decoder = std::make_shared<qwen3_tts::StreamDecoder>(stream_decoder_path,
+                                                                              decoder_device,
+                                                                              decoder_properties,
+                                                                              m_decoder_num_quantizers,
+                                                                              m_decoder_upsample);
+                m_perf_device[roles::SPEECH_TOKENIZER_DECODER_STREAM] = decoder_device;
+            } else {
+                OPENVINO_ASSERT(stream_decoder_mode == "auto",
+                                "OV_GENAI_QWEN_TTS_STREAM_DECODER=stateful requires '", STREAM_DECODER_NAME,
+                                "' in the model directory (", models_path.string(),
+                                "). Re-export the model with a recent optimum-intel.");
+            }
+        }
         const bool use_static_decoder = decoder_device.find("NPU") != std::string::npos ||
                                         decoder_device.find("GPU") != std::string::npos;
-        if (use_static_decoder) {
+        if (m_stream_decoder) {
+            // The stateless decoder is not needed.
+        } else if (use_static_decoder) {
             auto decoder_model = ov::genai::utils::singleton_core().read_model(decoder_path);
             const ov::PartialShape static_codes{1,
                                                 static_cast<int64_t>(m_decoder_num_quantizers),
@@ -163,7 +187,9 @@ Qwen3TTSCodecEngine::Qwen3TTSCodecEngine(const std::filesystem::path& models_pat
         } else {
             m_speech_tokenizer_decoder = compile_request(decoder_path, roles::SPEECH_TOKENIZER_DECODER, decoder_device, decoder_properties);
         }
-        m_perf_device[roles::SPEECH_TOKENIZER_DECODER] = device_of(m_speech_tokenizer_decoder, decoder_device);
+        if (!m_stream_decoder) {
+            m_perf_device[roles::SPEECH_TOKENIZER_DECODER] = device_of(m_speech_tokenizer_decoder, decoder_device);
+        }
     }
 
     const auto speaker_encoder_path = models_path / SPEAKER_ENCODER_NAME;
@@ -1130,6 +1156,10 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer(const std::vecto
     OPENVINO_ASSERT(codes.size() % m_decoder_num_quantizers == 0,
                     "Qwen codec tensor is malformed: expected [T, num_quantizers] flattening");
 
+    if (m_stream_decoder) {
+        return decode_with_stream_decoder(codes, {});
+    }
+
     const size_t num_frames = codes.size() / m_decoder_num_quantizers;
 
     if (!m_decoder_static) {
@@ -1304,6 +1334,35 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_chunk(const std::vector<in
                     "Speech tokenizer decoder produced fewer samples than the chunk's real code length");
     const float* out_ptr = out.data<const float>();
     return std::vector<float>(out_ptr + offset, out_ptr + offset + count);
+}
+
+std::vector<float> Qwen3TTSCodecEngine::decode_with_stream_decoder(const std::vector<int64_t>& codes,
+                                                                    const ov::Tensor& ref_codec_ids) {
+    if (codes.empty()) {
+        return {};
+    }
+    // Same machinery as streaming, run to completion: all reference frames prime the state (the cache makes this free
+    // for a reference that was already used), generated frames are decoded block by block and the tail is flushed.
+    const size_t groups = m_ids.num_code_groups;
+    const size_t ref_frames = ref_codec_ids ? ref_codec_ids.get_size() / groups : 0;
+    qwen3_tts::AudioChunker chunker(*this, 1, 1, std::max<size_t>(ref_frames, 1), ref_codec_ids);
+    std::vector<int64_t> frame(groups);
+    for (size_t i = 0; i < codes.size() / groups; ++i) {
+        std::copy(codes.begin() + i * groups, codes.begin() + (i + 1) * groups, frame.begin());
+        chunker.push_frame(frame);
+    }
+    return chunker.flush();
+}
+
+std::unique_ptr<qwen3_tts::StreamDecoderSession> Qwen3TTSCodecEngine::create_stream_session() {
+    if (!m_stream_decoder) {
+        return nullptr;
+    }
+    return std::make_unique<qwen3_tts::StreamDecoderSession>(m_stream_decoder, [this](double ms) {
+        std::lock_guard<std::mutex> lock(m_perf_mutex);
+        m_perf_ms[roles::SPEECH_TOKENIZER_DECODER_STREAM] += ms;
+        ++m_perf_calls[roles::SPEECH_TOKENIZER_DECODER_STREAM];
+    });
 }
 
 std::vector<bool> Qwen3TTSCodecEngine::compute_suppress_tokens() const {
@@ -1607,6 +1666,12 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer_with_reference(
                     m_ids.num_code_groups,
                     ", got ",
                     ref_groups);
+
+    if (m_stream_decoder) {
+        // The decoder state is primed with the reference codes (reused across calls, see AudioChunker) and the
+        // reference audio is never produced, so no proportional cut is needed.
+        return decode_with_stream_decoder(generated_codes, ref_codec_ids);
+    }
 
     std::vector<int64_t> codes;
     const int64_t* ref_ptr = ref_codec_ids.data<const int64_t>();

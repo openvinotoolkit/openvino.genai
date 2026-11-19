@@ -218,7 +218,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     }
 
     if (chunker && !stopped_by_streamer) {
-        emit_chunk(chunker->take_pending());  // flush the tail
+        emit_chunk(chunker->flush());  // flush the tail
     }
 
     auto waveform = streaming

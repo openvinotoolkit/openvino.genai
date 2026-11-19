@@ -603,7 +603,7 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
     // only that tail, so the concatenation of all reads equals the full waveform.
     std::vector<float> waveform;
     if (state.chunker) {
-        waveform = state.chunker->take_pending();
+        waveform = state.chunker->flush();
         state.streamed_samples += waveform.size();
     } else {
         waveform = state.ref_codec_ids

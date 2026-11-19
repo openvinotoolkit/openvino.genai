@@ -111,20 +111,30 @@ auto speech_generation_config_docstring = R"(
     :type ref_codec_ids: openvino.Tensor
 
     Qwen3-TTS audio output streaming (only used when ``speech_streamer`` is passed to ``generate``).
+    If the model directory has the explicit-state streaming codec decoder (``openvino_codec_decoder_stream.xml``) it
+    is used by default: nothing is re-decoded and the streamed audio equals the non-streamed decode. It decodes in
+    blocks of 4 frames: every chunk then has ``audio_first_chunk_frames`` frames (rounded up to a multiple of 4,
+    there is no chunk schedule), ``audio_chunk_frames`` is ignored and ``audio_chunk_left_context_frames`` only sets
+    how many trailing frames of the voice-clone reference codes prime its state. The stateless decoder uses the
+    chunk schedule described below. The environment variable ``OV_GENAI_QWEN_TTS_STREAM_DECODER`` (``auto`` (default), ``stateful`` or
+    ``stateless``) selects the decoder when the pipeline is created.
     One codec frame is 1920 samples (80 ms at 24 kHz).
     :param audio_first_chunk_frames: size of the first streamed chunk in codec frames. It alone determines
-                                     time-to-first-audio. Following chunks double in size until they reach
+                                     time-to-first-audio. Stateful decoder: the size of every chunk. Stateless
+                                     decoder: following chunks double in size until they reach
                                      ``audio_chunk_frames``. Must be >= 1. Default 4.
     :type audio_first_chunk_frames: int
 
-    :param audio_chunk_frames: largest streamed chunk in codec frames. Set equal to
-                               ``audio_first_chunk_frames`` for fixed-size chunks. Must be >= 1. Default 32.
+    :param audio_chunk_frames: stateless decoder only (ignored by the stateful decoder): largest streamed chunk in
+                               codec frames. Set equal to ``audio_first_chunk_frames`` for fixed-size chunks.
+                               Must be >= 1. Default 32.
     :type audio_chunk_frames: int
 
-    :param audio_chunk_left_context_frames: earlier codec frames decoded together with each chunk (their samples
-                                            are dropped) so chunk seams match a full decode. The codec decoder
-                                            has a 72-frame sliding-window attention, so values >= ~72 are
-                                            needed to closely match a full decode. Default 100.
+    :param audio_chunk_left_context_frames: stateless decoder: earlier codec frames decoded together with each
+                                            chunk (their samples are dropped) so chunk seams match a full decode;
+                                            the codec decoder has a 72-frame sliding-window attention, so values
+                                            >= ~72 are needed. Stateful decoder: number of trailing voice-clone
+                                            reference frames that prime the decoder state. Default 100.
     :type audio_chunk_left_context_frames: int
 
 )";

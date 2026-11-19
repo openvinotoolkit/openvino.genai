@@ -111,6 +111,8 @@ public:
     // doubles in size until it reaches `audio_chunk_frames`. The first chunk alone determines
     // time-to-first-audio, while the larger later chunks amortize the left-context re-decode cost.
     // Set both to the same value for fixed-size chunks.
+    // With the stateful codec decoder nothing is re-decoded, so there is no schedule: every chunk has
+    // `audio_first_chunk_frames` frames (rounded up to 4-frame blocks) and `audio_chunk_frames` is ignored.
     size_t audio_first_chunk_frames = 4;
     size_t audio_chunk_frames = 32;
 
@@ -119,6 +121,15 @@ public:
     // 72-frame sliding-window attention, so values >= ~72 are needed to closely match a full decode;
     // 0 decodes every chunk alone (audible seams). Costs decoder work per chunk, see the schedule above.
     size_t audio_chunk_left_context_frames = 100;
+
+    // Streaming decoder. When the model directory has the explicit-state streaming codec decoder
+    // (openvino_codec_decoder_stream.xml, exported by optimum-intel), streaming uses it by default: it carries the
+    // decoder's causal state between calls, so nothing is re-decoded and the streamed audio equals the non-streamed
+    // decode. It decodes in blocks of 4 frames, so the chunk sizes above are rounded up to a multiple of 4 frames
+    // and `audio_chunk_left_context_frames` only sets how many trailing frames of the voice-clone reference codes
+    // prime its state. The environment variable OV_GENAI_QWEN_TTS_STREAM_DECODER=auto|stateful|stateless selects
+    // the decoder when the pipeline is created (the chosen decoder is compiled then): "auto" (default) uses the
+    // stateful one if the model has it, "stateful" requires it, "stateless" re-decodes left context with every chunk.
 
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
