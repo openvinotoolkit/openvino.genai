@@ -1595,9 +1595,9 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer_with_reference(
 
     const size_t ref_frames = rank3 ? ref_shape[1] : ref_shape[0];
     const size_t ref_groups = rank3 ? ref_shape[2] : ref_shape[1];
-    OPENVINO_ASSERT(ref_groups == m_ids.num_code_groups,
-                    "Qwen3 Base ref_codec_ids group count mismatch. Expected ",
-                    m_ids.num_code_groups,
+    OPENVINO_ASSERT(ref_groups == m_decoder_num_quantizers,
+                    "Qwen3 Base ref_codec_ids group count mismatch with speech tokenizer decoder. Expected ",
+                    m_decoder_num_quantizers,
                     ", got ",
                     ref_groups);
 
