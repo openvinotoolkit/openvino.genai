@@ -29,40 +29,45 @@ Because a block hash depends on everything before it, a cache hit requires an id
 When no `SchedulerConfig` is passed, `LLMPipeline` and `VLMPipeline` use a latency-oriented scheduler configuration with prefix caching enabled. Passing your own `SchedulerConfig` replaces that configuration entirely, so set `enable_prefix_caching` explicitly if you still want prefix caching. See [Supported Pipelines and Configuration](./continuous-batching.md#supported-pipelines-and-configuration) for how the attention backend is selected.
 
 ## Configuration
-```python
-import openvino_genai as ov_genai
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai as ov_genai
 
-scheduler_config = ov_genai.SchedulerConfig()
-scheduler_config.enable_prefix_caching = True
-scheduler_config.cache_size = 2  # KV cache budget, in GB
+        scheduler_config = ov_genai.SchedulerConfig()
+        scheduler_config.enable_prefix_caching = True
+        scheduler_config.cache_size = 2  # KV cache budget, in GB
 
-pipe = ov_genai.LLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
+        pipe = ov_genai.LLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
 
-system_prompt = "You are a helpful assistant. Answer briefly.\n"
-for question in ["What is OpenVINO?", "What is a KV cache?"]:
-    # The second call reuses the KV cache of the shared system prompt
-    result = pipe.generate([system_prompt + question], max_new_tokens=50)
-    print(result.texts[0])
-    print(f"TTFT: {result.perf_metrics.get_ttft().mean:.2f} ms")
-```
+        system_prompt = "You are a helpful assistant. Answer briefly.\n"
+        for question in ["What is OpenVINO?", "What is a KV cache?"]:
+            # The second call reuses the KV cache of the shared system prompt
+            result = pipe.generate([system_prompt + question], max_new_tokens=50)
+            print(result.texts[0])
+            print(f"TTFT: {result.perf_metrics.get_ttft().mean:.2f} ms")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/llm_pipeline.hpp"
 
-```cpp
-#include "openvino/genai/llm_pipeline.hpp"
+        ov::genai::SchedulerConfig scheduler_config;
+        scheduler_config.enable_prefix_caching = true;
+        scheduler_config.cache_size = 2;  // KV cache budget, in GB
 
-ov::genai::SchedulerConfig scheduler_config;
-scheduler_config.enable_prefix_caching = true;
-scheduler_config.cache_size = 2;  // KV cache budget, in GB
+        ov::genai::LLMPipeline pipe(models_path, "CPU", ov::genai::scheduler_config(scheduler_config));
 
-ov::genai::LLMPipeline pipe(models_path, "CPU", ov::genai::scheduler_config(scheduler_config));
-
-std::string system_prompt = "You are a helpful assistant. Answer briefly.\n";
-for (const std::string question : {"What is OpenVINO?", "What is a KV cache?"}) {
-    // The second call reuses the KV cache of the shared system prompt
-    auto result = pipe.generate(std::vector<std::string>{system_prompt + question}, ov::genai::max_new_tokens(50));
-    std::cout << result.texts[0] << std::endl;
-    std::cout << "TTFT: " << result.perf_metrics.get_ttft().mean << " ms" << std::endl;
-}
-```
+        std::string system_prompt = "You are a helpful assistant. Answer briefly.\n";
+        for (const std::string question : {"What is OpenVINO?", "What is a KV cache?"}) {
+            // The second call reuses the KV cache of the shared system prompt
+            auto result = pipe.generate(std::vector<std::string>{system_prompt + question}, ov::genai::max_new_tokens(50));
+            std::cout << result.texts[0] << std::endl;
+            std::cout << "TTFT: " << result.perf_metrics.get_ttft().mean << " ms" << std::endl;
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
 
 The same `scheduler_config` argument is accepted by `VLMPipeline` and `ContinuousBatchingPipeline`.
 
