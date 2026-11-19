@@ -2841,8 +2841,9 @@ public:
             }
             const size_t content_length = (logical_block_idx + 1) * m_block_size;
             if (completed_blocks[0]->has_published_hash()) {
-                // A stop-string trim can leave a block past the positions that get_hash() can identify.
-                if (content_length <= sequence->get_prefix_identity_length()) {
+                // Only an offload observer wants these, and a stop-string trim can leave a block past the positions
+                // that get_hash() can identify.
+                if (m_link_observer != nullptr && content_length <= sequence->get_prefix_identity_length()) {
                     const uint64_t published_hash = completed_blocks[0]->get_hash();
                     if (published_hash == sequence->get_hash(content_length, m_block_size)) {
                         completed_published_blocks.emplace_back(published_hash, std::move(completed_blocks));

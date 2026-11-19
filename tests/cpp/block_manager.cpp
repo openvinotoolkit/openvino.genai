@@ -891,8 +891,12 @@ TEST(TestBlockManager, PrefixCachingRollbackUnregistersInvalidatedBoundaryBefore
 }
 
 TEST(TestBlockManager, PublishingCompletedBlocksIgnoresPublishedBlocksPastATrimmedSequence) {
+    struct IgnoringObserver : ov::genai::IOverwrittenBlockObserver {
+        void on_blocks_overwritten(size_t, const ov::genai::BlocksPerLayer&) override {}
+    } observer;
     constexpr size_t block_size = 4;
     ov::genai::BlockManager block_manager(8, true, block_size);
+    block_manager.set_overwritten_block_observer(&observer);
 
     auto sequence_group = create_sequence_group(std::vector<int64_t>{0, 1, 2, 3}, 60);
     const auto sequence = sequence_group->get_running_sequences().front();
