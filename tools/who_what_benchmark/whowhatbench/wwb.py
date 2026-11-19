@@ -195,7 +195,8 @@ def parse_args():
         help="Dataset source. For non-agent model types, this is passed to datasets.load_dataset "
         "as path,name (for example wikitext,wikitext-2-v1) and must follow Hugging Face datasets semantics. "
         "For text-agent and visual-text-agent, this should be a local .json/.jsonl file with "
-        "messages/tools records. If not provided, built-in defaults are used.",
+        "messages/tools records. For visual-text-chat, pass a local JSON file with chat turns. "
+        "If not provided, built-in defaults are used.",
     )
     parser.add_argument(
         "--dataset-field",
@@ -1536,6 +1537,7 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 max_new_tokens=args.max_new_tokens,
                 gen_answer_fn=genai_gen_visual_text_chat if args.genai else None,
+                test_data=args.dataset,
                 processor=processor,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,

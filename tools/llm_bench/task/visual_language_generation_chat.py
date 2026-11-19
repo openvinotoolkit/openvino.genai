@@ -171,7 +171,7 @@ class OptimumVLMGenerationChatAdapter(OptimumTextGenerationChatAdapter):
             tokenizer=self.tokenizer,
             config=self.config,
             video=videos,
-            audio=audios,
+            audio=audios or None,
         )
         tok_encode_end = time.perf_counter()
         tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
@@ -308,7 +308,7 @@ class GenAIVLMGenerationChatAdapter(GenAITextGenerationChatAdapter):
         gen_config.max_new_tokens = self.max_gen_tokens
         gen_config.num_beams = self.args["num_beams"]
         gen_config.do_sample = False
-        gen_config.ignore_eos = True
+        gen_config.ignore_eos = not self.args["end_token_stopping"]
         if self.args["pruning_ratio"] is not None:
             gen_config.pruning_ratio = self.args["pruning_ratio"]
         if self.args["relevance_weight"] is not None:
