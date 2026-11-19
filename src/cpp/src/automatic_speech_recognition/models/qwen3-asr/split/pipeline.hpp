@@ -46,9 +46,11 @@ private:
     // VLMPipeline is created before Qwen3ASRPipelineBase to share its tokenizer.
     Qwen3ASRVLMPipelineAdapter(const std::filesystem::path& models_path,
                                std::unique_ptr<VLMPipeline> impl,
-                               const ov::AnyMap& properties);
+                               const ov::AnyMap& properties,
+                               bool is_npu);
 
     std::unique_ptr<VLMPipeline> m_impl;
+    bool m_is_npu = false;
 
     std::vector<std::string> infer(const std::vector<AudioChunk>& chunks,
                                    const ASRGenerationConfig& config,
@@ -57,8 +59,8 @@ private:
 };
 
 /**
- * @brief Create Qwen3-ASR split export pipeline for the requested attention backend. PagedAttention backend is used
- * by default and falls back to SDPA if it isn't available, unless PagedAttention is explicitly requested.
+ * @brief Create a Qwen3-ASR split export pipeline. NPU uses SDPA; on other devices PagedAttention is used by
+ * default and falls back to SDPA if it isn't available, unless PagedAttention is explicitly requested.
  */
 std::unique_ptr<ASRPipelineImplBase> create_qwen3_asr_split_pipeline(const std::filesystem::path& models_path,
                                                                      const std::string& device,

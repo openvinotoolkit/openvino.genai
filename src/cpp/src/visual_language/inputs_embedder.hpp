@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <optional>
 #include <regex>
 #include <functional>
 
@@ -47,11 +48,13 @@ public:
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const Tokenizer& tokenizer,
                    const std::string& device,
-                   const ov::AnyMap device_config);
+                   const ov::AnyMap device_config,
+                   const std::optional<std::string>& audio_encoder_device = std::nullopt);
 
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const std::string& device,
-                   const ov::AnyMap device_config);
+                   const ov::AnyMap device_config,
+                   const std::optional<std::string>& audio_encoder_device = std::nullopt);
 
     InputsEmbedder(const ModelsMap& models_map,
                    const Tokenizer& tokenizer,

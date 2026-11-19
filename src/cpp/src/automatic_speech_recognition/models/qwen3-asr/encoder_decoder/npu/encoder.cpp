@@ -6,38 +6,11 @@
 #include <cstring>
 #include <iostream>
 #include <map>
-#include <set>
 
+#include "automatic_speech_recognition/models/qwen3-asr/npu_properties.hpp"
 #include "utils.hpp"
 
 namespace {
-
-ov::AnyMap encoder_properties(const ov::AnyMap& properties) {
-    static const std::set<std::string> decoder_options{
-        "MAX_PROMPT_LEN",
-        "MIN_RESPONSE_LEN",
-        "PREFILL_CONFIG",
-        "PREFILL_HINT",
-        "GENERATE_CONFIG",
-        "GENERATE_HINT",
-        "SHARED_HEAD_CONFIG",
-        "BLOB_PATH",
-        "EXPORT_BLOB",
-    };
-    auto result = properties;
-    const auto blob = properties.find("BLOB_PATH");
-    const bool decoder_blob = blob != properties.end() && !blob->second.as<std::string>().empty();
-    for (auto it = result.begin(); it != result.end();) {
-        const auto option = it->first.rfind("++", 0) == 0 ? it->first.substr(2) : it->first;
-        if (option == "NPUW_LLM" || option.rfind("NPUW_LLM_", 0) == 0 || option.rfind("NPUW_QWEN3_ASR", 0) == 0 ||
-            decoder_options.count(option) || (option == "WEIGHTS_PATH" && decoder_blob)) {
-            it = result.erase(it);
-        } else {
-            ++it;
-        }
-    }
-    return result;
-}
 
 void reshape_encoder(const std::shared_ptr<ov::Model>& model, size_t feature_size, size_t chunk_frames) {
     std::map<std::string, ov::PartialShape> shapes;
@@ -64,7 +37,7 @@ namespace ov::genai {
 Qwen3ASREncoderNPU::Qwen3ASREncoderNPU(const std::filesystem::path& models_path, const ov::AnyMap& properties)
     : Qwen3ASREncoder(models_path) {
     ov::Core core = utils::singleton_core();
-    const auto npu_properties = encoder_properties(properties);
+    const auto npu_properties = qwen3_asr_encoder_properties(properties);
     const WhisperFeatureExtractor feature_extractor{models_path / "preprocessor_config.json"};
     OPENVINO_ASSERT(feature_extractor.hop_length > 0, "hop_length in preprocessor_config.json must be > 0.");
     OPENVINO_ASSERT(feature_extractor.sampling_rate > 0, "sampling_rate in preprocessor_config.json must be > 0.");

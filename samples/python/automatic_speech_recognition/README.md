@@ -236,13 +236,15 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 #  He has gone and gone for good answered Polychrome who...
 ```
 
-## Continuous batching with Qwen3-ASR
+## Qwen3-ASR on NPU and continuous batching
 
-The Qwen3-ASR encoder-decoder export also supports `ASRPipeline` on NPU. It uses nominal 60-second audio chunks;
-the static encoder-state capacity includes the additional five-second low-energy boundary search window.
-The NPU implementation processes fixed-size encoder windows sequentially, while CPU/GPU retain dynamic batched
-encoder inference. The device-specific decoders share the same prefill and text-generation loop.
-The split-export pipeline keeps its existing chunking behavior.
+The current Qwen3-ASR split export contains an audio encoder, text embeddings and a language model.
+`ASRPipeline` on NPU runs the audio encoder and language model on NPU, while text embeddings run on CPU.
+Audio is split into nominal 60-second segments, with up to five additional seconds for boundary selection.
+The audio encoder processes fixed-size windows sequentially; short windows are zero-padded. CPU/GPU retain
+dynamic batched encoder inference. Padding can introduce numerical differences for sub-window audio; check
+transcription accuracy on the intended model and inputs. NPU uses the SDPA backend and supports greedy and
+multinomial decoding, but not beam search.
 
 Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
 

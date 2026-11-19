@@ -70,13 +70,14 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const std::filesystem::path& model_dir,
                                                const Tokenizer& tokenizer,
                                                const std::string& device,
-                                               const ov::AnyMap& properties)
+                                               const ov::AnyMap& properties,
+                                               const std::optional<std::string>& audio_encoder_device)
     : InputsEmbedderQwen3ASR(config,
                              tokenizer,
                              EmbeddingsModel::create(model_dir, config.scale_emb, device, properties),
                              utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
                              model_dir,
-                             device,
+                             audio_encoder_device.value_or(device),
                              properties) {}
 
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,

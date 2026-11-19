@@ -82,18 +82,14 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "did not report the generated token count"):
             self.speech._get_output_token_size(None, "transcript", False)
 
-    def test_native_qwen_npu_default_is_scoped_to_encoder_decoder_export(self):
+    def test_native_qwen_npu_default_is_scoped_to_genai_and_device(self):
         classify = self.speech._uses_native_npu_qwen3_asr_decoder
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory)
-            self.assertTrue(classify(path, "NPU", True, "qwen3-asr"))
-            self.assertTrue(classify(path, "npu", True, "qwen3-asr"))
-            self.assertFalse(classify(path, "CPU", True, "qwen3-asr"))
-            self.assertFalse(classify(path, "NPU.0", True, "qwen3-asr"))
-            self.assertFalse(classify(path, "NPU", False, "qwen3-asr"))
-            self.assertFalse(classify(path, "NPU", True, "whisper"))
-            (path / "openvino_audio_encoder_model.xml").touch()
-            self.assertFalse(classify(path, "NPU", True, "qwen3-asr"))
+        self.assertTrue(classify("NPU", True, "qwen3-asr"))
+        self.assertTrue(classify("npu", True, "qwen3-asr"))
+        self.assertFalse(classify("CPU", True, "qwen3-asr"))
+        self.assertFalse(classify("NPU.0", True, "qwen3-asr"))
+        self.assertFalse(classify("NPU", False, "qwen3-asr"))
+        self.assertFalse(classify("NPU", True, "whisper"))
 
     def _run_native_generation(self, model_type, infer_count, native_qwen_npu, configured_max):
         config = SimpleNamespace(max_new_tokens=configured_max, max_length=777)
@@ -216,7 +212,7 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
                 self.speech.run_speech_2_txt_benchmark(Path(directory), "ov", "CPU", args, 0, memory)
                 (Path(directory) / "openvino_audio_encoder_model.xml").touch()
                 self.speech.run_speech_2_txt_benchmark(Path(directory), "ov", "NPU", args, 0, memory)
-        self.assertEqual(observed, [True, False, False])
+        self.assertEqual(observed, [True, False, True])
 
     def test_vlm_genai_keeps_upstream_config_loading(self):
         module = self.ov_utils

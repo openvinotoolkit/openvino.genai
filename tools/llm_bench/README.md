@@ -348,29 +348,29 @@ python benchmark.py -m models/sensevoice-small/ --media ./how_are_you_doing_toda
 
 For an already-exported Qwen3-ASR IR, `--genai` uses the native GenAI pipeline and tokenizer;
 the `qwen-asr` Python package is needed only for the Optimum reference path. Supply audio with
-`--media`, rather than a text-generation prompt. Shared NPU configuration files may contain LLM
-settings: the Qwen3-ASR encoder filters decoder-only options, while the decoder retains them.
+`--media`, rather than a text-generation prompt. Current Optimum Intel exports separate audio encoder,
+text embeddings and language model files. On NPU the audio encoder and language model run on NPU,
+while text embeddings run on CPU. The audio encoder filters decoder-only options from shared NPU settings.
 
-The encoder-decoder pipeline requires a stateful decoder with KV-cache variables and a
-`beam_idx` input on every device. Export Qwen3-ASR with
-`--task automatic-speech-recognition-with-past` and do not use `--disable-stateful`, for example:
+Export Qwen3-ASR with `--task automatic-speech-recognition-with-past` and do not use
+`--disable-stateful`, for example:
 
 ```sh
 optimum-cli export openvino --model Qwen/Qwen3-ASR-1.7B --weight-format fp16 --task automatic-speech-recognition-with-past models/qwen3-asr-1.7b-fp16
 ```
 
-Explicitly selecting `--task automatic-speech-recognition` exports without past-key-value reuse.
-A directory name containing `stateful` or `use_cache: true` in the configuration does not
-make such a decoder stateful; adding a dummy `beam_idx` input does not restore its missing cache.
+Legacy encoder-decoder exports require a stateful decoder with KV-cache variables and a `beam_idx`
+input on every device. A directory name containing `stateful` or `use_cache: true` in the configuration
+does not make such a decoder stateful; adding a dummy `beam_idx` input does not restore its missing cache.
 On NPU, an explicitly requested output length beyond the compiled KV-cache is rejected before
 decoding. Reduce `max_new_tokens`/`max_length` (or `--infer_count` in the benchmark), or increase
 `MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN` in the NPU configuration. If no output limit is specified,
 generation is bounded by the available KV-cache; reaching it returns the partial transcription
 and logs an error. A prompt or minimum output length that cannot fit is also rejected before decoding.
-For the GenAI Qwen3-ASR encoder-decoder pipeline on NPU, omitting `--infer_count` preserves the
-model's generation configuration rather than applying the benchmark's 1000-token default.
-When importing a weightless decoder blob with `BLOB_PATH`, set `WEIGHTS_PATH` to the original
-`openvino_decoder_model.bin`; the encoder uses its own model weights.
+For the GenAI Qwen3-ASR pipeline on NPU, omitting `--infer_count` preserves the model's generation
+configuration rather than applying the benchmark's 1000-token default. When importing a weightless
+language-model blob with `BLOB_PATH`, set `WEIGHTS_PATH` to the original `openvino_language_model.bin`
+for split exports, or `openvino_decoder_model.bin` for legacy encoder-decoder exports.
 
 
 ### Text Rerank models

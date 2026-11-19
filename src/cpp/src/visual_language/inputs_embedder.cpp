@@ -342,13 +342,15 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedd
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
-                               const ov::AnyMap device_config) :
-    InputsEmbedder(model_dir, Tokenizer(model_dir, device_config), device, device_config) {}
+                               const ov::AnyMap device_config,
+                               const std::optional<std::string>& audio_encoder_device) :
+    InputsEmbedder(model_dir, Tokenizer(model_dir, device_config), device, device_config, audio_encoder_device) {}
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const Tokenizer& tokenizer,
                                const std::string& device,
-                               const ov::AnyMap device_config) {
+                               const ov::AnyMap device_config,
+                               const std::optional<std::string>& audio_encoder_device) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -385,7 +387,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
-        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, model_dir, tokenizer, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(
+            vlm_config, model_dir, tokenizer, device, device_config, audio_encoder_device);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {

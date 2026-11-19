@@ -14,6 +14,7 @@
 #include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/encoder.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/npu/encoder.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/audio_encoder.hpp"
 #include "openvino/op/ops.hpp"
 #include "openvino/openvino.hpp"
 
@@ -82,6 +83,45 @@ protected:
     static ov::AnyMap cpu_fallback() {
         return {{"NPU_USE_NPUW", "YES"}, {"NPUW_DEVICES", "CPU"}, {"NPUW_ONLINE_PIPELINE", "NONE"}};
     }
+
+    static ov::genai::VLMConfig split_config() {
+        ov::genai::VLMConfig config;
+        config.model_type = ov::genai::VLMModelType::QWEN3_ASR;
+        config.hidden_size = 1;
+        config.audio_config_num_mel_bins = 8;
+        config.audio_config_n_window = 2;
+        config.audio_config_n_window_infer = 8;
+        return config;
+    }
+
+    static std::shared_ptr<ov::Model> split_model(bool use_length = false) {
+        auto features = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, 8, -1});
+        features->output(0).set_names({"padded_feature"});
+        auto mask = std::make_shared<ov::op::v0::Parameter>(ov::element::boolean, ov::PartialShape{-1, -1});
+        mask->output(0).set_names({"padded_mask_after_cnn"});
+        auto lengths = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+        lengths->output(0).set_names({"aftercnn_lens"});
+        auto offsets = std::make_shared<ov::op::v0::Parameter>(ov::element::i32, ov::PartialShape{-1});
+        offsets->output(0).set_names({"cu_seqlens"});
+        auto mean = std::make_shared<ov::op::v1::ReduceMean>(
+            features, ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1}), false);
+        auto first = std::make_shared<ov::op::v8::Gather>(
+            mean,
+            ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {0}),
+            ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {1}));
+        auto masked = std::make_shared<ov::op::v1::Multiply>(first, std::make_shared<ov::op::v0::Convert>(
+                                                                       mask, ov::element::f32));
+        ov::Output<ov::Node> values = masked;
+        if (use_length) {
+            values = std::make_shared<ov::op::v1::Add>(values, std::make_shared<ov::op::v0::Convert>(
+                                                                  lengths, ov::element::f32));
+        }
+        auto output = std::make_shared<ov::op::v0::Unsqueeze>(
+            values, ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {2}));
+        output->output(0).set_names({"audio_features"});
+        return std::make_shared<ov::Model>(ov::OutputVector{output},
+                                           ov::ParameterVector{features, mask, lengths, offsets});
+    }
 };
 
 TEST_P(Qwen3ASRStaticEncoderTest, FullPartialAndRepeatedChunksMatchCPU) {
@@ -101,6 +141,26 @@ TEST_P(Qwen3ASRStaticEncoderTest, FullPartialAndRepeatedChunksMatchCPU) {
     for (size_t index = 0; index < expected.get_size(); ++index) {
         EXPECT_FLOAT_EQ(first.data<const float>()[index], expected.data<const float>()[index]);
         EXPECT_FLOAT_EQ(repeated.data<const float>()[index], expected.data<const float>()[index]);
+    }
+
+    auto model = split_model();
+    ov::genai::AudioEncoderQwen3ASR split_cpu(split_config(), model, m_model_dir, "CPU", {});
+    ov::genai::AudioEncoderQwen3ASR split_npu(split_config(), model, m_model_dir, "NPU", cpu_fallback());
+    const size_t sample_count = std::max<size_t>(frames, 3) * 160;
+    ov::Tensor audio(ov::element::f32, {sample_count});
+    for (size_t i = 0; i < sample_count; ++i) {
+        audio.data<float>()[i] = static_cast<float>(i % 31) / 31.0f;
+    }
+    const auto split_expected = split_cpu.encode({audio}).at(0);
+    const auto split_first = split_npu.encode({audio}).at(0);
+    const auto split_repeated = split_npu.encode({audio}).at(0);
+    ASSERT_EQ(split_first.num_audio_tokens, split_expected.num_audio_tokens);
+    ASSERT_EQ(split_first.audio_features.get_shape(), split_expected.audio_features.get_shape());
+    for (size_t index = 0; index < split_expected.audio_features.get_size(); ++index) {
+        EXPECT_FLOAT_EQ(split_first.audio_features.data<const float>()[index],
+                        split_expected.audio_features.data<const float>()[index]);
+        EXPECT_FLOAT_EQ(split_repeated.audio_features.data<const float>()[index],
+                        split_expected.audio_features.data<const float>()[index]);
     }
 }
 
@@ -148,6 +208,10 @@ TEST_F(Qwen3ASRStaticEncoderTest, SharedDecoderOptionsDoNotEnableLLMModeForEncod
     EXPECT_FLOAT_EQ(output.data<const float>()[1], 2.75f);
     EXPECT_EQ(properties.at("NPUW_LLM").as<std::string>(), "YES");
     EXPECT_EQ(properties.at("MAX_PROMPT_LEN").as<int>(), 4096);
+
+    ov::genai::AudioEncoderQwen3ASR split_encoder(split_config(), split_model(), m_model_dir, "NPU", properties);
+    EXPECT_THROW(ov::genai::AudioEncoderQwen3ASR(split_config(), split_model(true), m_model_dir, "NPU", properties),
+                 ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(ChunkLengths, Qwen3ASRStaticEncoderTest, ::testing::Values(1u, 4u, 6u, 8u));

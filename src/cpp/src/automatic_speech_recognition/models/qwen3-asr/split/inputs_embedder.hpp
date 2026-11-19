@@ -14,7 +14,8 @@ public:
                            const std::filesystem::path& model_dir,
                            const Tokenizer& tokenizer,
                            const std::string& device,
-                           const ov::AnyMap& properties);
+                           const ov::AnyMap& properties,
+                           const std::optional<std::string>& audio_encoder_device = std::nullopt);
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const ModelsMap& models_map,
                            const Tokenizer& tokenizer,

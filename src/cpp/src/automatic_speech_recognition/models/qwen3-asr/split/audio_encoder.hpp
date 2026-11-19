@@ -53,6 +53,7 @@ private:
     const VLMConfig m_config;
     WhisperFeatureExtractor m_feature_extractor;
     ov::InferRequest m_request;
+    bool m_static_npu = false;
     std::mutex m_audio_mutex;
 };
 
