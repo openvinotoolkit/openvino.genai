@@ -500,3 +500,14 @@ TEST(JsonContainerTest, json_serialization) {
     EXPECT_EQ(json["name"].get<std::string>(), "Alice");
     EXPECT_EQ(json["age"].get<int>(), 30);
 }
+
+TEST(JsonContainerTest, move_assignment_is_not_noexcept) {
+    EXPECT_FALSE(std::is_nothrow_move_assignable<JsonContainer>::value);
+}
+
+TEST(JsonContainerTest, move_assignment_propagates_invalid_source_path) {
+    JsonContainer root({{"target", "value"}});
+    auto target = root["target"];
+    auto missing = root["missing"];
+    EXPECT_THROW(target = std::move(missing), ov::Exception);
+}
