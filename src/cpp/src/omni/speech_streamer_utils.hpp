@@ -81,6 +81,10 @@ public:
         }
     }
 
+    const OmniSpeechStreamerVariant& streamer() const {
+        return m_streamer;
+    }
+
 private:
     const OmniSpeechStreamerVariant& m_streamer;
     bool m_is_active;

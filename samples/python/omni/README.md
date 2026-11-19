@@ -60,7 +60,7 @@ python qwen3_omni_chat.py <MODEL_DIR> <IMAGE_FILE_OR_DIR> <VIDEO_FILE> [--audio 
 python qwen3_omni_chat.py ./qwen3-omni-ov ./coco.jpg "./Coco Walking in Berkeley.mp4" --audio ./how_are_you_doing_today.wav
 ```
 
-Images, video and audio are loaded once at startup and sent with the first question. Type questions and press Enter; the model responds with streaming text and, when speech output is enabled, 24kHz mono PCM samples in `OmniDecodedResults.speech_result.waveforms`. Each turn's speech is saved to `output_audio_<turn>.wav` in the working directory. Press Ctrl+D to exit.
+Images, video and audio are loaded once at startup and sent with the first question. Type questions and press Enter; the model responds with streaming text and, when speech output is enabled, 24kHz mono PCM speech. Each turn's speech is written chunk by chunk to `output_audio_<turn>.wav` in the working directory while the text is still being generated. Press Ctrl+D to exit.
 
 ## Audio placement
 
@@ -84,13 +84,16 @@ Text decoding and speech output are configured separately:
 ```python
 text_config = openvino_genai.GenerationConfig()
 text_config.max_new_tokens = 256
+text_config.stream_text2speech = True  # Start speech before the text is complete
 
 talker_speech_config = openvino_genai.OmniTalkerSpeechConfig(model_dir)
 talker_speech_config.return_audio = True  # Enable speech synthesis
 talker_speech_config.speaker = "Cherry"   # Select a Qwen3-Omni voice (optional)
 ```
 
-Available voices vary by checkpoint. MoE models typically expose `"Ethan"`, `"Chelsie"`, `"Aiden"`, `"Cherry"`. Check `talker_config.speaker_id` in the model's `config.json` for the full list. Leaving `speaker` empty selects the default voice. LFM3-Omni has no speaker selection: describe the voice in the system prompt. Set `talker_speech_config.return_audio = False` for text-only responses.
+The sample passes a `speech_streamer` to `generate()`, which receives each audio chunk as soon as it is produced and appends it to the WAV file. With `text_config.stream_text2speech = True` the first Qwen3-Omni chunk arrives while the text is still being generated; LFM3-Omni decodes speech together with the text, so the flag changes nothing for it. The whole waveform is also returned in `OmniDecodedResults.speech_result.waveforms`.
+
+Available voices vary by checkpoint. MoE models typically expose `"Ethan"`, `"Chelsie"`, `"Aiden"`, `"Cherry"`. Check `talker_config.speaker_id` in the model's `config.json` for the full list. Leaving `speaker` empty selects the default voice. LFM3-Omni has no speaker selection: describe the voice in the system prompt. Set `talker_speech_config.return_audio = False` and `text_config.stream_text2speech = False` for text-only responses.
 
 ## GPU inference
 

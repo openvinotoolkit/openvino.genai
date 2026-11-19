@@ -3,7 +3,9 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -23,18 +25,14 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
     return ov::genai::StreamingStatus::RUNNING;
 }
 
-// Save the first waveform of a result to a WAV file. Speech output is optional,
-// so callers pass results whose waveforms may be empty.
-void save_speech(const ov::genai::OmniDecodedResults& results, const std::string& file_name) {
-    if (results.speech_result.waveforms.empty()) {
-        return;
-    }
-    const ov::Tensor& waveform = results.speech_result.waveforms[0];
-    utils::audio::save_to_wav(waveform.data<const float>(),
-                              waveform.get_size(),
-                              file_name,
-                              waveform.get_element_type().bitwidth(),
-                              SPEECH_SAMPLE_RATE);
+// Speech streamer that appends each chunk to a WAV file as soon as it is produced, which is while
+// the text is still being generated. With Qwen3-Omni it runs on the talker's thread.
+std::function<ov::genai::StreamingStatus(const ov::Tensor&)> stream_speech_to(const std::string& file_name) {
+    auto wav = std::make_shared<utils::audio::WavWriter>(file_name, SPEECH_SAMPLE_RATE);
+    return [wav](const ov::Tensor& audio_chunk) {
+        wav->write(audio_chunk.data<const float>(), audio_chunk.get_size());
+        return ov::genai::StreamingStatus::RUNNING;
+    };
 }
 }  // namespace
 
@@ -48,9 +46,14 @@ int main(int argc, char* argv[]) try {
 
     // Two configs: text_config drives the text decode, talker_speech_config drives the speech
     // output. Speech output is hardcoded on here to show the multimodal
-    // path. Set talker_speech_config.return_audio = false to get text-only responses.
+    // path. Set talker_speech_config.return_audio = false and text_config.stream_text2speech = false
+    // to get text-only responses.
     ov::genai::GenerationConfig text_config;
     text_config.max_new_tokens = 256;
+    // Qwen3-Omni: hand the thinker's tokens and hidden states to the talker as they are produced, so
+    // the first speech chunk reaches the speech streamer before the text is complete. LFM3-Omni
+    // decodes speech together with the text, so the flag changes nothing for it.
+    text_config.stream_text2speech = true;
 
     ov::genai::OmniTalkerSpeechConfig talker_speech_config(models_path);
     talker_speech_config.return_audio = true;
@@ -83,9 +86,9 @@ int main(int argc, char* argv[]) try {
                                                                    audios,
                                                                    text_config,
                                                                    talker_speech_config,
-                                                                   print_subword);
+                                                                   print_subword,
+                                                                   stream_speech_to("output_audio_0.wav"));
     history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
-    save_speech(decoded_results, "output_audio_0.wav");
 
     std::cout << "\n----------\n"
                  "question:\n";
@@ -102,9 +105,9 @@ int main(int argc, char* argv[]) try {
                                         turn_audios,
                                         text_config,
                                         talker_speech_config,
-                                        print_subword);
+                                        print_subword,
+                                        stream_speech_to("output_audio_" + std::to_string(turn) + ".wav"));
         history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
-        save_speech(decoded_results, "output_audio_" + std::to_string(turn) + ".wav");
 
         std::cout << "\n----------\n"
                      "question:\n";
