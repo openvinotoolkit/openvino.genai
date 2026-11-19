@@ -437,7 +437,7 @@ With prefix caching, a hybrid-attention target such as Qwen3.5 supports greedy d
 :::warning Runtime limits
 DFlash uses the Continuous Batching backend on CPU and GPU; NPU and the Stateful backend are not supported.
 
-- One return sequence per request.
+- Greedy and multinomial sampling, one return sequence per request.
   Beam search, adapters, prompt lookup, and `assistant_confidence_threshold` are not supported.
 - Cache eviction (`SchedulerConfig.use_cache_eviction`) is not supported for the target or the draft.
 - With a VLM target and prefix caching, `ChatHistory` and image `add_request()` requests need `num_assistant_tokens` > 0.
