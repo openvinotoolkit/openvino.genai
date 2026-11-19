@@ -9,8 +9,11 @@
 #include <optional>
 #include <set>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <functional>
 #include <limits>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -18,6 +21,23 @@
 #include "sequence_group.hpp"
 
 namespace ov::genai {
+
+/**
+ * @brief Timestamp for ordering cache blocks by recency, always later than the previous one.
+ *
+ * The steady clock can return the same value for consecutive calls. Blocks released back to back then tie, and the
+ * eviction choice among them falls to hash table iteration order, which differs from run to run.
+ */
+inline std::chrono::steady_clock::time_point next_block_timestamp() {
+    static std::atomic<std::chrono::steady_clock::rep> last_ticks{0};
+    const auto now_ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto previous_ticks = last_ticks.load(std::memory_order_relaxed);
+    std::chrono::steady_clock::rep next_ticks = 0;
+    do {
+        next_ticks = std::max(now_ticks, previous_ticks + 1);
+    } while (!last_ticks.compare_exchange_weak(previous_ticks, next_ticks, std::memory_order_relaxed));
+    return std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(next_ticks));
+}
 
 class CacheBlock {
     int m_ref_count;
@@ -34,7 +54,7 @@ public:
           m_index(index),
           m_hash(0),
           m_has_published_hash(false),
-          m_timestamp(std::chrono::steady_clock::now()) { }
+          m_timestamp(next_block_timestamp()) { }
 
     int get_index() const {
         return m_index;
@@ -105,6 +125,102 @@ public:
 using BlocksPerLayer = std::vector<CacheBlock::Ptr>;
 
 /**
+ * @brief Notified right before prefix-cache block contents are handed out to be overwritten.
+ *
+ * Implemented by the KV cache offload subsystem, which persists the contents while they are still
+ * intact. Callbacks run under the block manager's cache lock, so implementations must not call back
+ * into the block manager.
+ */
+class IOverwrittenBlockObserver {
+public:
+    virtual ~IOverwrittenBlockObserver() = default;
+
+    /**
+     * @param hash The prefix hash the block contents were computed for.
+     * @param blocks The blocks still holding those contents, one per block-table layer.
+     */
+    virtual void on_blocks_overwritten(size_t hash, const BlocksPerLayer& blocks) = 0;
+
+    /**
+     * @brief Notified when the forward pass that completed a block has finished and the block got its prefix hash.
+     * @param hash The prefix hash of the block.
+     * @param blocks The block holding the finished contents, one per block-table layer.
+     * The observer may copy the contents out here and store them in the background (chunk store); the default
+     * does nothing, so blocks are then only stored when they are about to be overwritten.
+     */
+    virtual void on_blocks_published(size_t hash, const BlocksPerLayer& blocks) {
+        (void)hash;
+        (void)blocks;
+    }
+
+    /**
+     * @brief Tells where a published block sits in its prompt's chain.
+     * @param hash The prefix hash of the block.
+     * @param parent_hash The prefix hash of the preceding block of the same chain; meaningful when @p has_parent.
+     * @param has_parent False for the first block of a chain.
+     * Lets the observer hand a complete chain from block 0 to the store before it writes a block that was
+     * overwritten long after its predecessors were published.
+     */
+    virtual void on_prefix_link(size_t hash, size_t parent_hash, bool has_parent) {
+        (void)hash;
+        (void)parent_hash;
+        (void)has_parent;
+    }
+};
+
+/**
+ * @brief Supplies prefix-cache block contents that are no longer held in memory.
+ *
+ * Implemented by the KV cache offload subsystem to bring previously persisted blocks back.
+ */
+class IExternalPrefixSource {
+public:
+    virtual ~IExternalPrefixSource() = default;
+
+    /// Answers from what probe() found and what is still queued; it is called under the manager lock, so it never asks the store.
+    virtual bool contains(size_t hash) const = 0;
+
+    /**
+     * @brief Reports which blocks of a prompt's prefix chain are available, in one query.
+     * @param chain The prefix hashes of the prompt's blocks from block 0, in order.
+     * By default this asks contains() for each block.
+     */
+    virtual std::vector<bool> probe(const std::vector<size_t>& chain) {
+        std::vector<bool> present;
+        present.reserve(chain.size());
+        for (const size_t hash : chain) {
+            present.push_back(contains(hash));
+        }
+        return present;
+    }
+
+    /**
+     * @brief Fills a physical cache block with the contents stored for @p hash.
+     *
+     * Called under the manager and execution locks, so it only serves blocks that are already in memory: queued for
+     * writing, or read ahead by prefetch(). It never reads the store itself.
+     * @return false if the contents are unavailable, in which case the block is left untouched.
+     */
+    virtual bool load_into(size_t hash, size_t block_index) = 0;
+
+    /**
+     * @brief Lets the source read the blocks a warm-up is about to load in one batch, with no host lock held.
+     * @param hashes Blocks of one prompt's chain, in order; load_into() serves them from memory. The source may read
+     * fewer than asked, within its memory budget; the rest is reported by load_into() as unavailable.
+     */
+    virtual void prefetch(const std::vector<size_t>& /*hashes*/) {}
+
+    /// Drops whatever prefetch() read ahead that load_into() did not use.
+    virtual void release_prefetched() {}
+};
+
+/**
+ * @brief Called by a warm-up right before it writes into the device cache, and returns the lock that keeps the
+ * pipeline from running or growing the cache until the warm-up is done.
+ */
+using DevicePhaseGuard = std::function<std::unique_lock<std::recursive_mutex>()>;
+
+/**
  * @brief Allows to store and retrieve KV-cache blocks based on their content- and position-based hash.
  * Blocks with the same prefix in the generated sequence will have the same hash. Blocks within this store
  * are not owned by any sequence (but had been once) and may be either selected for overwriting, if the allocator
@@ -114,12 +230,20 @@ class OverwritableBlocksHashStore {
     std::map<size_t, BlocksPerLayer> m_blocks;
     friend class BlockAllocator;
     size_t m_num_layers;
+    IOverwrittenBlockObserver* m_observer = nullptr;
     public:
     /**
      * Constructs the BlockHashStore.
      * @param num_layers The number of separate attention layers with KV caches in the LLM associated with the pipeline.
      */
     explicit OverwritableBlocksHashStore(size_t num_layers = 1) : m_num_layers(num_layers) { OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero"); }
+
+    /**
+     * @brief Sets the observer notified before block contents are overwritten. Pass nullptr to detach.
+     */
+    void set_overwritten_block_observer(IOverwrittenBlockObserver* observer) {
+        m_observer = observer;
+    }
 
     /**
      * Registers allocated KV cache blocks as overwritable. The blocks must not be owned by any sequence.
@@ -156,7 +280,7 @@ class OverwritableBlocksHashStore {
         BlocksPerLayer blocks_for_all_layers = it->second;
         for (auto& block_ptr : blocks_for_all_layers) {
 
-            block_ptr->set_timestamp(std::chrono::steady_clock::now());
+            block_ptr->set_timestamp(next_block_timestamp());
             block_ptr->increment();
         }
         m_blocks.erase(it);
@@ -174,11 +298,16 @@ class OverwritableBlocksHashStore {
             return {};
         }
         auto hash_and_blocks_for_all_layers = std::min_element(std::begin(m_blocks), std::end(m_blocks), [](const auto& lhs, const auto& rhs) -> bool { return lhs.second[0]->get_timestamp() < rhs.second[0]->get_timestamp(); });
+        const size_t overwritten_hash = hash_and_blocks_for_all_layers->first;
         auto blocks_for_all_layers = hash_and_blocks_for_all_layers->second;
+        // Last point at which these blocks still hold the contents computed for `overwritten_hash`.
+        if (m_observer != nullptr) {
+            m_observer->on_blocks_overwritten(overwritten_hash, blocks_for_all_layers);
+        }
         for (auto& block_ptr : blocks_for_all_layers) {
             block_ptr->increment();
         }
-        m_blocks.erase(hash_and_blocks_for_all_layers->first);
+        m_blocks.erase(overwritten_hash);
         return blocks_for_all_layers;
     }
 
@@ -350,6 +479,13 @@ public:
         } else {
             m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
+    }
+
+    /**
+     * @brief Sets the observer notified before cached block contents are overwritten. Pass nullptr to detach.
+     */
+    void set_overwritten_block_observer(IOverwrittenBlockObserver* observer) {
+        m_overwriteable_blocks.set_overwritten_block_observer(observer);
     }
 
     ~BlockAllocator() {
@@ -763,7 +899,7 @@ public:
             }
 
             // update block with new hash
-            const auto timestamp = std::chrono::steady_clock::now();
+            const auto timestamp = next_block_timestamp();
             for (auto& block : result.blocks) {
                 block->set_hash(hash);
                 block->set_timestamp(timestamp);
@@ -786,6 +922,9 @@ public:
     BlocksPerLayer get_cached_block(size_t hash, std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
         auto blocks_for_all_layers = m_overwriteable_blocks.get_block_to_restore(hash);
         if (!blocks_for_all_layers.empty()) {
+            GENAI_INFO("[KV_TRACE] prefix_restore hash=%zu source=overwriteable blocks=%zu",
+                       hash,
+                       blocks_for_all_layers.size());
             // use cached block from internal store
             return blocks_for_all_layers;
         }
@@ -797,6 +936,9 @@ public:
             for (auto& block_ptr : cached_blocks[hash]) {
                 block_ptr->increment();
             }
+            GENAI_INFO("[KV_TRACE] prefix_restore hash=%zu source=active blocks=%zu",
+                       hash,
+                       blocks_for_all_layers.size());
             return blocks_for_all_layers;
         }
         return {};
@@ -819,7 +961,7 @@ public:
         m_overwriteable_blocks.m_blocks.erase(hash);
         for (const auto& block : blocks) {
             block->increment();
-            block->set_timestamp(std::chrono::steady_clock::now());
+            block->set_timestamp(next_block_timestamp());
         }
     }
 
@@ -915,6 +1057,7 @@ private:
     std::map<uint64_t, LinearAttentionLiveState> m_linear_attention_live_states;
 
     std::mutex m_cached_blocks_map_mutex;
+    IOverwrittenBlockObserver* m_link_observer = nullptr;
 public:
     struct PrefixRestorePlan {
         std::vector<size_t> block_content_lengths;
@@ -1246,6 +1389,17 @@ public:
                       leaked_tables,
                       static_cast<unsigned long long>(first_leaked_seq_id));
         }
+    }
+
+    /**
+     * @brief Sets the observer notified before cached block contents are overwritten. Pass nullptr to detach.
+     *
+     * The observer is invoked while this manager's cache lock is held.
+     */
+    void set_overwritten_block_observer(IOverwrittenBlockObserver* observer) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        m_allocator.set_overwritten_block_observer(observer);
+        m_link_observer = observer;
     }
 
     /**
@@ -2309,8 +2463,10 @@ public:
      * Frees specific blocks layer-wise from a given sequence.
      * @param seq_id Sequence identifier for the blocks to be freed from.
      * @param logical_block_index_sets_to_free Sets (one for each layer) of logical block indices to be freed from this sequence.
+     * @return The freed block sets, captured before any of them was released. The blocks are not pinned, so their
+     * contents stay valid only until the allocator hands them out again.
      */
-    void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& logical_block_index_sets_to_free) {
+    std::vector<BlocksPerLayer> free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& logical_block_index_sets_to_free) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         std::vector<std::vector<size_t>> logical_block_indices_to_free(logical_block_index_sets_to_free.size());
         for (size_t i = 0; i < logical_block_index_sets_to_free.size(); i++) {
@@ -2327,12 +2483,14 @@ public:
         }
 
         if (logical_block_indices_to_free[0].empty()) {
-            return;
+            return {};
         }
 
         size_t num_blocks_to_free = logical_block_indices_to_free[0].size();
+        std::vector<BlocksPerLayer> captured_blocks;
+        captured_blocks.reserve(num_blocks_to_free);
 
-        // free blocks at the allocator level
+        // capture every block set before any of them is freed, so callers observe pre-free physical blocks
         for (size_t block_idx = 0; block_idx < num_blocks_to_free; block_idx++) {
             BlocksPerLayer per_layer_cache_blocks_to_free;
             per_layer_cache_blocks_to_free.reserve(presumed_num_layers);
@@ -2346,6 +2504,11 @@ public:
                 auto block = per_layer_block_table[logical_block_idx];
                 per_layer_cache_blocks_to_free.push_back(block);
             }
+            captured_blocks.push_back(std::move(per_layer_cache_blocks_to_free));
+        }
+
+        // free blocks at the allocator level
+        for (const auto& per_layer_cache_blocks_to_free : captured_blocks) {
             free_cached_blocks(per_layer_cache_blocks_to_free);
         }
 
@@ -2366,6 +2529,7 @@ public:
 
             per_layer_block_table = new_sequence_blocks;
         }
+        return captured_blocks;
     }
 
     /**
@@ -2616,6 +2780,7 @@ public:
                         m_prefix_hash_to_cached_blocks[hash] = last_blocks;
                         unregister_cached_hash(prev_hash);
                         register_cached_content_length(hash, content_length);
+                        note_prefix_link(sequence, content_length, hash);
                     }
                 }
             }
@@ -2654,6 +2819,8 @@ public:
         std::map<uint64_t, BlocksPerLayer> prepared_blocks;
         std::map<uint64_t, size_t> prepared_hash_lengths;
         std::map<size_t, size_t> prepared_length_counts;
+        // Blocks hashed when they were allocated are only complete once the forward pass has covered them.
+        std::vector<std::pair<uint64_t, BlocksPerLayer>> completed_published_blocks;
         for (size_t logical_block_idx = processed_before / m_block_size;
              logical_block_idx < processed_after / m_block_size; ++logical_block_idx) {
             if (logical_block_idx < logical_start) {
@@ -2672,10 +2839,18 @@ public:
                                 "Cache blocks across layers must share publication state");
                 completed_blocks.push_back(std::move(block));
             }
+            const size_t content_length = (logical_block_idx + 1) * m_block_size;
             if (completed_blocks[0]->has_published_hash()) {
+                // Only an offload observer wants these, and a stop-string trim can leave a block past the positions
+                // that get_hash() can identify.
+                if (m_link_observer != nullptr && content_length <= sequence->get_prefix_identity_length()) {
+                    const uint64_t published_hash = completed_blocks[0]->get_hash();
+                    if (published_hash == sequence->get_hash(content_length, m_block_size)) {
+                        completed_published_blocks.emplace_back(published_hash, std::move(completed_blocks));
+                    }
+                }
                 continue;
             }
-            const size_t content_length = (logical_block_idx + 1) * m_block_size;
             const uint64_t hash = sequence->get_hash(content_length, m_block_size);
             const auto content_length_it = m_cached_hash_to_content_length.find(hash);
             OPENVINO_ASSERT(content_length_it == m_cached_hash_to_content_length.end() ||
@@ -2693,6 +2868,7 @@ public:
             }
             const auto [prepared_it, inserted] = prepared_blocks.emplace(hash, std::move(completed_blocks));
             OPENVINO_ASSERT(inserted, "Crossed cache boundaries must have distinct prefix identities");
+            note_prefix_link(sequence, content_length, hash);
             if (content_length_it == m_cached_hash_to_content_length.end()) {
                 prepared_hash_lengths.emplace(prepared_it->first, content_length);
                 ++prepared_length_counts[content_length];
@@ -2702,6 +2878,9 @@ public:
         for (const auto& [hash, blocks] : prepared_blocks) {
             for (const CacheBlock::Ptr& block : blocks) {
                 block->set_hash(hash);
+            }
+            if (m_link_observer != nullptr) {
+                m_link_observer->on_blocks_published(hash, blocks);
             }
         }
         m_prefix_hash_to_cached_blocks.merge(prepared_blocks);
@@ -2713,6 +2892,11 @@ public:
         }
         m_cached_content_length_ref_counts.merge(prepared_length_counts);
         m_cached_hash_to_content_length.merge(prepared_hash_lengths);
+        if (m_link_observer != nullptr) {
+            for (const auto& [hash, blocks] : completed_published_blocks) {
+                m_link_observer->on_blocks_published(hash, blocks);
+            }
+        }
     }
 
     bool restore_cached_blocks(SequenceGroup::Ptr group) {
@@ -2745,6 +2929,150 @@ public:
 
         const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         return restore_cached_blocks_unlocked(group, plan);
+    }
+
+    /**
+     * @brief Brings prompt prefix blocks back into the in-memory cache from an external source.
+     *
+     * Restored blocks are left unowned, so a subsequent prefix restore claims them the same way it claims
+     * blocks that never left memory. Stops at the first prompt block the source cannot supply, because a
+     * restore chain has to be contiguous to be usable. A manager that restores only the latest prefix block
+     * (linear attention) brings back just the newest block the source can supply, since each of its blocks holds
+     * the complete state at its position and does not depend on the earlier ones.
+     *
+     * @param max_content_len Longest prefix, in tokens, the caller can still use; blocks beyond it are not brought back.
+     * @param begin_device_phase Called after the store I/O and before the first block is written into the device cache.
+     * @return The number of blocks brought back into memory.
+     */
+    size_t warm_prefix_cache(SequenceGroup::Ptr group,
+                             IExternalPrefixSource& source,
+                             size_t max_content_len = std::numeric_limits<size_t>::max(),
+                             const DevicePhaseGuard& begin_device_phase = {}) {
+        if (!m_enable_prefix_caching) {
+            return 0;
+        }
+
+        const auto sequences = group->get_not_finished_sequences();
+        if (sequences.size() != 1) {
+            return 0;
+        }
+        const auto& sequence = sequences[0];
+        const size_t chain_limit = std::min(group->get_prompt_len(), max_content_len);
+
+        // Ask the source about the whole chain at once, from block 0 in order, before reading anything: a store
+        // numbers the blocks by their place in this query. The walk below then only looks at the answer.
+        std::vector<size_t> chain_lengths;
+        for (size_t content_len = m_block_size; content_len <= chain_limit; content_len += m_block_size) {
+            chain_lengths.push_back(content_len);
+        }
+        std::vector<size_t> chain_hashes;
+        chain_hashes.reserve(chain_lengths.size());
+        for (const size_t content_len : chain_lengths) {
+            chain_hashes.push_back(sequence->get_hash(content_len, m_block_size));
+        }
+        // The source may be a slow plugin, so the probe and the prefetch run without the manager lock.
+        const std::vector<bool> probed = source.probe(chain_hashes);
+        OPENVINO_ASSERT(probed.size() == chain_hashes.size(), "A prefix probe must answer for every block of the chain");
+        std::set<size_t> available;
+        for (size_t i = 0; i < chain_hashes.size(); ++i) {
+            if (probed[i]) {
+                available.insert(chain_hashes[i]);
+            }
+        }
+
+        std::unique_lock<std::mutex> lock(m_cached_blocks_map_mutex);
+        std::vector<size_t> walk_lengths = chain_lengths;
+        if (m_restore_latest_prefix_block_only) {
+            walk_lengths.clear();
+            for (auto it = chain_lengths.rbegin(); it != chain_lengths.rend(); ++it) {
+                const auto hash = sequence->get_hash(*it, m_block_size);
+                if (m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) || available.count(hash) != 0) {
+                    walk_lengths.push_back(*it);
+                    break;
+                }
+            }
+        }
+
+        size_t num_restored = 0;
+        // Hold every chain block until the walk is over. A warmed block keeps the timestamp it was created
+        // with, so releasing it immediately would make it the very next block the allocator overwrites.
+        std::vector<BlocksPerLayer> chain;
+
+        // Read the blocks the walk is going to load in one batch, in chain order, instead of one by one.
+        std::vector<size_t> to_load;
+        const auto note_to_load = [&](size_t hash) {
+            if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) != 0 &&
+                m_allocator.can_allocate_blocks(to_load.size() + 1)) {
+                to_load.push_back(hash);
+            }
+        };
+        for (const size_t content_len : walk_lengths) {
+            const auto hash = sequence->get_hash(content_len, m_block_size);
+            if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) == 0) {
+                break;
+            }
+            note_to_load(hash);
+        }
+        // The pipeline takes the execution lock before the manager lock, so no lock is held while the store is read
+        // and the execution lock is taken before the manager lock is taken again.
+        lock.unlock();
+        struct PrefetchRelease {
+            IExternalPrefixSource& source;
+            ~PrefetchRelease() {
+                source.release_prefetched();
+            }
+        } prefetch_release{source};
+        if (!to_load.empty()) {
+            source.prefetch(to_load);
+        }
+        std::unique_lock<std::recursive_mutex> device_phase;
+        if (begin_device_phase) {
+            device_phase = begin_device_phase();
+        }
+        lock.lock();
+
+        // @return false when the chain cannot be extended with the block ending at `content_len`.
+        const auto extend_chain = [&](size_t content_len) {
+            const auto hash = sequence->get_hash(content_len, m_block_size);
+            if (m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks)) {
+                chain.push_back(m_allocator.get_cached_block(hash, m_prefix_hash_to_cached_blocks));
+                return true;
+            }
+            // A block evicted from the device while this walk allocates reaches the source after the probe above.
+            if ((available.find(hash) == available.end() && !source.contains(hash)) || !m_allocator.can_allocate_blocks(1)) {
+                return false;
+            }
+
+            auto blocks = allocate_cached_block(hash, content_len);
+            OPENVINO_ASSERT(!blocks.empty(), "Failed to allocate a block for prefix cache warm-up");
+            if (!source.load_into(hash, static_cast<size_t>(blocks[0]->get_index()))) {
+                // A partially filled block must never become visible under its hash.
+                m_prefix_hash_to_cached_blocks.erase(hash);
+                unregister_cached_hash(hash);
+                m_allocator.free_uncached(blocks);
+                return false;
+            }
+
+            chain.push_back(std::move(blocks));
+            ++num_restored;
+            return true;
+        };
+
+        for (const size_t content_len : walk_lengths) {
+            if (!extend_chain(content_len)) {
+                break;
+            }
+        }
+
+        // Drop ownership so that the regular restore path can claim the chain by hash.
+        for (const auto& blocks : chain) {
+            free_cached_blocks(blocks);
+        }
+
+        GENAI_INFO("[KV_TRACE] prefix_warm_from_disk seq=%llu blocks=%zu",
+                   static_cast<unsigned long long>(sequence->get_id()),
+                   num_restored);
+        return num_restored;
     }
 
     void clear() {
@@ -2809,7 +3137,7 @@ private:
             auto blocks = m_allocator.get_cached_block(sequence->get_hash(content_len, m_block_size),
                                                        m_prefix_hash_to_cached_blocks);
             OPENVINO_ASSERT(!blocks.empty(), "Prefix restore plan became unavailable for token position ", content_len);
-            const auto timestamp = std::chrono::steady_clock::now();
+            const auto timestamp = next_block_timestamp();
             for (size_t layer_idx = 0; layer_idx < block_table.size(); layer_idx++) {
                 auto& block = blocks[layer_idx];
                 block->set_timestamp(timestamp);
@@ -2936,6 +3264,18 @@ private:
         }
         m_cached_hash_to_content_length[hash] = content_length;
         ++m_cached_content_length_ref_counts[content_length];
+    }
+
+    /// Reports where the block ending at `content_length` sits in the sequence's chain (see on_prefix_link).
+    void note_prefix_link(const Sequence::Ptr& sequence, size_t content_length, uint64_t hash) {
+        if (m_link_observer == nullptr) {
+            return;
+        }
+        const size_t parent_length = (content_length - 1) / m_block_size * m_block_size;
+        const bool has_parent = parent_length > 0;
+        m_link_observer->on_prefix_link(hash,
+                                        has_parent ? sequence->get_hash(parent_length, m_block_size) : 0,
+                                        has_parent);
     }
 
     void unregister_cached_hash(uint64_t hash) {
@@ -3300,6 +3640,12 @@ private:
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
 
         auto sequence_id = sequence->get_id();
+        GENAI_INFO("[KV_TRACE] logical_allocate seq=%llu blocks=%zu prompt=%zu prefix=%s free_before=%zu",
+                   static_cast<unsigned long long>(sequence_id),
+                   num_blocks,
+                   prompt_size,
+                   m_enable_prefix_caching ? "true" : "false",
+                   num_free_blocks());
         if (m_block_table.find(sequence_id) == m_block_table.end()) {
             m_block_table[sequence_id].resize(m_num_layers);
         }
@@ -3365,6 +3711,7 @@ private:
                     m_prefix_hash_to_cached_blocks[hash] = last_blocks_vec;
                     unregister_cached_hash(prev_hash);
                     register_cached_content_length(hash, content_length);
+                    note_prefix_link(sequence, content_length, hash);
                 }
             }
             for (size_t i = 0; i < num_blocks; ++i) {
@@ -3374,6 +3721,7 @@ private:
                 }
                 auto hash = sequence->get_hash(num_hashed_tokens, m_block_size);
                 auto blocks_for_all_layers = allocate_cached_block(hash, num_hashed_tokens);
+                note_prefix_link(sequence, num_hashed_tokens, hash);
                 for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                     m_block_table[sequence_id][layer_idx].push_back(blocks_for_all_layers[layer_idx]);
                 }
@@ -3387,6 +3735,10 @@ private:
                 set_empty_linear_attention_live_state(sequence_id, live_rows);
             }
         }
+        GENAI_INFO("[KV_TRACE] logical_allocate_done seq=%llu table_blocks=%zu free_after=%zu",
+                   static_cast<unsigned long long>(sequence_id),
+                   m_block_table[sequence_id][0].size(),
+                   num_free_blocks());
     }
 };
 

@@ -1,0 +1,255 @@
+// Copyright (C) 2018-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+//
+
+#include <gtest/gtest.h>
+
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "continuous_batching/cache/kv_cache_disk_layout.hpp"
+#include "continuous_batching/cache/store_registry.hpp"
+#include "store_plugin_locator.hpp"
+
+using namespace ov::genai;
+
+namespace {
+
+constexpr size_t BLOCK_SIZE = 32;
+constexpr size_t NUM_BLOCKS = 4;
+
+CacheOffloadConfig make_config() {
+    CacheOffloadConfig config;
+    config.capacity_bytes = BLOCK_SIZE * NUM_BLOCKS;
+    return config;
+}
+
+KVCacheDiskLayout make_layout() {
+    return KVCacheDiskLayout({BLOCK_SIZE}, {0});
+}
+
+std::vector<uint8_t> make_block(uint8_t seed) {
+    std::vector<uint8_t> data(BLOCK_SIZE);
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = static_cast<uint8_t>(seed + i);
+    }
+    return data;
+}
+
+void expect_store_is_usable(IKVCacheStore& store) {
+    EXPECT_EQ(store.get_block_size(), BLOCK_SIZE);
+    EXPECT_EQ(store.get_capacity_blocks(), NUM_BLOCKS);
+    EXPECT_FALSE(store.has_block(1));
+
+    const auto expected = make_block(/*seed=*/5);
+    ASSERT_TRUE(store.write_block(1, expected));
+    ASSERT_TRUE(store.has_block(1));
+
+    std::vector<uint8_t> actual;
+    ASSERT_TRUE(store.read_block(1, actual));
+    EXPECT_EQ(actual, expected);
+}
+
+using ov::genai::test::find_sample_plugin_library;
+using ov::genai::test::find_self_as_plugin_library;
+
+}  // namespace
+
+TEST(TestStoreRegistry, DefaultConfigUsesTheInTreeFileStoreDirectly) {
+    auto store = open_kv_cache_store(make_layout(), make_config(), "CPU", "kv");
+    ASSERT_NE(store, nullptr);
+    expect_store_is_usable(*store);
+}
+
+TEST(TestStoreRegistry, DisallowedPluginIsIgnoredEvenWhenAPathIsSet) {
+    CacheOffloadConfig config = make_config();
+    config.store_library_path = "does_not_matter_because_disallowed.dll";
+    config.allow_untrusted_store_plugin = false;
+
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(store, nullptr);
+    expect_store_is_usable(*store);
+}
+
+TEST(TestStoreRegistry, NonexistentPluginLibraryFallsBackGracefully) {
+    CacheOffloadConfig config = make_config();
+    config.store_library_path = "this_library_does_not_exist_anywhere.dll";
+    config.allow_untrusted_store_plugin = true;
+
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(store, nullptr);
+    expect_store_is_usable(*store);
+}
+
+#ifdef _WIN32
+TEST(TestStoreRegistry, LibraryMissingTheEntrySymbolFallsBackGracefully) {
+    CacheOffloadConfig config = make_config();
+    // A real, always-present system DLL that definitely does not export our ABI entry symbol.
+    config.store_library_path = "kernel32.dll";
+    config.allow_untrusted_store_plugin = true;
+
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(store, nullptr);
+    expect_store_is_usable(*store);
+}
+#endif
+
+TEST(TestStoreRegistry, LoadsAndUsesAGenuinelySeparateDynamicallyLoadedPlugin) {
+    const std::optional<std::string> library_path = find_self_as_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "Could not locate openvino_genai's own shared library next to the test binary";
+    }
+
+    CacheOffloadConfig config = make_config();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "file";
+    config.allow_untrusted_store_plugin = true;
+
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(store, nullptr);
+    ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
+    expect_store_is_usable(*store);
+}
+
+TEST(TestStoreRegistry, LoadsAndUsesTheStandaloneSampleThirdPartyPlugin) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    CacheOffloadConfig config = make_config();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-in-memory";
+    config.allow_untrusted_store_plugin = true;
+
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(store, nullptr);
+    ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
+    expect_store_is_usable(*store);
+}
+
+// The ABI opens one store per namespace, so blocks of different groups must not be counted together.
+TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    CacheOffloadConfig config = make_config();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-in-memory";
+    config.allow_untrusted_store_plugin = true;
+
+    auto first = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_first");
+    auto second = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_second");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    ASSERT_TRUE(first->is_plugin_backed());
+    ASSERT_TRUE(second->is_plugin_backed());
+
+    ASSERT_TRUE(first->write_block(7, make_block(/*seed=*/1)));
+    EXPECT_EQ(first->get_num_free_blocks(), NUM_BLOCKS - 1);
+    EXPECT_EQ(second->get_num_free_blocks(), NUM_BLOCKS);
+}
+
+// The persistent provider keeps a block in a file under CacheOffloadConfig::kv_cache_dir, which is what lets another process
+// read it back; the cross-process round trip itself is checked by verify_chunk_store.py (write/read phases).
+TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_persistent_store_test";
+    std::filesystem::remove_all(directory);
+    CacheOffloadConfig config = make_config();
+    config.kv_cache_dir = directory.string();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-persistent-file";
+    config.allow_untrusted_store_plugin = true;
+
+    {
+        auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+        ASSERT_NE(store, nullptr);
+        ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
+        expect_store_is_usable(*store);
+
+        size_t block_files = 0;
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+            block_files += entry.is_regular_file() && entry.path().extension() == ".blk" ? 1 : 0;
+        }
+        EXPECT_EQ(block_files, 1u);
+    }
+
+    // Without a directory the provider refuses to open, and the registry falls back to its default store.
+    config.kv_cache_dir.clear();
+    auto fallback = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(fallback, nullptr);
+    EXPECT_FALSE(fallback->is_plugin_backed());
+    std::filesystem::remove_all(directory);
+}
+
+namespace {
+
+size_t count_block_files(const std::filesystem::path& directory) {
+    size_t block_files = 0;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+        block_files += entry.is_regular_file() && entry.path().extension() == ".blk" ? 1 : 0;
+    }
+    return block_files;
+}
+
+}  // namespace
+
+TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToReuseSsdCache) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_reuse_ssd_cache_test";
+    std::filesystem::remove_all(directory);
+    CacheOffloadConfig config = make_config();
+    config.kv_cache_dir = directory.string();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-persistent-file";
+    config.allow_untrusted_store_plugin = true;
+
+    {
+        auto first = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+        ASSERT_NE(first, nullptr);
+        ASSERT_TRUE(first->is_plugin_backed());
+        ASSERT_TRUE(first->write_block(1, make_block(/*seed=*/5)));
+    }
+    ASSERT_EQ(count_block_files(directory), 1u);
+
+    ASSERT_TRUE(config.reuse_ssd_cache);
+    {
+        auto reused = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+        ASSERT_NE(reused, nullptr);
+        ASSERT_TRUE(reused->is_plugin_backed());
+        EXPECT_TRUE(reused->has_block(1));
+    }
+
+    config.reuse_ssd_cache = false;
+    auto purged = open_kv_cache_store(make_layout(), config, "CPU", "kv");
+    ASSERT_NE(purged, nullptr);
+    ASSERT_TRUE(purged->is_plugin_backed());
+    EXPECT_FALSE(purged->has_block(1));
+    EXPECT_EQ(purged->get_num_free_blocks(), NUM_BLOCKS);
+    EXPECT_EQ(count_block_files(directory), 0u);
+    std::filesystem::remove_all(directory);
+}
+
+// The settings the host owns reach the plugin from their own fields, so naming one in store_properties is an error.
+TEST(TestStoreRegistry, StorePropertiesNamingAHostOwnedSettingAreRejected) {
+    for (const char* key : {"block_size_bytes", "device", "dram_cache_capacity_gb", "reuse_ssd_cache", "debug_log_path"}) {
+        CacheOffloadConfig config = make_config();
+        config.store_library_path = "this_library_does_not_exist_anywhere.dll";
+        config.allow_untrusted_store_plugin = true;
+        config.store_properties = {{key, "x"}};
+        EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv"), ov::Exception) << key;
+    }
+}

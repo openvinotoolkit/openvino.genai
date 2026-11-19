@@ -10,6 +10,7 @@
 #include "continuous_batching/scheduler.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/runtime/core.hpp"
+#include "prefix_digest_registry.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
 
@@ -624,6 +625,92 @@ TEST(TestBlockManager, SequenceHashRollbackAndForkMatchFreshSequences) {
     EXPECT_EQ(sequence->get_hash(12, 3), fresh_original->get_hash(12, 3));
 }
 
+TEST(TestBlockManager, SequenceDigestChainsThePrefixAndDoesNotDependOnTheCallOrder) {
+    auto group_a = create_sequence_group({0, 1, 2, 3, 4, 5, 6, 7}, 31);
+    auto group_same = create_sequence_group({0, 1, 2, 3, 4, 5, 6, 7}, 32);
+    auto group_other_prefix = create_sequence_group({9, 9, 9, 9, 4, 5, 6, 7}, 33);
+    auto a = group_a->get_running_sequences().at(0);
+    auto same = group_same->get_running_sequences().at(0);
+    auto other_prefix = group_other_prefix->get_running_sequences().at(0);
+
+    // The second block holds the same tokens in both sequences, so only the chained prefix can tell them apart.
+    EXPECT_NE(a->get_digest(8, 4), other_prefix->get_digest(8, 4));
+    EXPECT_NE(a->get_digest(4, 4), other_prefix->get_digest(4, 4));
+    // A partial block has its own digest.
+    EXPECT_NE(a->get_digest(6, 4), a->get_digest(8, 4));
+    EXPECT_NE(a->get_digest(5, 4), a->get_digest(6, 4));
+
+    // Asking for the last block first, then the first one, gives what a fresh sequence gives block by block.
+    EXPECT_EQ(same->get_digest(8, 4), a->get_digest(8, 4));
+    EXPECT_EQ(same->get_digest(4, 4), a->get_digest(4, 4));
+    EXPECT_EQ(same->get_digest(6, 4), a->get_digest(6, 4));
+    EXPECT_EQ(a->get_digest(8, 4), a->get_digest(8, 4));
+
+    // Block sizes do not share digests.
+    EXPECT_NE(a->get_digest(6, 3), a->get_digest(6, 2));
+    EXPECT_THROW(a->get_digest(0, 4), ov::Exception);
+    EXPECT_THROW(a->get_digest(1, 0), ov::Exception);
+}
+
+TEST(TestBlockManager, SequenceDigestRollbackAndForkMatchFreshSequences) {
+    const std::vector<int64_t> prompt = {0, 1, 2, 3};
+    const std::vector<int64_t> original_suffix = {4, 5, 6, 7, 8, 9, 10, 11};
+    const std::vector<int64_t> divergent_suffix = {40, 41, 42, 43, 44};
+    auto sequence_group = create_sequence_group(prompt, 34);
+    auto sequence = sequence_group->get_running_sequences().at(0);
+    for (const int64_t token : original_suffix) {
+        sequence->append_token(token, 0.0f);
+    }
+    const ov::genai::ContentHash original_digest = sequence->get_digest(12, 4);
+    auto forked_sequence = sequence_group->fork_sequence(sequence);
+
+    forked_sequence->remove_last_tokens(5);
+    for (const int64_t token : divergent_suffix) {
+        forked_sequence->append_token(token, 0.0f);
+    }
+
+    std::vector<int64_t> divergent_identity(prompt);
+    divergent_identity.insert(divergent_identity.end(), original_suffix.begin(), original_suffix.begin() + 3);
+    divergent_identity.insert(divergent_identity.end(), divergent_suffix.begin(), divergent_suffix.end());
+    auto fresh_divergent_group = create_sequence_group(divergent_identity, 35);
+    auto fresh_divergent = fresh_divergent_group->get_running_sequences().at(0);
+
+    EXPECT_EQ(forked_sequence->get_digest(12, 4), fresh_divergent->get_digest(12, 4));
+    EXPECT_EQ(forked_sequence->get_digest(12, 3), fresh_divergent->get_digest(12, 3));
+    EXPECT_NE(forked_sequence->get_digest(12, 4), original_digest);
+    EXPECT_EQ(sequence->get_digest(12, 4), original_digest);
+}
+
+TEST(TestBlockManager, PrefixDigestsAreRecordedOnlyWhileALeaseExistsAndNeverChangeTheHash) {
+    // Tokens no other test uses, so that nothing else can have recorded these hashes.
+    const std::vector<int64_t> tokens = {70011, 70012, 70013, 70014, 70015, 70016, 70017, 70018};
+    auto group_without = create_sequence_group(tokens, 36);
+    auto group_with = create_sequence_group(tokens, 37);
+    auto without_lease = group_without->get_running_sequences().at(0);
+    auto with_lease = group_with->get_running_sequences().at(0);
+    auto& registry = ov::genai::PrefixDigestRegistry::instance();
+
+    ASSERT_FALSE(ov::genai::PrefixDigestRegistry::enabled());
+    const size_t hash = without_lease->get_hash(8, 4);
+    EXPECT_FALSE(registry.find(hash).has_value());
+
+    {
+        ov::genai::PrefixDigestRegistry::Lease lease;
+        EXPECT_TRUE(ov::genai::PrefixDigestRegistry::enabled());
+        EXPECT_EQ(with_lease->get_hash(8, 4), hash) << "the in-memory hash must not depend on digest recording";
+        EXPECT_EQ(registry.find(hash), with_lease->get_digest(8, 4));
+        const auto partial_hash = with_lease->get_hash(6, 4);
+        EXPECT_EQ(registry.find(partial_hash), with_lease->get_digest(6, 4));
+
+        const auto found = registry.find_many({hash, partial_hash, 12345});
+        ASSERT_EQ(found.size(), 3u);
+        EXPECT_EQ(found[0], with_lease->get_digest(8, 4));
+        EXPECT_EQ(found[1], with_lease->get_digest(6, 4));
+        EXPECT_FALSE(found[2].has_value());
+    }
+    EXPECT_FALSE(ov::genai::PrefixDigestRegistry::enabled());
+}
+
 TEST(TestBlockManager, SequenceHashEmbeddingRollbackMatchesFreshSequence) {
     std::vector<std::vector<float>> embeddings;
     for (size_t token = 0; token < 12; ++token) {
@@ -706,6 +793,52 @@ TEST(TestBlockManager, TemporaryReservationReclaimsOldestCheckpointFirst) {
     }
 }
 
+// Blocks released back to back must be evicted in release order. The steady clock often returns the same value for
+// consecutive calls, so ordering by its raw timestamps leaves the choice to the hash table's iteration order, which
+// differs from run to run. Repeated with different tokens, so each round lands in a different hash table layout.
+TEST(TestBlockManager, PrefixCacheEvictsBlocksInReleaseOrderEvenWhenReleasedBackToBack) {
+    constexpr size_t block_size = 4;
+    constexpr size_t num_rounds = 64;
+    for (size_t round = 0; round < num_rounds; ++round) {
+        const int64_t base = static_cast<int64_t>(round) * 100;
+        ov::genai::BlockManager manager(3, true, block_size);
+
+        std::vector<ov::genai::SequenceGroup::Ptr> cached_groups;
+        std::vector<uint64_t> cached_ids;
+        for (int64_t i = 0; i < 3; ++i) {
+            auto group = create_sequence_group({base + i * 4, base + i * 4 + 1, base + i * 4 + 2, base + i * 4 + 3},
+                                               static_cast<uint64_t>(1000 + round * 10 + i));
+            group->schedule_tokens(block_size);
+            manager.append_slots(group);
+            group->finish_iteration();
+            cached_ids.push_back(group->get_running_sequences().front()->get_id());
+            cached_groups.push_back(group);
+        }
+        // Released immediately one after the other, oldest first; with no time passing between the calls.
+        for (const uint64_t id : cached_ids) {
+            manager.free_sequence(id);
+        }
+
+        auto newcomer = create_sequence_group({base + 90, base + 91, base + 92, base + 93}, 5000 + round);
+        newcomer->schedule_tokens(block_size);
+        manager.append_slots(newcomer);
+        newcomer->finish_iteration();
+
+        // Only the oldest released block may have been overwritten; the two newer ones must still be restorable.
+        auto probe_oldest = create_sequence_group({base, base + 1, base + 2, base + 3, base + 50}, 6000 + round);
+        auto probe_middle = create_sequence_group({base + 4, base + 5, base + 6, base + 7, base + 50}, 7000 + round);
+        auto probe_newest = create_sequence_group({base + 8, base + 9, base + 10, base + 11, base + 50}, 8000 + round);
+        EXPECT_FALSE(manager.restore_cached_blocks(probe_oldest)) << "round " << round;
+        EXPECT_TRUE(manager.restore_cached_blocks(probe_middle)) << "round " << round;
+        EXPECT_TRUE(manager.restore_cached_blocks(probe_newest)) << "round " << round;
+
+        for (const auto& probe : {probe_middle, probe_newest}) {
+            manager.free_sequence(probe->get_running_sequences().front()->get_id());
+        }
+        manager.free_sequence(newcomer->get_running_sequences().front()->get_id());
+    }
+}
+
 TEST(TestBlockManager, PrefixCachingRollbackUnregistersInvalidatedBoundaryBeforeDivergentRewrite) {
     constexpr size_t block_size = 4;
     ov::genai::BlockManager block_manager(8, true, block_size);
@@ -755,6 +888,30 @@ TEST(TestBlockManager, PrefixCachingRollbackUnregistersInvalidatedBoundaryBefore
 
     block_manager.free_sequence(sequence->get_id());
     block_manager.free_sequence(divergent_restore_group->get_running_sequences().front()->get_id());
+}
+
+TEST(TestBlockManager, PublishingCompletedBlocksIgnoresPublishedBlocksPastATrimmedSequence) {
+    struct IgnoringObserver : ov::genai::IOverwrittenBlockObserver {
+        void on_blocks_overwritten(size_t, const ov::genai::BlocksPerLayer&) override {}
+    } observer;
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(8, true, block_size);
+    block_manager.set_overwritten_block_observer(&observer);
+
+    auto sequence_group = create_sequence_group(std::vector<int64_t>{0, 1, 2, 3}, 60);
+    const auto sequence = sequence_group->get_running_sequences().front();
+    for (const int64_t token : std::vector<int64_t>{4, 5, 6, 7}) {
+        sequence->append_token(token, 0.0f);
+    }
+    sequence_group->schedule_tokens(8);
+    block_manager.append_slots(sequence_group);
+    sequence_group->finish_iteration();
+
+    // A stop-string trim leaves the second block past the positions that get_hash() can identify.
+    sequence->remove_last_tokens(4);
+    EXPECT_NO_THROW(block_manager.publish_completed_blocks(sequence, 4, 8));
+
+    block_manager.free_sequence(sequence->get_id());
 }
 
 TEST(TestBlockManager, PrefixCachingRollbackPreservesIdentityBackedBySharedOwner) {

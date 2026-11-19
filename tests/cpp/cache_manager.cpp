@@ -3,10 +3,12 @@
 //
 
 #include <gtest/gtest.h>
+#include "openvino/op/parameter.hpp"
 #include "openvino/runtime/core.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "helper.hpp"
 
 using namespace ov::genai;
@@ -51,6 +53,30 @@ TEST(TestCacheManager, test_cache_size_param) {
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), expected_size);
 }
 
+
+TEST(TestCacheManager, cache_offload_is_rejected_for_models_with_qsa_index_caches) {
+    ov::Core core;
+    auto model = get_dummy_model(core, 2);
+    auto index_cache = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32,
+        ov::PartialShape{ov::Dimension::dynamic(), 2, 32, 8});
+    index_cache->get_output_tensor(0).set_names({"block_index_keys_cache.0"});
+    model->add_parameters({index_cache});
+    ov::InferRequest request = core.compile_model(model).create_infer_request();
+    auto get_available_memory = [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    };
+
+    SchedulerConfig config;
+    config.num_kv_blocks = 16;
+    config.enable_prefix_caching = true;
+    EXPECT_NO_THROW(CacheOrchestrator::create(request, config, get_available_memory));
+
+    SchedulerConfig offload_config = config;
+    offload_config.use_cache_offload = true;
+    offload_config.cache_offload_config.capacity_bytes = 1 << 20;
+    EXPECT_THROW(CacheOrchestrator::create(request, offload_config, get_available_memory), ov::Exception);
+}
 
 TEST(TestCacheManager, test_kv_blocks_param) {
     ov::Core core;
@@ -106,6 +132,61 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     // check that cache does not increase if new blocks were not allocated
     cache_manager->allocate_cache_if_needed(block_manager.get_total_block_count());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 200 * block_size_in_bytes);
+}
+
+TEST(TestCacheManager, test_cpu_block_round_trip) {
+    ov::Core core;
+    constexpr size_t num_layers = 2;
+    constexpr size_t num_blocks = 3;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_layers)).create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request);
+    cache_manager->allocate_cache_if_needed(num_blocks);
+
+    const auto layout = cache_manager->get_block_layout();
+    ASSERT_EQ(layout.get_num_layers(), num_layers);
+
+    std::vector<uint8_t> expected(layout.get_slot_size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        expected[i] = static_cast<uint8_t>(i);
+    }
+
+    cache_manager->write_block(1, expected);
+    EXPECT_EQ(cache_manager->read_block(1), expected);
+    EXPECT_NE(cache_manager->read_block(0), expected);
+}
+
+TEST(TestCacheManager, test_block_layout_matches_allocated_tensors) {
+    ov::Core core;
+    constexpr size_t num_layers = 2;
+    constexpr size_t num_blocks = 4;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_layers)).create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request);
+    cache_manager->allocate_cache_if_needed(num_blocks);
+
+    const auto layout = cache_manager->get_block_layout();
+    size_t expected_slot_size = 0;
+    for (size_t layer = 0; layer < num_layers; ++layer) {
+        const auto key_block_bytes = cache_manager->get_key_cache(layer).get_byte_size() / num_blocks;
+        const auto value_block_bytes = cache_manager->get_value_cache(layer).get_byte_size() / num_blocks;
+        EXPECT_EQ(layout.get_key_segment(layer).size, key_block_bytes);
+        EXPECT_EQ(layout.get_value_segment(layer).size, value_block_bytes);
+        expected_slot_size += key_block_bytes + value_block_bytes;
+    }
+    EXPECT_EQ(layout.get_slot_size(), expected_slot_size);
+}
+
+TEST(TestCacheManager, test_disk_layout_is_layer_key_value_ordered) {
+    KVCacheDiskLayout layout({10, 20}, {3, 4});
+
+    EXPECT_EQ(layout.get_num_layers(), 2);
+    EXPECT_EQ(layout.get_slot_size(), 37);
+    EXPECT_EQ(layout.get_key_segment(0).offset, 0);
+    EXPECT_EQ(layout.get_key_segment(0).size, 10);
+    EXPECT_EQ(layout.get_value_segment(0).offset, 10);
+    EXPECT_EQ(layout.get_value_segment(0).size, 3);
+    EXPECT_EQ(layout.get_key_segment(1).offset, 13);
+    EXPECT_EQ(layout.get_value_segment(1).offset, 33);
+    EXPECT_EQ(layout.get_slot_offset(2), 74);
 }
 
 namespace {

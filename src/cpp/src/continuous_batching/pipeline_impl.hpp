@@ -30,6 +30,9 @@ protected:
     std::vector<SequenceGroup::Ptr> m_awaiting_requests;
     // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
     std::mutex m_awaiting_requests_mutex;
+    // Held for a whole step, so a prefix warm-up on another thread cannot allocate or rebind the cache while it runs.
+    // Recursive because a step may restore a prefix itself.
+    std::recursive_mutex m_execution_mutex;
     std::exception_ptr m_failure;
 
     std::map<size_t, CacheEvictionAlgorithm> m_seq_group_id_to_cache_eviction_algo_map;
