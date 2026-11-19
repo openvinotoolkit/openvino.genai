@@ -48,12 +48,15 @@ from .py_openvino_genai import (
     VideoMetadata,
 )
 
-# Omni pipeline (Qwen3-Omni text + speech)
+# Omni pipeline (Qwen3-Omni, LFM3-Omni text + speech)
 
 from .py_openvino_genai import (
     OmniDecodedResults,
     OmniPipeline,
+    OmniStreamerBase,
     OmniTalkerSpeechConfig,
+    OmniTextSourceBase,
+    SpeechOutputMode,
     Talker,
     TalkerBase,
     TalkerPerfMetrics,
