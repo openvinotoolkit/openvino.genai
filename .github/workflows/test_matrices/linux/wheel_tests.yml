@@ -331,7 +331,7 @@
     # which builds on main, so its head commit is installed.
     # The MiniCPM-V 4.7 and MiniCPM-OCR pairs need transformers 5.18 and 5.21 and run in their own jobs.
     python -m pip install transformers==5.15.1
-    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@c5221a2b13e3733edce07785bd121d421ab92149"
+    python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@153ceb0f55577967e4e5ebd8a6a6f9476f21e740"
     python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "(dflash or deepspec or dspark) and not minicpm"
   timeout: 90
   components:
@@ -354,7 +354,7 @@
     # needs https://github.com/huggingface/optimum-intel/pull/2099, here its head commit, which declares
     # transformers<5.16, so it is installed without dependencies.
     python -m pip install "transformers==5.21.*"
-    python -m pip install -U --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@c5221a2b13e3733edce07785bd121d421ab92149"
+    python -m pip install -U --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@153ceb0f55577967e4e5ebd8a6a6f9476f21e740"
     python -m pytest -v ./tests/python_tests/speculative_decoding_cb -k "minicpm-ocr"
   timeout: 30
   components:
