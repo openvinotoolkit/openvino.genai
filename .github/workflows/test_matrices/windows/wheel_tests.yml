@@ -184,7 +184,7 @@
 
 - name: genai-cli tests
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_genai_cli.py
+    python -m pytest -v ./tests/python_tests/genai_cli
   timeout: 15
   components:
     - genai_cli
