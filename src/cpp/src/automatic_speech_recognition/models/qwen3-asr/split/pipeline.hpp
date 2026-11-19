@@ -3,8 +3,12 @@
 
 #pragma once
 
+#include <atomic>
 #include <filesystem>
+#include <limits>
 #include <memory>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -16,7 +20,9 @@ namespace ov::genai {
 
 /**
  * @brief Runs Qwen3-ASR split export (audio encoder, text embeddings and language model) through
- * ContinuousBatchingPipeline with PagedAttention backend. Audio chunks are transcribed as a single continuous batch.
+ * ContinuousBatchingPipeline with PagedAttention backend. Every infer() call submits its audio chunks as requests.
+ * Concurrent infer() calls take turns running ContinuousBatchingPipeline::step(); each step advances the requests of
+ * all calls, so streaming sessions and generate() calls from different threads share one batch.
  */
 class Qwen3ASRContinuousBatchingAdapter : public Qwen3ASRPipelineBase {
 public:
@@ -24,8 +30,18 @@ public:
                                       const std::string& device,
                                       const ov::AnyMap& properties);
 
+    size_t max_streaming_sessions() const override {
+        return std::numeric_limits<size_t>::max();
+    }
+
 private:
     ContinuousBatchingPipeline m_impl;
+    std::atomic<uint64_t> m_next_request_id{0};
+    // ContinuousBatchingPipeline::step() must not run concurrently. m_stepping marks a step in progress;
+    // m_step_cv is notified after every step so that each waiting infer() call re-checks its own requests.
+    std::mutex m_step_mutex;
+    std::condition_variable m_step_cv;
+    bool m_stepping = false;
 
     std::vector<std::string> infer(const std::vector<AudioChunk>& chunks,
                                    const ASRGenerationConfig& config,

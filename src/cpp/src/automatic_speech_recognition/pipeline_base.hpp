@@ -39,6 +39,8 @@ public:
     ASRDecodedResults generate(const ASRTextCallback& text_callback);
 
 protected:
+    friend class ASRStreamingIncrementalSessionImpl;
+
     /// Run inference on the next audio frame and return newly decoded text.
     virtual std::string process_audio(const std::vector<float>& audio_frame) = 0;
     /// Run inference on audio buffered after the last frame and return the remaining text.
@@ -62,6 +64,19 @@ private:
     std::deque<std::vector<float>> m_queue;
     bool m_audio_ended = false;
     GenerationState m_state = GenerationState::NOT_STARTED;
+};
+
+/// Adapts an incremental ASRStreamImplBase (native streaming models) to the ASRStreamingSession contract.
+class ASRStreamingIncrementalSessionImpl final : public ASRStreamingSessionImpl {
+public:
+    ASRStreamingIncrementalSessionImpl(std::unique_ptr<ASRStreamImplBase> stream, size_t chunk_size_samples);
+
+protected:
+    ASRStreamingResult process(const std::vector<float>& audio, bool is_last) override;
+
+private:
+    std::unique_ptr<ASRStreamImplBase> m_stream;
+    std::string m_committed_text;
 };
 
 using AudiosView = std::vector<std::reference_wrapper<const std::vector<float>>>;
@@ -100,13 +115,25 @@ public:
         OPENVINO_THROW("Streaming input is not supported by the selected ASR model.");
     }
 
-    virtual std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
+    virtual std::unique_ptr<ASRStreamingSessionImpl> create_streaming_session_impl(
         const ASRStreamingConfig& streaming_config,
         const ASRGenerationConfig& generation_config) {
         OPENVINO_THROW("Streaming is not supported for this ASR model type");
     }
 
+    /// Number of streaming sessions the implementation serves concurrently. Implementations that run a pass on a
+    /// shared infer request without batching support one session.
+    virtual size_t max_streaming_sessions() const {
+        return 1;
+    }
+
+    /// Reserve a streaming session. Throws if max_streaming_sessions() sessions are alive.
+    ASRStreamingSessionSlot acquire_streaming_session_slot();
+
     virtual ~ASRPipelineImplBase() = default;
+
+private:
+    std::atomic<size_t> m_live_streaming_sessions{0};
 
 protected:
     static const std::vector<float>& validate_single_audio_and_get(const AudiosView& audios) {

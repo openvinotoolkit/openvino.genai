@@ -20,7 +20,7 @@ using ov::genai::ASRDecodedResultChunk;
 using ov::genai::ASRDecodedResults;
 using ov::genai::ASRForcedAligner;
 using ov::genai::ASRGenerationConfig;
-using ov::genai::ASRPartialResult;
+using ov::genai::ASRStreamingResult;
 using ov::genai::ASRPerfMetrics;
 using ov::genai::ASRStream;
 using ov::genai::ASRPipeline;
@@ -103,44 +103,52 @@ auto asr_stream_docstring = R"(
 auto asr_streaming_config_docstring = R"(
     ASRStreamingConfig
 
-    Streaming configuration used by ASRPipeline.create_streaming_session().
+    Parameters of an ASRStreamingSession.
 
-    :param chunk_size_sec: Audio duration to accumulate before triggering a decode pass.
+    :param chunk_size_sec: Audio duration between two decode passes. Must be > 0.
     :type chunk_size_sec: float
 
-    :param warmup_chunks: Number of initial decode passes run without a prefix.
-    :type warmup_chunks: int
+    :param unfixed_token_num: Re-decode models: tokens at the tail of each pass treated as unstable and excluded
+                              from committed text.
+    :type unfixed_token_num: int
 
-    :param context_rollback_tokens: Number of trailing tokens to rewind from the accumulated text when
-                                    reusing it as a prefix for the next decode pass.
-    :type context_rollback_tokens: int
+    :param unfixed_chunk_num: Re-decode models: chunks of already decoded audio kept in the window for re-decoding.
+    :type unfixed_chunk_num: int
 
-    :param window_chunk_num: Maximum chunks of audio retained in the sliding window before older,
-                             already-decoded audio is dropped from the front of the accumulated
-                             buffer. 0 = unbounded (re-encode the entire session every pass).
+    :param window_chunk_num: Re-decode models: audio window bound in chunks. 0 = unbounded.
+                             Must be 0 or greater than unfixed_chunk_num.
     :type window_chunk_num: int
-
-    :param window_rollback_chunk_num: Chunks of already-decoded audio treated as still "unfixed"
-                                      (not yet safe to drop) once the sliding window is active.
-                                      Must be less than window_chunk_num. Ignored when
-                                      window_chunk_num == 0.
-    :type window_rollback_chunk_num: int
-
-    :param unbounded_prefix: Experimental. When true, disables eviction of the
-                             text-history prefix tied to the audio sliding window, so the decoder
-                             prefix grows unbounded for the life of the session even though the
-                             audio window itself still stays bounded. Ignored when window_chunk_num == 0.
-    :type unbounded_prefix: bool
 )";
 
-auto asr_partial_result_docstring = R"(
-    Partial transcription result emitted after each streaming decode pass.
+auto asr_streaming_result_docstring = R"(
+    Result of one decode pass of an ASRStreamingSession.
 
-    :param language: Detected language for the current stream.
+    :param language: Detected or forced language.
     :type language: str
 
-    :param text: Current partial transcript.
-    :type text: str
+    :param committed_text: All stable text so far. Append-only across results.
+    :type committed_text: str
+
+    :param new_committed_text: Stable text added by this result.
+    :type new_committed_text: str
+
+    :param partial_text: Unstable tail that may change in the next result. Always empty for native streaming models.
+    :type partial_text: str
+
+    :param is_final: True for the last result after end().
+    :type is_final: bool
+
+    :param perf_metrics: Metrics of this decode pass.
+    :type perf_metrics: ASRPerfMetrics
+)";
+
+auto asr_streaming_session_docstring = R"(
+    Streaming transcription of one audio stream.
+
+    push() only buffers audio. read() returns the next result and runs the decode pass that produces it on the calling
+    thread. end() closes input; subsequent read() calls drain the remaining audio and the last result has
+    is_final == True. push()/end() may be called from one thread while read() is called from another.
+    The constructor raises if the pipeline cannot serve another concurrent session.
 )";
 
 auto asr_generation_config_docstring = R"(
@@ -497,39 +505,55 @@ void init_asr_pipeline(py::module_& m) {
     py::class_<ASRStreamingConfig>(m, "ASRStreamingConfig", asr_streaming_config_docstring)
         .def(py::init<>())
         .def_readwrite("chunk_size_sec", &ASRStreamingConfig::chunk_size_sec)
-        .def_readwrite("warmup_chunks", &ASRStreamingConfig::warmup_chunks)
-        .def_readwrite("context_rollback_tokens", &ASRStreamingConfig::context_rollback_tokens)
-        .def_readwrite("window_chunk_num", &ASRStreamingConfig::window_chunk_num)
-        .def_readwrite("window_rollback_chunk_num", &ASRStreamingConfig::window_rollback_chunk_num)
-        .def_readwrite("unbounded_prefix", &ASRStreamingConfig::unbounded_prefix);
+        .def_readwrite("unfixed_token_num", &ASRStreamingConfig::unfixed_token_num)
+        .def_readwrite("unfixed_chunk_num", &ASRStreamingConfig::unfixed_chunk_num)
+        .def_readwrite("window_chunk_num", &ASRStreamingConfig::window_chunk_num);
 
-    py::class_<ASRPartialResult>(m, "ASRPartialResult", asr_partial_result_docstring)
+    py::class_<ASRStreamingResult>(m, "ASRStreamingResult", asr_streaming_result_docstring)
         .def(py::init<>())
-        .def_readwrite("language", &ASRPartialResult::language)
-        .def_readwrite("committed_text", &ASRPartialResult::committed_text)
-        .def_readwrite("new_committed_text", &ASRPartialResult::new_committed_text)
-        .def_readwrite("partial_text", &ASRPartialResult::partial_text)
-        .def("__repr__", [](const ASRPartialResult& result) {
-            return py::str("ASRPartialResult(language='" + result.language +
-                           "', committed_text='" + result.committed_text +
-                           "', new_committed_text='" + result.new_committed_text +
-                           "', partial_text='" + result.partial_text + "')");
+        .def_readwrite("language", &ASRStreamingResult::language)
+        .def_readwrite("committed_text", &ASRStreamingResult::committed_text)
+        .def_readwrite("new_committed_text", &ASRStreamingResult::new_committed_text)
+        .def_readwrite("partial_text", &ASRStreamingResult::partial_text)
+        .def_readwrite("is_final", &ASRStreamingResult::is_final)
+        .def_readwrite("perf_metrics", &ASRStreamingResult::perf_metrics)
+        .def("__repr__", [](const ASRStreamingResult& result) {
+            return py::str("ASRStreamingResult(language='" + result.language + "', committed_text='" +
+                           result.committed_text + "', new_committed_text='" + result.new_committed_text +
+                           "', partial_text='" + result.partial_text +
+                           "', is_final=" + (result.is_final ? "True" : "False") + ")");
         });
 
-    py::class_<ASRStreamingSession>(m, "ASRStreamingSession")
-        .def("push_chunk",
-             [](ASRStreamingSession& session, const std::vector<float>& pcm16k) -> std::optional<ASRPartialResult> {
+    py::class_<ASRStreamingSession>(m, "ASRStreamingSession", asr_streaming_session_docstring)
+        .def(py::init([](ASRPipeline& pipeline,
+                         const std::optional<ASRStreamingConfig>& streaming_config,
+                         const std::optional<ASRGenerationConfig>& generation_config) {
+                 return std::make_unique<ASRStreamingSession>(pipeline,
+                                                              streaming_config.value_or(ASRStreamingConfig{}),
+                                                              generation_config);
+             }),
+             py::arg("pipeline"),
+             py::arg("streaming_config") = py::none(),
+             py::arg("generation_config") = py::none())
+        .def("push",
+             [](ASRStreamingSession& session, const std::vector<float>& pcm16k) {
                  py::gil_scoped_release release;
-                 return session.push_chunk(pcm16k);
+                 session.push(pcm16k);
              },
              py::arg("pcm16k"),
-             "Append audio samples to the streaming buffer. Returns a partial result if a decode pass was triggered, None otherwise.")
-        .def("finish",
+             "Append mono 16 kHz float32 audio samples. Never runs inference.")
+        .def("end",
              [](ASRStreamingSession& session) {
                  py::gil_scoped_release release;
-                 return session.finish();
+                 session.end();
              },
-             "Flush the remaining buffered audio and return the final partial result. partial_text is always empty on the returned result.")
+             "Close input. read() then drains the remaining audio.")
+        .def("read",
+             [](ASRStreamingSession& session) {
+                 py::gil_scoped_release release;
+                 return session.read();
+             },
+             "Return the next result, or None if no decode pass is due or the final result was already returned.")
         .def("__repr__", [](const ASRStreamingSession&) {
             return py::str("ASRStreamingSession()");
         });
@@ -581,8 +605,7 @@ void init_asr_pipeline(py::module_& m) {
              },
              py::arg("streaming_config") = py::none(),
              py::arg("generation_config") = py::none(),
-             py::keep_alive<0, 1>(),
-             "Create a streaming ASR session for incremental transcription.")
+             "Create a streaming ASR session. Equivalent to ASRStreamingSession(pipeline, ...).")
         .def("get_tokenizer", &ASRPipeline::get_tokenizer)
         .def(
             "create_stream",

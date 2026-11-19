@@ -14,7 +14,7 @@ namespace ov::genai {
 
 class WhisperASRPipelineAdapter;
 
-class WhisperASRStreamingSessionImpl final : public ASRStreamingSession::Impl {
+class WhisperASRStreamingSessionImpl final : public ASRStreamingSessionImpl {
 public:
     WhisperASRStreamingSessionImpl(WhisperASRPipelineAdapter* pipeline,
                                    const ASRStreamingConfig& streaming_config,

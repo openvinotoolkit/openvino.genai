@@ -55,33 +55,17 @@ python recorder.py
 
 ## Streaming ASR sample
 
-The repository also includes a streaming transcription example in [`asr_streaming.py`](asr_streaming.py). This sample targets Qwen3-ASR and Whisper models and uses an incremental `ASRStreamingSession` instead of a single full-audio `generate()` call. Audio is fed in chunks, and the pipeline decodes once a configured amount of audio has accumulated.
+[`asr_streaming.py`](asr_streaming.py) transcribes audio while it is being spoken with `ASRStreamingSession` (Qwen3-ASR, Voxtral Realtime). Audio comes from the microphone, or from a WAV file fed at real-time speed:
 
-Qwen3-ASR sessions support both encoder/decoder and split exports, including the PagedAttention and SDPA backends.
-Voxtral Realtime uses the separate `create_stream()` API shown below.
-
-This pattern is useful for live applications such as microphone transcription or any source that produces audio asynchronously. The core idea is simple:
-
-- `chunk_size_sec` controls how much audio accumulates before one decode pass starts.
-- `warmup_chunks` lets the model run a few startup passes without reusing stale prefix text.
-- `context_rollback_tokens` rolls a small amount of trailing context back when computing the next prefix, which reduces boundary jitter between adjacent chunks.
-
-Each partial result exposes three fields:
-
-- `committed_text` — all stable text confirmed so far (grows monotonically across callbacks).
-- `new_committed_text` — the stable text added since the previous partial result (delta only).
-- `partial_text` — the trailing region still subject to change as more audio arrives. Always empty in the final callback fired by `finish()`.
-
-The streaming sample supports two output modes:
-
-**Default mode** — one line per partial result showing the stable delta and the unstable tail:
-```
-[partial] (English) +Okay, so today we're going to be talking about [the history of...]
-```
-
-**Inline mode (`--inline`)** — appends only `new_committed_text` without newlines, then prints a newline before the final result. Suitable for terminal-style live display:
-```
-Okay, so today we're going to be talking about the history of...
+```python
+session = openvino_genai.ASRStreamingSession(pipe, config)
+for block in audio_blocks:
+    session.push(block)                       # only buffers audio
+    while (result := session.read()) is not None:  # runs inference once a full chunk is buffered
+        print(result.new_committed_text)
+session.end()                                 # close input
+while (result := session.read()) is not None:  # remaining audio; the last result has is_final == True
+    print(result.new_committed_text)
 ```
 
 ### 1. Stream from a WAV file
@@ -90,26 +74,48 @@ Okay, so today we're going to be talking about the history of...
 python asr_streaming.py /path/to/exported_model_dir --wav /path/to/audio.wav
 ```
 
+Four concurrent streams whose inference the PagedAttention backend batches:
+
+```sh
+python asr_streaming.py /path/to/exported_model_dir --wav /path/to/audio.wav --attention-backend PA --streams 4
+```
+
 ### 2. Stream from a microphone
 
 ```sh
 python asr_streaming.py /path/to/exported_model_dir --duration 10
 ```
 
-You can also tune the streaming behavior:
+Streaming options: `--chunk-size-sec` (audio per inference), `--unfixed-token-num`, `--unfixed-chunk-num`, `--window-chunk-num` and `--block-ms` (size of pushed audio blocks).
 
-```sh
-python asr_streaming.py /path/to/exported_model_dir --wav /path/to/audio.wav \
-    --chunk-size-sec 2.0 --warmup-chunks 2 --context-rollback-tokens 5 --block-ms 250
+Each result exposes:
+
+- `committed_text`: all stable text so far. It only grows.
+- `new_committed_text`: stable text added by this result.
+- `partial_text`: unstable tail that may change in the next result. Empty in the final result.
+- `is_final`: true for the last result after `end()`.
+
+The sample prints one timeline line per result, then compares latency with offline `generate()` over the same audio:
+
+```
+[stream 0] partial audio   2.0-  4.0 s | read   1187 ms | latency   1187 ms | +"Folks, you know, if you watch the show, you" [ know I spend most.]
+...
+[stream 0] final   audio  20.0- 20.0 s | read      0 ms | latency    885 ms | +" using traditional push knife." []
+
+=== Latency: time from end of speech to text ===
+streaming, every result: p50    885 ms | p95   1182 ms | max   1182 ms
+streaming, final result:    885 ms
+offline generate()     :   4251 ms
+
+=== Compute: total inference time per stream ===
+streaming, sum of read():   8853 ms | 0.44 s per 1 s of audio
+offline generate()      :   4251 ms | 0.21 s per 1 s of audio
 ```
 
-Use `--inline` for a live terminal-style display:
-
-```sh
-python asr_streaming.py /path/to/exported_model_dir --wav /path/to/audio.wav --inline
-```
-
-The WAV path simply feeds the file in fixed-size chunks. It does not inject artificial delays; the session itself is synchronous and decodes as each chunk reaches the configured threshold.
+- `read`: time spent in `read()`, which runs inference on one chunk.
+- `latency`: time from the moment the last sample of the chunk was spoken until `read()` returned its result.
+- Offline `generate()` can only start after the speech has ended, so its whole duration is latency. Streaming runs most inference while the speech goes on.
+- Compute above 1.0 s per 1 s of audio means streaming can't keep up with a live source, and its latency grows with every chunk. Re-decoding models such as Qwen3-ASR spend more compute than offline `generate()`, because every chunk re-transcribes the audio window.
 
 ## Run
 

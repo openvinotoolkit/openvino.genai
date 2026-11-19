@@ -124,7 +124,7 @@ std::string Qwen3ASRPipelineBase::build_text_prompt(const ASRGenerationConfig& c
     return prompt + streaming_prefix;
 }
 
-std::unique_ptr<ASRStreamingSession::Impl> Qwen3ASRPipelineBase::create_streaming_session_impl(
+std::unique_ptr<ASRStreamingSessionImpl> Qwen3ASRPipelineBase::create_streaming_session_impl(
     const ASRStreamingConfig& streaming_config,
     const ASRGenerationConfig& generation_config) {
     return std::make_unique<Qwen3ASRStreamingSessionImpl>(

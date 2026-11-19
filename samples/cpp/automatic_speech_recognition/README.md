@@ -44,35 +44,59 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 
 ## Streaming ASR sample
 
-The repository also includes a streaming transcription example in [`asr_streaming.cpp`](asr_streaming.cpp). This sample targets Qwen3-ASR and Whisper models and uses an incremental `ASRStreamingSession` instead of a single full-audio `generate()` call. Audio is fed in fixed-size steps, and the pipeline decodes once a configured amount of audio has accumulated.
+[`asr_streaming.cpp`](asr_streaming.cpp) transcribes audio while it is being spoken with `ov::genai::ASRStreamingSession` (Qwen3-ASR, Voxtral Realtime). The WAV file is fed at real-time speed, as a live microphone would deliver it:
 
-Qwen3-ASR sessions support both encoder/decoder and split exports, including the PagedAttention and SDPA backends.
+```c++
+ov::genai::ASRStreamingSession session(pipeline, streaming_config);
+for (const auto& piece : audio_pieces) {
+    session.push(piece);                 // only buffers audio
+    while (auto result = session.read())  // runs inference once a full chunk is buffered
+        print(*result);
+}
+session.end();                           // close input
+while (auto result = session.read())      // remaining audio; the last result has is_final == true
+    print(*result);
+```
 
 ```sh
-asr_streaming <MODEL_DIR> <WAV_FILE> [--device DEVICE] [--chunk-sec SEC] [--step-ms MS]
+asr_streaming <MODEL_DIR> <WAV_FILE> [--device DEVICE] [--chunk-sec SEC] [--step-ms MS] [--window-chunks N]
+              [--unfixed-chunks N] [--unfixed-tokens N] [--streams N] [--attention-backend PA|SDPA]
 ```
 
-For example:
+For example, four concurrent streams whose inference the PagedAttention backend batches:
 
 ```sh
-asr_streaming qwen3-asr-1.7b-ov recording.wav
-asr_streaming qwen3-asr-1.7b-ov recording.wav --device GPU --chunk-sec 3.0 --step-ms 250
+asr_streaming Qwen3-ASR-0.6B recording.wav --attention-backend PA --streams 4
 ```
 
-Each partial result exposes three fields:
+Each result exposes:
 
-- `committed_text` — all stable text confirmed so far (grows monotonically across callbacks).
-- `new_committed_text` — the stable text added since the previous partial result (delta only).
-- `partial_text` — the trailing region still subject to change. Empty when `context_rollback_tokens` is 0. Always empty in the final callback fired by `finish()`.
+- `committed_text`: all stable text so far. It only grows.
+- `new_committed_text`: stable text added by this result.
+- `partial_text`: unstable tail that may change in the next result. Empty in the final result.
+- `is_final`: true for the last result after `end()`.
 
-The sample prints one line per partial result showing the stable delta and the unstable tail:
+The sample prints one timeline line per result, then compares latency with offline `generate()` over the same audio:
 
 ```
-[partial] (English) +Okay, so today we're going to be talking about [the history of...]
-[partial] (English) +the history of [the Appalachian Trail...]
+[stream 0] partial audio   2.0-  4.0 s | read   1187 ms | latency   1187 ms | +"Folks, you know, if you watch the show, you" [ know I spend most.]
 ...
-[final ] (English) Okay, so today we're going to be talking about the history of the Appalachian Trail...
+[stream 0] final   audio  20.0- 20.0 s | read      0 ms | latency    885 ms | +" using traditional push knife." []
+
+=== Latency: time from end of speech to text ===
+streaming, every result: p50    885 ms | p95   1182 ms | max   1182 ms
+streaming, final result:    885 ms
+offline generate()     :   4251 ms
+
+=== Compute: total inference time per stream ===
+streaming, sum of read():   8853 ms | 0.44 s per 1 s of audio
+offline generate()      :   4251 ms | 0.21 s per 1 s of audio
 ```
+
+- `read`: time spent in `read()`, which runs inference on one chunk.
+- `latency`: time from the moment the last sample of the chunk was spoken until `read()` returned its result.
+- Offline `generate()` can only start after the speech has ended, so its whole duration is latency. Streaming runs most inference while the speech goes on.
+- Compute above 1.0 s per 1 s of audio means streaming can't keep up with a live source, and its latency grows with every chunk. Re-decoding models such as Qwen3-ASR spend more compute than offline `generate()`, because every chunk re-transcribes the audio window.
 
 # ASR pipeline usage
 

@@ -22,22 +22,24 @@ static constexpr const char* REPLACEMENT_CHAR_UTF8 = "\xef\xbf\xbd";
 // auto-detect mode. Rollback must never trim back into it -- see trim_rollback().
 static const std::string ASR_TEXT_TAG = "<asr_text>";
 
+// Number of initial decode passes whose output is never committed and never used as a prefix.
+constexpr size_t WARMUP_PASSES = 2;
+
 }  // namespace
 
 Qwen3ASRStreamingSessionImpl::Qwen3ASRStreamingSessionImpl(Qwen3ASRPipelineBase* pipeline,
                                                            const ASRStreamingConfig& streaming_config,
                                                            const ASRGenerationConfig& generation_config)
-    : m_pipeline{pipeline},
+    : ASRStreamingSessionImpl{static_cast<size_t>(streaming_config.chunk_size_sec *
+                                                    pipeline->m_feature_extractor.sampling_rate)},
+      m_pipeline{pipeline},
       m_streaming_config{streaming_config},
       m_generation_config{generation_config},
-      m_chunk_size_samples{static_cast<size_t>(
-          std::max(1.0f, streaming_config.chunk_size_sec) * m_pipeline->m_feature_extractor.sampling_rate)} {
-    OPENVINO_ASSERT(m_pipeline != nullptr, "Qwen3ASRStreamingSessionImpl: pipeline pointer must not be null");
-    m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
-}
+      m_chunk_size_samples{static_cast<size_t>(streaming_config.chunk_size_sec *
+                                               pipeline->m_feature_extractor.sampling_rate)} {}
 
 std::string Qwen3ASRStreamingSessionImpl::trim_rollback(const std::string& raw) const {
-    if (m_chunk_count < m_streaming_config.warmup_chunks || raw.empty()) {
+    if (m_chunk_count < WARMUP_PASSES || raw.empty()) {
         return "";
     }
 
@@ -72,7 +74,7 @@ std::string Qwen3ASRStreamingSessionImpl::trim_rollback(const std::string& raw) 
         }
     }
 
-    size_t rollback = m_streaming_config.context_rollback_tokens;
+    size_t rollback = m_streaming_config.unfixed_token_num;
 
     // Increase rollback until the decoded prefix is free of replacement characters, but never trim
     // past min_keep_tokens (the end of the "<asr_text>" header, when present).
@@ -118,7 +120,7 @@ std::string Qwen3ASRStreamingSessionImpl::bounded_prefix() const {
     return text;
 }
 
-void Qwen3ASRStreamingSessionImpl::decode_current_accum() {
+void Qwen3ASRStreamingSessionImpl::decode_current_accum(ASRPerfMetrics& perf_metrics) {
     // Evict commit_history entries whose grounding audio no longer exists in m_audio_accum, tied
     // directly to how far the sliding window has actually rolled (m_total_dropped_samples) rather
     // than a fixed chunk-count margin.
@@ -131,15 +133,9 @@ void Qwen3ASRStreamingSessionImpl::decode_current_accum() {
     // window_chunk_num == 0 means the audio window is itself unbounded, so nothing is ever dropped
     // (m_total_dropped_samples stays 0) and nothing is evicted here either -- matches the audio
     // window's own semantics.
-    //
-    // unbounded_prefix skips this eviction entirely: the audio window still slides normally, 
-    // but the text prefix is left to grow for the life of the session instead of staying bounded 
-    // to what the window can still see.
-    if (!m_streaming_config.unbounded_prefix) {
-        while (!m_commit_history.empty() &&
-               (m_commit_history.front().chunk_index + 1) * m_chunk_size_samples <= m_total_dropped_samples) {
-            m_commit_history.pop_front();
-        }
+    while (!m_commit_history.empty() &&
+           (m_commit_history.front().chunk_index + 1) * m_chunk_size_samples <= m_total_dropped_samples) {
+        m_commit_history.pop_front();
     }
 
     // Captured before wrapping with the language tag: the exact tag-free text this pass's prefix
@@ -160,7 +156,7 @@ void Qwen3ASRStreamingSessionImpl::decode_current_accum() {
     }
 
     const std::string raw_out =
-        m_pipeline->infer_streaming_chunk(m_audio_accum, prefix, m_generation_config, m_perf_metrics);
+        m_pipeline->infer_streaming_chunk(m_audio_accum, prefix, m_generation_config, perf_metrics);
 
     const std::string full_raw = prefix + raw_out;
     auto [language, text] = m_pipeline->parse_asr_output(full_raw, m_generation_config.language);
@@ -203,54 +199,40 @@ void Qwen3ASRStreamingSessionImpl::decode_current_accum() {
     m_current_new_committed_text = delta;
 }
 
-std::optional<ASRPartialResult> Qwen3ASRStreamingSessionImpl::push_chunk(const std::vector<float>& pcm16k) {
-    m_buffer.insert(m_buffer.end(), pcm16k.begin(), pcm16k.end());
+ASRStreamingResult Qwen3ASRStreamingSessionImpl::process(const std::vector<float>& audio, bool is_last) {
+    const auto start_time = std::chrono::steady_clock::now();
+    ASRPerfMetrics perf_metrics;
+    perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
-    if (m_buffer.size() < m_chunk_size_samples) {
-        return std::nullopt;
-    }
-
-    // m_audio_accum has been fully decoded by the end of every prior push_chunk()/finish()
-    // call, so its size right before this merge is exactly how much is safe to drop from.
-    const size_t already_inferred_samples = m_audio_accum.size();
-
-    // Drain the entire buffer in one pass (single decode per push_chunk call).
-    m_audio_accum.insert(m_audio_accum.end(), m_buffer.begin(), m_buffer.end());
-    m_buffer.clear();
-
-    m_total_dropped_samples += apply_sliding_window_drop(m_audio_accum,
-                                                         already_inferred_samples,
-                                                         m_chunk_size_samples,
-                                                         m_streaming_config.window_chunk_num,
-                                                         m_streaming_config.window_rollback_chunk_num);
-
-    decode_current_accum();
-    return ASRPartialResult{m_current_language, m_current_committed_text,
-                            m_current_new_committed_text, m_current_partial_text};
-}
-
-ASRPartialResult Qwen3ASRStreamingSessionImpl::finish() {
-    m_current_new_committed_text = "";
-
-    if (!m_buffer.empty()) {
+    m_current_new_committed_text.clear();
+    if (!audio.empty()) {
+        // m_audio_accum has been fully decoded by every previous pass, so its size before the merge is exactly
+        // how much audio is safe to drop.
         const size_t already_inferred_samples = m_audio_accum.size();
-        m_audio_accum.insert(m_audio_accum.end(), m_buffer.begin(), m_buffer.end());
-        m_buffer.clear();
+        m_audio_accum.insert(m_audio_accum.end(), audio.begin(), audio.end());
         m_total_dropped_samples += apply_sliding_window_drop(m_audio_accum,
                                                              already_inferred_samples,
                                                              m_chunk_size_samples,
                                                              m_streaming_config.window_chunk_num,
-                                                             m_streaming_config.window_rollback_chunk_num);
-        decode_current_accum();
+                                                             m_streaming_config.unfixed_chunk_num);
+        decode_current_accum(perf_metrics);
     }
 
-    // Commit any remaining partial tail; final result always has partial_text == "".
-    m_current_committed_text += m_current_partial_text;
-    m_current_new_committed_text += std::move(m_current_partial_text);
-    m_current_partial_text = "";
+    if (is_last) {
+        // The final result commits the remaining unstable tail.
+        m_current_committed_text += m_current_partial_text;
+        m_current_new_committed_text += m_current_partial_text;
+        m_current_partial_text.clear();
+    }
 
-    return {m_current_language, m_current_committed_text,
-            m_current_new_committed_text, m_current_partial_text};
+    PerfMetrics::emplace_duration(perf_metrics.raw_metrics.generate_durations, start_time);
+    perf_metrics.evaluate_statistics(start_time);
+    return {m_current_language,
+            m_current_committed_text,
+            m_current_new_committed_text,
+            m_current_partial_text,
+            is_last,
+            std::move(perf_metrics)};
 }
 
 }  // namespace ov::genai

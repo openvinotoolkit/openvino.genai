@@ -90,7 +90,7 @@ from .py_openvino_genai import (
     ASRDecodedResults,
     ASRForcedAligner,
     ASRGenerationConfig,
-    ASRPartialResult,
+    ASRStreamingResult,
     ASRPerfMetrics,
     ASRStream,
     ASRPipeline,

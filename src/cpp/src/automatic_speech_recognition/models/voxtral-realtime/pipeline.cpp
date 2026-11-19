@@ -675,4 +675,12 @@ std::unique_ptr<ASRStreamImplBase> VoxtralASR::create_stream(
     return std::make_unique<VoxtralASRStream>(m_runtime, m_generation_config, generation_config, m_load_time_ms);
 }
 
+std::unique_ptr<ASRStreamingSessionImpl> VoxtralASR::create_streaming_session_impl(
+    const ASRStreamingConfig& streaming_config,
+    const ASRGenerationConfig& generation_config) {
+    return std::make_unique<ASRStreamingIncrementalSessionImpl>(
+        create_stream(generation_config),
+        static_cast<size_t>(streaming_config.chunk_size_sec * m_runtime->config.sampling_rate));
+}
+
 }  // namespace ov::genai

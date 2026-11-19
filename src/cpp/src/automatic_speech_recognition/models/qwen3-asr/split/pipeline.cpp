@@ -3,6 +3,8 @@
 
 #include "pipeline.hpp"
 
+#include <algorithm>
+
 #include "utils.hpp"
 
 namespace {
@@ -98,27 +100,96 @@ std::vector<std::string> Qwen3ASRContinuousBatchingAdapter::infer(const std::vec
                                                                   const std::shared_ptr<StreamerBase>& streamer,
                                                                   const std::string& streaming_prefix) {
     const std::string prompt = build_text_prompt(config, streaming_prefix);
+    const GenerationConfig chunk_config = create_chunk_generation_config(config);
 
-    std::vector<std::vector<ov::Tensor>> audios;
-    audios.reserve(chunks.size());
+    std::vector<GenerationHandle> handles;
+    handles.reserve(chunks.size());
     for (const AudioChunk& chunk : chunks) {
-        audios.push_back({wrap_chunk_audio(chunk)});
+        // add_request() encodes the audio synchronously, so the non-owning tensor is valid for the call.
+        handles.push_back(m_impl.add_request(m_next_request_id++,
+                                             prompt,
+                                             std::vector<ov::Tensor>{},
+                                             std::vector<ov::Tensor>{},
+                                             std::vector<ov::Tensor>{wrap_chunk_audio(chunk)},
+                                             chunk_config));
     }
 
     // Qwen3ASRPipelineBase::generate() allows a streamer only for a single chunk.
-    const StreamerVariant chunk_streamer =
-        streamer ? StreamerVariant{create_chunk_streamer(streamer, config)} : StreamerVariant{std::monostate{}};
-    const std::vector<VLMDecodedResults> results = m_impl.generate(
-        std::vector<std::string>(chunks.size(), prompt),
-        audios_batches(audios),
-        generation_config_batches(std::vector<GenerationConfig>(chunks.size(), create_chunk_generation_config(config))),
-        ov::genai::streamer(chunk_streamer));
-    append_perf_metrics(results, perf_metrics);
+    const std::shared_ptr<StreamerBase> chunk_streamer = create_chunk_streamer(streamer, config);
+    std::vector<int64_t> streamed_ids;
+    const auto stream_available_tokens = [&]() {
+        GenerationHandle& handle = handles.front();
+        while (handle->can_read()) {
+            for (const auto& [sequence_id, output] : handle->read()) {
+                streamed_ids.insert(streamed_ids.end(), output.generated_ids.begin(), output.generated_ids.end());
+                if (chunk_streamer->write(output.generated_ids) != StreamingStatus::RUNNING) {
+                    handle->stop();
+                }
+            }
+        }
+    };
+    const auto requests_running = [&handles]() {
+        return std::any_of(handles.begin(), handles.end(), [](const GenerationHandle& handle) {
+            return handle->get_status() == GenerationStatus::RUNNING;
+        });
+    };
+
+    // Concurrent infer() calls take turns: one runs step(), which advances the requests of all calls, and the others
+    // wait for that step to end and then re-check their own requests.
+    std::unique_lock<std::mutex> lock{m_step_mutex};
+    while (true) {
+        if (chunk_streamer) {
+            stream_available_tokens();
+        }
+        if (!requests_running()) {
+            break;
+        }
+        if (m_stepping) {
+            m_step_cv.wait(lock);
+            continue;
+        }
+        m_stepping = true;
+        lock.unlock();
+        try {
+            if (m_impl.has_non_finished_requests()) {
+                m_impl.step();
+            }
+        } catch (...) {
+            lock.lock();
+            m_stepping = false;
+            m_step_cv.notify_all();
+            throw;
+        }
+        lock.lock();
+        m_stepping = false;
+        m_step_cv.notify_all();
+    }
+    lock.unlock();
+    if (chunk_streamer) {
+        stream_available_tokens();
+        chunk_streamer->end();
+    }
 
     std::vector<std::string> texts;
-    texts.reserve(results.size());
-    for (const VLMDecodedResults& result : results) {
-        texts.push_back(result.texts.at(0));
+    texts.reserve(handles.size());
+    for (GenerationHandle& handle : handles) {
+        std::vector<int64_t> generated_ids;
+        if (chunk_streamer) {
+            generated_ids = std::move(streamed_ids);
+        } else {
+            const std::vector<GenerationOutput> outputs = handle->read_all();
+            OPENVINO_ASSERT(!outputs.empty(), "Qwen3-ASR request produced no output.");
+            generated_ids = outputs.front().generated_ids;
+        }
+
+        VLMDecodedResults result;
+        result.texts.push_back(m_tokenizer.decode(generated_ids));
+        result.perf_metrics = handle->get_vlm_perf_metrics();
+        if (result.perf_metrics.raw_metrics.m_inference_durations.empty()) {
+            result.perf_metrics.raw_metrics.m_inference_durations.emplace_back(0.0f);
+        }
+        texts.push_back(result.texts.front());
+        append_perf_metrics({std::move(result)}, perf_metrics);
     }
     return texts;
 }

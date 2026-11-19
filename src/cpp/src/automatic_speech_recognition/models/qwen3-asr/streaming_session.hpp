@@ -14,18 +14,18 @@ namespace ov::genai {
 
 class Qwen3ASRPipelineBase;
 
-class Qwen3ASRStreamingSessionImpl final : public ASRStreamingSession::Impl {
+class Qwen3ASRStreamingSessionImpl final : public ASRStreamingSessionImpl {
 public:
     Qwen3ASRStreamingSessionImpl(Qwen3ASRPipelineBase* pipeline,
                                  const ASRStreamingConfig& streaming_config,
                                  const ASRGenerationConfig& generation_config);
 
-    std::optional<ASRPartialResult> push_chunk(const std::vector<float>& pcm16k) override;
-    ASRPartialResult finish() override;
+protected:
+    ASRStreamingResult process(const std::vector<float>& audio, bool is_last) override;
 
 private:
-    void decode_current_accum();
-    // Trims context_rollback_tokens off the tail of an arbitrary raw string (retrying with a
+    void decode_current_accum(ASRPerfMetrics& perf_metrics);
+    // Trims unfixed_token_num off the tail of an arbitrary raw string (retrying with a
     // larger rollback on a UTF-8 boundary corruption). Operates on a plain parameter rather than
     // a persistent member so callers can apply it to any candidate string without mutating state.
     std::string trim_rollback(const std::string& raw) const;
@@ -37,11 +37,10 @@ private:
     // split point for this pass's own delta (see the delta-computation comment there).
     std::string history_text() const;
 
-    Qwen3ASRPipelineBase* m_pipeline;  // non-owning; lifetime guaranteed by ASRPipeline
+    Qwen3ASRPipelineBase* m_pipeline;  // non-owning; ASRStreamingSessionImpl co-owns the pipeline
     ASRStreamingConfig m_streaming_config;
     ASRGenerationConfig m_generation_config;
 
-    std::vector<float> m_buffer;
     std::vector<float> m_audio_accum;
 
     // One entry per decode pass that advanced committed_text, holding just that pass's own
@@ -68,7 +67,6 @@ private:
     std::string m_current_new_committed_text;
     std::string m_current_partial_text;
 
-    ASRPerfMetrics m_perf_metrics;
 };
 
 }  // namespace ov::genai

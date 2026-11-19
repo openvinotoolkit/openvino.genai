@@ -134,4 +134,17 @@ size_t ASRStreamImplBase::get_num_generated_tokens() const {
     return m_num_generated_tokens.load(std::memory_order_relaxed);
 }
 
+ASRStreamingSessionSlot ASRPipelineImplBase::acquire_streaming_session_slot() {
+    const size_t limit = max_streaming_sessions();
+    size_t live = m_live_streaming_sessions.load();
+    do {
+        OPENVINO_ASSERT(live < limit,
+                        "The selected ASR model and backend support ",
+                        limit,
+                        " concurrent streaming session(s). Destroy an existing session first",
+                        limit == 1 ? " or use a backend with batching support (ATTENTION_BACKEND=PA for Qwen3-ASR)." : ".");
+    } while (!m_live_streaming_sessions.compare_exchange_weak(live, live + 1));
+    return ASRStreamingSessionSlot{&m_live_streaming_sessions};
+}
+
 }  // namespace ov::genai

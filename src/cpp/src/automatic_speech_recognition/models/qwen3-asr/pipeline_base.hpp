@@ -28,7 +28,7 @@ public:
                                const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 
-    std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
+    std::unique_ptr<ASRStreamingSessionImpl> create_streaming_session_impl(
         const ASRStreamingConfig& streaming_config,
         const ASRGenerationConfig& generation_config) override;
 

@@ -42,7 +42,7 @@ public:
         return to_asr_results(std::move(whisper_result));
     }
 
-    std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
+    std::unique_ptr<ASRStreamingSessionImpl> create_streaming_session_impl(
         const ASRStreamingConfig& streaming_config,
         const ASRGenerationConfig& generation_config) override {
         return std::make_unique<WhisperASRStreamingSessionImpl>(this, streaming_config, generation_config);
