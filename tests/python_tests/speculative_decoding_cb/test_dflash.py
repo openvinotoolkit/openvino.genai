@@ -3,7 +3,7 @@
 
 import shutil
 from pathlib import Path
-from xml.etree import ElementTree
+from xml.etree import ElementTree  # nosec B405 - parses only IRs that the tests export
 
 import numpy as np
 import pytest
@@ -155,7 +155,7 @@ def _negated_weights_copy(model_path: Path, copy_path: Path) -> Path:
     shutil.copytree(model_path, copy_path)
     weights = np.fromfile(model_path / "openvino_model.bin", dtype=np.uint8)
     dtypes = {"f16": np.float16, "f32": np.float32}
-    for data in ElementTree.parse(model_path / "openvino_model.xml").iter("data"):
+    for data in ElementTree.parse(model_path / "openvino_model.xml").iter("data"):  # nosec B314 - exported IR
         dtype = dtypes.get(data.get("element_type"))
         if dtype is not None and "offset" in data.attrib and int(data.get("size")) > np.dtype(dtype).itemsize:
             begin = int(data.get("offset"))
