@@ -6,7 +6,9 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,7 +25,7 @@ namespace {
 // Points at an OpenVINO IR text-generation model; the suite is skipped when it is not provided.
 constexpr const char* MODEL_PATH_ENV = "OFFLOAD_E2E_MODEL";
 
-// Points at a visual-language model directory, used to cover a hybrid attention stack.
+// Points at a hybrid attention model directory: a visual-language model, or a plain language model (openvino_model.xml).
 constexpr const char* VLM_MODEL_PATH_ENV = "OFFLOAD_E2E_VLM_MODEL";
 
 // Inference device for the comparison, defaults to CPU.
@@ -264,7 +266,7 @@ TEST(TestKVCacheOffloadEndToEnd, RejectsConfigurationsTheBackendCannotServe) {
 
 namespace {
 
-/// Same request sequence as above, driven through a visual-language pipeline with text-only prompts.
+/// Same request sequence as above for a hybrid model, with text-only prompts.
 std::vector<std::string> run_vlm_sequence(const std::string& model_path, bool use_offload, size_t num_kv_blocks) {
     auto scheduler_config = make_scheduler_config(use_offload);
     scheduler_config.num_kv_blocks = num_kv_blocks;
@@ -277,25 +279,40 @@ std::vector<std::string> run_vlm_sequence(const std::string& model_path, bool us
     // default 512 budget assumes.
     scheduler_config.max_num_batched_tokens = 2048;
 
-    ov::AnyMap properties;
-    properties.insert(ov::genai::scheduler_config(scheduler_config));
-    VLMPipeline pipeline(model_path, offload_e2e_device(), properties);
+    const auto generation_config = make_greedy_config();
+    // A plain language model has no vision parts, so only the continuous batching pipeline can load it.
+    std::optional<ContinuousBatchingPipeline> language_pipeline;
+    std::optional<VLMPipeline> vlm_pipeline;
+    if (std::filesystem::exists(std::filesystem::path(model_path) / "openvino_model.xml")) {
+        language_pipeline.emplace(model_path, scheduler_config, offload_e2e_device());
+    } else {
+        ov::AnyMap properties;
+        properties.insert(ov::genai::scheduler_config(scheduler_config));
+        vlm_pipeline.emplace(model_path, offload_e2e_device(), properties);
+    }
+    auto generate = [&](const std::string& prompt) {
+        if (language_pipeline) {
+            auto results = language_pipeline->generate({prompt}, {generation_config});
+            EXPECT_FALSE(results.at(0).m_generation_ids.empty());
+            return results.at(0).m_generation_ids.at(0);
+        }
+        auto result = vlm_pipeline->generate(prompt, ov::genai::generation_config(generation_config));
+        EXPECT_FALSE(result.texts.empty());
+        return result.texts.at(0);
+    };
 
     const std::string shared_prefix = repeat("The quick brown fox jumps over the lazy dog. ", is_gpu ? 12 : 40);
     const std::string filler = repeat("Completely unrelated tokens to evict the cached prefix. ", is_gpu ? 30 : 80);
-    const auto generation_config = make_greedy_config();
 
     std::vector<std::string> outputs;
     for (const std::string& prompt : {shared_prefix + " First continuation:",
                                       filler,
                                       shared_prefix + " Second continuation:"}) {
         const auto started = std::chrono::steady_clock::now();
-        auto result = pipeline.generate(prompt, ov::genai::generation_config(generation_config));
+        outputs.push_back(generate(prompt));
         const auto elapsed = std::chrono::steady_clock::now() - started;
-        std::cout << "[offload=" << std::boolalpha << use_offload << "] request " << outputs.size() << " took "
+        std::cout << "[offload=" << std::boolalpha << use_offload << "] request " << outputs.size() - 1 << " took "
                   << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() << " ms" << std::endl;
-        EXPECT_FALSE(result.texts.empty());
-        outputs.push_back(result.texts.at(0));
     }
     return outputs;
 }
