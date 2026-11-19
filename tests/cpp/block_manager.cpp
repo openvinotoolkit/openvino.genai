@@ -56,6 +56,7 @@ void ensure_two_running_sequences(const ov::genai::SequenceGroup::Ptr& sequence_
 }
 
 void set_block_timestamps_oldest_first(const ov::genai::BlocksPerLayer& blocks) {
+    // Make LRU eviction deterministic because the steady clock can give multiple blocks the same timestamp.
     const auto timestamp = std::chrono::steady_clock::now();
     for (size_t index = 0; index < blocks.size(); ++index) {
         blocks[index]->set_timestamp(timestamp - std::chrono::seconds(blocks.size() - index));
