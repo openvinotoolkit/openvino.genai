@@ -91,7 +91,9 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
         self.assertFalse(classify("NPU", False, "qwen3-asr"))
         self.assertFalse(classify("NPU", True, "whisper"))
 
-    def _run_native_generation(self, model_type, infer_count, native_qwen_npu, configured_max):
+    def _run_native_generation(
+        self, model_type, infer_count, native_qwen_npu, configured_max, tokenizer=None, token_count=1, iter_data=None
+    ):
         config = SimpleNamespace(max_new_tokens=configured_max, max_length=777)
         metrics = SimpleNamespace(
             get_ttft=lambda: SimpleNamespace(mean=1),
@@ -104,13 +106,14 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
             get_tokenization_duration=lambda: SimpleNamespace(mean=1),
             get_features_extraction_duration=lambda: SimpleNamespace(mean=1),
             get_detokenization_duration=lambda: SimpleNamespace(mean=1),
-            get_num_generated_tokens=lambda: 1,
+            get_num_generated_tokens=lambda: token_count,
         )
         pipe = mock.Mock()
         pipe.get_generation_config.return_value = config
         pipe.generate.return_value = SimpleNamespace(texts=["transcript"], perf_metrics=metrics)
-        tokenizer = mock.Mock()
-        tokenizer.encode.return_value = SimpleNamespace(input_ids=SimpleNamespace(size=1))
+        if tokenizer is None:
+            tokenizer = mock.Mock()
+            tokenizer.encode.return_value = SimpleNamespace(input_ids=SimpleNamespace(size=1))
         memory = mock.Mock()
         memory.iter_stop_and_collect_data.return_value = {}
         input_param = {
@@ -129,9 +132,51 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
             mock.patch.object(self.speech.metrics_print, "print_metrics"),
             mock.patch.object(self.speech.metrics_print, "print_generated"),
         ):
-            self.speech.run_speech_2_txt_generation(input_param, args, {0: {}}, [])
+            result_data = iter_data if iter_data is not None else []
+            self.speech.run_speech_2_txt_generation(input_param, args, {0: {}}, result_data)
         self.assertIs(pipe.generate.call_args.args[1], config)
         return config
+
+    def test_sensevoice_detokenizer_only_uses_ctc_output_count(self):
+        for token_count in (0, 7):
+            with self.subTest(token_count=token_count):
+                tokenizer = mock.Mock()
+                tokenizer.encode.side_effect = AssertionError("SenseVoice must not encode its transcript")
+                iter_data = []
+                self._run_native_generation("sense-voice", None, False, 128, tokenizer, token_count, iter_data)
+                tokenizer.encode.assert_not_called()
+                self.assertEqual(iter_data[0]["output_size"], token_count)
+                self.assertEqual(iter_data[0]["throughput_token_count"], token_count)
+
+    def test_other_native_asr_models_still_count_retokenized_text(self):
+        for model_type in ("qwen3-asr", "fun-asr", "whisper"):
+            with self.subTest(model_type=model_type):
+                tokenizer = mock.Mock()
+                tokenizer.encode.return_value = SimpleNamespace(input_ids=SimpleNamespace(size=3))
+                iter_data = []
+                self._run_native_generation(model_type, None, False, 128, tokenizer, 7, iter_data)
+                tokenizer.encode.assert_called_once_with("transcript")
+                self.assertEqual(iter_data[0]["output_size"], 3)
+
+    def test_qwen_omni_speech_uses_visual_language_pipeline(self):
+        visual_language = importlib.import_module("task.visual_language_generation")
+        args = {"is_omni_model": True, "infer_count": None}
+        memory = mock.Mock()
+        expected = object()
+        with (
+            mock.patch.object(self.speech, "get_speech_files", return_value=[{"media": "audio.wav"}]),
+            mock.patch.object(self.speech.FW_UTILS["ov"], "create_speech_2_txt_model") as create_asr,
+            mock.patch.object(
+                visual_language, "run_visual_language_generation_benchmark", return_value=expected
+            ) as run_vlm,
+        ):
+            result = self.speech.run_speech_2_txt_benchmark(Path("model"), "ov", "CPU", args, 1, memory)
+        self.assertIs(result, expected)
+        create_asr.assert_not_called()
+        self.assertEqual(args["infer_count"], self.speech.DEFAULT_OUTPUT_TOKEN_SIZE)
+        self.assertEqual(run_vlm.call_args.kwargs["input_list"], [
+            {"prompt": self.speech.DEFAULT_SPEECH_PROMPT, "audio": "audio.wav"}
+        ])
 
     def test_qwen_npu_omitted_limit_preserves_pipeline_configuration(self):
         unlimited = (1 << 64) - 1

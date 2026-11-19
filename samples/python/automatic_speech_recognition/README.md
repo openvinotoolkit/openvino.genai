@@ -246,6 +246,10 @@ dynamic batched encoder inference. Padding can introduce numerical differences f
 transcription accuracy on the intended model and inputs. NPU uses the SDPA backend and supports greedy and
 multinomial decoding, but not beam search.
 
+On NPU, an explicit output limit must fit the compiled KV cache; adjust `MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN`
+if needed. For a weightless decoder blob imported with `BLOB_PATH`, set `WEIGHTS_PATH` to the original
+`openvino_language_model.bin` for split exports or `openvino_decoder_model.bin` for legacy encoder-decoder exports.
+
 Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
 
 ```python

@@ -161,7 +161,9 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         log.debug('latency of all infers:')
         [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
 
-    out_token_size = _get_output_token_size(processor, result_text, use_genai, num_generated_tokens)
+    # SenseVoice exports may contain only a detokenizer; use the reported CTC token count.
+    count_processor = None if use_case.model_type == "sense-voice" else processor
+    out_token_size = _get_output_token_size(count_processor, result_text, use_genai, num_generated_tokens)
 
     result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if len(md5_list[num]) == 0:
