@@ -32,6 +32,7 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
+import io
 import json
 import shutil
 from dataclasses import dataclass
@@ -776,13 +777,14 @@ def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: st
             image_path = pytestconfig.cache.mkdir("images") / file_name
         except AttributeError:
             # Cache is disabled with -p no:cacheprovider
-            return download_image(link)
-        if image_path.exists():
-            image: PIL.Image = PIL.Image.open(image_path)
-        else:
+            image_buffer = io.BytesIO()
+            download_image(link).save(image_buffer, format="JPEG")
+            image_buffer.seek(0)
+            return PIL.Image.open(image_buffer)
+        if not image_path.exists():
             image = download_image(link)
             image.save(image_path)
-        return image
+        return PIL.Image.open(image_path)
     return retry(implementation, PIL.UnidentifiedImageError)
 
 
