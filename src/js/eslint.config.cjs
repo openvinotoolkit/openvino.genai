@@ -106,6 +106,7 @@ module.exports = defineConfig([
             "cp_top_k",
             "output_mode",
             "frames_indices",
+            "stream_text2speech",
           ],
         },
       ],

@@ -902,6 +902,11 @@ public:
         m_stream_window_size = k;
     }
 
+    /// @brief Number of generated tokens prepare_notification() has released to the generation stream.
+    size_t get_num_streamed_tokens() const {
+        return m_num_streamed_tokens;
+    }
+
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");

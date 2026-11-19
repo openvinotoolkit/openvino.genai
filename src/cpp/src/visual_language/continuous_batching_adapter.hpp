@@ -5,6 +5,7 @@
 
 #include <functional>
 
+#include "continuous_batching/pipeline_base.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "omni/speech_streamer_utils.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
@@ -141,6 +142,28 @@ public:
         return finalize_decoded_results(decoded_results, start_time, stop_time);
     }
 
+    VLMDecodedResults generate(const std::string& prompt,
+                               const std::vector<ov::Tensor>& images,
+                               const std::vector<ov::Tensor>& videos,
+                               const std::vector<ov::Tensor>& audios,
+                               const std::vector<VideoMetadata>& videos_metadata,
+                               const GenerationConfig& generation_config,
+                               const StreamerVariant& streamer,
+                               const std::shared_ptr<OmniStreamerBase>& omni_streamer) override {
+        auto start_time = std::chrono::steady_clock::now();
+        // ContinuousBatchingPipeline::generate() takes no bridge, so the backend is called directly.
+        const auto decoded_results = m_impl.m_impl->generate({prompt},
+                                                             {images},
+                                                             {videos},
+                                                             {videos_metadata},
+                                                             {audios},
+                                                             {generation_config},
+                                                             streamer,
+                                                             omni_streamer)[0];
+        auto stop_time = std::chrono::steady_clock::now();
+        return finalize_decoded_results(decoded_results, start_time, stop_time);
+    }
+
     VLMDecodedResults generate(const ChatHistory& history,
                                const std::vector<ov::Tensor>& images,
                                const GenerationConfig& generation_config,
@@ -196,6 +219,29 @@ public:
             return decode_with_speech(generation_config, streamer, *speech_request, start_time, run);
         }
         const auto decoded_results = run(generation_config, streamer);
+        auto stop_time = std::chrono::steady_clock::now();
+        return finalize_decoded_results(decoded_results, start_time, stop_time);
+    }
+
+    VLMDecodedResults generate(const ChatHistory& history,
+                               const std::vector<ov::Tensor>& images,
+                               const std::vector<ov::Tensor>& videos,
+                               const std::vector<ov::Tensor>& audios,
+                               const std::vector<VideoMetadata>& videos_metadata,
+                               const GenerationConfig& generation_config,
+                               const StreamerVariant& streamer,
+                               const std::shared_ptr<OmniStreamerBase>& omni_streamer) override {
+        auto start_time = std::chrono::steady_clock::now();
+        ChatHistoryInternalState::get_or_create(history);
+        // ContinuousBatchingPipeline::generate() takes no bridge, so the backend is called directly.
+        const auto decoded_results = m_impl.m_impl->generate({history},
+                                                             {images},
+                                                             {videos},
+                                                             {videos_metadata},
+                                                             {audios},
+                                                             {generation_config},
+                                                             streamer,
+                                                             omni_streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
         return finalize_decoded_results(decoded_results, start_time, stop_time);
     }
