@@ -302,7 +302,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         }
 
         for (size_t i = 0; i < active_sequence_groups.size(); i++) {
-            beam_offets[active_sequence_groups.at(i)->get_request_id()] = i == 0 ? 0 : (active_sequence_groups.at(i - 1)->num_running_seqs() + beam_offets[i - 1]);
+            beam_offets[active_sequence_groups.at(i)->get_request_id()] = i == 0 ? 0 : (active_sequence_groups.at(i - 1)->num_running_seqs() + beam_offets.at(active_sequence_groups.at(i - 1)->get_request_id()));
         }
 
         if (m_embedding) {

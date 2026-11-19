@@ -327,6 +327,30 @@ def test_batch_size_switch(ov_pipe: ov_genai.LLMPipeline) -> None:
 
 
 @pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+def test_batch_continues_after_first_request_finishes(llm_model: OVConvertedModelSchema) -> None:
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    inputs = ov_pipe.get_tokenizer().encode(
+        ["The capital of Poland is", "Once upon a time there", "def fibonacci(n):", "The best way to learn"]
+    )
+    max_new_tokens = 24
+
+    reference = ov_pipe.generate(inputs, max_new_tokens=max_new_tokens).tokens
+    assert all(len(tokens) == max_new_tokens for tokens in reference)
+
+    survivor_tokens = {token for tokens in reference[1:] for token in tokens}
+    stop_index = next(
+        (i for i in range(1, max_new_tokens // 2) if reference[0][i] not in {*survivor_tokens, *reference[0][:i]}),
+        None,
+    )
+    assert stop_index is not None, "no token stops request 0 early without stopping the other requests"
+
+    result = ov_pipe.generate(inputs, max_new_tokens=max_new_tokens, stop_token_ids={reference[0][stop_index]}).tokens
+
+    assert result[0] == reference[0][: stop_index + 1]
+    assert result[1:] == reference[1:]
+
+
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
 def test_empty_encoded_inputs_throw(ov_pipe: ov_genai.LLMPipeline) -> None:
     with pytest.raises(RuntimeError):
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
