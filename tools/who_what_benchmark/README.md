@@ -105,15 +105,17 @@ Both agent types accept a local `.json` or `.jsonl` dataset. A JSON file contain
 ]
 ```
 
-Generate reference outputs with a Hugging Face model, export the model to OpenVINO, then compare the OpenVINO GenAI outputs using the same dataset and model type:
+Generate the reference outputs with a Hugging Face model, export the model to OpenVINO, then evaluate the exported model with either the Optimum-Intel or OpenVINO GenAI backend. Reuse the same dataset and `--model-type` as in the reference run. Without `--genai`, WWB uses the Optimum-Intel backend. Each comparison writes its metrics and target outputs to the directory specified by `--output`:
 
 ```sh
 # Generate references for an agent-style text model
 wwb --base-model Qwen/Qwen2.5-0.5B-Instruct --gt-data text_agent_gt.csv --dataset agent.json --model-type text-agent --num-samples 1 --max_new_tokens 64 --hf
 # Export the model to OpenVINO
 optimum-cli export openvino -m Qwen/Qwen2.5-0.5B-Instruct --weight-format fp16 qwen2.5-agent-openvino
+# Compare with the Optimum-Intel backend (the default)
+wwb --target-model qwen2.5-agent-openvino --gt-data text_agent_gt.csv --dataset agent.json --model-type text-agent --num-samples 1 --max_new_tokens 64 --output text_agent_optimum
 # Compare with OpenVINO GenAI
-wwb --target-model qwen2.5-agent-openvino --gt-data text_agent_gt.csv --dataset agent.json --model-type text-agent --num-samples 1 --max_new_tokens 64 --genai
+wwb --target-model qwen2.5-agent-openvino --gt-data text_agent_gt.csv --dataset agent.json --model-type text-agent --num-samples 1 --max_new_tokens 64 --genai --output text_agent_genai
 ```
 
 For `visual-text-agent`, replace the model identifiers and exported model directory below with a supported VLM. The tokenizer's chat template must accept the dataset's messages and tools:
@@ -121,9 +123,13 @@ For `visual-text-agent`, replace the model identifiers and exported model direct
 ```sh
 # Generate references for an agent-style visual language model
 wwb --base-model org/visual-agent-model --gt-data visual_agent_gt.csv --dataset path/to/visual_agent.jsonl --model-type visual-text-agent --hf
+# Compare with the Optimum-Intel backend (the default)
+wwb --target-model path/to/openvino-visual-agent --gt-data visual_agent_gt.csv --dataset path/to/visual_agent.jsonl --model-type visual-text-agent --output visual_agent_optimum
 # Compare with OpenVINO GenAI
-wwb --target-model path/to/openvino-visual-agent --gt-data visual_agent_gt.csv --dataset path/to/visual_agent.jsonl --model-type visual-text-agent --genai
+wwb --target-model path/to/openvino-visual-agent --gt-data visual_agent_gt.csv --dataset path/to/visual_agent.jsonl --model-type visual-text-agent --genai --output visual_agent_genai
 ```
+
+Check the `metrics.csv` and `metrics_per_question.csv` files in each output directory to compare results.
 
 If `--dataset` is omitted, WWB uses its built-in long agent dataset; use `--short-prompt` to select the short dataset. `--split` and `--dataset-field` do not apply to these local JSON/JSONL datasets. To override a model's chat template, provide `--chat-template-source` with a local `.jinja` file, an HTTP(S) URL, or a Hugging Face model/tokenizer source. Apply the same override when generating references and evaluating the target.
 
