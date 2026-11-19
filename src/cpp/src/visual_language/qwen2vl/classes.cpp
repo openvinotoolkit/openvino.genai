@@ -1066,10 +1066,15 @@ void InputsEmbedderQwen2VL::expand_video_tags_in_prompt(
     const std::vector<size_t>& videos_sequence,
     size_t video_base_id
 ) const {
+    size_t search_offset = 0;
     for (size_t video_id : videos_sequence) {
         const auto& encoded_video = encoded_videos.at(video_id - video_base_id);
         const std::string expanded_tag = get_expanded_video_tag(encoded_video);
-        unified_prompt.replace(unified_prompt.find(NATIVE_VIDEO_TAG), NATIVE_VIDEO_TAG.length(), expanded_tag);
+        const size_t tag_pos = unified_prompt.find(NATIVE_VIDEO_TAG, search_offset);
+        OPENVINO_ASSERT(tag_pos != std::string::npos,
+            "Missing video placeholder for video ", video_id, " at or after offset ", search_offset);
+        unified_prompt.replace(tag_pos, NATIVE_VIDEO_TAG.length(), expanded_tag);
+        search_offset = tag_pos + expanded_tag.size();
     }
 }
 
@@ -1090,6 +1095,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
         images_grid_thw.push_back({grid_t, grid_h, grid_w});
     }
 
+    size_t search_offset = 0;
     for (size_t new_image_id : images_sequence) {
         auto [grid_t, grid_h, grid_w] = images_grid_thw.at(new_image_id - image_base_id);
         const size_t num_image_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
@@ -1104,7 +1110,11 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
         }
         expanded_tag.append(m_vlm_config.vision_end_token);
 
-        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
+        const size_t tag_pos = unified_prompt.find(NATIVE_TAG, search_offset);
+        OPENVINO_ASSERT(tag_pos != std::string::npos,
+            "Missing image placeholder for image ", new_image_id, " at or after offset ", search_offset);
+        unified_prompt.replace(tag_pos, NATIVE_TAG.length(), expanded_tag);
+        search_offset = tag_pos + expanded_tag.size();
     }
 
     // Video
