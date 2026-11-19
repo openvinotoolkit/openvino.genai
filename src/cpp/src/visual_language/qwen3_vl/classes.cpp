@@ -423,10 +423,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen3VL::encode_videos(
 }
 
 std::string InputsEmbedderQwen3VL::get_expanded_video_tag(const EncodedVideo& encoded_video) const {
-    size_t grid_t = encoded_video.frame_num;
-    OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
-    size_t grid_h = encoded_video.resized_source_size.height;
-    size_t grid_w = encoded_video.resized_source_size.width;
+    const auto [grid_t, grid_h, grid_w] = qwen2_vl_utils::get_grid_thw(encoded_video);
 
     // Calculate number of video pad tokens for each frame
     const size_t num_video_pad_tokens = calc_tokens_num(1, grid_h, grid_w);
