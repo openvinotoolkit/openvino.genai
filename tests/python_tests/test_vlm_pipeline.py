@@ -778,7 +778,8 @@ def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: st
         except AttributeError:
             # Cache is disabled with -p no:cacheprovider
             image_buffer = io.BytesIO()
-            download_image(link).save(image_buffer)
+            image_format = PIL.Image.registered_extensions()[Path(file_name).suffix.lower()]
+            download_image(link).save(image_buffer, format=image_format)
             image_buffer.seek(0)
             return PIL.Image.open(image_buffer)
         if not image_path.exists():
