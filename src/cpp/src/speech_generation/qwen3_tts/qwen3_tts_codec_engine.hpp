@@ -60,7 +60,7 @@ public:
         return m_ids;
     }
 
-    Tokenizer tokenizer() const {
+    Tokenizer& tokenizer() {
         return m_tokenizer;
     }
 
