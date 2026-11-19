@@ -68,6 +68,22 @@ def _resolve_torch_dtype(dtype):
 
 
 _CASTABLE_FLOAT_DTYPES = {torch.float16, torch.bfloat16, torch.float32, torch.float64}
+# Models known to be left with mixed floating dtypes after HF loading; the cast is limited to them
+# to avoid changing the accuracy of other models.
+_MIXED_DTYPE_CAST_MODELS = {"ministral-3-3b-instruct-2512"}
+
+
+def _requires_floating_dtype_unification(model_id, config):
+    """Return True only for models known to need ``_unify_floating_dtype`` after loading."""
+    if getattr(config, "model_type", None) != "mistral3":
+        return False
+    for name in (model_id, getattr(config, "_name_or_path", None)):
+        if not name:
+            continue
+        basename = str(name).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1].lower()
+        if basename in _MIXED_DTYPE_CAST_MODELS:
+            return True
+    return False
 
 
 def _unify_floating_dtype(model, dtype):
@@ -693,7 +709,8 @@ def load_visual_text_model(
                     if hasattr(model.model, "_require_grads_hook"):
                         model.model.disable_input_require_grads()
 
-        model = _unify_floating_dtype(model, model_kwargs["torch_dtype"])
+        if _requires_floating_dtype_unification(model_id, config):
+            model = _unify_floating_dtype(model, model_kwargs["torch_dtype"])
 
         # Common LoRA support via PEFT
         if kwargs.get("adapters") is not None:
