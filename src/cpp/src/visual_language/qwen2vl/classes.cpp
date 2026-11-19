@@ -1038,37 +1038,37 @@ size_t InputsEmbedderQwen2VL::calc_vec_tokens_num(const std::vector<std::array<s
     return token_num;
 }
 
+std::string InputsEmbedderQwen2VL::get_expanded_video_tag(const EncodedVideo& encoded_video) const {
+    const size_t grid_t = encoded_video.frame_num;
+    OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
+    const size_t grid_h = encoded_video.resized_source_size.height;
+    const size_t grid_w = encoded_video.resized_source_size.width;
+
+    const size_t num_video_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
+
+    std::string expanded_tag;
+    expanded_tag.reserve(
+        m_vlm_config.vision_start_token.length() +
+        m_vlm_config.video_pad_token.length() * num_video_pad_tokens +
+        m_vlm_config.vision_end_token.length()
+    );
+    expanded_tag.append(m_vlm_config.vision_start_token);
+    for (size_t i = 0; i < num_video_pad_tokens; ++i) {
+        expanded_tag.append(m_vlm_config.video_pad_token);
+    }
+    expanded_tag.append(m_vlm_config.vision_end_token);
+    return expanded_tag;
+}
+
 void InputsEmbedderQwen2VL::expand_video_tags_in_prompt(
     std::string& unified_prompt,
     const std::vector<EncodedVideo>& encoded_videos,
     const std::vector<size_t>& videos_sequence,
     size_t video_base_id
 ) const {
-    std::vector<std::array<size_t, 3>> video_grid_thw_list;
-    video_grid_thw_list.reserve(encoded_videos.size());
-
-    for (const auto& encoded_video : encoded_videos) {
-        const size_t grid_t = encoded_video.frame_num;
-        OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
-        const size_t grid_h = encoded_video.resized_source_size.height;
-        const size_t grid_w = encoded_video.resized_source_size.width;
-        video_grid_thw_list.push_back({grid_t, grid_h, grid_w});
-    }
-
     for (size_t video_id : videos_sequence) {
-        const auto [grid_t, grid_h, grid_w] = video_grid_thw_list.at(video_id - video_base_id);
-        const size_t num_video_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
-
-        std::string expanded_tag;
-        expanded_tag.reserve(m_vlm_config.vision_start_token.length() +
-                             m_vlm_config.video_pad_token.length() * num_video_pad_tokens +
-                             m_vlm_config.vision_end_token.length());
-        expanded_tag.append(m_vlm_config.vision_start_token);
-        for (size_t i = 0; i < num_video_pad_tokens; ++i) {
-            expanded_tag.append(m_vlm_config.video_pad_token);
-        }
-        expanded_tag.append(m_vlm_config.vision_end_token);
-
+        const auto& encoded_video = encoded_videos.at(video_id - video_base_id);
+        const std::string expanded_tag = get_expanded_video_tag(encoded_video);
         unified_prompt.replace(unified_prompt.find(NATIVE_VIDEO_TAG), NATIVE_VIDEO_TAG.length(), expanded_tag);
     }
 }

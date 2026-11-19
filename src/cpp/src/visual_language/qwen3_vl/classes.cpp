@@ -422,48 +422,33 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen3VL::encode_videos(
     return encoded_videos;
 }
 
-void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(
-    std::string& unified_prompt,
-    const std::vector<EncodedVideo>& encoded_videos,
-    const std::vector<size_t>& videos_sequence,
-    size_t video_base_id
-) const {
-    std::vector<std::array<size_t, 3>> video_grid_thw_list;
-    video_grid_thw_list.reserve(encoded_videos.size());
+std::string InputsEmbedderQwen3VL::get_expanded_video_tag(const EncodedVideo& encoded_video) const {
+    size_t grid_t = encoded_video.frame_num;
+    OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
+    size_t grid_h = encoded_video.resized_source_size.height;
+    size_t grid_w = encoded_video.resized_source_size.width;
 
-    for (const auto& encoded_video : encoded_videos) {
-        size_t grid_t = encoded_video.frame_num;
-        OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
-        size_t grid_h = encoded_video.resized_source_size.height;
-        size_t grid_w = encoded_video.resized_source_size.width;
-        video_grid_thw_list.push_back({grid_t, grid_h, grid_w});
-    }
+    // Calculate number of video pad tokens for each frame
+    const size_t num_video_pad_tokens = calc_tokens_num(1, grid_h, grid_w);
 
-    for (size_t video_id : videos_sequence) {
-        auto [grid_t, grid_h, grid_w] = video_grid_thw_list.at(video_id - video_base_id);
-        // Calculate number of video pad tokens for each frame
-        const size_t num_video_pad_tokens = calc_tokens_num(1, grid_h, grid_w);
+    const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+    auto timestamps = calculate_video_timestamps(encoded_video.metadata, spatial_merge_size);
+    OPENVINO_ASSERT(timestamps.size() == grid_t, "Timestamps size does not match the number of frames");
 
-        const auto& encoded_video = encoded_videos.at(video_id - video_base_id);
-        const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
-        auto timestamps = calculate_video_timestamps(encoded_video.metadata, spatial_merge_size);
-        OPENVINO_ASSERT(timestamps.size() == grid_t, "Timestamps size does not match the number of frames");
-
-        std::string expanded_tag;
-        for (size_t grid_t_idx = 0; grid_t_idx < grid_t; ++grid_t_idx) {
-            std::stringstream timestamp_ss;
-            timestamp_ss << std::fixed << std::setprecision(1) << timestamps[grid_t_idx];
-            const std::string timestamp_str = "<" + timestamp_ss.str() + " seconds>";
-            expanded_tag.append(timestamp_str);
-            expanded_tag.append(m_vlm_config.vision_start_token);
-            for (size_t i = 0; i < num_video_pad_tokens; ++i) {
-                expanded_tag.append(m_vlm_config.video_pad_token);
-            }
-            expanded_tag.append(m_vlm_config.vision_end_token);
+    std::string expanded_tag;
+    for (size_t grid_t_idx = 0; grid_t_idx < grid_t; ++grid_t_idx) {
+        std::stringstream timestamp_ss;
+        timestamp_ss << std::fixed << std::setprecision(1) << timestamps[grid_t_idx];
+        const std::string timestamp_str = "<" + timestamp_ss.str() + " seconds>";
+        expanded_tag.append(timestamp_str);
+        expanded_tag.append(m_vlm_config.vision_start_token);
+        for (size_t i = 0; i < num_video_pad_tokens; ++i) {
+            expanded_tag.append(m_vlm_config.video_pad_token);
         }
-
-        unified_prompt.replace(unified_prompt.find(NATIVE_VIDEO_TAG), NATIVE_VIDEO_TAG.length(), expanded_tag);
+        expanded_tag.append(m_vlm_config.vision_end_token);
     }
+
+    return expanded_tag;
 }
 
 void InputsEmbedderQwen3VL::add_interpolated_pos_embeds(

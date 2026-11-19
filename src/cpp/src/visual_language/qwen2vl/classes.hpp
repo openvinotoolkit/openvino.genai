@@ -155,7 +155,9 @@ protected:
     // where the adapter weights are already baked into the compiled model.
     void apply_vision_adapters(ov::InferRequest& request);
 
-    virtual void expand_video_tags_in_prompt(
+    virtual std::string get_expanded_video_tag(const EncodedVideo& encoded_video) const;
+
+    void expand_video_tags_in_prompt(
         std::string& unified_prompt,
         const std::vector<EncodedVideo>& encoded_videos,
         const std::vector<size_t>& videos_sequence,
