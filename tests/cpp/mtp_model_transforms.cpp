@@ -15,12 +15,16 @@
 namespace {
 
 using ov::genai::utils::mtp::apply_mtp_rt_info;
+using ov::genai::utils::mtp::expose_last_hidden_state;
 using ov::genai::utils::mtp::extract_mtp_info_from_config;
 using ov::genai::utils::mtp::extract_tied_lm_head_weight;
 using ov::genai::utils::mtp::graft_lm_head_on_mtp;
 
 constexpr size_t HIDDEN = 8;
 constexpr size_t VOCAB = 16;
+// Qwen3.8 (Qwen4Exp) hyper-connection stream count.
+constexpr size_t HC_COUNT = 4;
+constexpr const char* HC_STREAMS_PRODUCER = "hc_streams";
 
 // Main model stand-in with logits and last_hidden_state outputs.
 std::shared_ptr<ov::Model> make_main_model(const std::vector<float>& weights_data,
@@ -59,6 +63,68 @@ std::shared_ptr<ov::Model> make_mtp_model(bool matching_result_friendly_name = t
     result->set_friendly_name(matching_result_friendly_name ? "last_hidden_state" : "mtp_hidden_result");
 
     return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{hidden_states});
+}
+
+// Qwen3.8 (Qwen4Exp) main model stand-in: lm_head consumes a reduction of the wider hyper-connection streams,
+// the logits output is the only result.
+std::shared_ptr<ov::Model> make_hyper_connection_main_model() {
+    auto embeds = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, HC_COUNT * HIDDEN});
+    embeds->output(0).set_names({"inputs_embeds"});
+
+    auto bias = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{HC_COUNT * HIDDEN}, 0.5f);
+    auto streams = std::make_shared<ov::op::v1::Add>(embeds, bias);
+    streams->set_friendly_name(HC_STREAMS_PRODUCER);
+
+    auto reduce_weights =
+        std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{HC_COUNT * HIDDEN, HIDDEN}, 0.25f);
+    auto hidden = std::make_shared<ov::op::v0::MatMul>(streams, reduce_weights);
+
+    auto weights = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{VOCAB, HIDDEN}, 0.1f);
+    auto logits_matmul = std::make_shared<ov::op::v0::MatMul>(hidden, weights, false, true);
+
+    auto logits_result = std::make_shared<ov::op::v0::Result>(logits_matmul);
+    logits_result->output(0).set_names({"logits"});
+
+    return std::make_shared<ov::Model>(ov::ResultVector{logits_result}, ov::ParameterVector{embeds});
+}
+
+// Qwen3.8 (Qwen4Exp) MTP stand-in: hyper-connection hidden_states -> next_hidden_states and last_hidden_state.
+std::shared_ptr<ov::Model> make_hyper_connection_mtp_model() {
+    auto hidden_states =
+        std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, HC_COUNT * HIDDEN});
+    hidden_states->output(0).set_names({"hidden_states"});
+
+    auto bias = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{HC_COUNT * HIDDEN}, 1.0f);
+    auto next_streams = std::make_shared<ov::op::v1::Add>(hidden_states, bias);
+
+    auto reduce_weights =
+        std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{HC_COUNT * HIDDEN, HIDDEN}, 0.25f);
+    auto hidden = std::make_shared<ov::op::v0::MatMul>(next_streams, reduce_weights);
+
+    auto next_result = std::make_shared<ov::op::v0::Result>(next_streams);
+    next_result->output(0).set_names({"next_hidden_states"});
+    auto hidden_result = std::make_shared<ov::op::v0::Result>(hidden);
+    hidden_result->output(0).set_names({"last_hidden_state"});
+
+    return std::make_shared<ov::Model>(ov::ResultVector{next_result, hidden_result},
+                                       ov::ParameterVector{hidden_states});
+}
+
+void set_mtp_hidden_states_annotation(const std::shared_ptr<ov::Model>& model,
+                                      const std::string& producer,
+                                      size_t hidden_size) {
+    model->set_rt_info("{\"producer\": \"" + producer + "\", \"output_index\": 0, \"hidden_size\": " +
+                           std::to_string(hidden_size) + "}",
+                       "mtp_hidden_states");
+}
+
+std::shared_ptr<ov::op::v0::Result> find_result(const std::shared_ptr<ov::Model>& model, const std::string& name) {
+    for (const auto& result : model->get_results()) {
+        if (result->output(0).get_names().count(name) != 0) {
+            return result;
+        }
+    }
+    return nullptr;
 }
 
 template <typename T>
@@ -110,6 +176,68 @@ TEST(MtpModelTransforms, ExtractTiedLmHeadWeight) {
     ASSERT_TRUE(weight.get_node());
     EXPECT_TRUE(transpose_weight);
     EXPECT_EQ(weight.get_partial_shape(), (ov::PartialShape{VOCAB, HIDDEN}));
+}
+
+TEST(MtpModelTransforms, ExposeLastHiddenUsesLLMHeadWithoutAnnotation) {
+    auto main_model = make_hyper_connection_main_model();
+    expose_last_hidden_state(main_model);
+    EXPECT_EQ(main_model->get_results().size(), 2u);
+
+    const auto hidden_result = find_result(main_model, "last_hidden_state");
+    ASSERT_TRUE(hidden_result);
+    EXPECT_TRUE(ov::as_type_ptr<ov::op::v0::MatMul>(hidden_result->get_input_node_shared_ptr(0)));
+    EXPECT_EQ(hidden_result->get_input_partial_shape(0), (ov::PartialShape{1, -1, HIDDEN}));
+}
+
+
+TEST(MtpModelTransforms, Qwen38ExposeLastHiddenStateUsesAnnotatedProducer) {
+    auto main_model = make_hyper_connection_main_model();
+    set_mtp_hidden_states_annotation(main_model, HC_STREAMS_PRODUCER, HC_COUNT * HIDDEN);
+    expose_last_hidden_state(main_model);
+
+    const auto hidden_result = find_result(main_model, "last_hidden_state");
+    ASSERT_TRUE(hidden_result);
+    EXPECT_EQ(hidden_result->get_input_node_shared_ptr(0)->get_friendly_name(), HC_STREAMS_PRODUCER);
+    EXPECT_EQ(hidden_result->get_input_partial_shape(0), (ov::PartialShape{1, -1, HC_COUNT * HIDDEN}));
+    EXPECT_TRUE(hidden_result->get_rt_info().at("manually_added_output").as<bool>());
+
+    ov::Core core;
+    auto request = core.compile_model(main_model, "CPU").create_infer_request();
+    const size_t seq_len = 2;
+    std::vector<float> embeds(seq_len * HC_COUNT * HIDDEN);
+    for (size_t i = 0; i < embeds.size(); ++i) {
+        embeds[i] = static_cast<float>(i) * 0.01f;
+    }
+    request.set_tensor("inputs_embeds",
+                       ov::Tensor(ov::element::f32, ov::Shape{1, seq_len, HC_COUNT * HIDDEN}, embeds.data()));
+    request.infer();
+
+    const auto hidden = request.get_tensor("last_hidden_state");
+    ASSERT_EQ(hidden.get_shape(), (ov::Shape{1, seq_len, HC_COUNT * HIDDEN}));
+    const float* hidden_data = hidden.data<float>();
+    for (size_t i = 0; i < embeds.size(); ++i) {
+        EXPECT_NEAR(hidden_data[i], embeds[i] + 0.5f, 1e-5f) << "Mismatch at element " << i;
+    }
+}
+
+TEST(MtpModelTransforms, Qwen38ExposeLastHiddenStateRejectsHiddenSizeMismatch) {
+    auto main_model = make_hyper_connection_main_model();
+    set_mtp_hidden_states_annotation(main_model, HC_STREAMS_PRODUCER, HIDDEN);
+    EXPECT_THROW(expose_last_hidden_state(main_model), ov::Exception);
+}
+
+TEST(MtpModelTransforms, Qwen38GraftLmHeadOnHyperConnectionMtp) {
+    auto main_model = make_hyper_connection_main_model();
+    auto mtp_model = make_hyper_connection_mtp_model();
+    graft_lm_head_on_mtp(mtp_model, main_model);
+
+    ASSERT_EQ(mtp_model->get_results().size(), 3u);
+    const auto logits_result = find_result(mtp_model, "logits");
+    ASSERT_TRUE(logits_result);
+    EXPECT_EQ(logits_result->get_input_partial_shape(0), (ov::PartialShape{1, -1, VOCAB}));
+    const auto next_hidden_result = find_result(mtp_model, "next_hidden_states");
+    ASSERT_TRUE(next_hidden_result);
+    EXPECT_EQ(next_hidden_result->get_input_partial_shape(0), (ov::PartialShape{1, -1, HC_COUNT * HIDDEN}));
 }
 
 TEST(MtpModelTransforms, FindsOutputsByResultTensorName) {

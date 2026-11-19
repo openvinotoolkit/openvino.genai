@@ -69,7 +69,7 @@ py::object json_container_to_py_object(const ov::genai::JsonContainer& container
 /**
  * @brief Convert an ov::Any value to a Python object.
  *
- * Supports selected scalar and vector types, including nested ov::AnyMap
+ * Supports selected scalar and vector types, including ov::Tensor, nested ov::AnyMap
  * and std::vector<ov::Any> values. Empty ov::Any maps to None.
  * Throws for unsupported stored types.
  */
