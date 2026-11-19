@@ -213,6 +213,7 @@ std::vector<IStepHook::GeneratedEmbedding> LFM3SpeechStepHook::after_sampling(
         if (it == m_states.end() || (!it->second.finished() && !sampler_finished)) {
             continue;
         }
+        const bool state_finished = it->second.finished();
         finish_request(it);
         if (m_result->status == GenerationStatus::CANCEL) {
             group->get_generation_stream()->cancel();
@@ -234,6 +235,11 @@ std::vector<IStepHook::GeneratedEmbedding> LFM3SpeechStepHook::after_sampling(
                 sequence->set_status(SequenceStatus::FINISHED);
                 sequence->set_finish_reason(m_result->finish_reason);
                 sampler_output.m_dropped_sequences.push_back(sequence->get_id());
+            }
+        } else if (state_finished) {
+            // <|text_end|> on the last allowed slot: the sampler, which does not stop on it, has set LENGTH.
+            for (const Sequence::Ptr& sequence : group->get_sequences()) {
+                sequence->set_finish_reason(m_result->finish_reason);
             }
         }
     }
