@@ -116,6 +116,20 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen4_Exp::get_ngram_embeddings(
     return {std::move(ngram_embeddings), std::move(new_ngram_history)};
 }
 
+std::string InputsEmbedderQwen4_Exp::get_expanded_video_tag(const EncodedVideo& encoded_video) const {
+    const std::string expanded_video_tag = InputsEmbedderQwen3VL::get_expanded_video_tag(encoded_video);
+    std::string result;
+    result.reserve(
+        m_vlm_config.vision_start_token.size() +
+        expanded_video_tag.size() +
+        m_vlm_config.vision_end_token.size()
+    );
+    result += m_vlm_config.vision_start_token;
+    result += expanded_video_tag;
+    result += m_vlm_config.vision_end_token;
+    return result;
+}
+
 ov::Tensor InputsEmbedderQwen4_Exp::get_inputs_embeds(
     const std::string& prompt,
     const std::vector<EncodedImage>& images,
