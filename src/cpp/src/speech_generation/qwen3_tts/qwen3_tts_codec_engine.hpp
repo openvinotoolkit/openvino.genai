@@ -84,14 +84,6 @@ public:
         return m_talker_hidden_size;
     }
 
-    ov::InferRequest& talker_embedding() {
-        return m_talker_embedding;
-    }
-
-    ov::InferRequest& talker_text_embedding() {
-        return m_talker_text_embedding;
-    }
-
     // for per-component inference timing (see qwen3_tts::run_and_time); shared across every
     // submodel this engine owns. The talker driver may add talker-specific entries (e.g. talker
     // prefill/generate timing) into the same maps.
