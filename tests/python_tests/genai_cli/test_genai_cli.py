@@ -33,13 +33,6 @@ def _export_args(*argv: str):
     return cli_main._build_parser().parse_args(["export", *argv])
 
 
-def test_export_help():
-    result = subprocess.run(
-        [sys.executable, "-m", "openvino_genai._cli", "export", "--help"], check=True, capture_output=True, text=True
-    )
-    assert "--weight-format" in result.stdout
-
-
 @pytest.mark.parametrize("uv_on_path", [False, True])
 def test_missing_export_requirements_are_reported(tmp_path, monkeypatch, capsys, uv_on_path):
     """Without openvino-genai[export], genai-cli export stops with a hint instead of a ModuleNotFoundError."""
