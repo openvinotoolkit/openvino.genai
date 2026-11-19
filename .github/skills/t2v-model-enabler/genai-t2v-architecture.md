@@ -147,8 +147,13 @@ numerically:
   read it with `has_rt_info`.
 - Text encoders may be exported with the hidden states already packed (`prompt_embeds`); `Gemma3TextEncoder`
   supports both layouts.
-- Components the pipeline does not need may be present (`[null, null]` in `model_index.json` means absent). Load
-  only what is listed and present.
+- The export must contain **every component listed in the original diffusers `model_index.json`**, including ones
+  the first GenAI mode does not use (`vae_encoder` for text-to-video, `audio_vae` encoder, `prompt_enhancer`,
+  `processor`, `duration_head`): later modes (image-/video-to-video, prompt enhancement) need them. A component
+  missing from the export is an optimum-intel gap to fix there, not something to work around in GenAI.
+- Entries that are `[null, null]` in the original `model_index.json` are absent from that checkpoint (LTX-2.3 lists
+  LTX-2.5's `duration_head`, `processor`, `prompt_enhancer` this way); GenAI must treat them as absent. A pipeline
+  mode loads only the components it uses.
 
 ## Adding a New Model — Checklist
 

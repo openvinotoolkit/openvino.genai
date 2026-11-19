@@ -53,6 +53,9 @@ models.
 2. Inventory the export: `model_index.json` (component class names; `[null, null]` entries are absent components),
    every `*/openvino_model.xml` with its input/output names, element types and partial shapes, every component
    `config.json`, the scheduler config. Write a script that prints this; do not read XML by hand.
+   Diff it against the original diffusers `model_index.json`: every non-null component there must be exported,
+   including optional ones the text-to-video path does not use (VAE encoders, prompt enhancer, processor). Report
+   missing ones as an optimum-intel prerequisite.
 3. Read the diffusers pipeline `__call__` end to end and list, in order:
    - text encoding: tokenizer settings (padding side, max length, BOS), which hidden states are used and how they
      are packed;
