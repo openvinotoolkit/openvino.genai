@@ -1,8 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Export tests of the models genai-cli converts natively, the counterpart of optimum-intel's
-tests/openvino/test_export.py and tests/openvino/test_exporters_cli.py for the native genai-cli exporters."""
+"""Export tests of the genai-cli export tool"""
 
 import json
 import shutil
@@ -15,13 +14,9 @@ from openvino_genai import Tokenizer, VLMPipeline
 from openvino_genai._cli.exporters import _import_exporter_modules, get_native_exporter
 from openvino_genai._cli.exporters.base import registered_exporters
 
+from genai_cli.utils import SUPPORTED_ARCHITECTURES
 from utils.export import export_with_genai_cli, native_genai_cli_model_type
 from utils.network import retry_request
-
-# Tiny checkpoints of the model types genai-cli exports natively.
-SUPPORTED_ARCHITECTURES = {
-    "molmo2": "optimum-intel-internal-testing/tiny-random-molmo2",
-}
 
 # The OpenVINO GenAI pipeline and the IRs of every task the native exporters produce.
 TASK_PIPELINES = {
