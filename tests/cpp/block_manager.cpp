@@ -1033,7 +1033,10 @@ TEST(TestBlockManager, PrefixCachingRollbackInvalidatesLatestOnlyEndpointWithLog
     producer_group->schedule_tokens(source_tokens.size());
     block_manager.append_slots(producer_group);
     producer_group->finish_iteration();
-    block_manager.free_sequence(producer_group->get_running_sequences().front()->get_id());
+    const auto producer_sequence_id = producer_group->get_running_sequences().front()->get_id();
+    const auto producer_blocks = block_manager.get_block_table(producer_sequence_id, 0);
+    set_block_timestamps_oldest_first(producer_blocks);
+    block_manager.free_sequence(producer_sequence_id);
 
     auto pressure_group = create_sequence_group(std::vector<int64_t>{20, 21, 22, 23}, 73);
     pressure_group->schedule_tokens(4);
