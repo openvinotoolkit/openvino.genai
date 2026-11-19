@@ -58,6 +58,8 @@ public:
     virtual StreamingStatus write(JsonContainer& message) = 0;
 
     CallbackTypeVariant write(std::string message);
+
+    void end() override;
     
     JsonContainer get_parsed_message() const;
 
