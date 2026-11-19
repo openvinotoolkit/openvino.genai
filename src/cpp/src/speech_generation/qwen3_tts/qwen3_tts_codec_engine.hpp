@@ -18,9 +18,8 @@ namespace genai {
 // Shared Qwen3-TTS codec subsystem: every submodel EXCEPT the talker backbone (talker embedding
 // table, text embedding/projection, code predictor, speech tokenizer encoder/decoder, speaker
 // encoder), plus the per-frame code-predictor decode loop, sampling, prefill-assembly helpers and
-// waveform decoding built on top of them. Reused as-is by both the SDPA driver (Qwen3TTSImpl) and
-// the continuous-batching driver (Qwen3TTSContinuousBatchingImpl); only the talker backbone's own
-// inference mechanism (stateful infer vs. PagedAttention) differs between the two.
+// waveform decoding built on top of them. Keeping codec work separate from talker inference lets
+// alternate talker backends reuse the same implementation.
 class Qwen3TTSCodecEngine {
 public:
     struct QwenIds {
@@ -94,8 +93,8 @@ public:
     }
 
     // for per-component inference timing (see qwen3_tts::run_and_time); shared across every
-    // submodel this engine owns. Callers (Qwen3TTSImpl / Qwen3TTSContinuousBatchingImpl) may add
-    // their own talker-specific entries (e.g. talker prefill/generate timing) into the same maps.
+    // submodel this engine owns. The talker driver may add talker-specific entries (e.g. talker
+    // prefill/generate timing) into the same maps.
     std::unordered_map<std::string, double>& perf_ms() const {
         return m_perf_ms;
     }
@@ -171,7 +170,7 @@ public:
     };
 
     // Builds the talker prefill embedding for the non-ICL path (CustomVoice / VoiceDesign / Base
-    // x-vector). Shared by the SDPA driver (Qwen3TTSImpl) and the continuous-batching driver.
+    // x-vector). Keeping prefill construction here lets alternate backends reuse it.
     // `input_ids_tensor` is the already-tokenized "<|im_start|>assistant\n...<|im_start|>assistant\n"
     // turn; `effective_speaker_embedding` must already be resolved (x-vector extracted from ref_audio
     // if needed) by the caller; `language`/`speaker` are the caller's already-normalized values.

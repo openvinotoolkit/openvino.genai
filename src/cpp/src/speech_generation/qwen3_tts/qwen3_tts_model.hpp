@@ -14,9 +14,8 @@
 namespace ov {
 namespace genai {
 
-// SDPA/stateful driver for the Qwen3-TTS talker. Everything except the talker backbone's own
-// inference mechanism and the outer per-session decode loop lives in Qwen3TTSCodecEngine, shared
-// with the continuous-batching driver (Qwen3TTSContinuousBatchingImpl).
+// SDPA/stateful driver for the Qwen3-TTS talker. Codec work lives in Qwen3TTSCodecEngine so that
+// alternate talker backends can reuse it without duplicating model-specific logic.
 class Qwen3TTSImpl : public Text2SpeechPipelineImpl {
 public:
     // Internal voice-clone prompt used by the generate() dispatch path (ICL mode only).

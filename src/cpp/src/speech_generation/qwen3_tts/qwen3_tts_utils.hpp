@@ -20,8 +20,8 @@
 
 #include "utils.hpp"
 
-// Shared, stateless helpers used by both the SDPA (Qwen3TTSImpl) and continuous-batching
-// (Qwen3TTSContinuousBatchingImpl) Qwen3-TTS drivers, and by Qwen3TTSCodecEngine.
+// Shared, stateless helpers for Qwen3-TTS model and codec components. Keeping these utilities
+// separate from the driver lets alternate backends reuse the same tensor and device logic.
 namespace ov {
 namespace genai {
 namespace qwen3_tts {
