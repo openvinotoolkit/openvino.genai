@@ -119,7 +119,7 @@ public:
     /**
      * @brief Move assignment operator.
      */
-    JsonContainer& operator=(JsonContainer&& other) noexcept;
+    JsonContainer& operator=(JsonContainer&& other);
 
     bool operator==(const JsonContainer& other) const;
     bool operator!=(const JsonContainer& other) const;
