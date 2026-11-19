@@ -206,6 +206,9 @@ protected:
 namespace qwen2_vl_utils {
 
 ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels);
+    
+std::array<size_t, 3> get_grid_thw(const EncodedImage& encoded_image);
+std::array<size_t, 3> get_grid_thw(const EncodedVideo& encoded_video);
 
 ov::Tensor reshape_image_patches(
     const ov::Tensor& patches,

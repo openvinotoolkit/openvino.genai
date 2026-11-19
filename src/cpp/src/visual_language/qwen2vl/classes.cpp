@@ -292,6 +292,21 @@ ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pi
     return ImageSize{h_bar, w_bar};
 }
 
+std::array<size_t, 3> get_grid_thw(const EncodedImage& encoded_image) {
+    const size_t grid_t = 1;
+    const size_t grid_h = encoded_image.resized_source_size.height;
+    const size_t grid_w = encoded_image.resized_source_size.width;
+    return {grid_t, grid_h, grid_w};
+}
+
+std::array<size_t, 3> get_grid_thw(const EncodedVideo& encoded_video) {
+    const size_t grid_t = encoded_video.frame_num;
+    OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
+    const size_t grid_h = encoded_video.resized_source_size.height;
+    const size_t grid_w = encoded_video.resized_source_size.width;
+    return {grid_t, grid_h, grid_w};
+}
+
 ov::Tensor reshape_image_patches(
     const ov::Tensor& patches,
     const size_t grid_t,
@@ -424,26 +439,13 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_i
     const std::vector<EncodedImage>& encoded_images,
     const std::vector<size_t>& images_sequence
 ) {
-    std::vector<ov::Tensor> image_embeds;
-    std::vector<std::array<size_t, 3>> images_grid_thw;
-
-    image_embeds.reserve(encoded_images.size());
-    images_grid_thw.reserve(encoded_images.size());
-
-    for (const auto& encoded_image : encoded_images) {
-        image_embeds.push_back(encoded_image.resized_source);
-
-        size_t grid_t = 1;
-        size_t grid_h = encoded_image.resized_source_size.height;
-        size_t grid_w = encoded_image.resized_source_size.width;
-        images_grid_thw.push_back({grid_t, grid_h, grid_w});
-    }
-
     std::vector<ov::Tensor> reordered_image_embeds;
     std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
+
     for (size_t new_image_id : images_sequence) {
-        reordered_image_embeds.push_back(image_embeds.at(new_image_id));
-        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
+        const auto& encoded_image = encoded_images.at(new_image_id);
+        reordered_image_embeds.push_back(encoded_image.resized_source);
+        reordered_images_grid_thw.push_back(qwen2_vl_utils::get_grid_thw(encoded_image));
     }
 
     return {std::move(reordered_image_embeds), std::move(reordered_images_grid_thw)};
@@ -453,22 +455,13 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_v
     const std::vector<EncodedVideo>& videos,
     const std::vector<size_t>& videos_sequence
 ) {
-    std::vector<ov::Tensor> video_embeds;
-    std::vector<std::array<size_t, 3>> videos_grid_thw;
-
-    for (const auto& encoded_video : videos) {
-        video_embeds.push_back(encoded_video.video_features);
-        size_t grid_t = encoded_video.frame_num;
-        size_t grid_h = encoded_video.resized_source_size.height;
-        size_t grid_w = encoded_video.resized_source_size.width;
-        videos_grid_thw.push_back({grid_t, grid_h, grid_w});
-    }
-
     std::vector<ov::Tensor> reordered_video_embeds;
     std::vector<std::array<size_t, 3>> reordered_videos_grid_thw;
+
     for (size_t new_video_id : videos_sequence) {
-        reordered_video_embeds.push_back(video_embeds.at(new_video_id));
-        reordered_videos_grid_thw.push_back(videos_grid_thw.at(new_video_id));
+        const auto& encoded_video = videos.at(new_video_id);
+        reordered_video_embeds.push_back(encoded_video.video_features);
+        reordered_videos_grid_thw.push_back(qwen2_vl_utils::get_grid_thw(encoded_video));
     }
 
     return {reordered_video_embeds, reordered_videos_grid_thw};
@@ -1039,11 +1032,7 @@ size_t InputsEmbedderQwen2VL::calc_vec_tokens_num(const std::vector<std::array<s
 }
 
 std::string InputsEmbedderQwen2VL::get_expanded_video_tag(const EncodedVideo& encoded_video) const {
-    const size_t grid_t = encoded_video.frame_num;
-    OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
-    const size_t grid_h = encoded_video.resized_source_size.height;
-    const size_t grid_w = encoded_video.resized_source_size.width;
-
+    const auto [grid_t, grid_h, grid_w] = qwen2_vl_utils::get_grid_thw(encoded_video);
     const size_t num_video_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
 
     std::string expanded_tag;
@@ -1085,19 +1074,11 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
                                                          const std::vector<EncodedVideo>& videos) const {
     // Images
     auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, image_base_id, images.size(), ModalityType::IMAGE);
-    std::vector<std::array<size_t, 3>> images_grid_thw;
-    images_grid_thw.reserve(images.size());
-
-    for (const auto& encoded_image : images) {
-        size_t grid_t = 1;
-        size_t grid_h = encoded_image.resized_source_size.height;
-        size_t grid_w = encoded_image.resized_source_size.width;
-        images_grid_thw.push_back({grid_t, grid_h, grid_w});
-    }
 
     size_t search_offset = 0;
     for (size_t new_image_id : images_sequence) {
-        auto [grid_t, grid_h, grid_w] = images_grid_thw.at(new_image_id - image_base_id);
+        const auto& encoded_image = images.at(new_image_id - image_base_id);
+        const auto [grid_t, grid_h, grid_w] = qwen2_vl_utils::get_grid_thw(encoded_image);
         const size_t num_image_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
 
         std::string expanded_tag;
@@ -1142,20 +1123,13 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
     for (const auto& encoded_image : images) {
-        size_t grid_t = 1;
-        size_t grid_h = encoded_image.resized_source_size.height;
-        size_t grid_w = encoded_image.resized_source_size.width;
-        images_grid_thw.push_back({grid_t, grid_h, grid_w});
+        images_grid_thw.push_back(qwen2_vl_utils::get_grid_thw(encoded_image));
     }
 
     std::vector<std::array<size_t, 3>> video_grid_thw;
     video_grid_thw.reserve(videos.size());
     for (const auto& encoded_video : videos) {
-        size_t grid_t = encoded_video.frame_num;
-        OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
-        size_t grid_h = encoded_video.resized_source_size.height;
-        size_t grid_w = encoded_video.resized_source_size.width;
-        video_grid_thw.push_back({grid_t, grid_h, grid_w});
+        video_grid_thw.push_back(qwen2_vl_utils::get_grid_thw(encoded_video));
     }
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
