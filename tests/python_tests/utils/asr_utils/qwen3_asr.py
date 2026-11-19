@@ -1,8 +1,10 @@
 import functools
 import json
 import pathlib
+import platform
 import re
 import shutil
+import sys
 from typing import ClassVar
 
 import numpy as np
@@ -21,6 +23,17 @@ from utils.network import retry_request
 
 QWEN3_ASR_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-asr"
 QWEN3_FORCED_ALIGNER_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-forced-aligner"
+# Keep split and legacy exports in separate converted-model caches.
+QWEN3_ASR_SPLIT_EXPORT_SUFFIX = "-split"
+SKIP_IF_PAGED_ATTENTION_UNAVAILABLE = pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="PagedAttention requires SVE on ARM and is unavailable on macOS arm64.",
+)
+# ASRPipeline runs Qwen3-ASR split export through ContinuousBatchingPipeline for PA and VLMPipeline for SDPA.
+QWEN3_ASR_SPLIT_EXPORT_ATTENTION_BACKENDS = [
+    pytest.param("PA", id="PA", marks=SKIP_IF_PAGED_ATTENTION_UNAVAILABLE),
+    pytest.param("SDPA", id="SDPA"),
+]
 
 
 def check_qwen3_asr_package():
@@ -53,7 +66,17 @@ class Qwen3ASROptimumPipeline:
     def generate(self, sample, **kwargs):
         generate_kwargs = kwargs.get("generate_kwargs", {})
         language = generate_kwargs.get("language") or kwargs.get("language")
+        generated_only = self.generate_ids(sample, **kwargs)
+        full_text = self.processor.batch_decode(generated_only, skip_special_tokens=False)[0]
+        if language:
+            return {"text": full_text.strip(), "language": language}
 
+        parsed_output = self.parse_asr_output(full_text)
+        return {"text": parsed_output["text"], "language": parsed_output["language"]}
+
+    def generate_ids(self, sample, **kwargs):
+        generate_kwargs = kwargs.get("generate_kwargs", {})
+        language = generate_kwargs.get("language") or kwargs.get("language")
         messages = [
             {"role": "system", "content": ""},
             {"role": "user", "content": [{"type": "audio", "audio": ""}]},
@@ -67,22 +90,21 @@ class Qwen3ASROptimumPipeline:
             "max_new_tokens": kwargs.get("max_new_tokens", 1000),
         }
         config["max_new_tokens"] = generate_kwargs.get("max_new_tokens", config["max_new_tokens"])
+        if "do_sample" in kwargs:
+            config["do_sample"] = kwargs["do_sample"]
 
-        output_ids = self.model.generate(
-            input_features=inputs["input_features"],
-            decoder_input_ids=inputs["input_ids"],
-            eos_token_id=self.EOS_TOKEN_IDS,
-            **config,
-        )
+        if hasattr(self.model, "audio_encoder"):
+            output_ids = self.model.generate(**inputs, **config)
+        else:
+            output_ids = self.model.generate(
+                input_features=inputs["input_features"],
+                decoder_input_ids=inputs["input_ids"],
+                eos_token_id=self.EOS_TOKEN_IDS,
+                **config,
+            )
 
-        prompt_len = inputs["input_ids"].shape[1]
-        generated_only = output_ids[:, prompt_len:]
-        full_text = self.processor.batch_decode(generated_only, skip_special_tokens=False)[0]
-        if language:
-            return {"text": full_text.strip(), "language": language}
-
-        parsed_output = self.parse_asr_output(full_text)
-        return {"text": parsed_output["text"], "language": parsed_output["language"]}
+        output_ids = getattr(output_ids, "sequences", output_ids)
+        return output_ids[:, inputs["input_ids"].shape[1] :]
 
     def parse_asr_output(self, raw_text):
         """Parse the raw ASR output to extract language and transcription text."""
@@ -143,9 +165,9 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
     manager.execute(save_to_temp)
 
 
-def _converted_model_path(model_id: str) -> str:
+def _converted_model_path(model_id: str, model_name_suffix: str = "") -> str:
     skip_if_qwen3_asr_package_is_unavailable()
-    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+    path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + model_name_suffix)
     manager = AtomicDownloadManager(path)
     if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
         save_model(model_id=model_id, tmp_path=path)
@@ -158,8 +180,14 @@ def qwen3_asr_model_path() -> str:
 
 
 @functools.lru_cache()
+def qwen3_asr_split_model_path() -> str:
+    return _converted_model_path(QWEN3_ASR_MODEL_ID, QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
+
+
+# OpenVINO GenAI supports only the split export of the forced aligner.
+@functools.lru_cache()
 def forced_aligner_model_path() -> str:
-    return _converted_model_path(QWEN3_FORCED_ALIGNER_MODEL_ID)
+    return _converted_model_path(QWEN3_FORCED_ALIGNER_MODEL_ID, QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
 
 
 def forced_aligner_audio():

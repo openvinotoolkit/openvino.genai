@@ -540,6 +540,15 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Lfm3ForCausalLM',
+    models: [
+      {
+        name: 'LFM3',
+        links: ['https://huggingface.co/LiquidAI/LFM3-1.7B'],
+      },
+    ],
+  },
+  {
     architecture: 'LlamaForCausalLM',
     models: [
       {
@@ -600,6 +609,17 @@ export const LLM_MODELS: LLMModelType[] = [
       {
         name: 'TinyLlama',
         links: ['https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0'],
+      },
+      {
+        name: 'SmolLM',
+        links: ['https://huggingface.co/HuggingFaceTB/SmolLM-135M'],
+      },
+      {
+        name: 'SmolLM2',
+        links: [
+          'https://huggingface.co/HuggingFaceTB/SmolLM2-135M',
+          'https://huggingface.co/HuggingFaceTB/SmolLM2-360M',
+        ],
       },
       {
         name: 'MiniCPM5',
@@ -966,6 +986,19 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/xverse/XVERSE-13B-Chat',
           'https://huggingface.co/xverse/XVERSE-65B',
           'https://huggingface.co/xverse/XVERSE-65B-Chat',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'NemotronHForCausalLM',
+    models: [
+      {
+        name: 'NemotronH',
+        links: [
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16',
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16',
         ],
       },
     ],

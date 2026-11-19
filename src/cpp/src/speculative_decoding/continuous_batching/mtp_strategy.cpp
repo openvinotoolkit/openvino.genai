@@ -20,8 +20,8 @@ void validate_mtp_generation_config(const GenerationConfig& config) {
                     "assistant_confidence_threshold must be 0.f.");
     OPENVINO_ASSERT(!config.is_tree_search(),
                     "MTP speculative decoding does not support tree search.");
-    OPENVINO_ASSERT(config.is_greedy_decoding(),
-                    "MTP speculative decoding supports greedy decoding only.");
+    OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
+                    "MTP speculative decoding supports greedy and multinomial decoding only.");
     OPENVINO_ASSERT(config.num_return_sequences == 1,
                     "MTP speculative decoding does not support parallel sampling; "
                     "num_return_sequences must be 1.");
@@ -39,6 +39,20 @@ ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
     ov::Tensor shifted(input_embeds.get_element_type(), {shape[0], shape[1] - 1, shape[2]});
     ov::Tensor(input_embeds, start_coord, end_coord).copy_to(shifted);
     return shifted;
+}
+
+// The draft prompt holds the embeddings of tokens 1..L-1 at the positions of tokens 0..L-2.
+ov::Tensor create_draft_position_ids(const ov::Tensor& position_ids) {
+    const auto shape = position_ids.get_shape();
+    const size_t seq_len_dim = shape.size() - 1;
+    OPENVINO_ASSERT(shape[seq_len_dim] > 1, "MTP draft position ids expect seq_len > 1, got shape ", shape);
+
+    auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, seq_len_dim, 0, shape[seq_len_dim] - 1);
+    ov::Shape draft_shape = shape;
+    draft_shape[seq_len_dim] -= 1;
+    ov::Tensor draft_position_ids(position_ids.get_element_type(), draft_shape);
+    ov::Tensor(position_ids, start_coord, end_coord).copy_to(draft_position_ids);
+    return draft_position_ids;
 }
 
 }  // namespace
@@ -61,7 +75,7 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
     m_tokenizer = main_model_tokenizer;
     m_inputs_embedder = inputs_embedder;
     m_model_input_type = ModelInputType::EMBEDDINGS;
-    m_vision_registry = std::make_shared<VisionRegistry>();
+    m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 
     // PA conversion must precede the MTP lm_head graft.
     bool allow_score_aggregation = true;
@@ -134,9 +148,7 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::enable_mtp_hidden_state_pairin
 
 GenerationConfig ContinuousBatchingPipeline::MtpDecodingImpl::make_draft_generation_config(
     const GenerationConfig& config) {
-    GenerationConfig draft_config = config;
-    draft_config.ignore_eos = true;
-    draft_config.stop_strings.clear();
+    GenerationConfig draft_config = make_draft_sampling_params(config);
     if (draft_config.max_new_tokens == SIZE_MAX && draft_config.max_length == SIZE_MAX) {
         // The draft is stopped by the target, but ignore_eos requires a finite generation limit.
         draft_config.max_new_tokens = SIZE_MAX - 1;
@@ -156,46 +168,57 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     GenerationConfig draft_sampling_params = make_draft_generation_config(sampling_params);
     // Draft gets shifted embeds only; VLM extras belong to the main model.
     ov::Tensor draft_input_embeds = create_draft_input_embeds(input_ids);
-    OPENVINO_ASSERT(!std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline)->is_prefix_caching_enabled() ||
+    OPENVINO_ASSERT(!m_main_pipeline->is_prefix_caching_enabled() ||
                         (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
                          prompt_ids->get_size() == input_ids.get_shape()[1]),
                     "MTP prefix caching requires built-in prompt preparation with one token ID per embedding");
+    OPENVINO_ASSERT(sampling_params.is_greedy_decoding() || !m_main_pipeline->is_prefix_caching_enabled() ||
+                        !m_main_pipeline->has_linear_attention_cache(),
+                    "MTP speculative decoding of models with linear-attention state supports greedy decoding only "
+                    "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
     // Use insert_or_assign, not insert: a finished prior request may leave a stale (stopped) handle
     // under the same request_id. insert() would be a no-op there, dropping the new handle as a
     // temporary whose destructor stops the freshly added draft request before it can draft.
+    // ContinuousBatchingImpl::add_request() reads prompt positions from the shared embedder,
+    // ModelRunner uses them only for a draft with M-RoPE position_ids, other drafts get sequential positions.
+    ov::Tensor main_position_ids;
+    if (m_draft_pipeline->has_mrope_position_ids()) {
+        main_position_ids = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0).first;
+    }
     try {
+        if (main_position_ids) {
+            m_inputs_embedder->set_position_ids(create_draft_position_ids(main_position_ids));
+        }
         m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
+        if (main_position_ids) {
+            m_inputs_embedder->set_position_ids(main_position_ids);
+        }
         auto main_handle = m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
         align_request_pair_processed_prefix(request_id);
         return main_handle;
     } catch (...) {
-        std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline)->discard_awaiting_request(request_id);
-        std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_draft_pipeline)->discard_awaiting_request(request_id);
+        if (main_position_ids) {
+            m_inputs_embedder->set_position_ids(main_position_ids);
+        }
+        m_main_pipeline->discard_awaiting_request(request_id);
+        m_draft_pipeline->discard_awaiting_request(request_id);
         m_draft_generations.erase(request_id);
         throw;
     }
 }
 
 void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {
-    auto find_request = [request_id](const std::vector<SequenceGroup::Ptr>& requests) {
-        const auto found = std::find_if(requests.begin(), requests.end(), [request_id](const auto& group) {
-            return group->get_request_id() == request_id;
-        });
-        OPENVINO_ASSERT(found != requests.end(), "MTP alignment requires both awaiting requests: ", request_id);
-        return *found;
-    };
-    const auto main_group = find_request(m_main_pipeline->get_awaiting_requests());
-    const auto draft_group = find_request(m_draft_pipeline->get_awaiting_requests());
+    const auto main_group = m_main_pipeline->find_awaiting_request(request_id);
+    const auto draft_group = m_draft_pipeline->find_awaiting_request(request_id);
+    OPENVINO_ASSERT(main_group && draft_group, "MTP alignment requires both awaiting requests: ", request_id);
     draft_group->get_sequences().front()->set_prefix_cache_policy(draft_group->get_prompt_len(),
         [main_group](size_t length, size_t block_size) {
             return main_group->get_sequences().front()->get_hash(length + 1, block_size);
         });
-    auto main_pipeline = std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline);
-    auto draft_pipeline = std::static_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_draft_pipeline);
     size_t ceiling = draft_group->get_prompt_len() - 1;
     while (true) {
-        const size_t main_processed = main_pipeline->restore_awaiting_prefix(request_id, ceiling);
-        const size_t draft_processed = draft_pipeline->restore_awaiting_prefix(request_id, main_processed);
+        const size_t main_processed = m_main_pipeline->restore_awaiting_prefix(request_id, ceiling);
+        const size_t draft_processed = m_draft_pipeline->restore_awaiting_prefix(request_id, main_processed);
         if (main_processed == draft_processed) {
             if (main_processed > 0) {
                 GENAI_DEBUG("MTP paired prefix replay: request=%llu main=%zu draft=%zu",
@@ -221,7 +244,8 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
-        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+        m_inputs_embedder->set_prompt_formatting(
+            sampling_params.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         const size_t previous_tokens = m_inputs_embedder->get_cache_state().get_state().size();
         const std::vector<ov::genai::EncodedImage> no_images;
         // add_request() takes no audio. Normalizing with none still rejects an <ov_genai_audio_N> tag,
@@ -251,24 +275,21 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
     GenerateStrategy strategy;
-    strategy.prepare_request = [this](size_t,
-                                      const ov::Tensor& in_embeds,
-                                      GenerationConfig& main_cfg,
-                                      GenerationConfig& draft_cfg,
-                                      ov::Tensor& main_in,
-                                      ov::Tensor& draft_in) {
+    strategy.prepare_request = [](size_t,
+                                  const ov::Tensor& in_embeds,
+                                  GenerationConfig& main_cfg,
+                                  ov::Tensor& main_in) {
         (void)main_cfg;
-        (void)draft_cfg;
         main_in = in_embeds;
-        draft_in = create_draft_input_embeds(in_embeds);
     };
 
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
                                   const std::vector<ov::Tensor>& input_ids,
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
-                            (input_ids.size() == 1 && sampling_params[0].is_greedy_decoding()),
-                        "MTP streaming only supports batch size=1 with greedy decoding.");
+                            (input_ids.size() == 1 &&
+                             (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial())),
+                        "MTP streaming only supports batch size=1 with greedy/multinomial decoding.");
     };
     strategy.start_timer = []() { return std::chrono::steady_clock::now(); };
     strategy.stop_timer = [](const TimePoint& start) {
