@@ -953,10 +953,21 @@ public:
                                                 ", seq_id=", sequence->get_id());
                             }
                             const auto& position_ids_elem = position_ids_list[effective_position_id];
-                            const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
+                            if (position_ids_elem.get_shape().size() == 2) {
+                                // [1, 1] element of rank-1 position_ids: a rank-1 ROI copy would mismatch ranks
+                                OPENVINO_ASSERT(position_ids_elem.get_size() == 1,
+                                                "Expected one position id per token, got shape ",
+                                                position_ids_elem.get_shape());
+                                position_ids_data[position_ids_idx] = position_ids_elem.data<const int64_t>()[0];
+                            } else {
+                                const auto [begin, end] =
+                                    Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(),
+                                                                                position_ids_idx,
+                                                                                false);
 
-                            ov::Tensor dst_roi(position_ids, begin, end);
-                            position_ids_elem.copy_to(dst_roi);
+                                ov::Tensor dst_roi(position_ids, begin, end);
+                                position_ids_elem.copy_to(dst_roi);
+                            }
                         }
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
