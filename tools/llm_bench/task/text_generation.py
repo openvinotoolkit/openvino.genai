@@ -18,6 +18,7 @@ from llm_bench_utils.ov_utils import get_genai_chunk_streamer, OptimumChunkStrea
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
 from llm_bench_utils.prompt_utils import get_text_prompt
+from llm_bench_utils.metrics_collection_utils import get_sd_metrics
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
@@ -391,7 +392,10 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         generated_tokens = np.array(generation_result.tokens)
 
     perf_metrics = generation_result[0].perf_metrics if cb_pipeline else generation_result.perf_metrics
-    return generated_tokens, perf_metrics, end - start
+    extended_perf_metrics = (
+        generation_result[0].extended_perf_metrics if cb_pipeline else generation_result.extended_perf_metrics
+    )
+    return generated_tokens, perf_metrics, extended_perf_metrics, end - start
 
 
 # ===== GenAI Utils =====
@@ -527,7 +531,7 @@ def run_text_generation_genai(
 
     # ===== Generate =====
     mem_consumption.start(num)
-    generated_tokens, perf_metrics, generation_time = genai_generate(
+    generated_tokens, perf_metrics, extended_perf_metrics, generation_time = genai_generate(
         streaming, model, tokens_len, gen_config, args["empty_lora"], input_data, args["batch_size"], prefix
     )
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
@@ -604,6 +608,7 @@ def run_text_generation_genai(
         prompt_idx=prompt_index,
         cb_metric=cache_usage,
         prefill_time=inference_durations[0] * 1000 if args.get("num_prefill_tokens", None) else "",
+        sd_metric=get_sd_metrics(extended_perf_metrics),
     )
 
     print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)
@@ -664,7 +669,8 @@ def run_text_generation_genai_with_stream(
     mem_consumption.start(num)
     log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
     start = time.perf_counter()
-    generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
+    generation_result = model.generate(input_data, gen_config, streamer=streamer)
+    generated_tokens = generation_result.tokens
     end = time.perf_counter()
     log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
     generation_time = end - start
@@ -726,7 +732,8 @@ def run_text_generation_genai_with_stream(
         warm_up=(num == 0),
         tokenization_time=(tok_encode_time, tok_decode_time),
         batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        prompt_idx=prompt_index,
+        sd_metric=get_sd_metrics(generation_result.extended_perf_metrics),
     )
 
     print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)

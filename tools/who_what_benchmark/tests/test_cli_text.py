@@ -354,6 +354,19 @@ def test_text_genai_sd_generation_config_json_string(tmp_path, sd_main_model_pat
         ]
     )
 
+    reference = pd.read_csv(temp_file_name)
+    sd_columns = {
+        "draft_processed_tokens",
+        "draft_candidate_tokens",
+        "num_accepted",
+        "rejected_tokens",
+        "acceptance_rate",
+        "miss_rate",
+    }
+    assert sd_columns.isdisjoint(reference.columns)
+    assert reference["answers"].map(lambda answer: isinstance(answer, str)).all()
+
+    output_dir = tmp_path / "sd_output"
     output = run_wwb(
         [
             "--target-model",
@@ -370,12 +383,29 @@ def test_text_genai_sd_generation_config_json_string(tmp_path, sd_main_model_pat
             sd_draft_model_path,
             "--sd-generation-config",
             sd_config_string,
+            "--output",
+            str(output_dir),
         ]
     )
     assert "sd_generation_config:" in output
     assert "Metrics for model" in output
     similarity = get_similarity(output)
     assert similarity >= SD_SIMILARITY_THRESHOLD
+
+    predictions = pd.read_csv(output_dir / "target.csv")
+    assert len(predictions) == 2
+    assert sd_columns.issubset(predictions.columns)
+    assert predictions[list(sd_columns)].notna().all().all()
+    assert predictions["answers"].map(lambda answer: isinstance(answer, str)).all()
+    for row in predictions.itertuples():
+        candidates = row.draft_candidate_tokens
+        assert row.draft_processed_tokens >= 0
+        assert row.num_accepted >= 0
+        assert row.rejected_tokens >= 0
+        if candidates:
+            assert row.num_accepted + row.rejected_tokens == candidates
+        assert row.acceptance_rate == pytest.approx(row.num_accepted / candidates * 100 if candidates else 0)
+        assert row.miss_rate == pytest.approx(row.rejected_tokens / candidates * 100 if candidates else 0)
 
 
 @pytest.mark.skipif(

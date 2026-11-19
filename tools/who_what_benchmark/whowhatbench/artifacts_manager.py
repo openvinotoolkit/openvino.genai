@@ -16,11 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 class GenerationResults:
-    def __init__(self, answer_text, prompt_input_ids=None, logits=None, generated_token_ids=None):
+    def __init__(
+        self, answer_text, prompt_input_ids=None, logits=None, generated_token_ids=None, extended_perf_metrics=None
+    ):
         self.answer_text = answer_text
         self.prompt_input_ids = prompt_input_ids
         self.logits = logits
         self.generated_token_ids = generated_token_ids
+        self.extended_perf_metrics = extended_perf_metrics
 
 
 class Metrics(Enum):

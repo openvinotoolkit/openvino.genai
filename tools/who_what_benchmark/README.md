@@ -74,6 +74,13 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-n-ctx` to set context window size; if omitted, WWB uses 8192.<br>
 
+When speculative decoding is active, generated CSV files include draft processed, candidate,
+accepted and rejected token counts, plus acceptance and miss rates. Rates are unavailable
+when accepted tokens are reported without a candidate count. In the batched continuous
+batching path, native SD counters cover the entire batch. These totals appear only on the
+first row of each batch, marked with `sd_metrics_scope=batch` and `sd_batch_size`; the
+remaining rows have empty SD fields. Non-speculative runs do not add SD columns.
+
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh
 # Export FP16 model to OpenVINO
