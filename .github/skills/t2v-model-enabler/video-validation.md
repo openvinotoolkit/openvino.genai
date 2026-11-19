@@ -146,6 +146,10 @@ not an export error.
 
 4. Compare three numbers: GenAI vs ground truth, optimum-intel vs ground truth (should be equal), GenAI vs
    optimum-intel (should be close to 1.0; LTX-2.5 distilled: 0.973, 0.973 and 0.998).
+5. Read the per-prompt scores, not only the average. Video generation is chaotic: a tiny numerical difference can
+   send one prompt to a different video, so a few prompts can pull the average down while the pipeline is exact.
+   GenAI-vs-optimum-intel near 1.0 rules out a GenAI defect; a low score against ground truth with it is an export
+   or reference question for optimum-intel.
 
 Run long jobs under `nohup /usr/bin/time -v ... &` and check `Maximum resident set size` at the end; a killed run
 shows in `dmesg -T | grep -i "killed process"`.
