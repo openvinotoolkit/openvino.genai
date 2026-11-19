@@ -4,6 +4,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <random>
 
@@ -383,9 +384,9 @@ public:
         if (!m_is_chat_conversation) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
-            if (m_is_npu && m_vlm_config.model_type == VLMModelType::QWEN3_ASR) {
-                m_inputs_embedder->get_cache_state().reset_state();
-            }
+            // A previous generate() that threw after tokenization skipped the cache_state.reset_state() at the end of
+            // generate().
+            m_inputs_embedder->get_cache_state().reset_state();
             if (m_embedder_has_chat_history) {
                 m_inputs_embedder->finish_chat();
                 m_embedder_has_chat_history = false;
