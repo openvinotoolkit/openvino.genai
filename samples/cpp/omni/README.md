@@ -55,7 +55,7 @@ This sample takes exactly one audio file. The [Python sample](../../python/omni/
 **Interactive usage:**
 1. Images, video and audio are loaded once at startup and sent with the first question
 2. Type questions and press Enter
-3. Model responds with streaming text; when speech output is enabled, each turn's audio is saved to `output_audio_<turn>.wav`
+3. Model responds with streaming text; when speech output is enabled, each turn's audio is written chunk by chunk to `output_audio_<turn>.wav` while the text is still being generated
 4. Continue the conversation across multiple turns
 5. Press Ctrl+D to exit
 
@@ -81,6 +81,7 @@ Export using [Optimum Intel](https://github.com/huggingface/optimum-intel) CLI o
 ```cpp
 ov::genai::GenerationConfig text_config;
 text_config.max_new_tokens = 256;
+text_config.stream_text2speech = true;  // Start speech before the text is complete
 ```
 
 ### Speech Synthesis
@@ -95,7 +96,9 @@ talker_speech_config.speaker = "Cherry";   // Select a Qwen3-Omni voice (optiona
 
 **Available voices** vary by checkpoint. MoE models typically expose: `"Ethan"`, `"Chelsie"`, `"Aiden"`, `"Cherry"`. Check `talker_config.speaker_id` in the model's `config.json` for the full list. Leaving `speaker` empty selects the default voice. LFM3-Omni has no speaker selection: describe the voice in the system prompt.
 
-**Speech output:** 24kHz mono PCM samples returned in `OmniDecodedResults.speech_result.waveforms` and saved to `output_audio_<turn>.wav` for each turn.
+**Speech output:** 24kHz mono PCM samples. The sample passes a speech streamer to `generate()`, which receives each audio chunk as soon as it is produced and appends it to `output_audio_<turn>.wav`. With `text_config.stream_text2speech = true` the first Qwen3-Omni chunk arrives while the text is still being generated; LFM3-Omni decodes speech together with the text, so the flag changes nothing for it. The whole waveform is also returned in `OmniDecodedResults.speech_result.waveforms`.
+
+For text-only responses set `talker_speech_config.return_audio = false` and `text_config.stream_text2speech = false`.
 
 ## GPU Inference
 
