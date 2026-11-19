@@ -197,10 +197,10 @@ def run_test_with_lora(
     ],
 )
 def test_vlm_basic(model_id, model_type, tmp_path):
-    from transformers.image_utils import load_image
+    from PIL import Image
 
     image_path = tmp_path / "image.jpg"
-    load_image("http://images.cocodataset.org/val2017/000000329219.jpg").save(image_path)
+    Image.new("RGB", (32, 32), "white").save(image_path)
     dataset = tmp_path / "dataset.csv"
     pd.DataFrame({"prompts": ["What animal is this?"], "images": [str(image_path)]}).to_csv(dataset, index=False)
 
