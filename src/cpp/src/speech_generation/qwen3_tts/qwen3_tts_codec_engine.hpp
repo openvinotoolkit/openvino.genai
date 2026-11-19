@@ -145,6 +145,12 @@ public:
     std::vector<std::vector<int64_t>> generate_codec_groups_batch(
         const std::vector<CodecGroupBatchItem>& batch_items);
 
+    ov::Tensor make_next_talker_embedding(const std::vector<int64_t>& codec_groups,
+                                          size_t generation_step,
+                                          const ov::Tensor& tts_pad,
+                                          const ov::Tensor& trailing_text_hidden,
+                                          bool non_streaming_mode);
+
     std::vector<float> decode_speech_tokenizer(const std::vector<int64_t>& codes);
 
     std::vector<bool> compute_suppress_tokens() const;

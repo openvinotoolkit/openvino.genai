@@ -136,46 +136,8 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         auto groups = m_engine.generate_codec_groups(past_hidden, token, generation_config, subtalker_rng);
         all_codes.insert(all_codes.end(), groups.begin(), groups.end());
 
-        auto token_embed = m_engine.infer_embedding(m_engine.talker_embedding(), groups[0]);
-        OPENVINO_ASSERT(token_embed.get_shape().size() == 3 && token_embed.get_shape()[2] == hidden,
-                        "Talker embedding hidden size (", token_embed.get_shape()[2],
-                        ") must match talker hidden size (", hidden, ")");
-        float* token_embed_ptr = token_embed.data<float>();
-        for (size_t g = 1; g < groups.size(); ++g) {
-            auto pred_emb = m_engine.infer_predictor_embedding(groups[g], static_cast<int64_t>(g - 1));
-            OPENVINO_ASSERT(pred_emb.get_shape().size() == 3 && pred_emb.get_shape()[1] == 1 &&
-                                pred_emb.get_shape()[2] == token_embed.get_shape()[2],
-                            "Code predictor residual embedding shape mismatch. Expected [1, 1, ",
-                            token_embed.get_shape()[2], "], got ", pred_emb.get_shape());
-            const float* pred_ptr = pred_emb.data<const float>();
-            for (size_t h_i = 0; h_i < token_embed.get_shape()[2]; ++h_i) {
-                token_embed_ptr[h_i] += pred_ptr[h_i];
-            }
-        }
-        if (generation_config.non_streaming_mode) {
-            const float* tts_pad_ptr = tts_pad.data<const float>();
-            for (size_t h_i = 0; h_i < token_embed.get_shape()[2]; ++h_i) {
-                token_embed_ptr[h_i] += tts_pad_ptr[h_i];
-            }
-        } else if (trailing_text_hidden) {
-            OPENVINO_ASSERT(trailing_text_hidden.get_shape().size() == 3,
-                            "trailing_text_hidden is expected to have shape [1, T, H]");
-            OPENVINO_ASSERT(trailing_text_hidden.get_shape()[0] == 1,
-                            "trailing_text_hidden batch size is expected to be 1");
-            OPENVINO_ASSERT(trailing_text_hidden.get_shape()[2] == token_embed.get_shape()[2],
-                            "trailing_text_hidden hidden size mismatch");
-            const size_t trailing_len = trailing_text_hidden.get_shape()[1];
-            const float* trailing_ptr = trailing_text_hidden.data<const float>();
-            const float* add_ptr = nullptr;
-            if (step < trailing_len) {
-                add_ptr = trailing_ptr + step * token_embed.get_shape()[2];
-            } else {
-                add_ptr = tts_pad.data<const float>();
-            }
-            for (size_t h_i = 0; h_i < token_embed.get_shape()[2]; ++h_i) {
-                token_embed_ptr[h_i] += add_ptr[h_i];
-            }
-        }
+        const ov::Tensor token_embed = m_engine.make_next_talker_embedding(
+            groups, step, tts_pad, trailing_text_hidden, generation_config.non_streaming_mode);
 
         auto attn = make_decode_attention_mask_4d(absolute_pos + 1);
         auto pos = make_position_ids_decode(absolute_pos);

@@ -1122,6 +1122,60 @@ std::vector<std::vector<int64_t>> Qwen3TTSCodecEngine::generate_codec_groups_bat
     return groups;
 }
 
+ov::Tensor Qwen3TTSCodecEngine::make_next_talker_embedding(const std::vector<int64_t>& codec_groups,
+                                                          size_t generation_step,
+                                                          const ov::Tensor& tts_pad,
+                                                          const ov::Tensor& trailing_text_hidden,
+                                                          bool non_streaming_mode) {
+    OPENVINO_ASSERT(!codec_groups.empty(), "Code-group embedding requires at least one codec id");
+    ov::Tensor token_embedding = infer_embedding(m_talker_embedding, codec_groups[0]);
+    const ov::Shape token_shape = token_embedding.get_shape();
+    OPENVINO_ASSERT(token_shape.size() == 3 && token_shape[0] == 1 && token_shape[1] == 1 &&
+                        token_shape[2] == m_talker_hidden_size,
+                    "Talker codec embedding must have shape [1, 1, ",
+                    m_talker_hidden_size,
+                    "], got ",
+                    token_shape);
+
+    float* token_data = token_embedding.data<float>();
+    for (size_t group = 1; group < codec_groups.size(); ++group) {
+        const ov::Tensor residual_embedding =
+            infer_predictor_embedding(codec_groups[group], static_cast<int64_t>(group - 1));
+        OPENVINO_ASSERT(residual_embedding.get_shape() == ov::Shape({1, 1, m_talker_hidden_size}),
+                        "Code predictor residual embedding must have shape [1, 1, ",
+                        m_talker_hidden_size,
+                        "], got ",
+                        residual_embedding.get_shape());
+        const float* residual_data = residual_embedding.data<const float>();
+        for (size_t hidden_index = 0; hidden_index < m_talker_hidden_size; ++hidden_index) {
+            token_data[hidden_index] += residual_data[hidden_index];
+        }
+    }
+
+    const float* conditioning_data = nullptr;
+    if (non_streaming_mode) {
+        conditioning_data = tts_pad.data<const float>();
+    } else if (trailing_text_hidden) {
+        const ov::Shape trailing_shape = trailing_text_hidden.get_shape();
+        OPENVINO_ASSERT(trailing_shape.size() == 3 && trailing_shape[0] == 1 &&
+                            trailing_shape[2] == m_talker_hidden_size,
+                        "trailing_text_hidden must have shape [1, T, ",
+                        m_talker_hidden_size,
+                        "], got ",
+                        trailing_shape);
+        conditioning_data = generation_step < trailing_shape[1]
+            ? trailing_text_hidden.data<const float>() + generation_step * m_talker_hidden_size
+            : tts_pad.data<const float>();
+    }
+
+    if (conditioning_data) {
+        for (size_t hidden_index = 0; hidden_index < m_talker_hidden_size; ++hidden_index) {
+            token_data[hidden_index] += conditioning_data[hidden_index];
+        }
+    }
+    return token_embedding;
+}
+
 std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer(const std::vector<int64_t>& codes) {
     if (codes.empty()) {
         return {};
