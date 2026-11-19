@@ -55,6 +55,13 @@ void ensure_two_running_sequences(const ov::genai::SequenceGroup::Ptr& sequence_
     ASSERT_EQ(sequence_group->num_running_seqs(), 2);
 }
 
+void set_block_timestamps_oldest_first(const ov::genai::BlocksPerLayer& blocks) {
+    const auto timestamp = std::chrono::steady_clock::now();
+    for (size_t index = 0; index < blocks.size(); ++index) {
+        blocks[index]->set_timestamp(timestamp - std::chrono::seconds(blocks.size() - index));
+    }
+}
+
 class PrefixCachingCopyOnWriteLayerTest : public testing::TestWithParam<size_t> {};
 
 }  // namespace
@@ -1348,7 +1355,10 @@ TEST(TestBlockManager, PrefixCachingRestoredLiveCheckpointRejectsCombinedDeficit
     producer_group->schedule_tokens(tokens.size());
     block_manager.append_slots(producer_group);
     producer_group->finish_iteration();
-    block_manager.free_sequence(producer_group->get_running_sequences().front()->get_id());
+    const auto producer_sequence_id = producer_group->get_running_sequences().front()->get_id();
+    const auto producer_blocks = block_manager.get_block_table(producer_sequence_id, 0);
+    set_block_timestamps_oldest_first(producer_blocks);
+    block_manager.free_sequence(producer_sequence_id);
 
     auto pressure_group = create_sequence_group(std::vector<int64_t>{20, 21, 22, 23}, 90);
     pressure_group->schedule_tokens(4);
@@ -1393,7 +1403,10 @@ TEST(TestBlockManager, PrefixCachingRestoredLiveCheckpointWithSufficientCapacity
     producer_group->schedule_tokens(tokens.size());
     block_manager.append_slots(producer_group);
     producer_group->finish_iteration();
-    block_manager.free_sequence(producer_group->get_running_sequences().front()->get_id());
+    const auto producer_sequence_id = producer_group->get_running_sequences().front()->get_id();
+    const auto producer_blocks = block_manager.get_block_table(producer_sequence_id, 0);
+    set_block_timestamps_oldest_first(producer_blocks);
+    block_manager.free_sequence(producer_sequence_id);
 
     auto pressure_group = create_sequence_group(std::vector<int64_t>{20, 21, 22, 23, 24, 25, 26, 27}, 94);
     pressure_group->schedule_tokens(8);
