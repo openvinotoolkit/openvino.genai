@@ -1210,18 +1210,8 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer(const std::vecto
             }
         }
 
-        // Fill the rest of the window with real look-ahead codes (if available) instead of
-        // zeros: a real-vs-zero-padded-code boundary confuses the decoder near that edge, so
-        // only the true tail of the whole sequence (no more codes left at all) is ever padded.
-        const size_t lookahead_len = std::min(padded_len - chunk_len, num_frames - end);
-        if (lookahead_len > 0) {
-            const int64_t* lookahead_src = codes.data() + end * m_decoder_num_quantizers;
-            for (size_t t = 0; t < lookahead_len; ++t) {
-                for (size_t q = 0; q < m_decoder_num_quantizers; ++q) {
-                    dst[q * padded_len + (chunk_len + t)] = lookahead_src[t * m_decoder_num_quantizers + q];
-                }
-            }
-        }
+        // The unused tail of the window stays zero. The decoder is causal, so the padding cannot influence the
+        // audio of the real frames; no look-ahead codes are needed.
 
         m_speech_tokenizer_decoder.set_tensor("audio_codes", audio_codes);
         run_and_time([&]{ m_speech_tokenizer_decoder.infer(); }, roles::SPEECH_TOKENIZER_DECODER, m_perf_ms, m_perf_calls);
@@ -1236,35 +1226,10 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer(const std::vecto
                         "Speech tokenizer decoder produced fewer samples than the chunk's real code length");
         const size_t context_samples = ctx * m_decoder_upsample;
 
-        // Split the ctx-frame overlap into three zones so each chunk gets a region where it is
-        // fully trusted, mirrored around a middle blend zone: the first (oldest) left_drop frames
-        // keep the previous chunk's decode untouched (this chunk's decode of them has too little
-        // left-side context), the last (nearest the boundary) right_drop frames take this chunk's
-        // decode outright (the previous chunk's decode of them had no right-side context), and
-        // blend_frames in between are linearly crossfaded.
-        const size_t blend_frames = std::min<size_t>(static_cast<size_t>(DECODER_BLEND_FRAMES), ctx);
-        const size_t leftover_frames = ctx - blend_frames;
-        const size_t left_drop_frames = (leftover_frames + 1) / 2;
-        const size_t right_drop_frames = leftover_frames - left_drop_frames;
-        const size_t blend_samples = blend_frames * m_decoder_upsample;
-        const size_t right_drop_samples = right_drop_frames * m_decoder_upsample;
-
-        if (blend_samples > 0 && chunks_audio.size() >= blend_samples + right_drop_samples) {
-            const size_t blend_start_local = context_samples - blend_samples - right_drop_samples;
-            float* blend_tail = chunks_audio.data() + (chunks_audio.size() - blend_samples - right_drop_samples);
-            for (size_t i = 0; i < blend_samples; ++i) {
-                // Closed-interval ramp: the last blended sample is fully this chunk's own
-                // regeneration, the first is fully the previous chunk's already-appended output.
-                const float w = (blend_samples > 1) ? static_cast<float>(i) / static_cast<float>(blend_samples - 1)
-                                                     : 1.0f;
-                blend_tail[i] = blend_tail[i] * (1.0f - w) + out_ptr[blend_start_local + i] * w;
-            }
-        }
-        if (right_drop_samples > 0 && chunks_audio.size() >= right_drop_samples) {
-            float* new_tail = chunks_audio.data() + (chunks_audio.size() - right_drop_samples);
-            std::copy_n(out_ptr + (context_samples - right_drop_samples), right_drop_samples, new_tail);
-        }
-
+        // The `ctx` frames this chunk shares with the previous one are only history: the previous chunk already decoded
+        // them near the end of its window, with more history than this window gives them, so its audio is kept and
+        // this decode of them is dropped. (A crossfade over the overlap would blend in the less accurate decode and
+        // measured worse than this hard splice.)
         chunks_audio.insert(chunks_audio.end(),
                             out_ptr + static_cast<std::ptrdiff_t>(context_samples),
                             out_ptr + static_cast<std::ptrdiff_t>(valid_samples));

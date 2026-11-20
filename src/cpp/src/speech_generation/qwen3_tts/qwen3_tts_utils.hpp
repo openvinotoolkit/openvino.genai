@@ -41,11 +41,8 @@ constexpr const char* STREAM_DECODER_NAME = "openvino_codec_decoder_stream.xml";
 // latency is linear in the window, so this is ~2x cheaper per call than the previous 256 window, and the
 // offline path below only pays ~10% more decoder work per second of audio.
 constexpr int64_t DECODER_CHUNK_SIZE = 107;      // effective (non-overlapping) codes fed per chunk (offline path)
-constexpr int64_t DECODER_LEFT_CONTEXT = 25;     // prior-chunk codes prepended for continuity
+constexpr int64_t DECODER_LEFT_CONTEXT = 25;     // prior-chunk codes prepended for continuity (decoded and dropped)
 constexpr int64_t DECODER_WINDOW_LEN = DECODER_CHUNK_SIZE + DECODER_LEFT_CONTEXT;  // static decoder window
-constexpr int64_t DECODER_BLEND_FRAMES = 13;      // middle region of DECODER_LEFT_CONTEXT that is cross-faded.
-static_assert(DECODER_LEFT_CONTEXT >= DECODER_BLEND_FRAMES,
-              "DECODER_LEFT_CONTEXT must be >= DECODER_BLEND_FRAMES");
 
 // Component roles used for per-component device routing. Each Qwen3-TTS
 // submodel is a separate IR, so (mirroring the VLM pipeline) the pipeline can
