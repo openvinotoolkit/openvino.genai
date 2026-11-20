@@ -12,7 +12,6 @@ import numpy as np
 
 from pathlib import Path
 from shutil import rmtree
-from huggingface_hub import snapshot_download
 from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
@@ -1703,24 +1702,11 @@ def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_d
     del ov_pipe
 
 
-def _export_with_remote_code(model_id: str) -> Path:
-    model_path = get_ov_cache_converted_models_dir() / sanitize_model_id(model_id)
-    AtomicDownloadManager(model_path).execute(
-        lambda temp_path: export_with_optimum_cli(
-            retry_request(lambda: snapshot_download(model_id)),
-            "text-generation-with-past",
-            temp_path,
-            trust_remote_code=True,
-        )
-    )
-    return model_path
-
-
 def test_eagle3_counts_the_tree_window_that_ends_a_request():
     # The second token of the target stops each request, so the tree the target validates after the first token ends
     # the request.
-    target_path = _export_with_remote_code("optimum-intel-internal-testing/tiny-random-qwen3-layer10")
-    draft_path = _export_with_remote_code("optimum-intel-internal-testing/tiny-random-qwen3-eagle3")
+    target_path = download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3-layer10").models_path
+    draft_path = download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3-eagle3").models_path
     tokenizer = Tokenizer(target_path)
     prompts = ["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada."]
     input_ids = [tokenizer.encode(prompt).input_ids for prompt in prompts]
