@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <functional>
 
 #include "continuous_batching/pipeline_base.hpp"
@@ -355,8 +356,16 @@ private:
         pipeline_config.repetition_penalty = 1.0f;
         // Inside an interleaved answer <|text_end|> starts the speech tail, so only the hook may end the turn on it.
         pipeline_config.stop_token_ids.erase(speech_config.text_end_token_id);
-        OPENVINO_ASSERT(pipeline_config.eos_token_id != speech_config.text_end_token_id,
-                        "LFM3-Omni speech output needs an eos_token_id other than <|text_end|>");
+        if (pipeline_config.eos_token_id == speech_config.text_end_token_id) {
+            // validate() needs the EOS among the stop ids. A media placeholder is neither sampled as text nor forced
+            // for a frame, so the pipeline never stops on it, and the stop ids stay non-empty for add_request().
+            const auto& placeholders = speech_config.placeholder_token_ids;
+            const auto placeholder = std::find_if(placeholders.begin(), placeholders.end(), [&](int64_t token_id) {
+                return token_id != speech_config.audio_out_token_id;
+            });
+            OPENVINO_ASSERT(placeholder != placeholders.end(), "LFM3-Omni config.json defines no media placeholder");
+            pipeline_config.set_eos_token_id(*placeholder);
+        }
 
         // The hook writes the text streamer itself, so the pipeline streams nothing.
         VLMDecodedResults decoded_results;

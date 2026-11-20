@@ -906,6 +906,31 @@ def test_paged_attention_speech_matches_sdpa(
 
 
 @SKIP_PA_ON_MACOS_ARM64
+@pytest.mark.parametrize("output_mode", [ov_genai.SpeechOutputMode.INTERLEAVED, ov_genai.SpeechOutputMode.SPEECH_ONLY])
+def test_paged_attention_text_end_as_eos_matches_sdpa(
+    omni_sdpa_pipe: ov_genai.OmniPipeline,
+    omni_pa_pipe: ov_genai.OmniPipeline,
+    lfm3_omni_model_path: Path,
+    output_mode: ov_genai.SpeechOutputMode,
+) -> None:
+    # The speech decode reads <|text_end|> before the stop ids, so it may also be the EOS on both backends.
+    text_end = json.loads((lfm3_omni_model_path / "config.json").read_text())["text_end_token_id"]
+
+    def run(pipe: ov_genai.OmniPipeline) -> ov_genai.VLMDecodedResults:
+        text_config = _text_config(1000)
+        text_config.set_eos_token_id(text_end)
+        return pipe.generate(
+            PROMPT,
+            text_config=text_config,
+            talker_speech_config=_speech_config(14, output_mode=output_mode, rng_seed=2),
+        )
+
+    sdpa, pa = run(omni_sdpa_pipe), run(omni_pa_pipe)
+    assert (pa.texts, pa.finish_reasons) == (sdpa.texts, sdpa.finish_reasons)
+    np.testing.assert_array_equal(_waveform(pa), _waveform(sdpa))
+
+
+@SKIP_PA_ON_MACOS_ARM64
 @pytest.mark.parametrize("backend", ["SDPA", "PA"])
 def test_speech_streamer_stop_on_final_flush_keeps_length(
     backend: str, omni_sdpa_pipe: ov_genai.OmniPipeline, omni_pa_pipe: ov_genai.OmniPipeline
