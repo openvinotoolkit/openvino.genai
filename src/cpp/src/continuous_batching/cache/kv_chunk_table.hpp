@@ -20,6 +20,9 @@ namespace ov::genai::kv_chunk_table {
 //   slots [0, 16)                    header (magic, L, C_max, live chunks, granule shift, live granules, D_max, ...)
 //   slots [16, 16 + ceil(D_max/2))   directory: D_max u32 entries, dir[k] = (chunk_id << 20) | granule_in_chunk
 //   then, per layer l, 2 * C_max slots: K chunk pointers [0, C_max) followed by V chunk pointers [0, C_max)
+//   then ceil(C_max/2) slots: C_max u32 chunk_end[c] = global granule index one past the last granule of chunk c
+//     (a chunk covers the dense global blocks [(chunk_end - chunk_granules) << g, chunk_end << g), so a kernel that
+//     remembers that range resolves any block of the chunk without reading the directory)
 constexpr uint64_t kMagic = 0x50414348554E4B33ull;  // "PACHUNK3"
 constexpr uint32_t kGranuleInChunkBits = 20;
 constexpr size_t kMaxChunkId = (size_t{1} << 12) - 1;
@@ -42,8 +45,12 @@ inline size_t bases_offset(size_t max_granules) {
     return kHeaderSlots + (max_granules + 1) / 2;
 }
 
-inline size_t total_slots(size_t num_layers, size_t max_chunks, size_t max_granules) {
+inline size_t chunk_ends_offset(size_t num_layers, size_t max_chunks, size_t max_granules) {
     return bases_offset(max_granules) + num_layers * 2 * max_chunks;
+}
+
+inline size_t total_slots(size_t num_layers, size_t max_chunks, size_t max_granules) {
+    return chunk_ends_offset(num_layers, max_chunks, max_granules) + (max_chunks + 1) / 2;
 }
 
 // Owns the in-place updates of the table tensor. The tensor is the inference request's own USM host input tensor
@@ -110,6 +117,11 @@ public:
             set_slot(base + chunk_id, key_ptrs[layer]);
             set_slot(base + m_max_chunks + chunk_id, value_ptrs[layer]);
         }
+        const uint32_t chunk_end = static_cast<uint32_t>(first_granule + granules);
+        std::memcpy(static_cast<uint8_t*>(m_table.data()) +
+                        chunk_ends_offset(m_num_layers, m_max_chunks, m_max_granules) * sizeof(uint64_t) + chunk_id * sizeof(uint32_t),
+                    &chunk_end,
+                    sizeof(chunk_end));
         set_slot(LIVE_GRANULES, first_granule + granules);
         set_slot(LIVE_CHUNKS, chunk_id + 1);
         set_slot(GENERATION, get_slot(GENERATION) + 1);
