@@ -129,8 +129,7 @@ ov::OutputVector add_ragged_dimension(const ov::OutputVector& inputs) {
     return res;
 }
 
-// GGUF token_type values (llama_token_type). convert_hf_to_gguf.py maps Hugging Face added tokens
-// with special=true to CONTROL and other added tokens to USER_DEFINED.
+// GGUF token_type values (llama_token_type), used as stored in the file.
 enum GGUFTokenType : int32_t {
     GGUF_TOKEN_NORMAL = 1,
     GGUF_TOKEN_UNKNOWN = 2,
@@ -145,8 +144,8 @@ bool is_atomic_token(int32_t token_type) {
     return token_type == GGUF_TOKEN_CONTROL || token_type == GGUF_TOKEN_USER_DEFINED;
 }
 
-// Tokens removed by skip_special_tokens. USER_DEFINED tokens such as </think> stay visible,
-// as in llama.cpp token_to_piece().
+// Tokens removed by skip_special_tokens. USER_DEFINED tokens such as </think> stay visible.
+// Unlike llama.cpp, known EOG/FIM tokens are not promoted to CONTROL at load time.
 bool is_skipped_on_decode(int32_t token_type) {
     return token_type == GGUF_TOKEN_CONTROL;
 }
@@ -833,6 +832,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         token_types = *val;
     }
 
+    OPENVINO_ASSERT(token_types.get_size() == tokens.size(), "[gguf tokenizer] 'token_type' array size != vocab size");
     const auto token_types_data = token_types.data<int32_t>();
 
     for (size_t i = 0; i < tokens.size(); ++i) {
