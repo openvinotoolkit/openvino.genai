@@ -47,6 +47,12 @@ TEST(AudioChunkFramesValidation, RejectsExcessiveLeftContextFrames) {
     EXPECT_THROW(ov::genai::validate_omni_talker_speech_config(cfg), ov::Exception);
 }
 
+TEST(AudioChunkFramesValidation, RejectsUnknownOutputMode) {
+    auto cfg = make_config_with_audio(4);
+    cfg.output_mode = static_cast<ov::genai::SpeechOutputMode>(2);
+    EXPECT_THROW(ov::genai::validate_omni_talker_speech_config(cfg), ov::Exception);
+}
+
 TEST(AudioChunkFramesValidation, ReadsLeftContextFramesFromProperties) {
     ov::genai::OmniTalkerSpeechConfig cfg;
     EXPECT_TRUE(ov::genai::is_omni_talker_speech_config_key("audio_chunk_left_context_frames"));
