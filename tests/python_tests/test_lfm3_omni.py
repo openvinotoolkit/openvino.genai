@@ -24,6 +24,7 @@ import platform
 import shutil
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1012,15 +1013,23 @@ def test_rejects_speech_token_ids_outside_vocab(lfm3_omni_model_path: Path, tmp_
         ov_genai.OmniPipeline(tmp_path, "CPU")
 
 
+def _write_model(source: Path, target: Path, name: str, edit: Callable[[ov.Model], ov.Model]) -> None:
+    # Writes an edited copy of openvino_<name>_model and links the rest of the export.
+    _link_export(source, target, {f"openvino_{name}_model.xml", f"openvino_{name}_model.bin"})
+    model = edit(ov.Core().read_model(source / f"openvino_{name}_model.xml"))
+    ov.save_model(model, target / f"openvino_{name}_model.xml", compress_to_fp16=False)
+
+
 def _write_failing_speech_model(source: Path, target: Path, name: str, output: str, row_shape: list[int]) -> None:
     # The output is reshaped to rows one element longer: the model compiles, but every inference throws.
-    _link_export(source, target, {f"openvino_{name}_model.xml", f"openvino_{name}_model.bin"})
-    model = ov.Core().read_model(source / f"openvino_{name}_model.xml")
-    original = model.output(output).get_node().input_value(0)
-    original.get_tensor().set_names(set())
-    failing = ov.opset13.reshape(original, [-1, *row_shape[:-1], row_shape[-1] + 1], special_zero=False)
-    failing.output(0).get_tensor().set_names({output})
-    ov.save_model(ov.Model([failing], model.get_parameters()), target / f"openvino_{name}_model.xml")
+    def edit(model: ov.Model) -> ov.Model:
+        original = model.output(output).get_node().input_value(0)
+        original.get_tensor().set_names(set())
+        failing = ov.opset13.reshape(original, [-1, *row_shape[:-1], row_shape[-1] + 1], special_zero=False)
+        failing.output(0).get_tensor().set_names({output})
+        return ov.Model([failing], model.get_parameters())
+
+    _write_model(source, target, name, edit)
 
 
 @pytest.mark.parametrize("backend", ["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
@@ -1041,6 +1050,50 @@ def test_speech_model_failure_ends_only_its_call(
         pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=speech_only)
     collector = TokenCollector()
     pipe.generate(
+        PROMPT,
+        text_config=_text_config(TEXT_TOKENS),
+        talker_speech_config=_speech_config(2, return_audio=False),
+        streamer=collector,
+    )
+    assert len(collector.tokens) == TEXT_TOKENS
+
+
+def _add_scaled_last_hidden_state(model: ov.Model) -> ov.Model:
+    hidden_states = model.output("hidden_states").get_node().input_value(0)
+    scaled = ov.opset13.multiply(hidden_states, ov.opset13.constant(np.float32(2.0)))
+    scaled.output(0).get_tensor().set_names({"last_hidden_state"})
+    model.add_results([ov.opset13.result(scaled)])
+    return model
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_speech_reads_hidden_states_output(lfm3_omni_model_path: Path, tmp_path: Path) -> None:
+    # SDPA drives the depth decoder with hidden_states; PA must read the same output when last_hidden_state exists too.
+    _write_model(lfm3_omni_model_path, tmp_path, "language", _add_scaled_last_hidden_state)
+    config = _speech_config(14, rng_seed=2)
+    results = [
+        ov_genai.OmniPipeline(tmp_path, "CPU", ATTENTION_BACKEND=backend, **F32).generate(
+            PROMPT, text_config=_text_config(1000), talker_speech_config=config
+        )
+        for backend in ("SDPA", "PA")
+    ]
+    assert results[1].texts == results[0].texts
+    np.testing.assert_array_equal(_waveform(results[1]), _waveform(results[0]))
+
+
+def _remove_hidden_states(model: ov.Model) -> ov.Model:
+    model.remove_result(model.output("hidden_states").get_node())
+    return model
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_needs_hidden_states_output(lfm3_omni_model_path: Path, tmp_path: Path) -> None:
+    _write_model(lfm3_omni_model_path, tmp_path, "language", _remove_hidden_states)
+    with pytest.raises(RuntimeError, match="no hidden_states output"):
+        ov_genai.OmniPipeline(tmp_path, "CPU", ATTENTION_BACKEND="PA")
+    # Without an explicit backend the pipeline falls back to SDPA, which answers in text.
+    collector = TokenCollector()
+    ov_genai.OmniPipeline(tmp_path, "CPU").generate(
         PROMPT,
         text_config=_text_config(TEXT_TOKENS),
         talker_speech_config=_speech_config(2, return_audio=False),

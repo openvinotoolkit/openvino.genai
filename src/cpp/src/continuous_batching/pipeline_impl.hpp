@@ -197,8 +197,8 @@ public:
 
     void step() override;
 
-    /// @brief Installs model-specific step work. The hook reads the hidden states of every step, so their export
-    /// stays on.
+    /// @brief Installs model-specific step work. The "hidden_states" output is exported for the steps the hook needs.
+    /// @throws ov::Exception if the language model has no "hidden_states" output.
     void set_step_hook(std::shared_ptr<IStepHook> hook);
 
     /**

@@ -495,8 +495,6 @@ public:
             const auto& name = output.get_any_name();
             if (name == "hidden_states") {
                 m_has_hidden_states_output = true;
-            } else if (name == "last_hidden_state") {
-                m_has_last_hidden_state_output = true;
             } else if (name == "intermediate_hidden_states") {
                 m_has_intermediate_hidden_states_output = true;
             } else if (name == "next_hidden_states") {
@@ -522,6 +520,16 @@ public:
      */
     ov::InferRequest get_infer_request() {
         return m_request;
+    }
+
+    /// @brief Exports the "hidden_states" output, as the SDPA pipelines read it, whatever else the model outputs.
+    void use_hidden_states_output() {
+        OPENVINO_ASSERT(m_has_hidden_states_output, "The language model has no hidden_states output to export");
+        m_use_hidden_states_output = true;
+    }
+
+    bool is_hidden_state_export_enabled() const {
+        return _is_hs_export();
     }
 
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
@@ -1150,19 +1158,16 @@ public:
         _reset_cache_rotation_coefficients();
 
         if (_is_hs_export()) {
-            // Use "hidden_states" output when the model also exports "intermediate_hidden_states"
-            // (Qwen3-Omni pattern). Use "next_hidden_states" for models which have it, e.g., Qwen4Exp MTP draft
-            // uses it between draft model iterations. Use "hidden_states" when there is no "last_hidden_state"
-            // (LFM3-Omni). Otherwise prefer "last_hidden_state" to preserve existing behavior for speculative decoding.
-            if (m_has_hidden_states_output && m_has_intermediate_hidden_states_output) {
-                m_hidden_states = m_request.get_tensor("hidden_states");
-            } else if (m_has_next_hidden_states_output) {
-                m_hidden_states = m_request.get_tensor("next_hidden_states");
-            } else if (m_has_hidden_states_output && !m_has_last_hidden_state_output) {
-                m_hidden_states = m_request.get_tensor("hidden_states");
-            } else {
-                m_hidden_states = m_request.get_tensor("last_hidden_state");
-            }
+            // Use "hidden_states" output only when the model also exports "intermediate_hidden_states"
+            // (Qwen3-Omni pattern) or a step hook asked for it (LFM3-Omni). Otherwise prefer "last_hidden_state"
+            // to preserve existing behavior for speculative decoding and other models.
+            // Use "next_hidden_states" for model which has it, e.g., Qwen4Exp MTP draft use it between draft model iterations.
+            const bool use_hidden_states =
+                m_has_hidden_states_output && (m_has_intermediate_hidden_states_output || m_use_hidden_states_output);
+            m_hidden_states = use_hidden_states
+                ? m_request.get_tensor("hidden_states")
+                : m_has_next_hidden_states_output ? m_request.get_tensor("next_hidden_states")
+                                                  : m_request.get_tensor("last_hidden_state");
 
             // Capture intermediate hidden states if available (Qwen3-Omni talker support)
             if (m_has_intermediate_hidden_states_output) {
@@ -1304,7 +1309,8 @@ private:
     ov::Tensor m_intermediate_hidden_states;
     // Whether model has "hidden_states" vs "last_hidden_state" output name
     bool m_has_hidden_states_output = false;
-    bool m_has_last_hidden_state_output = false;
+    // Export "hidden_states" even without "intermediate_hidden_states" (set by a step hook).
+    bool m_use_hidden_states_output = false;
     // Whether model has intermediate_hidden_states output (e.g., Qwen3-Omni)
     bool m_has_intermediate_hidden_states_output = false;
     // Whether model has next_hidden_states output (e.g., Qwen4Exp MTP draft)

@@ -56,6 +56,9 @@ public:
                         ov::Tensor& inputs_embeds,
                         std::optional<ov::Tensor>& prompt_ids,
                         InputsEmbedder& inputs_embedder) override;
+    bool needs_hidden_states() const override {
+        return !m_states.empty();
+    }
     void before_sampling(const std::vector<SequenceGroup::Ptr>& requests, const ov::Tensor& logits) override;
     std::vector<GeneratedEmbedding> after_sampling(const std::vector<SequenceGroup::Ptr>& requests,
                                                    SamplerOutput& sampler_output) override;

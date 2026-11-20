@@ -83,6 +83,25 @@ template <class... Ts>
 struct overloaded : Ts... {
     using Ts::operator()...;
 };
+
+namespace {
+
+// RAII guard so the flag is restored on every exit path (including exceptions).
+struct HiddenStateExportGuard {
+    std::shared_ptr<ModelRunner>& m_runner;
+    explicit HiddenStateExportGuard(std::shared_ptr<ModelRunner>& runner) : m_runner(runner) {
+        if (m_runner)
+            m_runner->enable_hidden_state_export(true);
+    }
+    ~HiddenStateExportGuard() {
+        if (m_runner)
+            m_runner->enable_hidden_state_export(false);
+    }
+    HiddenStateExportGuard(const HiddenStateExportGuard&) = delete;
+    HiddenStateExportGuard& operator=(const HiddenStateExportGuard&) = delete;
+};
+
+}  // namespace
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
@@ -791,6 +810,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
 
     {
         static ManualTimer timer("forward");
+        // The step hook may need hidden states for this step only, e.g. while a speech request runs.
+        std::optional<HiddenStateExportGuard> step_hook_export;
+        if (m_step_hook && m_step_hook->needs_hidden_states() && !m_model_runner->is_hidden_state_export_enabled()) {
+            step_hook_export.emplace(m_model_runner);
+        }
         const auto infer_start = std::chrono::steady_clock::now();
         timer.start();
         logits = m_model_runner->forward(m_requests, scheduler_output);
@@ -948,8 +972,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_step_hook(std::shared_ptr<IStepHook> hook) {
+    OPENVINO_ASSERT(hook, "A step hook must not be null");
+    m_model_runner->use_hidden_states_output();
     m_step_hook = std::move(hook);
-    m_model_runner->enable_hidden_state_export(m_step_hook != nullptr);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std::optional<AdapterConfig>& adapters) {
@@ -1134,21 +1159,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     }
     set_adapters(sampling_params[0].adapters);
 
-    // RAII guard so the flag is restored on every exit path (including exceptions).
-    struct HiddenStateExportGuard {
-        std::shared_ptr<ModelRunner>& m_runner;
-        explicit HiddenStateExportGuard(std::shared_ptr<ModelRunner>& runner) : m_runner(runner) {
-            if (m_runner)
-                m_runner->enable_hidden_state_export(true);
-        }
-        ~HiddenStateExportGuard() {
-            if (m_runner)
-                m_runner->enable_hidden_state_export(false);
-        }
-        HiddenStateExportGuard(const HiddenStateExportGuard&) = delete;
-        HiddenStateExportGuard& operator=(const HiddenStateExportGuard&) = delete;
-    };
-
     // Enable hidden state export only when a request opts in via GenerationConfig::return_omni_outputs
     // (set by OmniPipeline on the audio path).
     const bool collect_hidden_states = std::any_of(sampling_params.begin(), sampling_params.end(),
@@ -1156,8 +1166,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                                                        return params.return_omni_outputs;
                                                    });
     std::optional<HiddenStateExportGuard> hidden_state_guard;
-    // An installed step hook keeps the export on for every call, so this call must not switch it off.
-    if (collect_hidden_states && !m_step_hook) {
+    if (collect_hidden_states) {
         hidden_state_guard.emplace(m_model_runner);
     }
 

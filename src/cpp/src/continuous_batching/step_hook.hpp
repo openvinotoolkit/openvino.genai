@@ -33,6 +33,9 @@ public:
                                 std::optional<ov::Tensor>& prompt_ids,
                                 InputsEmbedder& inputs_embedder) = 0;
 
+    /// @brief Read before each forward: true if its sequences must carry the "hidden_states" output.
+    virtual bool needs_hidden_states() const = 0;
+
     /// @brief After forward, before sampling. May force the next token of sequences that need sampling.
     /// @param logits The forward output, laid out as the sampler reads it.
     virtual void before_sampling(const std::vector<SequenceGroup::Ptr>& requests, const ov::Tensor& logits) = 0;
