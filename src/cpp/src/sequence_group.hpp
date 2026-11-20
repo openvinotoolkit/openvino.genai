@@ -67,6 +67,7 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
+    size_t m_hidden_state_first_position = 0;
     // When enabled, one intermediate hidden state is kept per token position
     // (prefill batches are sliced into per-token tensors before accumulation)
     static constexpr size_t kMaxAccumulatedHiddenStates = 512;
@@ -76,6 +77,9 @@ class Sequence {
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
+    // The draft candidates that the main model accepted, counted as it validates them: a matched stop string can
+    // remove accepted candidates from the generated tokens afterwards.
+    size_t m_num_accepted_candidates = 0;
     std::unordered_map<size_t, std::vector<int64_t>> m_prefix_hashes;
     size_t m_prefix_publication_limit = std::numeric_limits<size_t>::max();
     std::function<size_t(size_t, size_t)> m_prefix_hash_provider;
@@ -105,11 +109,13 @@ class Sequence {
         m_draft_proposals(seq.m_draft_proposals),
         m_grouped_id(id),
         m_hidden_state(seq.m_hidden_state),
+        m_hidden_state_first_position(seq.m_hidden_state_first_position),
         m_accumulate_hidden_states(seq.m_accumulate_hidden_states),
         m_hidden_state_cap_warned(seq.m_hidden_state_cap_warned),
         m_all_intermediate_hidden_states(seq.m_all_intermediate_hidden_states),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
+        m_num_accepted_candidates(seq.m_num_accepted_candidates),
         m_prefix_hashes(seq.m_prefix_hashes),
         m_prefix_publication_limit(seq.m_prefix_publication_limit),
         m_prefix_hash_provider(seq.m_prefix_hash_provider),
@@ -185,12 +191,18 @@ public:
         }
     }
 
-    void update_hidden_state(const ov::Tensor& tensor) {
+    // first_position is the token position of the first row.
+    void update_hidden_state(const ov::Tensor& tensor, size_t first_position = 0) {
         m_hidden_state = tensor;
+        m_hidden_state_first_position = first_position;
     }
 
     ov::Tensor get_hidden_state() const {
         return m_hidden_state;
+    }
+
+    size_t get_hidden_state_first_position() const {
+        return m_hidden_state_first_position;
     }
 
     void set_tree_metadata(TreeMetaData metadata) {
@@ -321,6 +333,14 @@ public:
         OPENVINO_ASSERT(idx < m_generated_log_probs.size());
         m_cumulative_log_prob += log_prob - m_generated_log_probs[idx];
         m_generated_log_probs[idx] = log_prob;
+    }
+
+    void count_accepted_candidate() {
+        ++m_num_accepted_candidates;
+    }
+
+    size_t get_num_accepted_candidates() const {
+        return m_num_accepted_candidates;
     }
 
     void set_draft_proposal(size_t idx, DraftProposalPtr proposal) {
@@ -868,8 +888,13 @@ public:
     }
 
     void clear_scheduled_tokens() {
-        m_num_scheduled_tokens = 0;
+        unschedule_tokens();
         m_num_validation_tokens = 0;
+    }
+
+    // Unlike clear_scheduled_tokens(), keeps the candidates of a validation window to validate in a later step.
+    void unschedule_tokens() {
+        m_num_scheduled_tokens = 0;
         m_output_seq_len = 0;
     }
 
@@ -896,19 +921,40 @@ public:
         return m_num_streamed_tokens;
     }
 
+    // The pending tokens of a request, the candidates of a validation window or the tokens a draft request takes over
+    // from the main model, are the last tokens of the sequence, and the forward that runs them samples after the last
+    // one, so it runs to the end of the sequence. After a recompute the group counts one row less: without pending
+    // tokens, the last generated token runs on its own in a later step.
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
-        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
-        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
+        const size_t num_available_tokens =
+            std::max<size_t>(std::max(get_prompt_len(), m_max_content_len) - m_num_processed_tokens, 1u) +
+            m_num_validation_tokens;
+        if (m_num_validation_tokens == 0) {
+            return num_available_tokens;
+        }
+        size_t sequence_len = 0;
+        for (const auto& sequence : get_running_sequences()) {
+            sequence_len = std::max(sequence_len, get_prompt_len() + sequence->get_generated_len());
+        }
+        return std::max(num_available_tokens,
+                        sequence_len > m_num_processed_tokens ? sequence_len - m_num_processed_tokens : 0);
     }
 
     void finish_iteration() {
+        finish_iteration_before_validation_window();
+        m_num_validation_tokens = 0;
+    }
+
+    // A forward that ends before the validation window, in a prompt or a recompute, leaves its candidates to the
+    // forward that runs the window.
+    void finish_iteration_before_validation_window() {
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
-        clear_scheduled_tokens();
+        unschedule_tokens();
     }
 
     void update_processed_tokens_num(size_t processed_tokens) {
