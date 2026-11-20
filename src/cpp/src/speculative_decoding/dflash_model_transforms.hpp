@@ -71,7 +71,7 @@ void reject_dflash_draft_on_npu(bool is_npu_requested, const ov::AnyMap& propert
 /**
  * @brief Promotes DFlash-specific GPU requirements to explicit OpenVINO compile properties.
  *
- * The GPU plugin intentionally ignores generic activation-scale RT info for LLM graphs. DFlash v2
+ * The GPU plugin intentionally ignores generic activation-scale RT info for LLM graphs. DFlash-2
  * therefore stores a GPU minimum in its own metadata, which GenAI applies explicitly when compiling
  * the draft. A requested value above the minimum is preserved. A lower value set for the draft is
  * rejected, but one from the target's properties, which a draft without properties of its own
