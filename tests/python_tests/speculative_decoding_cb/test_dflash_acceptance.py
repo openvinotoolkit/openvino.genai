@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""DFlash, DSpark and DFlash v2 drafts whose every candidate the target accepts.
+"""DFlash, DSpark and DFlash-2 drafts whose every candidate the target accepts.
 
 The tiny random drafts of the shared speculative decoding scenarios reject almost every candidate. Here every token
 embedding carries a large channel 0 that only token 0 reads out, so the target and all drafts predict token 0: greedy
@@ -29,7 +29,7 @@ if not all(
     for name in ("Qwen3DFlashForCausalLM", "Qwen3DSparkForCausalLM", "Qwen3DFlash2ForCausalLM")
 ):
     pytest.skip(
-        "This optimum-intel version cannot export DSpark and DFlash v2 drafts (huggingface/optimum-intel#2098).",
+        "This optimum-intel version cannot export DSpark and DFlash-2 drafts (huggingface/optimum-intel#2098).",
         allow_module_level=True,
     )
 
