@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 import shutil
 from pathlib import Path
 from xml.etree import ElementTree  # nosec B405 - parses only IRs that the tests export
@@ -12,6 +13,7 @@ from openvino_genai import (
     ContinuousBatchingPipeline,
     GenerationConfig,
     GenerationStatus,
+    LLMPipeline,
     SchedulerConfig,
     VLMPipeline,
     draft_model,
@@ -24,6 +26,7 @@ from test_speculative_decoding import (
     PROMPTS_4,
     QWEN3_DEEPSPEC,
     QWEN3_DFLASH,
+    QWEN3_DFLASH2,
     QWEN3_DSPARK,
     QWEN35_DFLASH,
     SCORE_SKIP,
@@ -180,14 +183,44 @@ def test_drafts_without_properties_do_not_share_cached_blobs(model_pair, tmp_pat
     assert len(list(cache_dir.glob("*.blob"))) == 4
 
 
-@pytest.mark.parametrize("model_pair", [QWEN3_DSPARK, MINICPMV47_DSPARK], indirect=True)
-def test_dspark_draft_needs_its_markov_head_model(model_pair, tmp_path):
+@pytest.mark.parametrize("model_pair", [QWEN3_DSPARK, MINICPMV47_DSPARK, QWEN3_DFLASH2], indirect=True)
+def test_draft_with_markov_head_needs_its_model(model_pair, tmp_path):
     draft_dir = tmp_path / "no_markov_head"
     shutil.copytree(model_pair.draft_path, draft_dir)
     for suffix in (".xml", ".bin"):
         (draft_dir / f"openvino_markov_head_model{suffix}").unlink()
     with pytest.raises(RuntimeError, match="openvino_markov_head_model.xml is not next to it"):
         draft_model(draft_dir, "CPU")
+
+
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH2], indirect=True)
+def test_gated_markov_head_has_no_dense_step(model_pair):
+    with pytest.raises(RuntimeError, match="selects the dense Markov walk"):
+        draft_model(model_pair.draft_path, "CPU", markov_head_top_k=0)
+
+
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_draft_without_token_type_ids_is_rejected(model_pair, tmp_path):
+    draft_dir = tmp_path / "no_token_type_ids"
+    shutil.copytree(model_pair.draft_path, draft_dir)
+    xml_path = draft_dir / "openvino_model.xml"
+    xml = xml_path.read_text(encoding="utf-8")
+    renamed_xml = re.sub(r'name(s?)="token_type_ids"', r'name\1="segment_ids"', xml)
+    assert renamed_xml != xml
+    xml_path.write_text(renamed_xml, encoding="utf-8")
+    with pytest.raises(RuntimeError, match="has no 'token_type_ids' input"):
+        draft = draft_model(draft_dir, "CPU", **PARITY_PROPERTIES)
+        ContinuousBatchingPipeline(
+            model_pair.target_path, SchedulerConfig(), "CPU", {**PARITY_PROPERTIES, "draft_model": draft}
+        )
+
+
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_draft_on_npu_is_rejected(model_pair):
+    # NPU pipelines use the stateful backend, and DFlash runs on the continuous batching backend only.
+    draft = draft_model(model_pair.draft_path, "NPU")
+    with pytest.raises(RuntimeError, match="NPU is not supported"):
+        LLMPipeline(model_pair.target_path, "CPU", draft_model=draft)
 
 
 @pytest.mark.parametrize("model_pair", [QWEN3_DFLASH, QWEN3_DEEPSPEC, QWEN35_DFLASH], indirect=True)
