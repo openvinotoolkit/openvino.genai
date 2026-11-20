@@ -299,9 +299,9 @@
 
 - name: DFlash and DSpark speculative decoding tests
   cmd: |-
-    # Selects the DFlash v1, DFlash v2 (qwen3-dflash2), DeepSpec and DSpark pairs, test_dflash.py and
+    # Selects the DFlash, DFlash-2 (qwen3-dflash2), DeepSpec and DSpark pairs, test_dflash.py and
     # test_dflash_acceptance.py. Their drafts need the export from optimum-intel main, which exports Qwen3.5 only with
-    # transformers>=5.15 and exports DFlash v2 drafts since https://github.com/huggingface/optimum-intel/pull/2098.
+    # transformers>=5.15 and exports DFlash-2 drafts since https://github.com/huggingface/optimum-intel/pull/2098.
     # The MiniCPM-V 4.7 pairs need transformers 5.18 and run in their own job.
     python -m pip install transformers==5.15.1
     python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@7995031fbf29285441ec7c222ef9afa80aaedbb2"

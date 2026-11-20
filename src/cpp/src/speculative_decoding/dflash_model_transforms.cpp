@@ -53,7 +53,7 @@ float parse_dflash_gpu_min_activations_scale_factor(const std::string& value) {
     }
     OPENVINO_ASSERT(parsed_characters > 0 && parsed_characters == value.size() && std::isfinite(scale_factor) &&
                         scale_factor > 0.0f,
-                    "DFlash v2 gpu_min_activations_scale_factor must be a finite positive number, got '",
+                    "DFlash-2 gpu_min_activations_scale_factor must be a finite positive number, got '",
                     value,
                     "'.");
     return scale_factor;
@@ -554,7 +554,7 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
             ".");
     }
     OPENVINO_ASSERT(info.dflash_version != 2 || info.gpu_min_activations_scale_factor > 0.0f,
-                    "DFlash v2 draft model is missing dflash/gpu_min_activations_scale_factor metadata.");
+                    "DFlash-2 draft model is missing dflash/gpu_min_activations_scale_factor metadata.");
     if (auto input_scale_it = config.find("dflash_input_embedding_scale"); input_scale_it != config.end()) {
         info.input_embedding_scale = input_scale_it->second.as<float>();
         config.erase(input_scale_it);
@@ -584,7 +584,7 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
                     " applies only to drafts with a Markov head that are loaded with draft_model(<draft folder>).");
     if (info.dflash_version == 2) {
         OPENVINO_ASSERT(info.markov_rank > 0 && info.markov_head_type == DFLASH2_MARKOV_HEAD,
-                        "A DFlash v2 draft must have a '",
+                        "A DFlash-2 draft must have a '",
                         DFLASH2_MARKOV_HEAD,
                         "' Markov head. Re-export the draft with an optimum-intel version that exports ",
                         MARKOV_HEAD_MODEL_FILE_NAME,
@@ -597,7 +597,7 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
                         info.markov_head_type,
                         "' for a DFlash v",
                         info.dflash_version,
-                        " draft. Supported Markov heads: vanilla, and dflash2 for DFlash v2 drafts.");
+                        " draft. Supported Markov heads: vanilla, and dflash2 for DFlash-2 drafts.");
         OPENVINO_ASSERT(info.markov_head_computation,
                         "The draft has a Markov head but no Markov head model. Load the draft with "
                         "draft_model(<draft folder>) so that ",
@@ -642,11 +642,11 @@ void apply_dflash_gpu_compile_properties(const DFlashRTInfo& info,
         requested_scale_factor = requested_it->second.as<float>();
         OPENVINO_ASSERT(std::isfinite(requested_scale_factor),
                         property_name,
-                        " must be finite when compiling a DFlash v2 GPU draft, got ",
+                        " must be finite when compiling a DFlash-2 GPU draft, got ",
                         requested_scale_factor,
                         ".");
         OPENVINO_ASSERT(inherits_target_properties || requested_scale_factor >= info.gpu_min_activations_scale_factor,
-                        "The DFlash v2 GPU draft ",
+                        "The DFlash-2 GPU draft ",
                         property_name,
                         " ",
                         requested_scale_factor,
