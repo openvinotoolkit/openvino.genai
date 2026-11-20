@@ -19,12 +19,18 @@
 
 namespace ov::genai::dflash_cb {
 
+// True when no logit processor of this config depends on the tokens generated before: the penalties, min_new_tokens
+// and structured output.
+inline bool logit_processors_ignore_history(const GenerationConfig& config) {
+    return config.repetition_penalty == 1.0f && config.presence_penalty == 0.0f && config.frequency_penalty == 0.0f &&
+           config.min_new_tokens == 0 && !config.is_structured_output_generation();
+}
+
 // True when the logit processors of a draft sampler with this config cannot change which token has the highest logit,
 // so a greedy draft can take the best token of every row without the sampler. Follows the transforms that
 // LogitProcessor adds for greedy decoding; the log-prob transforms keep the argmax.
 inline bool logit_processors_keep_argmax(const GenerationConfig& config) {
-    return config.is_greedy_decoding() && config.repetition_penalty == 1.0f && config.presence_penalty == 0.0f &&
-           config.frequency_penalty == 0.0f && config.min_new_tokens == 0 && !config.is_structured_output_generation();
+    return config.is_greedy_decoding() && logit_processors_ignore_history(config);
 }
 
 // True when the logit processors of a sampled draft request with this config only apply its temperature to a lattice
@@ -32,8 +38,7 @@ inline bool logit_processors_keep_argmax(const GenerationConfig& config) {
 // Follows the transforms that LogitProcessor adds for multinomial sampling: a top_k of at least num_row_candidates
 // keeps every candidate of a row.
 inline bool logit_processors_only_apply_temperature(const GenerationConfig& config, size_t num_row_candidates) {
-    return config.is_multinomial() && config.repetition_penalty == 1.0f && config.presence_penalty == 0.0f &&
-           config.frequency_penalty == 0.0f && config.min_new_tokens == 0 && !config.is_structured_output_generation() &&
+    return config.is_multinomial() && logit_processors_ignore_history(config) &&
            (config.top_k == 0 || config.top_k >= num_row_candidates) && config.top_p == 1.0f && config.min_p == 0.0f;
 }
 
