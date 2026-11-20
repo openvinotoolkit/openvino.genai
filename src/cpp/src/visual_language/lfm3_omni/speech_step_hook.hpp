@@ -23,8 +23,9 @@ public:
 
     /// @brief Announces the speech settings of the next request added to the pipeline.
     /// @param speech_streamer Optional; must outlive the request.
-    /// @param text_streamer Optional. Written in the step that samples each text token, so its stop or cancel ends
-    /// the speech before the next frame, as on SDPA. The caller ends it.
+    /// @param text_streamer Optional. Written on the decoding thread in the step that samples each text token, so its
+    /// stop or cancel ends the speech before the next frame, as on SDPA; a slow callback stalls the step. The caller
+    /// ends it.
     void expect_request(const LFM3SpeechRequest& request,
                         const OmniSpeechStreamerVariant& speech_streamer,
                         std::shared_ptr<StreamerBase> text_streamer);

@@ -27,6 +27,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import openvino as ov
@@ -111,10 +112,10 @@ def omni_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
     return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", **F32)
 
 
-@pytest.fixture(scope="module")
-def omni_chat_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
+@pytest.fixture(scope="module", params=["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+def omni_chat_pipe(request: pytest.FixtureRequest, lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
     # A ChatHistory call keeps the pipeline in chat mode, so prompt calls on it would continue that chat.
-    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU")
+    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND=request.param)
 
 
 @pytest.fixture(scope="module", params=["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
@@ -866,6 +867,14 @@ PA_MATCHES_SDPA_CASES = [
 ]
 
 
+class SpeechRun(NamedTuple):
+    texts: list[str]
+    finish_reasons: list[ov_genai.GenerationFinishReason]
+    streamed_tokens: list[int]
+    waveform: np.ndarray
+    chunks: list[np.ndarray]
+
+
 @SKIP_PA_ON_MACOS_ARM64
 @pytest.mark.parametrize("text_fields, speech_fields, streamed", PA_MATCHES_SDPA_CASES)
 def test_paged_attention_speech_matches_sdpa(
@@ -876,7 +885,7 @@ def test_paged_attention_speech_matches_sdpa(
     streamed: bool,
 ) -> None:
     # Continuous batching runs the same text and frame sampler as the SDPA loop, so the answers are equal.
-    def run(pipe: ov_genai.OmniPipeline) -> tuple:
+    def run(pipe: ov_genai.OmniPipeline) -> SpeechRun:
         text_config = _text_config(1000)
         for name, value in text_fields.items():
             setattr(text_config, name, value)
@@ -895,13 +904,15 @@ def test_paged_attention_speech_matches_sdpa(
             streamer=collector,
             **kwargs,
         )
-        return result.texts, result.finish_reasons, collector.tokens, _waveform(result), chunks
+        return SpeechRun(result.texts, result.finish_reasons, collector.tokens, _waveform(result), chunks)
 
     sdpa, pa = run(omni_sdpa_pipe), run(omni_pa_pipe)
-    assert pa[:3] == sdpa[:3]
-    np.testing.assert_array_equal(pa[3], sdpa[3])
-    assert len(pa[4]) == len(sdpa[4])
-    for pa_chunk, sdpa_chunk in zip(pa[4], sdpa[4]):
+    assert pa.texts == sdpa.texts
+    assert pa.finish_reasons == sdpa.finish_reasons
+    assert pa.streamed_tokens == sdpa.streamed_tokens
+    np.testing.assert_array_equal(pa.waveform, sdpa.waveform)
+    assert len(pa.chunks) == len(sdpa.chunks)
+    for pa_chunk, sdpa_chunk in zip(pa.chunks, sdpa.chunks):
         np.testing.assert_array_equal(pa_chunk, sdpa_chunk)
 
 
@@ -930,14 +941,9 @@ def test_paged_attention_text_end_as_eos_matches_sdpa(
     np.testing.assert_array_equal(_waveform(pa), _waveform(sdpa))
 
 
-@SKIP_PA_ON_MACOS_ARM64
-@pytest.mark.parametrize("backend", ["SDPA", "PA"])
-def test_speech_streamer_stop_on_final_flush_keeps_length(
-    backend: str, omni_sdpa_pipe: ov_genai.OmniPipeline, omni_pa_pipe: ov_genai.OmniPipeline
-) -> None:
+def test_speech_streamer_stop_on_final_flush_keeps_length(speech_pipe: ov_genai.OmniPipeline) -> None:
     # The frame limit ends the turn before a chunk is due, so the STOP comes from the final flush.
-    pipe = omni_sdpa_pipe if backend == "SDPA" else omni_pa_pipe
-    result = pipe.generate(
+    result = speech_pipe.generate(
         PROMPT,
         text_config=_text_config(1000),
         talker_speech_config=_speech_config(1, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY, audio_chunk_frames=4),
@@ -966,6 +972,26 @@ def test_paged_attention_chunked_prefill_matches_sdpa(
     actual = pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config)
     assert actual.texts == expected.texts
     np.testing.assert_array_equal(_waveform(actual), _waveform(expected))
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_prefix_cache_does_not_change_speech(lfm3_omni_model_path: Path) -> None:
+    # Later calls reuse the cached prompt blocks of earlier ones; the speech must still follow only its own seed.
+    scheduler_config = ov_genai.SchedulerConfig()
+    scheduler_config.enable_prefix_caching = True
+    pipe = ov_genai.OmniPipeline(
+        lfm3_omni_model_path, "CPU", ATTENTION_BACKEND="PA", scheduler_config=scheduler_config, **F32
+    )
+
+    def run(seed: int) -> np.ndarray:
+        config = _speech_config(
+            26, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY, cp_temperature=1.0, rng_seed=seed
+        )
+        return _waveform(pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
+
+    first, other, rerun = run(0), run(1), run(0)
+    assert not np.array_equal(other, first)
+    np.testing.assert_array_equal(rerun, first)
 
 
 @SKIP_PA_ON_MACOS_ARM64
