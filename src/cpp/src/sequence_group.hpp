@@ -916,6 +916,11 @@ public:
         m_stream_window_size = k;
     }
 
+    /// @brief Number of generated tokens prepare_notification() has released to the generation stream.
+    size_t get_num_streamed_tokens() const {
+        return m_num_streamed_tokens;
+    }
+
     // The pending tokens of a request, the candidates of a validation window or the tokens a draft request takes over
     // from the main model, are the last tokens of the sequence, and the forward that runs them samples after the last
     // one, so it runs to the end of the sequence. After a recompute the group counts one row less: without pending
