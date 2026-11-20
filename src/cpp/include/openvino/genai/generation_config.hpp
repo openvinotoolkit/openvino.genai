@@ -639,6 +639,16 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param return_omni_outputs if set to true, the pipeline accumulates per-token intermediate hidden
  *        states and full token ids in the result so a Qwen3-Omni talker can consume them. Only the
  *        continuous-batching backend supports this; OmniPipeline sets it internally on the audio path.
+ *
+ * @param stream_text2speech if set to true, OmniPipeline streams the thinker's tokens and hidden states
+ *        to the talker as they are produced instead of handing over the whole sequence once text
+ *        generation has finished, so speech starts before the text is complete. Requires
+ *        talker_speech_config.return_audio and the continuous-batching backend. The generated text is
+ *        unchanged, and with the same OmniTalkerSpeechConfig::rng_seed so is the waveform, unless the
+ *        thinker generates an <|im_start|> token.
+ *        Interaction with stop_strings: a token reaches the talker only once no stop string can
+ *        remove it, which delays speech by the token length of the longest stop string.
+ *        Has no effect on LFM3-Omni: it has no talker and decodes speech together with the text.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
@@ -705,9 +715,15 @@ public:
     bool apply_chat_template = true;
 
     // Accumulate intermediate hidden states and full token ids in the result for Qwen3-Omni speech
-    // generation. Only supported by the continuous-batching backend; set internally by OmniPipeline.
+    // generation. Only supported by the continuouzs-batching backend; set internally by OmniPipeline.
     // Preview API: subject to change.
     bool return_omni_outputs = false;
+
+    // Stream the thinker's tokens and hidden states to the talker while text generation is still
+    // running, instead of handing the whole sequence over once it has finished. Requires
+    // talker_speech_config.return_audio and the continuous-batching backend.
+    // Preview API: subject to change.
+    bool stream_text2speech = false;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
@@ -790,6 +806,9 @@ static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
 
 // Preview API: subject to change.
 static constexpr ov::Property<bool> return_omni_outputs{"return_omni_outputs"};
+
+// Preview API: subject to change.
+static constexpr ov::Property<bool> stream_text2speech{"stream_text2speech"};
 
 }  // namespace genai
 }  // namespace ov
