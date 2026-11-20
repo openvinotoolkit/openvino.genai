@@ -191,6 +191,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                       m_inputs_embedder ? m_inputs_embedder->get_lora_tensor_prefix() : std::nullopt);
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);
     }
+    // lookahead expert scheduling: build the expert predictor heads in the PA model
+    std::optional<ExpertPredictor> expert_predictor;
+    std::optional<les::GraphInfo> expert_predictor_info;
+    if (les::extract_from_properties(filtered_properties, expert_predictor)) {
+        expert_predictor_info =
+            les::apply(model, *expert_predictor, les::GraphMode::PAGED);
+    }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
     auto sampler_num_threads_it = filtered_properties->find("sampler_num_threads");
@@ -278,6 +285,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                                        /* is_aggregate_attention_scores = */ false,
                                                        is_use_xattention,
                                                        /* is_use_adaptive_rkv = */ false);
+    }
+
+    if (expert_predictor_info) {
+        m_model_runner->set_expert_predictor(std::make_shared<les::PagedState>(*expert_predictor_info));
     }
 
     if (hidden_state_bytes_per_token > 0) {

@@ -16,6 +16,7 @@
 #include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
+#include "expert_predictor/expert_predictor.hpp"
 #include "continuous_batching/cache/cache_eviction.hpp"
 
 namespace ov::genai {
@@ -514,6 +515,11 @@ public:
 
     // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
     void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on; }
+
+    // Lookahead expert scheduling: the model has expert predictor heads that need the previous token per sequence.
+    void set_expert_predictor(std::shared_ptr<les::PagedState> state) {
+        m_expert_predictor = std::move(state);
+    }
 
     // DFlash draft: each scheduled request forwards [target hidden-state rows ; seed + mask block]. The target
     // rows come from set_initial_hidden_state() and get token type 0; the remaining scheduled rows are the block
@@ -1111,11 +1117,34 @@ public:
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
         }
 
+        // sequences in the order of their rows in subsequence_begins
+        std::vector<les::ScheduledSequence> expert_predictor_sequences;
+        if (m_expert_predictor) {
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                const auto& sequence_group = sequence_groups[scheduler_output.m_scheduled_sequence_groups_ids[i]];
+                const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+                for (const auto& sequence : sequence_group->get_running_sequences()) {
+                    expert_predictor_sequences.push_back({sequence->get_id(), num_scheduled_tokens});
+                }
+            }
+            m_expert_predictor->set_inputs(m_request, expert_predictor_sequences);
+        }
+
         {
             static ManualTimer timer("pure generate inference");
             timer.start();
             m_request.infer();
             timer.end();
+        }
+
+        if (m_expert_predictor) {
+            std::unordered_set<uint64_t> alive_sequence_ids;
+            for (const auto& sequence_group : sequence_groups) {
+                for (const auto& sequence : sequence_group->get_not_finished_sequences()) {
+                    alive_sequence_ids.insert(sequence->get_id());
+                }
+            }
+            m_expert_predictor->update(m_request, expert_predictor_sequences, alive_sequence_ids);
         }
 
         if (m_collect_attention_scores) {
@@ -1253,6 +1282,7 @@ public:
     }
 
 private:
+    std::shared_ptr<les::PagedState> m_expert_predictor;
     ov::Tensor m_hidden_states;
     ov::Tensor m_intermediate_hidden_states;
     // Whether model has "hidden_states" vs "last_hidden_state" output name

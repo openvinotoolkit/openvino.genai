@@ -9,6 +9,7 @@
 #include <filesystem>
 
 #include "openvino/core/any.hpp"
+#include "openvino/genai/expert_predictor.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"

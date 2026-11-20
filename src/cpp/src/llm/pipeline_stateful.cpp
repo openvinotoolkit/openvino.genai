@@ -70,6 +70,13 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
+    std::optional<ExpertPredictor> expert_predictor;
+    std::optional<les::GraphInfo> expert_predictor_info;
+    if (les::extract_from_properties(filtered_properties, expert_predictor)) {
+        OPENVINO_ASSERT(!m_is_npu, "The expert predictor is not supported on NPU");
+        expert_predictor_info =
+            les::apply(model, *expert_predictor, les::GraphMode::STATEFUL);
+    }
     ov::CompiledModel compiled_model;
     if (m_is_npu) {
         utils::KVDesc kv_desc;
@@ -80,6 +87,15 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     }
     m_model_runner = compiled_model.create_infer_request();
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Stateful LLM model");
+    if (expert_predictor_info && expert_predictor_info->router_outputs) {
+        // decode steps run asynchronously: count them in the completion callback
+        m_expert_predictor_stats = std::make_unique<les::Stats>(*expert_predictor_info);
+        m_model_runner.set_callback([this](std::exception_ptr error) {
+            if (!error) {
+                m_expert_predictor_stats->accumulate_stateful_decode(m_model_runner);
+            }
+        });
+    }
 
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
