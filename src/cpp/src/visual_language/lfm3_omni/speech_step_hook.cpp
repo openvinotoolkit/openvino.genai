@@ -5,9 +5,11 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <utility>
 
 #include "circular_buffer_queue.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 
@@ -46,13 +48,28 @@ void LFM3SpeechStepHook::expect_request(const LFM3SpeechRequest& request,
     OPENVINO_ASSERT(!m_pending_request && m_states.empty(), "LFM3-Omni decodes one speech request at a time");
     m_pending_request = PendingRequest{request, &speech_streamer, std::move(text_streamer)};
     m_result.reset();
-    m_streamer_error = nullptr;
+    m_request_error = nullptr;
     m_text_streamer_failed = false;
 }
 
-void LFM3SpeechStepHook::rethrow_streamer_error() {
-    if (m_streamer_error) {
-        std::rethrow_exception(std::exchange(m_streamer_error, nullptr));
+void LFM3SpeechStepHook::rethrow_request_error() {
+    if (m_request_error) {
+        std::rethrow_exception(std::exchange(m_request_error, nullptr));
+    }
+}
+
+void LFM3SpeechStepHook::keep_request_error(const char* source) {
+    std::string message = "unknown exception";
+    try {
+        throw;
+    } catch (const std::exception& error) {
+        message = error.what();
+    } catch (...) {
+        // Not an std::exception: the exception itself is still kept below.
+    }
+    GENAI_WARN("LFM3-Omni speech request ends after a %s failure: %s", source, message.c_str());
+    if (!m_request_error) {
+        m_request_error = std::current_exception();
     }
 }
 
@@ -60,7 +77,7 @@ void LFM3SpeechStepHook::finish_request(std::map<uint64_t, LFM3SpeechState>::ite
     try {
         m_result = it->second.finish(*m_models);
     } catch (...) {
-        m_streamer_error = std::current_exception();
+        keep_request_error("final speech decode");
         m_result = LFM3SpeechResult{};
         m_result->status = GenerationStatus::CANCEL;
     }
@@ -75,12 +92,12 @@ LFM3SpeechResult LFM3SpeechStepHook::take_result() {
     return result;
 }
 
-void LFM3SpeechStepHook::on_add_request(uint64_t request_id,
+bool LFM3SpeechStepHook::on_add_request(uint64_t request_id,
                                         ov::Tensor& inputs_embeds,
                                         std::optional<ov::Tensor>& prompt_ids,
                                         InputsEmbedder& inputs_embedder) {
     if (!m_pending_request) {
-        return;
+        return false;
     }
     const PendingRequest pending = std::move(*m_pending_request);
     m_pending_request.reset();
@@ -107,6 +124,7 @@ void LFM3SpeechStepHook::on_add_request(uint64_t request_id,
         }
     }
     state.start(inputs_embeds.get_shape().at(1));
+    return true;
 }
 
 void LFM3SpeechStepHook::before_sampling(const std::vector<SequenceGroup::Ptr>& requests, const ov::Tensor& logits) {
@@ -155,7 +173,7 @@ void LFM3SpeechStepHook::before_sampling(const std::vector<SequenceGroup::Ptr>& 
                 try {
                     status = m_text_streamer->write(token);
                 } catch (...) {
-                    m_streamer_error = std::current_exception();
+                    keep_request_error("text streamer");
                     m_text_streamer_failed = true;
                     status = StreamingStatus::CANCEL;
                 }
@@ -171,15 +189,24 @@ void LFM3SpeechStepHook::before_sampling(const std::vector<SequenceGroup::Ptr>& 
     for (size_t row = 0; row < hidden_rows.size(); ++row) {
         std::copy_n(hidden_rows[row], hidden_size, hidden_states.data<float>() + row * hidden_size);
     }
-    std::vector<std::vector<int64_t>> codes = m_models->sample_frames(hidden_states, frame_states);
+    // A speech model or streamer exception ends only its request: it must not leave the batching step.
+    std::vector<std::vector<int64_t>> codes;
+    try {
+        codes = m_models->sample_frames(hidden_states, frame_states);
+    } catch (...) {
+        keep_request_error("depth decoder");
+        for (LFM3SpeechState* state : frame_states) {
+            state->end_with(GenerationStatus::CANCEL);
+        }
+    }
     for (size_t row = 0; row < frame_states.size(); ++row) {
-        // accept_frame() may stream a chunk; an exception of the speech streamer ends only this request.
-        m_pending_frames[row].codes = codes[row];
-        try {
-            m_pending_frames[row].codes = frame_states[row]->accept_frame(std::move(codes[row]), *m_models);
-        } catch (...) {
-            m_streamer_error = std::current_exception();
-            frame_states[row]->end_with(GenerationStatus::CANCEL);
+        if (!frame_states[row]->finished()) {
+            try {
+                m_pending_frames[row].codes = frame_states[row]->accept_frame(std::move(codes[row]), *m_models);
+            } catch (...) {
+                keep_request_error("speech streamer");
+                frame_states[row]->end_with(GenerationStatus::CANCEL);
+            }
         }
         m_pending_frames[row].sequence->set_forced_next_token(m_models->config().audio_out_token_id);
     }
@@ -188,21 +215,35 @@ void LFM3SpeechStepHook::before_sampling(const std::vector<SequenceGroup::Ptr>& 
 std::vector<IStepHook::GeneratedEmbedding> LFM3SpeechStepHook::after_sampling(
     const std::vector<SequenceGroup::Ptr>& requests,
     SamplerOutput& sampler_output) {
-    std::vector<GeneratedEmbedding> generated;
-    if (!m_pending_frames.empty()) {
-        std::vector<std::vector<int64_t>> frames;
-        for (const PendingFrame& frame : m_pending_frames) {
+    // Only a request that goes on needs its frame as the next input; one that ended this step is finished below.
+    std::vector<const PendingFrame*> fed_back;
+    std::vector<std::vector<int64_t>> frames;
+    for (const PendingFrame& frame : m_pending_frames) {
+        const auto it = m_states.find(frame.sequence_group->get_request_id());
+        if (it != m_states.end() && !it->second.finished()) {
+            fed_back.push_back(&frame);
             frames.push_back(frame.codes);
         }
-        const ov::Tensor embeds = m_models->embed_frames(frames);
-        const size_t hidden_size = embeds.get_shape().at(1);
-        for (size_t row = 0; row < m_pending_frames.size(); ++row) {
-            ov::Tensor embedding(ov::element::f32, {1, 1, hidden_size});
-            std::copy_n(embeds.data<const float>() + row * hidden_size, hidden_size, embedding.data<float>());
-            generated.push_back({m_pending_frames[row].sequence_group, m_pending_frames[row].sequence, embedding});
-        }
-        m_pending_frames.clear();
     }
+    std::vector<GeneratedEmbedding> generated;
+    if (!frames.empty()) {
+        try {
+            const ov::Tensor embeds = m_models->embed_frames(frames);
+            const size_t hidden_size = embeds.get_shape().at(1);
+            for (size_t row = 0; row < fed_back.size(); ++row) {
+                ov::Tensor embedding(ov::element::f32, {1, 1, hidden_size});
+                std::copy_n(embeds.data<const float>() + row * hidden_size, hidden_size, embedding.data<float>());
+                generated.push_back({fed_back[row]->sequence_group, fed_back[row]->sequence, embedding});
+            }
+        } catch (...) {
+            keep_request_error("audio_out_embeddings");
+            generated.clear();
+            for (const PendingFrame* frame : fed_back) {
+                m_states.at(frame->sequence_group->get_request_id()).end_with(GenerationStatus::CANCEL);
+            }
+        }
+    }
+    m_pending_frames.clear();
     // The speech state ends a request on <|text_end|> rules, the frame limit and streamer statuses, the sampler at
     // max_new_tokens and stop tokens. Either way the request is finished here, before its handle is notified, so a
     // STOP or CANCEL, the final flush included, reaches the handle like on SDPA. Sampling has already cleared the
@@ -262,7 +303,10 @@ void LFM3SpeechStepHook::on_request_freed(const SequenceGroup::Ptr& request) {
 }
 
 void LFM3SpeechStepHook::on_request_dropped(uint64_t request_id) {
-    m_states.erase(request_id);
+    if (m_states.erase(request_id) == 0) {
+        return;
+    }
+    // One speech request runs at a time, so the streamer and every pending frame were its own.
     m_text_streamer.reset();
     m_pending_frames.clear();
 }

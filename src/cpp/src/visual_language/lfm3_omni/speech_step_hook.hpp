@@ -33,9 +33,9 @@ public:
     /// @brief Result of the speech request that ended last; one speech request runs at a time.
     LFM3SpeechResult take_result();
 
-    /// @brief Rethrows an exception of the text or speech streamer. It ended only its request, so the pipeline stays
-    /// usable.
-    void rethrow_streamer_error();
+    /// @brief Rethrows the first exception of the last speech request, from a streamer or a speech model. It ended
+    /// only that request, so the pipeline stays usable.
+    void rethrow_request_error();
 
     /// @brief True if the text streamer threw in the last request, so the caller must not call it again.
     bool text_streamer_failed() const {
@@ -52,7 +52,7 @@ public:
         return m_models->config();
     }
 
-    void on_add_request(uint64_t request_id,
+    bool on_add_request(uint64_t request_id,
                         ov::Tensor& inputs_embeds,
                         std::optional<ov::Tensor>& prompt_ids,
                         InputsEmbedder& inputs_embedder) override;
@@ -75,18 +75,21 @@ private:
         std::vector<int64_t> codes;
     };
 
+    /// @brief Flushes the codec, stores the result and erases the state. Any exception cancels the request and is
+    /// kept for rethrow_request_error().
+    void finish_request(std::map<uint64_t, LFM3SpeechState>::iterator it);
+
+    /// @brief Logs the current exception and keeps it, unless the request already failed.
+    void keep_request_error(const char* source);
+
     std::unique_ptr<LFM3SpeechModels> m_models;
     std::optional<PendingRequest> m_pending_request;
     std::map<uint64_t, LFM3SpeechState> m_states;
     std::shared_ptr<StreamerBase> m_text_streamer;
     std::vector<PendingFrame> m_pending_frames;
     std::optional<LFM3SpeechResult> m_result;
-    std::exception_ptr m_streamer_error;
+    std::exception_ptr m_request_error;
     bool m_text_streamer_failed = false;
-
-    /// @brief Flushes the codec for the request of it, keeps the result and forgets the state. An exception of the
-    /// speech streamer cancels the request and is kept for rethrow_streamer_error().
-    void finish_request(std::map<uint64_t, LFM3SpeechState>::iterator it);
 };
 
 }  // namespace ov::genai

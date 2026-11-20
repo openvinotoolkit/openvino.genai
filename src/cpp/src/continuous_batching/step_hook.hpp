@@ -27,7 +27,8 @@ public:
     virtual ~IStepHook() = default;
 
     /// @brief Called by add_request() for embedding inputs, before position ids are computed. May append prompt rows.
-    virtual void on_add_request(uint64_t request_id,
+    /// @return True if the hook took the request; a failure before it is queued then calls on_request_dropped().
+    virtual bool on_add_request(uint64_t request_id,
                                 ov::Tensor& inputs_embeds,
                                 std::optional<ov::Tensor>& prompt_ids,
                                 InputsEmbedder& inputs_embedder) = 0;

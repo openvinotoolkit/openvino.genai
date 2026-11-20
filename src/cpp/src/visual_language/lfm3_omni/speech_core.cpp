@@ -156,6 +156,21 @@ LFM3SpeechModelConfig LFM3SpeechModelConfig::read(const std::filesystem::path& c
         config.audio_start_token_id >= 0 && config.mixed_start_token_id >= 0 && config.text_end_token_id >= 0,
         "LFM3-Omni config.json must define audio_start_token_id, mixed_start_token_id and "
         "text_end_token_id");
+    read_json_param(model_json, "text_config.vocab_size", config.vocab_size);
+    read_json_param(model_json, "text_config.hidden_size", config.hidden_size);
+    OPENVINO_ASSERT(config.vocab_size > 0 && config.hidden_size > 0,
+                    "LFM3-Omni config.json must define text_config.vocab_size and text_config.hidden_size");
+    // The decode indexes the language model logits with these ids inside the batching step.
+    std::vector<int64_t> speech_token_ids = config.placeholder_token_ids;
+    speech_token_ids.insert(speech_token_ids.end(),
+                            {config.audio_start_token_id, config.mixed_start_token_id, config.text_end_token_id});
+    for (int64_t token_id : speech_token_ids) {
+        OPENVINO_ASSERT(static_cast<size_t>(token_id) < config.vocab_size,
+                        "LFM3-Omni config.json token id ",
+                        token_id,
+                        " is outside text_config.vocab_size ",
+                        config.vocab_size);
+    }
     // Each pass is checked against the codebooks still hidden, so the sum cannot wrap around.
     size_t revealed = 0;
     for (size_t pass_size : config.maskgit_schedule) {
@@ -399,6 +414,16 @@ ov::Tensor LFM3SpeechModels::embed_frames(const std::vector<std::vector<int64_t>
     m_audio_out_embeddings.set_tensor("codes", codes_tensor);
     m_audio_out_embeddings.infer();
     const ov::Tensor embeds = m_audio_out_embeddings.get_tensor("inputs_embeds");
+    OPENVINO_ASSERT(embeds.get_element_type() == ov::element::f32 &&
+                        embeds.get_shape() == ov::Shape({frames.size(), m_config.hidden_size}),
+                    "LFM3-Omni audio_out_embeddings must return f32 inputs_embeds [",
+                    frames.size(),
+                    ", ",
+                    m_config.hidden_size,
+                    "], got ",
+                    embeds.get_element_type(),
+                    " ",
+                    embeds.get_shape());
     return copy_tensor(embeds, embeds.get_shape());
 }
 

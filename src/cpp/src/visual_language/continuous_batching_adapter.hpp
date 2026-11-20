@@ -7,6 +7,7 @@
 
 #include "continuous_batching/pipeline_base.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
+#include "logger.hpp"
 #include "omni/speech_streamer_utils.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "utils.hpp"
@@ -304,13 +305,17 @@ private:
         // Speculative and prompt lookup pipelines wrap other cores; speech stays unavailable there.
         const auto impl = std::dynamic_pointer_cast<ContinuousBatchingPipeline::ContinuousBatchingImpl>(m_impl.m_impl);
         if (!impl) {
+            GENAI_DEBUG("LFM3-Omni speech output is unavailable with speculative decoding or prompt lookup");
             return;
         }
         m_speech_core_supported = true;
-        if (has_speech_models) {
-            m_speech_hook = std::make_shared<LFM3SpeechStepHook>(make_models());
-            impl->set_step_hook(m_speech_hook);
+        if (!has_speech_models) {
+            GENAI_DEBUG("LFM3-Omni speech output is unavailable: the export has no speech models");
+            return;
         }
+        m_speech_hook = std::make_shared<LFM3SpeechStepHook>(make_models());
+        impl->set_step_hook(m_speech_hook);
+        GENAI_DEBUG("LFM3-Omni speech output is decoded on continuous batching");
     }
 
     /// @brief LFM3-Omni speech on continuous batching: the step hook picks every slot, and the pipeline only
@@ -321,6 +326,7 @@ private:
                                          const SpeechRequest& speech_request,
                                          std::chrono::steady_clock::time_point start_time,
                                          const Generate& run) {
+        check_lfm3_speech_models_loaded(m_speech_hook != nullptr);
         GenerationConfig text_config = generation_config;
         const GenerationConfig defaults = m_impl.get_config();
         // Same order as ContinuousBatchingImpl::add_request(): set_eos_token_id() adds EOS to the stop ids.
@@ -356,7 +362,7 @@ private:
         VLMDecodedResults decoded_results;
         try {
             decoded_results = run(pipeline_config, std::monostate{});
-            m_speech_hook->rethrow_streamer_error();
+            m_speech_hook->rethrow_request_error();
         } catch (...) {
             // As in ContinuousBatchingImpl::generate(): a healthy text streamer is ended on failure too, and an end()
             // failure is dropped so the original error reaches the caller.

@@ -982,17 +982,71 @@ def test_speech_rejects_invalid_text_config(speech_pipe: ov_genai.OmniPipeline) 
         speech_pipe.generate(PROMPT, text_config=text_config, talker_speech_config=_speech_config(2))
 
 
+def _link_export(source: Path, target: Path, replaced: set[str]) -> None:
+    # Links every file of the export except the replaced ones, which the test writes itself.
+    for item in source.iterdir():
+        if item.name not in replaced:
+            (target / item.name).symlink_to(item)
+
+
+def _write_config(source: Path, target: Path, **fields: object) -> None:
+    _link_export(source, target, {"config.json"})
+    config = json.loads((source / "config.json").read_text())
+    config.update(fields)
+    (target / "config.json").write_text(json.dumps(config))
+
+
 def test_rejects_maskgit_schedule_that_wraps(lfm3_omni_model_path: Path, tmp_path: Path) -> None:
     # The pass sizes sum to 12 only after wrapping around; each pass must fit in the codebooks still hidden.
-    config = json.loads((lfm3_omni_model_path / "config.json").read_text())
-    config["maskgit_schedule"] = [2**64 - 1, 13]
-    for item in lfm3_omni_model_path.iterdir():
-        if item.name != "config.json":
-            (tmp_path / item.name).symlink_to(item)
-    (tmp_path / "config.json").write_text(json.dumps(config))
+    _write_config(lfm3_omni_model_path, tmp_path, maskgit_schedule=[2**64 - 1, 13])
     # The speech models are compiled in the constructor, which reads the schedule.
     with pytest.raises(RuntimeError, match="maskgit_schedule"):
         ov_genai.OmniPipeline(tmp_path, "CPU")
+
+
+def test_rejects_speech_token_ids_outside_vocab(lfm3_omni_model_path: Path, tmp_path: Path) -> None:
+    # The decode indexes the logits with these ids, so a mismatched config.json must fail at load, not mid-step.
+    vocab_size = json.loads((lfm3_omni_model_path / "config.json").read_text())["text_config"]["vocab_size"]
+    _write_config(lfm3_omni_model_path, tmp_path, text_end_token_id=vocab_size)
+    with pytest.raises(RuntimeError, match="vocab_size"):
+        ov_genai.OmniPipeline(tmp_path, "CPU")
+
+
+def _write_failing_speech_model(source: Path, target: Path, name: str, output: str, row_shape: list[int]) -> None:
+    # The output is reshaped to rows one element longer: the model compiles, but every inference throws.
+    _link_export(source, target, {f"openvino_{name}_model.xml", f"openvino_{name}_model.bin"})
+    model = ov.Core().read_model(source / f"openvino_{name}_model.xml")
+    original = model.output(output).get_node().input_value(0)
+    original.get_tensor().set_names(set())
+    failing = ov.opset13.reshape(original, [-1, *row_shape[:-1], row_shape[-1] + 1], special_zero=False)
+    failing.output(0).get_tensor().set_names({output})
+    ov.save_model(ov.Model([failing], model.get_parameters()), target / f"openvino_{name}_model.xml")
+
+
+@pytest.mark.parametrize("backend", ["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+@pytest.mark.parametrize("failing_model", ["depth_decoder", "audio_out_embeddings"])
+def test_speech_model_failure_ends_only_its_call(
+    lfm3_omni_model_path: Path, tmp_path: Path, backend: str, failing_model: str
+) -> None:
+    # On PA the speech models run inside the batching step, so a failure there must not fail the whole pipeline.
+    config = json.loads((lfm3_omni_model_path / "config.json").read_text())
+    output, row_shape = {
+        "depth_decoder": ("logits", [config["num_codebooks"], config["codebook_size"]]),
+        "audio_out_embeddings": ("inputs_embeds", [config["text_config"]["hidden_size"]]),
+    }[failing_model]
+    _write_failing_speech_model(lfm3_omni_model_path, tmp_path, failing_model, output, row_shape)
+    pipe = ov_genai.OmniPipeline(tmp_path, "CPU", ATTENTION_BACKEND=backend, **F32)
+    speech_only = _speech_config(4, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
+    with pytest.raises(RuntimeError):
+        pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=speech_only)
+    collector = TokenCollector()
+    pipe.generate(
+        PROMPT,
+        text_config=_text_config(TEXT_TOKENS),
+        talker_speech_config=_speech_config(2, return_audio=False),
+        streamer=collector,
+    )
+    assert len(collector.tokens) == TEXT_TOKENS
 
 
 def test_speech_decode_recovers_after_failed_call(speech_pipe: ov_genai.OmniPipeline) -> None:

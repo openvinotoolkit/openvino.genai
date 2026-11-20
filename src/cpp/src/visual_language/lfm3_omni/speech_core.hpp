@@ -83,6 +83,9 @@ struct LFM3SpeechModelConfig {
     std::vector<size_t> maskgit_schedule{4, 4, 4};
     size_t interleaved_n_text = 6;
     size_t interleaved_n_audio = 12;
+    /// @brief Of the language model, from text_config.
+    size_t vocab_size = 0;
+    size_t hidden_size = 0;
     int64_t audio_out_token_id = -1;
     int64_t audio_start_token_id = -1;
     int64_t mixed_start_token_id = -1;

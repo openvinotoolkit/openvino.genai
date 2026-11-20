@@ -1217,6 +1217,8 @@ public:
         const size_t token_idx = sequence->get_generated_ids_embeds().size();
         OPENVINO_ASSERT(token_idx + 1 == sequence->get_generated_len(),
                         "A generated embedding can only be set for the last generated token");
+        OPENVINO_ASSERT(embedding.get_size() == sequence_group->get_hidden_size(),
+                        "A generated embedding must have the hidden size of the prompt embeddings");
         const size_t position_id = token_idx + sequence_group->get_prompt_len();
         sequence->append_position_ids(
             m_inputs_embedder->get_generation_phase_position_ids(1, position_id, sequence->get_rope_delta()).first);

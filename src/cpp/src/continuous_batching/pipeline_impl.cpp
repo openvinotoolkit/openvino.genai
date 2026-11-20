@@ -355,8 +355,11 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     ov::Tensor inputs = input_ids;
     StepHookRequestGuard step_hook_guard{nullptr, request_id};
     if (m_step_hook && m_model_input_type == ModelInputType::EMBEDDINGS) {
+        // Armed before the call, since on_add_request() itself may throw after taking the request.
         step_hook_guard.hook = m_step_hook.get();
-        m_step_hook->on_add_request(request_id, inputs, prompt_ids, *m_inputs_embedder);
+        if (!m_step_hook->on_add_request(request_id, inputs, prompt_ids, *m_inputs_embedder)) {
+            step_hook_guard.hook = nullptr;
+        }
     }
 
     auto sampling_params_copy = sampling_params;
@@ -1431,6 +1434,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
         m_sampler->clear_request_info(request->get_request_id());
     }
     m_requests.clear();
+    if (m_step_hook) {
+        // A request still waiting to be pulled must not keep the state the hook took for it.
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (const SequenceGroup::Ptr& request : m_awaiting_requests) {
+            m_step_hook->on_request_dropped(request->get_request_id());
+        }
+    }
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_throw_if_failed() const {
