@@ -18,6 +18,7 @@ from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechR
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
+import re
 import typing
 import numpy as np
 import pathlib
@@ -43,6 +44,7 @@ from utils.asr_utils.qwen3_asr import (
     QWEN3_ASR_SPLIT_EXPORT_SUFFIX,
     SKIP_IF_PAGED_ATTENTION_UNAVAILABLE,
     Qwen3ASROptimumPipeline,
+    qwen3_asr_model_path,
     save_model,
     skip_if_qwen3_asr_package_is_unavailable,
 )
@@ -678,6 +680,78 @@ def test_max_new_tokens(pipelines_fixture, sample_from_dataset, request):
     config.max_new_tokens = 10
     genai_result = genai_pipe.generate(sample_from_dataset, config)
     compare_results(expected, genai_result)
+
+
+@pytest.mark.parametrize(
+    "model_path_factory",
+    [
+        pytest.param(
+            qwen3_asr_model_path,
+            id="qwen3-asr-legacy-NPUW-CPU",
+            marks=[pytest.mark.qwen3_asr_npu, pytest.mark.skipif(**should_skip_npuw_tests())],
+        )
+    ],
+)
+def test_qwen3_asr_legacy_npu_generation_and_recovery(model_path_factory):
+    core = openvino.Core()
+    try:
+        core.get_property("NPU", "NPUW_QWEN3_ASR")
+    except RuntimeError as exception:
+        if "Unsupported configuration key: NPUW_QWEN3_ASR" not in str(exception):
+            raise
+        pytest.skip("Legacy Qwen3-ASR NPUW requires openvinotoolkit/openvino#39312.")
+
+    model_path = pathlib.Path(model_path_factory())
+    assert (model_path / "openvino_encoder_model.xml").is_file()
+    assert (model_path / "openvino_decoder_model.xml").is_file()
+    assert not (model_path / "openvino_audio_encoder_model.xml").exists()
+    pipe = ov_genai.ASRPipeline(
+        model_path,
+        "NPU",
+        **NPUW_CPU_PROPERTIES,
+        MAX_PROMPT_LEN=1024,
+        MIN_RESPONSE_LEN=256,
+    )
+    audio = np.zeros(3200, dtype=np.float32)
+    generation = {"language": "English", "max_new_tokens": 8, "ignore_eos": True}
+    expected = pipe.generate(audio, **generation)
+    assert len(expected.texts) == 1
+    assert expected.languages == ["English"]
+    assert expected.perf_metrics.get_num_generated_tokens() == 8
+
+    with pytest.raises(RuntimeError, match=r"requested 1000000 new tokens.*KV-cache can accommodate only") as error:
+        pipe.generate(audio, language="English", max_new_tokens=1_000_000, ignore_eos=True)
+    capacity = re.search(r"KV-cache can accommodate only (\d+) after a prompt of (\d+) tokens", str(error.value))
+    assert capacity is not None
+    available = int(capacity.group(1))
+    assert available >= 8
+    with pytest.raises(
+        RuntimeError,
+        match=rf"requested {available + 1} new tokens.*KV-cache can accommodate only {available} ",
+    ):
+        pipe.generate(audio, language="English", max_new_tokens=available + 1, ignore_eos=True)
+
+    class StopAfterFirstToken(ov_genai.StreamerBase):
+        def __init__(self):
+            super().__init__()
+            self.tokens = []
+            self.ended = False
+
+        def write(self, tokens):
+            self.tokens.extend(tokens if isinstance(tokens, list) else [tokens])
+            return ov_genai.StreamingStatus.STOP
+
+        def end(self):
+            self.ended = True
+
+    streamer = StopAfterFirstToken()
+    pipe.generate(audio, language="English", max_new_tokens=available, ignore_eos=True, streamer=streamer)
+    assert len(streamer.tokens) == 1
+    assert streamer.ended
+    recovered = pipe.generate(audio, **generation)
+    assert recovered.texts == expected.texts
+    assert recovered.languages == expected.languages
+    assert recovered.perf_metrics.get_num_generated_tokens() == 8
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
