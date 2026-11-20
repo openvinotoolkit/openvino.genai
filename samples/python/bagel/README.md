@@ -60,5 +60,13 @@ python bagel.py BAGEL-7B-MoT-ov-int4 CPU vqa "The images above are consecutive f
 python bagel.py BAGEL-7B-MoT-ov-int4 CPU edit "Generate the next frame of this robot video. In the next frame the robot arm lifts the white mug. Keep the camera viewpoint, the scene and all other objects unchanged." frame_0.png frame_1.png frame_2.png
 ```
 
+`frames` predicts the next 3 frames as a world model and writes `next_frame_0.bmp` .. `next_frame_2.bmp`. Each
+generated frame replaces the oldest one of the window and joins the context as VAE latents only, without a decode and
+re-encode; the 3 frames are decoded at the end, in one VAE decoder call (one call per frame on NPU):
+
+```sh
+python bagel.py BAGEL-7B-MoT-ov-int4 CPU frames "Generate the next frame of this robot video. The task of the robot is: put the white mug on the left plate. In the next frame the robot arm lifts the white mug. Keep the camera viewpoint, the scene and all other objects unchanged." frame_0.png frame_1.png frame_2.png
+```
+
 On NPU the language, vision and VAE models run through NPUW (`NPUW_BAGEL`), which compiles a static variant of a model
 the first time an input size is used, so the first run is slower than the next ones.

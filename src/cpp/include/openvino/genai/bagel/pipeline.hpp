@@ -120,6 +120,22 @@ public:
                           const std::string& prompt,
                           const std::optional<BagelImageGenerationConfig>& config = std::nullopt);
 
+    /**
+     * @brief Predicts the next frames of a video, as a world model. Frame k is generated from a window of the
+     * input frames' count: it then replaces the oldest frame of the window. Generated frames join the context as VAE
+     * latents only, without a decode / re-encode, and all of them are decoded at the end, in one VAE decoder call
+     * (one call per frame on NPU)
+     * @param frames u8 RGB frames, oldest first
+     * @param prompt instruction for the next frames, e.g. the task and the action of a robot
+     * @param num_frames number of frames to generate
+     * @param config generation parameters, `size` is ignored; frame k starts from the noise of seed + k
+     * @return u8 [num_frames, H, W, 3] RGB frames at the VAE resolution of the last input frame
+     */
+    ov::Tensor generate_frames(const std::vector<ov::Tensor>& frames,
+                               const std::string& prompt,
+                               size_t num_frames,
+                               const std::optional<BagelImageGenerationConfig>& config = std::nullopt);
+
     /// @brief Snapshot of compile and inference timings since construction or the last reset_perf_metrics();
     /// safe to call while another thread generates
     BagelPerfMetrics get_perf_metrics() const;

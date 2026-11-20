@@ -207,6 +207,108 @@ def test_multi_image_edit_matches_reference(genai_pipe, optimum_model, processor
     assert diff.max() <= 1, f"max abs pixel diff {diff.max()}"
 
 
+def reference_frames(optimum_model, processor, frames, prompt, num_frames, config, monkeypatch) -> list[np.ndarray]:
+    """optimum-intel's guidance loop over a window of the input frames' count: an input frame is a VAE and a ViT block,
+    a generated frame its clean latent tokens only. The reference decodes the generated frames one by one."""
+    per_frame = [
+        processor(text=prompt, images=[Image.fromarray(f)], generation_mode="image", return_tensors="pt")
+        for f in frames
+    ]
+    window = []
+    for inputs in per_frame:
+        latent = optimum_model.vae_encoder({"pixel_values": inputs["vae_pixel_values"].numpy()})["latent"]
+        height, width = inputs["vae_pixel_values"].shape[-2:]
+        window.append((optimum_model._patchify(latent), (height, width), inputs))
+    height, width = window[-1][1]
+
+    def add_window(context, _):
+        for tokens, (h, w), inputs in window:
+            optimum_model._latent_block(context, tokens, 0.0, optimum_model._latent_position_ids(h, w), True)
+            if inputs is not None:
+                add_vit_image(context, inputs["pixel_values"], inputs["image_position_ids"])
+
+    add_vit_image = optimum_model._add_vit_image
+    monkeypatch.setattr(optimum_model, "_add_vae_image", add_window)
+    monkeypatch.setattr(optimum_model, "_add_vit_image", lambda *args: None)
+    num_tokens = (height // optimum_model.latent_downsample) * (width // optimum_model.latent_downsample)
+    generated = []
+    for k in range(num_frames):
+        noise = np.random.RandomState(config.seed + k).randn(num_tokens, optimum_model._patch_dim)
+        tokens = optimum_model.generate(
+            **per_frame[-1],
+            generation_mode="image",
+            num_inference_steps=config.num_inference_steps,
+            guidance_scale=config.cfg_text_scale,
+            image_guidance_scale=config.cfg_img_scale,
+            cfg_interval=(0.0, 1.0),
+            latents=torch.from_numpy(noise.astype(np.float32)),
+            output_type="latent",
+        ).numpy()
+        generated.append(tokens)
+        window = window[1:] + [(tokens, (height, width), None)]
+    monkeypatch.undo()
+
+    return [
+        to_uint8(
+            torch.from_numpy(
+                optimum_model.vae_decoder({"latents": optimum_model._unpatchify(tokens, height, width)})["image"]
+            )
+        )
+        for tokens in generated
+    ]
+
+
+def test_generate_frames_matches_reference(genai_pipe, optimum_model, processor, images, monkeypatch):
+    num_frames = 3
+    config = ov_genai.BagelImageGenerationConfig()
+    config.num_inference_steps = NUM_STEPS
+    config.seed = 11
+    genai_pipe.reset_perf_metrics()
+    genai_frames = genai_pipe.generate_frames([ov.Tensor(i[None]) for i in images], EDIT_PROMPT, num_frames, config)
+    decoder_calls = [stage for stage, _ in genai_pipe.get_perf_metrics().infer_ms if stage == "vae_dec"]
+    assert len(decoder_calls) == 1, "the generated frames are not decoded in one call"
+
+    expected = reference_frames(optimum_model, processor, images, EDIT_PROMPT, num_frames, config, monkeypatch)
+    assert genai_frames.get_element_type() == ov.Type.u8
+    assert list(genai_frames.get_shape()) == [num_frames, *expected[0].shape]
+    for k, (genai_frame, frame) in enumerate(zip(genai_frames.data, expected)):
+        diff = np.abs(genai_frame.astype(np.int32) - frame.astype(np.int32))
+        assert diff.max() <= 1, f"frame {k}: max abs pixel diff {diff.max()}"
+    assert not np.array_equal(genai_frames.data[0], genai_frames.data[1])
+
+
+def test_generate_frames_decodes_per_frame_without_dynamic_batch(genai_pipe, bagel_ov_path, images, tmp_path):
+    """Exports before the dynamic VAE decoder batch decode one frame per call, with the same frames."""
+    decoder = ov.Core().read_model(bagel_ov_path / "openvino_vae_decoder_model.xml")
+    shape = decoder.input().get_partial_shape()
+    assert shape[0].is_dynamic
+    shape[0] = 1
+    decoder.reshape({decoder.input(): shape})
+    for file in bagel_ov_path.iterdir():
+        if not file.name.startswith("openvino_vae_decoder_model."):
+            (tmp_path / file.name).symlink_to(file)
+    ov.save_model(decoder, tmp_path / "openvino_vae_decoder_model.xml", compress_to_fp16=False)
+    static_pipe = ov_genai.BagelPipeline(tmp_path, "CPU", INFERENCE_PRECISION_HINT="f32")
+
+    config = ov_genai.BagelImageGenerationConfig()
+    config.num_inference_steps = NUM_STEPS
+    frames = [ov.Tensor(i[None]) for i in images]
+    per_frame = static_pipe.generate_frames(frames, EDIT_PROMPT, 2, config).data
+    batched = genai_pipe.generate_frames(frames, EDIT_PROMPT, 2, config).data
+    assert per_frame.shape == batched.shape
+    diff = np.abs(per_frame.astype(np.int32) - batched.astype(np.int32))
+    assert diff.max() <= 1, f"max abs pixel diff {diff.max()}"
+    decoder_calls = [stage for stage, _ in static_pipe.get_perf_metrics().infer_ms if stage == "vae_dec"]
+    assert len(decoder_calls) == 2
+
+
+def test_generate_frames_rejects_invalid_arguments(genai_pipe, image):
+    with pytest.raises(RuntimeError, match="at least one input frame"):
+        genai_pipe.generate_frames([], EDIT_PROMPT, 1)
+    with pytest.raises(RuntimeError, match="num_frames must be positive"):
+        genai_pipe.generate_frames([ov.Tensor(image[None])], EDIT_PROMPT, 0)
+
+
 def test_image_inputs(genai_pipe, image):
     tensor = ov.Tensor(image[None])
     assert isinstance(genai_pipe.generate_text(PROMPT, tensor, max_new_tokens=4), str)

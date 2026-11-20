@@ -12,7 +12,8 @@ five models without a batch dimension:
   The KV cache stays explicit inputs / outputs: BagelPipeline forks it for the classifier-free-guidance branches.
 * ``openvino_text_embeddings_model``: ``input_ids`` -> ``inputs_embeds``.
 * ``openvino_vision_embeddings_model``: SigLIP, connector and ViT position embedding of the patches of one image.
-* ``openvino_vae_encoder_model`` / ``openvino_vae_decoder_model``: the latent autoencoder (posterior mean).
+* ``openvino_vae_encoder_model`` / ``openvino_vae_decoder_model``: the latent autoencoder (posterior mean). The decoder
+  has a dynamic batch, so the frames of ``BagelPipeline.generate_frames`` decode in one call on CPU and GPU.
 """
 
 import gc
@@ -296,10 +297,11 @@ class BagelExporter(NativeExporter):
         )
 
         logger.info("Exporting the VAE decoder model")
+        # a batch of 2 keeps the batch dimension out of the traced shapes
         ep = torch_export(
             VAEDecoder(model),
-            args=(torch.randn(1, config.vae_config.latent_channels, latent_size, latent_size),),
-            dynamic_shapes={"latents": {2: dynamic, 3: dynamic}},
+            args=(torch.randn(2, config.vae_config.latent_channels, latent_size, latent_size),),
+            dynamic_shapes={"latents": {0: dynamic, 2: dynamic, 3: dynamic}},
         )
         save_submodel(
             convert_exported_program(ep, ["latents"], ["image"]),

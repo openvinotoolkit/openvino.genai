@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <limits>
 #include <mutex>
@@ -385,6 +386,9 @@ public:
         m_lm = compile("language_model.xml", device, lm_config);
         m_vae_enc = compile("vae_encoder_model.xml", device, config);
         m_vae_dec = compile("vae_decoder_model.xml", device, config);
+        // exports before the dynamic decoder batch decode one image per call; on NPU (driver 1.38) a batched VAE
+        // decoder returns NaN for all but the first image, so NPU also decodes one image per call
+        m_batched_decode = !m_npu && m_vae_dec.get_compiled_model().input().get_partial_shape()[0].is_dynamic();
     }
 
     std::string generate_text(const std::string& prompt,
@@ -438,7 +442,7 @@ public:
         if (config.cfg_text_scale > 1.0f) {
             cfg_text = Context{empty_kv(), 0, 0};
         }
-        return diffuse(side, side, main, cfg_text, std::nullopt, config, {0.4f, 1.0f});
+        return decode({denoise(side, side, main, cfg_text, std::nullopt, config, {0.4f, 1.0f})}, side, side);
     }
 
     // As BAGEL's interleaved inference: each image adds a VAE and a ViT block, the output takes the last image's size
@@ -468,7 +472,58 @@ public:
             prefill_text(prompt);
             cfg_img = m_ctx;
         }
-        return diffuse(hw.first, hw.second, main, cfg_text, cfg_img, config, {0.0f, 1.0f});
+        const auto x = denoise(hw.first, hw.second, main, cfg_text, cfg_img, config, {0.0f, 1.0f});
+        return decode({x}, hw.first, hw.second);
+    }
+
+    ov::Tensor generate_frames(const std::vector<ov::Tensor>& frames,
+                               const std::string& prompt,
+                               size_t num_frames,
+                               const BagelImageGenerationConfig& config) {
+        OPENVINO_ASSERT(!frames.empty(), "generate_frames needs at least one input frame");
+        OPENVINO_ASSERT(num_frames > 0, "num_frames must be positive");
+        validate(config);
+        // the input frames are encoded once; a generated frame has no ViT block
+        struct Frame {
+            ov::Tensor latent;
+            std::pair<size_t, size_t> hw;
+            std::optional<ov::Tensor> vit;
+        };
+        std::deque<Frame> window;
+        for (const auto& frame : frames) {
+            const auto vae_image = m_vae_transform.resize(to_clip_image(frame));
+            auto [latent, hw] = vae_encode(vae_image);
+            window.push_back({std::move(latent), hw, vit_embed(vae_image)});
+        }
+        const auto [h, w] = window.back().hw;
+
+        std::optional<Context> cfg_img;
+        if (config.cfg_text_scale > 1.0f && config.cfg_img_scale > 1.0f) {
+            reset();
+            prefill_text(prompt);
+            cfg_img = m_ctx;
+        }
+        std::vector<ov::Tensor> latents;
+        for (size_t k = 0; k < num_frames; ++k) {
+            reset();
+            for (const auto& frame : window) {
+                m_ctx = latent_prefill(frame.latent, frame.hw, m_ctx);
+                if (frame.vit) {
+                    prefill_vit_embeds(*frame.vit);
+                }
+            }
+            std::optional<Context> cfg_text;
+            if (config.cfg_text_scale > 1.0f) {
+                cfg_text = m_ctx;
+            }
+            prefill_text(prompt);
+            auto frame_config = config;
+            frame_config.seed = config.seed + static_cast<uint32_t>(k);
+            latents.push_back(denoise(h, w, m_ctx, cfg_text, cfg_img, frame_config, {0.0f, 1.0f}));
+            window.pop_front();
+            window.push_back({latents.back(), {h, w}, std::nullopt});
+        }
+        return decode(latents, h, w);
     }
 
     BagelPerfMetrics perf_metrics() const {
@@ -680,6 +735,11 @@ private:
     }
 
     void prefill_image(const clip_image_u8& image) {
+        prefill_vit_embeds(vit_embed(image));
+    }
+
+    // [patches, hidden] ViT embeddings of the image
+    ov::Tensor vit_embed(const clip_image_u8& image) {
         const auto img = to_normalized_tensor(m_vit_transform.resize(image));
         const size_t h = img.get_shape()[1], w = img.get_shape()[2];
         const size_t gh = h / m_vit_patch, gw = w / m_vit_patch;
@@ -691,8 +751,10 @@ private:
             m_vit.set_tensor("position_ids", pos);
             m_vit.infer();
         });
-        const auto img_emb = m_vit.get_output_tensor();
+        return copy_tensor(m_vit.get_output_tensor());
+    }
 
+    void prefill_vit_embeds(const ov::Tensor& img_emb) {
         load_soi_eoi();
         const size_t n = img_emb.get_shape()[0];
         const size_t s = n + 2;
@@ -716,6 +778,12 @@ private:
 
     // Encodes the VAE-resized image into a [soi, latent, eoi] context; returns it with the latent grid
     std::pair<Context, std::pair<size_t, size_t>> vae_prefill(const clip_image_u8& vae_image, const Context& ctx) {
+        const auto [x_t, hw] = vae_encode(vae_image);
+        return {latent_prefill(x_t, hw, ctx), hw};
+    }
+
+    // [h * w, p * p * c] latent tokens of the VAE-resized image, with the latent grid
+    std::pair<ov::Tensor, std::pair<size_t, size_t>> vae_encode(const clip_image_u8& vae_image) {
         const auto img = to_normalized_tensor(vae_image);
         const size_t img_h = img.get_shape()[1], img_w = img.get_shape()[2];
         ov::Tensor batched(ov::element::f32, {1, 3, img_h, img_w}, img.data());
@@ -726,11 +794,14 @@ private:
         const auto latent = m_vae_enc.get_output_tensor();
         const auto& ls = latent.get_shape();
         const size_t h = img_h / m_latent_downsample, w = img_w / m_latent_downsample;
-        const auto x_t = patchify(latent.data<const float>(), m_latent_channel, ls[2], ls[3], m_latent_patch, h, w);
+        return {patchify(latent.data<const float>(), m_latent_channel, ls[2], ls[3], m_latent_patch, h, w), {h, w}};
+    }
 
+    // Clean (timestep 0) latent tokens as a [soi, latent, eoi] block on top of the context
+    Context latent_prefill(const ov::Tensor& x_t, std::pair<size_t, size_t> hw, const Context& ctx) {
         load_soi_eoi();
-        auto out = gen(x_t, 0.0f, ctx, vae_position_ids(h, w), true, "vae_prefill");
-        return {Context{std::move(out.present), ctx.rope + 1, ctx.len + h * w + 2}, {h, w}};
+        auto out = gen(x_t, 0.0f, ctx, vae_position_ids(hw.first, hw.second), true, "vae_prefill");
+        return Context{std::move(out.present), ctx.rope + 1, ctx.len + hw.first * hw.second + 2};
     }
 
     std::vector<float> velocity(const ov::Tensor& x_t,
@@ -741,7 +812,8 @@ private:
         return {v.data<const float>(), v.data<const float>() + v.get_size()};
     }
 
-    ov::Tensor diffuse(size_t h,
+    // Flow-matching denoising; returns the [h * w, p * p * c] latent tokens
+    ov::Tensor denoise(size_t h,
                        size_t w,
                        const Context& main,
                        const std::optional<Context>& cfg_text,
@@ -802,46 +874,60 @@ private:
             }
             add_infer_ms(use_cfg ? "step.cfg" : "step.nocfg", ms_since(t0) - (m_first_call_total_ms - first0));
         }
-        return decode(x, h, w);
+        return x;
     }
 
-    // [n, p * p * c] latent tokens -> u8 [1, H, W, 3] image
-    ov::Tensor decode(const ov::Tensor& x, size_t h, size_t w) {
+    // N x [h * w, p * p * c] latent tokens -> u8 [N, H, W, 3] images, in one VAE decoder call if its batch is dynamic
+    ov::Tensor decode(const std::vector<ov::Tensor>& xs, size_t h, size_t w) {
         const size_t p = m_latent_patch, c = m_latent_channel;
         const size_t lh = h * p, lw = w * p;
-        ov::Tensor lat(ov::element::f32, {1, c, lh, lw});
-        const float* src = x.data<const float>();
-        float* dst = lat.data<float>();
-        for (size_t gh = 0; gh < h; ++gh) {
-            for (size_t gw = 0; gw < w; ++gw) {
-                for (size_t py = 0; py < p; ++py) {
-                    for (size_t px = 0; px < p; ++px) {
-                        for (size_t ch = 0; ch < c; ++ch) {
-                            dst[(ch * lh + gh * p + py) * lw + gw * p + px] = *src++;
+        const size_t frame = c * lh * lw;
+        ov::Tensor lat(ov::element::f32, {xs.size(), c, lh, lw});
+        for (size_t b = 0; b < xs.size(); ++b) {
+            const float* src = xs[b].data<const float>();
+            float* dst = lat.data<float>() + b * frame;
+            for (size_t gh = 0; gh < h; ++gh) {
+                for (size_t gw = 0; gw < w; ++gw) {
+                    for (size_t py = 0; py < p; ++py) {
+                        for (size_t px = 0; px < p; ++px) {
+                            for (size_t ch = 0; ch < c; ++ch) {
+                                dst[(ch * lh + gh * p + py) * lw + gw * p + px] = *src++;
+                            }
                         }
                     }
                 }
             }
         }
-        timed("vae_dec", "vae_decoder " + std::to_string(lh) + "x" + std::to_string(lw), [&] {
-            m_vae_dec.set_input_tensor(lat);
-            m_vae_dec.infer();
-        });
-        const auto img = m_vae_dec.get_output_tensor();
-        const size_t oh = img.get_shape()[2], ow = img.get_shape()[3];
-        ov::Tensor out(ov::element::u8, {1, oh, ow, 3});
-        const float* in = img.data<const float>();
-        uint8_t* o = out.data<uint8_t>();
-        for (size_t i = 0; i < oh * ow; ++i) {
-            for (size_t ch = 0; ch < 3; ++ch) {
-                const float v = std::clamp((in[ch * oh * ow + i] + 1.0f) / 2.0f, 0.0f, 1.0f);
-                o[i * 3 + ch] = static_cast<uint8_t>(v * 255.0f);
+        const size_t batch = m_batched_decode ? xs.size() : 1;
+        std::optional<ov::Tensor> out;
+        for (size_t b = 0; b < xs.size(); b += batch) {
+            ov::Tensor part(ov::element::f32, {batch, c, lh, lw}, lat.data<float>() + b * frame);
+            const auto variant =
+                "vae_decoder " + std::to_string(batch) + "x" + std::to_string(lh) + "x" + std::to_string(lw);
+            timed("vae_dec", variant, [&] {
+                m_vae_dec.set_input_tensor(part);
+                m_vae_dec.infer();
+            });
+            const auto img = m_vae_dec.get_output_tensor();
+            const size_t oh = img.get_shape()[2], ow = img.get_shape()[3];
+            if (!out) {
+                out = ov::Tensor(ov::element::u8, {xs.size(), oh, ow, 3});
+            }
+            const float* in = img.data<const float>();
+            uint8_t* o = out->data<uint8_t>() + b * oh * ow * 3;
+            for (size_t i = 0; i < batch * oh * ow; ++i) {
+                const size_t plane = i / (oh * ow) * 3 * oh * ow + i % (oh * ow);
+                for (size_t ch = 0; ch < 3; ++ch) {
+                    const float v = std::clamp((in[plane + ch * oh * ow] + 1.0f) / 2.0f, 0.0f, 1.0f);
+                    o[i * 3 + ch] = static_cast<uint8_t>(v * 255.0f);
+                }
             }
         }
-        return out;
+        return *out;
     }
 
     bool m_npu;
+    bool m_batched_decode = false;
     Tokenizer m_tokenizer;
     ov::InferRequest m_text_emb, m_vit, m_lm, m_vae_enc, m_vae_dec;
     std::set<std::string> m_compiled;
@@ -901,6 +987,13 @@ ov::Tensor BagelPipeline::edit_image(const std::vector<ov::Tensor>& images,
                                      const std::string& prompt,
                                      const std::optional<BagelImageGenerationConfig>& config) {
     return m_impl->edit_image(images, prompt, config.value_or(BagelImageGenerationConfig{}));
+}
+
+ov::Tensor BagelPipeline::generate_frames(const std::vector<ov::Tensor>& frames,
+                                          const std::string& prompt,
+                                          size_t num_frames,
+                                          const std::optional<BagelImageGenerationConfig>& config) {
+    return m_impl->generate_frames(frames, prompt, num_frames, config.value_or(BagelImageGenerationConfig{}));
 }
 
 BagelPerfMetrics BagelPipeline::get_perf_metrics() const {

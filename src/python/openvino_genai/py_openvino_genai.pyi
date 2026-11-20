@@ -1140,6 +1140,10 @@ class BagelPipeline:
         """
         Edits or composes several u8 RGB images; the output has the VAE resolution of the last one.
         """
+    def generate_frames(self, frames: collections.abc.Sequence[openvino._pyopenvino.Tensor], prompt: str, num_frames: typing.SupportsInt, config: openvino_genai.py_openvino_genai.BagelImageGenerationConfig | None = None) -> openvino._pyopenvino.Tensor:
+        """
+        Predicts the next num_frames frames of u8 RGB frames (oldest first) as a world model; returns a u8 [num_frames, H, W, 3] RGB tensor at the VAE resolution of the last frame, decoded in one call (one call per frame on NPU). Each generated frame replaces the oldest one of the window; frame k uses seed + k. Default config if None.
+        """
     def generate_image(self, prompt: str, config: openvino_genai.py_openvino_genai.BagelImageGenerationConfig | None = None) -> openvino._pyopenvino.Tensor:
         """
         Text-to-image; returns a u8 [1, H, W, 3] RGB tensor. Default config if None.

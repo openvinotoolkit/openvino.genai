@@ -45,6 +45,7 @@ def bagel_command(sample: str, model_dir: str, task: str, prompt: str, images: l
         ("t2i", "A red bicycle", 0),
         ("edit", "Make it green", 1),
         ("edit", "Combine the images", 3),
+        ("frames", "The robot lifts the cup", 3),
     ],
 )
 def test_sample_bagel(
@@ -54,5 +55,8 @@ def test_sample_bagel(
         bagel_command(sample, bagel_ov_path, task, prompt, [input_image] * num_images), cwd=str(tmp_path)
     )
     # a random tiny model may answer with an empty string, so VQA is only checked to run
-    if task != "vqa":
+    if task == "frames":
+        frames = sorted(tmp_path.glob("next_frame_*.bmp"))
+        assert len(frames) == 3, f"frames wrote {len(frames)} frames:\n{result.stdout}"
+    elif task != "vqa":
         assert list(tmp_path.glob("image*.bmp")), f"{task} wrote no image:\n{result.stdout}"
