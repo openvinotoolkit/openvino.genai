@@ -911,12 +911,26 @@ public:
         m_stream_window_size = k;
     }
 
+    // The pending tokens of a request, the candidates of a validation window or the tokens a draft request takes over
+    // from the main model, are the last tokens of the sequence, and the forward that runs them samples after the last
+    // one, so it runs to the end of the sequence. After a recompute the group counts one row less: without pending
+    // tokens, the last generated token runs on its own in a later step.
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
-        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
-        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
+        const size_t num_available_tokens =
+            std::max<size_t>(std::max(get_prompt_len(), m_max_content_len) - m_num_processed_tokens, 1u) +
+            m_num_validation_tokens;
+        if (m_num_validation_tokens == 0) {
+            return num_available_tokens;
+        }
+        size_t sequence_len = 0;
+        for (const auto& sequence : get_running_sequences()) {
+            sequence_len = std::max(sequence_len, get_prompt_len() + sequence->get_generated_len());
+        }
+        return std::max(num_available_tokens,
+                        sequence_len > m_num_processed_tokens ? sequence_len - m_num_processed_tokens : 0);
     }
 
     void finish_iteration() {
