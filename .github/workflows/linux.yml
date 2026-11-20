@@ -29,7 +29,8 @@ env:
   SCCACHE_SERVER_PORT: 35555
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
-  HF_HOME: /mount/caches/huggingface/lin
+  HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
+  HF_HUB_DISABLE_XET: "1"  # Disable Xet so downloads use HTTP through the proxy instead of Xet.
   # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/b53e4e21/
@@ -688,6 +689,7 @@ jobs:
     steps:
       - name: Setup Variables
         run: |
+          echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
@@ -753,6 +755,7 @@ jobs:
     steps:
       - name: Setup Variables
         run: |
+          echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
@@ -846,6 +849,7 @@ jobs:
     steps:
       - name: Setup Variables
         run: |
+          echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
@@ -882,7 +886,7 @@ jobs:
           while IFS=',' read -r model_id _rest; do
             [[ -z "${model_id}" || "${model_id}" =~ ^[[:space:]]*# ]] && continue
             model_name="${model_id##*/}"
-            model_dir="${{ env.HF_HOME }}/ov_test_models/${model_name}"
+            model_dir="${{ env.OV_CACHE }}/ov_test_models/${model_name}"
             if [[ ! -f "${model_dir}/openvino_model.xml" ]]; then
               optimum-cli export openvino -m "${model_id}" --task text-generation-with-past "${model_dir}"
             fi
@@ -896,7 +900,7 @@ jobs:
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="-AddSecondInputTest.*"
           ${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure
         env:
-          TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
+          TEST_MODELS_BASE_DIR: "${{ env.OV_CACHE }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
 
@@ -994,6 +998,7 @@ jobs:
     steps:
       - name: Setup Variables
         run: |
+          echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
@@ -1080,6 +1085,9 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
 
     steps:
+      - name: Setup Variables
+        run: echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
+
       - name: Normalize sccache Azure endpoint
         run: |
           SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
