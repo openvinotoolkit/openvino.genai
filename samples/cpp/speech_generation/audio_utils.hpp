@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -51,6 +52,22 @@ void save_to_wav(const float* waveform_ptr,
                  const std::filesystem::path& file_path,
                  uint32_t bits_per_sample,
                  uint32_t sample_rate = COMMON_SAMPLE_RATE);
+
+/**
+ * Writes a mono 32-bit float WAV file chunk by chunk, for audio that arrives while it is generated.
+ * The file is complete once the writer is destroyed.
+ */
+class WavWriter {
+public:
+    WavWriter(const std::filesystem::path& file_path, uint32_t sample_rate);
+    ~WavWriter();
+
+    void write(const float* samples, size_t sample_count);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
 
 /**
  * Reads a binary file of float32 values and returns an ov::Tensor with the given shape.
