@@ -41,8 +41,8 @@ void ASRStreamImplBase::push_audio(const std::vector<float>& audio_frame) {
         m_frame_popped.wait(lock, [this] {
             return m_queue.size() < m_max_queued_frames || m_audio_ended || m_state == GenerationState::STOPPED;
         });
-        OPENVINO_ASSERT(!m_audio_ended, "Cannot push audio after ASRStream::end_audio().");
-        OPENVINO_ASSERT(m_state != GenerationState::STOPPED, "Cannot push audio after ASRStream::generate() has stopped.");
+        OPENVINO_ASSERT(!m_audio_ended, "Cannot push audio after end_audio().");
+        OPENVINO_ASSERT(m_state != GenerationState::STOPPED, "Cannot push audio after generate() has stopped.");
         m_queue.push_back(std::move(frame));
     }
     m_frame_pushed.notify_one();
@@ -51,7 +51,7 @@ void ASRStreamImplBase::push_audio(const std::vector<float>& audio_frame) {
 void ASRStreamImplBase::end_audio() {
     {
         const std::lock_guard<std::mutex> lock{m_mutex};
-        OPENVINO_ASSERT(!m_audio_ended, "ASRStream::end_audio() may only be called once.");
+        OPENVINO_ASSERT(!m_audio_ended, "end_audio() may only be called once.");
         m_audio_ended = true;
     }
     m_frame_pushed.notify_all();
@@ -62,7 +62,7 @@ ASRDecodedResults ASRStreamImplBase::generate(const ASRTextCallback& text_callba
     const TimePoint start_time = std::chrono::steady_clock::now();
     {
         const std::lock_guard<std::mutex> lock{m_mutex};
-        OPENVINO_ASSERT(m_state == GenerationState::NOT_STARTED, "ASRStream::generate() may only be called once.");
+        OPENVINO_ASSERT(m_state == GenerationState::NOT_STARTED, "generate() may only be called once.");
         m_state = GenerationState::RUNNING;
     }
     m_perf_metrics = ASRPerfMetrics{};

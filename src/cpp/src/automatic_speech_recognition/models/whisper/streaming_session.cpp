@@ -5,7 +5,6 @@
 
 #include <algorithm>
 
-#include "automatic_speech_recognition/debug_dump.hpp"
 #include "automatic_speech_recognition/sliding_window.hpp"
 #include "pipeline.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
@@ -16,6 +15,9 @@ namespace {
 
 // Whisper encoder accepts at most 30 seconds of 16 kHz audio.
 static constexpr size_t WHISPER_MAX_SAMPLES = 480000;
+
+// Number of first chunks decoded without a forced prefix and without committing text.
+static constexpr size_t WARMUP_CHUNKS = 2;
 
 // UTF-8 encoding of U+FFFD REPLACEMENT CHARACTER — signals a corrupted decode boundary.
 static constexpr const char* REPLACEMENT_CHAR_UTF8 = "\xef\xbf\xbd";
@@ -34,10 +36,10 @@ WhisperASRStreamingSessionImpl::WhisperASRStreamingSessionImpl(WhisperASRPipelin
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 }
 
-// Trims context_rollback_tokens off the tail of raw (tokenizing it fresh), retrying with a larger
+// Trims unfixed_token_num off the tail of raw (tokenizing it fresh), retrying with a larger
 // rollback on a UTF-8 boundary corruption. Same policy as Qwen3-ASR's identically-named helper.
 std::string WhisperASRStreamingSessionImpl::trim_rollback(const std::string& raw) const {
-    if (raw.empty() || m_chunk_count < m_streaming_config.warmup_chunks) {
+    if (raw.empty() || m_chunk_count < WARMUP_CHUNKS) {
         return "";
     }
 
@@ -45,7 +47,7 @@ std::string WhisperASRStreamingSessionImpl::trim_rollback(const std::string& raw
     const ov::Tensor& ids_tensor = encoded.input_ids;
     const size_t n_tokens = ids_tensor.get_shape()[1];
 
-    size_t rollback = m_streaming_config.context_rollback_tokens;
+    size_t rollback = m_streaming_config.unfixed_token_num;
 
     while (true) {
         const size_t keep = (n_tokens > rollback) ? n_tokens - rollback : 0;
@@ -78,11 +80,9 @@ void WhisperASRStreamingSessionImpl::decode_current_accum() {
     // directly to how far the sliding window has actually rolled (m_total_dropped_samples) rather
     // than a fixed chunk-count margin -- same mechanism as
     // Qwen3ASRStreamingSessionImpl::decode_current_accum().
-    if (!m_streaming_config.unbounded_prefix) {
-        while (!m_commit_history.empty() &&
-               (m_commit_history.front().chunk_index + 1) * m_chunk_size_samples <= m_total_dropped_samples) {
-            m_commit_history.pop_front();
-        }
+    while (!m_commit_history.empty() &&
+           (m_commit_history.front().chunk_index + 1) * m_chunk_size_samples <= m_total_dropped_samples) {
+        m_commit_history.pop_front();
     }
 
     // Captured before this pass runs: the exact tag-free text this pass's prefix was built from,
@@ -93,18 +93,10 @@ void WhisperASRStreamingSessionImpl::decode_current_accum() {
 
     // Inject the bounded prefix as forced decoder tokens so the model is anchored to stable prior
     // output. With no prior committed text (warmup or empty history) the prefix is left unset.
-    const bool inject_prefix = m_chunk_count >= m_streaming_config.warmup_chunks && !prefix_text.empty();
+    const bool inject_prefix = m_chunk_count >= WARMUP_CHUNKS && !prefix_text.empty();
     ASRGenerationConfig config_for_pass = m_generation_config;
     if (inject_prefix) {
         config_for_pass.prefix = prefix_text;
-    }
-
-    if (asr_debug_dump_enabled()) {
-        asr_debug_dump_chunk("whisper",
-                             m_chunk_count,
-                             m_audio_accum,
-                             /*sample_rate=*/16000,
-                             inject_prefix ? prefix_text : std::string());
     }
 
     const ASRDecodedResults results = m_pipeline->generate({std::cref(m_audio_accum)}, config_for_pass, nullptr);
@@ -176,7 +168,7 @@ std::optional<ASRPartialResult> WhisperASRStreamingSessionImpl::push_chunk(const
                                                          already_inferred_samples,
                                                          m_chunk_size_samples,
                                                          m_streaming_config.window_chunk_num,
-                                                         m_streaming_config.window_rollback_chunk_num);
+                                                         m_streaming_config.unfixed_chunk_num);
 
     if (m_audio_accum.size() >= WHISPER_MAX_SAMPLES) {
         m_window_full = true;
@@ -203,7 +195,7 @@ ASRPartialResult WhisperASRStreamingSessionImpl::finish() {
                                                              already_inferred_samples,
                                                              m_chunk_size_samples,
                                                              m_streaming_config.window_chunk_num,
-                                                             m_streaming_config.window_rollback_chunk_num);
+                                                             m_streaming_config.unfixed_chunk_num);
 
         if (!m_audio_accum.empty()) {
             decode_current_accum();

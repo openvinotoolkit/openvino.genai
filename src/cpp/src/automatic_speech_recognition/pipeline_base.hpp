@@ -7,7 +7,10 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
@@ -18,7 +21,12 @@ namespace ov::genai {
 
 void erase_allowed_asr_ctor_properties(ov::AnyMap& properties);
 
-/// Owns the input queue and generation state of ASRStream; derived classes implement model inference.
+/// Receives transcript deltas from ASRStreamImplBase::generate(). Returning STOP or CANCEL stops generation and
+/// discards audio that wasn't processed yet.
+using ASRTextCallback = std::function<StreamingStatus(std::string)>;
+
+/// Input queue and generation loop for incremental models (Voxtral). generate() drives process_audio() and flush()
+/// for offline ASRPipeline::generate(); ASRStreamingIncrementalSessionImpl calls them directly instead.
 class ASRStreamImplBase {
 public:
     explicit ASRStreamImplBase(size_t max_queued_frames, float load_time_ms = 0.0f);

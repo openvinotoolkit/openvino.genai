@@ -663,7 +663,7 @@ ASRDecodedResults VoxtralASR::generate(const AudiosView& audios,
                                        const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) {
     OPENVINO_ASSERT(!streamer,
-                    "Voxtral uses input streaming; call create_stream() and pass a text callback to ASRStream::generate().");
+                    "Voxtral doesn't support a streamer in generate(); use ASRStreamingSession for streaming.");
     auto stream = create_stream(generation_config);
     stream->push_audio(validate_single_audio_and_get(audios));
     stream->end_audio();

@@ -150,15 +150,13 @@ ASRStreamingSession::ASRStreamingSession(ASRPipeline& pipeline,
                                          const ASRStreamingConfig& streaming_config,
                                          const std::optional<ASRGenerationConfig>& generation_config) {
     validate_streaming_config(streaming_config);
-    ASRStreamingConfig config = streaming_config;
-    // Legacy fields read by sessions not yet ported to the unfixed_* names.
-    config.context_rollback_tokens = config.unfixed_token_num;
-    config.window_rollback_chunk_num = config.unfixed_chunk_num;
     std::shared_ptr<ASRPipelineImplBase> owner = pipeline.m_impl;
     ASRStreamingSessionSlot slot = owner->acquire_streaming_session_slot();
     const ASRGenerationConfig resolved = generation_config.value_or(pipeline.get_generation_config());
-    m_impl = owner->create_streaming_session_impl(config, resolved);
-    m_impl->attach(std::move(owner), std::move(slot), static_cast<size_t>(config.chunk_size_sec * SAMPLE_RATE));
+    m_impl = owner->create_streaming_session_impl(streaming_config, resolved);
+    m_impl->attach(std::move(owner),
+                   std::move(slot),
+                   static_cast<size_t>(streaming_config.chunk_size_sec * SAMPLE_RATE));
 }
 
 ASRStreamingSession::~ASRStreamingSession() = default;

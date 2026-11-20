@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'ASRStream', 'ASRStreamingConfig', 'ASRStreamingResult', 'ASRStreamingSession', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'ASRStreamingConfig', 'ASRStreamingResult', 'ASRStreamingSession', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -334,14 +334,6 @@ class ASRPipeline:
                         Only supported for Qwen3-ASR. Required when requesting
                         generate(..., word_timestamps=True).
         """
-    def create_stream(self, generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None) -> ASRStream:
-        """
-        Create a stateful input stream for ASR models that support incremental audio.
-        """
-    def create_streaming_session(self, streaming_config: openvino_genai.py_openvino_genai.ASRStreamingConfig | None = None, generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None) -> ASRStreamingSession:
-        """
-        Create a streaming ASR session. Equivalent to ASRStreamingSession(pipeline, ...).
-        """
     def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat] | collections.abc.Sequence[collections.abc.Sequence[typing.SupportsFloat]], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
             High level generate that receives raw speech as a single audio input or a batch of audio inputs and returns decoded output.
@@ -505,43 +497,6 @@ class ASRRawPerfMetrics:
     @property
     def word_level_timestamps_processing_durations(self) -> list[float]:
         ...
-class ASRStream:
-    """
-    
-        Streaming audio transcription session.
-    
-        generate() runs inference once for the whole stream and consumes audio frames submitted by push_audio()
-        until end_audio() is called. Another thread may call push_audio() and end_audio() while generate() runs.
-        Frames are processed in the order push_audio() calls complete.
-    """
-    def end_audio(self) -> None:
-        """
-        Signal the end of audio input. May be called once.
-        """
-    def generate(self, text_callback: collections.abc.Callable[[str], int | None] | None = None) -> ASRDecodedResults:
-        """
-        Run inference once over all audio pushed to the stream and return the complete transcription. Blocks until end_audio() is called and the queue is drained, or text_callback returns StreamingStatus.STOP or StreamingStatus.CANCEL. text_callback receives transcript deltas.
-        """
-    def get_kv_cache_size(self) -> int:
-        """
-        Return retained audio and text KV tensor bytes after the latest completed inference chunk. Excludes convolution caches, inference request buffers and temporary allocations. Safe to call while generate() is running. Raises if the model does not support KV-cache size monitoring.
-        """
-    def get_kv_cache_window_sizes(self) -> dict[str, tuple[int, int]]:
-        """
-        Return audio and text KV windows as {component: (retained_positions, maximum_positions)}. Retained sizes start at zero and reflect tensor sequence lengths after the latest completed inference chunk and cropping. Safe to call during generation. Raises if window monitoring is unsupported by the model.
-        """
-    def get_num_generated_tokens(self) -> int:
-        """
-        Return the number of generated tokens so far. Safe to call while generate() is running.
-        """
-    def get_stage_durations(self) -> dict[str, float]:
-        """
-        Return cumulative stage durations in milliseconds: audio_inference, text_inference, audio_kv_cache, text_kv_cache. Inference covers infer() calls; KV timings cover allocation, copying, cropping and rephasing. Excludes feature extraction, convolution cache copies, tensor setup, sampling and callbacks. With PERF_COUNT enabled, audio_op/<node_type>/<exec_type> and text_op/<node_type>/<exec_type> keys group latest plugin real-time counters in milliseconds. CPU counters are running averages, not cumulative or per-call times; do not accumulate or difference them. audio_node/<description> and text_node/<description> report executed Broadcast counters with node names, execution types, compiled-graph partial shapes (? is dynamic) and consumer names, not measured runtime shapes. Unmatched plugin nodes are marked explicitly. Plugin counters may overlap or exclude runtime overhead; do not add them to wall-clock stages. Safe to call while generate() is running. Raises if stage timing is unsupported by the model.
-        """
-    def push_audio(self, audio_frame: collections.abc.Sequence[typing.SupportsFloat]) -> None:
-        """
-        Enqueue normalized mono 16 kHz audio samples for generate() without running inference. Blocks while the bounded input queue is full. Raises after end_audio() or once generate() has stopped.
-        """
 class ASRStreamingConfig:
     """
     

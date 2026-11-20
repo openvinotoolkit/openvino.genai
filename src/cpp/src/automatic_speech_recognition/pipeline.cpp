@@ -141,55 +141,6 @@ ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs, const o
     return generate(audio_inputs, config, utils::get_streamer_from_map(config_map));
 }
 
-ASRStream::ASRStream(std::unique_ptr<ASRStreamImplBase> impl) : m_impl{std::move(impl)} {
-    OPENVINO_ASSERT(m_impl, "ASR stream implementation must not be null.");
-}
-
-ASRStream::ASRStream(ASRStream&&) noexcept = default;
-
-ASRStream& ASRStream::operator=(ASRStream&&) noexcept = default;
-
-ASRStream::~ASRStream() = default;
-
-void ASRStream::push_audio(const std::vector<float>& audio_frame) {
-    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    m_impl->push_audio(audio_frame);
-}
-
-void ASRStream::end_audio() {
-    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    m_impl->end_audio();
-}
-
-size_t ASRStream::get_num_generated_tokens() const {
-    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    return m_impl->get_num_generated_tokens();
-}
-
-size_t ASRStream::get_kv_cache_size() const {
-    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    return m_impl->get_kv_cache_size();
-}
-
-std::map<std::string, std::pair<size_t, size_t>> ASRStream::get_kv_cache_window_sizes() const {
-    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    return m_impl->get_kv_cache_window_sizes();
-}
-
-std::map<std::string, double> ASRStream::get_stage_durations() const {
-    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    return m_impl->get_stage_durations();
-}
-
-ASRDecodedResults ASRStream::generate(const ASRTextCallback& text_callback) {
-    OPENVINO_ASSERT(m_impl, "ASR stream has been moved from.");
-    return m_impl->generate(text_callback);
-}
-
-ASRStream ASRPipeline::create_stream(const std::optional<ASRGenerationConfig>& generation_config) {
-    return ASRStream{m_impl->create_stream(generation_config)};
-}
-
 Tokenizer ASRPipeline::get_tokenizer() {
     return m_impl->m_tokenizer;
 }

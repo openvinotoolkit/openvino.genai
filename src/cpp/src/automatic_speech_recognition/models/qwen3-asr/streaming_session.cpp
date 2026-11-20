@@ -7,7 +7,6 @@
 #include <chrono>
 #include <iterator>
 
-#include "automatic_speech_recognition/debug_dump.hpp"
 #include "automatic_speech_recognition/sliding_window.hpp"
 #include "pipeline_base.hpp"
 
@@ -146,14 +145,6 @@ void Qwen3ASRStreamingSessionImpl::decode_current_accum(ASRPerfMetrics& perf_met
     // genuinely new content, regardless of how much *earlier* history no longer appears in the prompt.
     const std::string prefix_text = history_text();
     const std::string prefix = bounded_prefix();
-
-    if (asr_debug_dump_enabled()) {
-        asr_debug_dump_chunk("qwen3-asr",
-                             m_chunk_count,
-                             m_audio_accum,
-                             m_pipeline->m_feature_extractor.sampling_rate,
-                             prefix);
-    }
 
     const std::string raw_out =
         m_pipeline->infer_streaming_chunk(m_audio_accum, prefix, m_generation_config, perf_metrics);

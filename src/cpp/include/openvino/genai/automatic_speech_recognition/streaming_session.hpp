@@ -27,13 +27,6 @@ struct OPENVINO_GENAI_EXPORTS ASRStreamingConfig {
     size_t unfixed_chunk_num = 2;
     /// Re-decode models: audio window bound in chunks. 0 = unbounded. Must be 0 or greater than unfixed_chunk_num.
     size_t window_chunk_num = 8;
-
-    /// Legacy, read only by the Whisper streaming session until it is ported. context_rollback_tokens and
-    /// window_rollback_chunk_num are overwritten from unfixed_token_num and unfixed_chunk_num by ASRStreamingSession.
-    size_t warmup_chunks = 2;
-    size_t context_rollback_tokens = 5;
-    size_t window_rollback_chunk_num = 2;
-    bool unbounded_prefix = false;
 };
 
 /// Result of one decode pass of an ASRStreamingSession.

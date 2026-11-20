@@ -92,7 +92,6 @@ from .py_openvino_genai import (
     ASRGenerationConfig,
     ASRStreamingResult,
     ASRPerfMetrics,
-    ASRStream,
     ASRPipeline,
     ASRRawPerfMetrics,
     ASRStreamingConfig,

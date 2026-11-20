@@ -25,7 +25,7 @@ public:
 
 private:
     void decode_current_accum();
-    // Trims context_rollback_tokens off the tail of an arbitrary raw string (retrying with a
+    // Trims unfixed_token_num off the tail of an arbitrary raw string (retrying with a
     // larger rollback on a UTF-8 boundary corruption). Operates on a plain parameter rather than
     // a persistent member so callers can apply it to any candidate string without mutating state.
     std::string trim_rollback(const std::string& raw) const;
