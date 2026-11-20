@@ -7,6 +7,7 @@
 #include <cmath>
 #include <iostream>
 #include <openvino/openvino.hpp>
+#include <optional>
 #include <thread>
 
 #include "openvino/genai/perf_metrics.hpp"
@@ -17,6 +18,7 @@
 #include "utils.hpp"
 #include "whisper/config.hpp"
 #include "whisper/context_tokens.hpp"
+#include "whisper/decoder_round_guard.hpp"
 #include "whisper/feature_extractor.hpp"
 #include "whisper/logit_processor.hpp"
 #include "whisper/models.hpp"
@@ -28,6 +30,8 @@
 using ov::genai::MicroSeconds;
 
 namespace {
+
+constexpr uint64_t decode_request_id = 0;
 
 // Convert one logits row (batch_idx) to log-probabilities in place, over the full vocabulary.
 void logits_row_to_logprobs(ov::Tensor& logits, size_t batch_idx) {
@@ -56,14 +60,17 @@ void logits_row_to_logprobs(ov::Tensor& logits, size_t batch_idx) {
 void process_whisper_logits(ov::Tensor logits,
                             const ov::genai::WhisperGenerationConfig& config,
                             const bool return_timestamps,
-                            const std::map<size_t, std::vector<int64_t>>& batch_to_generated_ids) {
-    const bool initial_step = batch_to_generated_ids.empty();
-    const size_t batch_size = logits.get_shape().at(0);
+                            const std::vector<ov::genai::Sequence::Ptr>& row_sequences) {
+    OPENVINO_ASSERT(row_sequences.size() == logits.get_shape().at(0),
+                    "Whisper logits rows don't match the number of running sequences");
 
     // Normalize before masking so beam scores remain comparable across rows, matching HF beam search.
     const bool is_beam_search = config.is_beam_search();
 
-    for (size_t batch = 0; batch < batch_size; batch++) {
+    for (size_t batch = 0; batch < row_sequences.size(); batch++) {
+        const auto& generated_ids = row_sequences[batch]->get_generated_ids();
+        const bool initial_step = generated_ids.empty();
+
         if (is_beam_search) {
             logits_row_to_logprobs(logits, batch);
         }
@@ -75,30 +82,22 @@ void process_whisper_logits(ov::Tensor logits,
         ov::genai::do_suppress_tokens(logits, batch, config.suppress_tokens);
 
         if (return_timestamps) {
-            if (initial_step) {
-                ov::genai::process_whisper_timestamp_logits(logits, batch, config, {}, initial_step);
-            } else {
-                ov::genai::process_whisper_timestamp_logits(logits,
-                                                            batch,
-                                                            config,
-                                                            batch_to_generated_ids.at(batch),
-                                                            initial_step);
-            }
+            ov::genai::process_whisper_timestamp_logits(logits, batch, config, generated_ids, initial_step);
         }
     }
 }
 
-std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::WhisperDecoder> decoder,
+std::pair<ov::genai::EncodedResults, bool> decode(const std::shared_ptr<ov::genai::WhisperDecoder>& decoder,
                                                   const std::vector<int64_t>& input_ids,
                                                   const ov::Tensor& encoder_hidden_state,
-                                                  const std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
+                                                  const std::shared_ptr<ov::genai::StreamerBase>& streamer_ptr,
                                                   ov::genai::Sampler& sampler,
                                                   const bool return_timestamps,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   ov::genai::RawPerfMetrics& raw_metrics,
                                                   ov::genai::WhisperRawPerfMetrics& whisper_raw_metrics) {
     ov::genai::SequenceGroup::Ptr sequence_group =
-        std::make_shared<ov::genai::SequenceGroup>(0, input_ids, config);
+        std::make_shared<ov::genai::SequenceGroup>(decode_request_id, input_ids, config);
 
     // Keep the sampler's score representation consistent with process_whisper_logits().
     if (config.is_beam_search()) {
@@ -149,7 +148,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     raw_metrics.m_batch_sizes.emplace_back(batch_size);
     whisper_raw_metrics.decode_inference_durations.emplace_back(infer_ms);
 
-    process_whisper_logits(logits, config, return_timestamps, {});
+    process_whisper_logits(logits, config, return_timestamps, sequence_group->get_running_sequences());
 
     // sample last token only
     int64_t output_sequence_len = logits.get_shape().at(1);
@@ -168,8 +167,6 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     // "Generation" phase
     while (!sequence_group->has_finished() && !sequence_group->handle_stopped() &&
            !sequence_group->handle_cancelled()) {
-        std::map<size_t, std::vector<int64_t>> batch_to_generated_ids{};
-
         sequence_group->schedule_tokens(1);
         // compute aggregated values
         size_t num_sequences = sequence_group->num_running_seqs();
@@ -203,7 +200,6 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
             auto beam_idx = beam_idxs[sequence->get_id()];
             next_beams.push_back(beam_idx);
-            batch_to_generated_ids[next_beams.size() - 1] = sequence->get_generated_ids();
         }
 
         const auto infer_start = std::chrono::steady_clock::now();
@@ -228,7 +224,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         raw_metrics.m_batch_sizes.emplace_back(total_num_tokens);
         whisper_raw_metrics.decode_inference_durations.emplace_back(infer_ms);
 
-        process_whisper_logits(logits, config, return_timestamps, batch_to_generated_ids);
+        process_whisper_logits(logits, config, return_timestamps, running_sequences);
 
         {
             const auto sample_start = std::chrono::steady_clock::now();
@@ -243,7 +239,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     ov::genai::EncodedResults results;
 
-    const auto sampling_params = sequence_group->get_sampling_parameters();
+    const auto& sampling_params = sequence_group->get_sampling_parameters();
 
     // there is also check in generation config validate function
     OPENVINO_ASSERT(config.num_return_sequences == 1);
@@ -262,9 +258,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     }
     results.finish_reasons.push_back(finish_reason);
 
-    sampler.clear_request_info(sequence_group->get_request_id());
-
-    return {results, (sequence_group->handle_stopped() || sequence_group->handle_cancelled())};
+    return {std::move(results), (sequence_group->handle_stopped() || sequence_group->handle_cancelled())};
 }
 
 ov::Tensor encode(ov::InferRequest& request,
@@ -300,8 +294,8 @@ ov::Tensor encode(ov::InferRequest& request,
     return request.get_tensor("last_hidden_state");
 }
 
-ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
-                                              std::shared_ptr<ov::genai::WhisperDecoder> decoder,
+ov::genai::SotTokensResult prepare_sot_tokens(const ov::Tensor& encoder_hidden_state,
+                                              const std::shared_ptr<ov::genai::WhisperDecoder>& decoder,
                                               const ov::genai::WhisperGenerationConfig& config,
                                               ov::genai::RawPerfMetrics& raw_metrics) {
     if (!config.is_multilingual) {
@@ -328,6 +322,145 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
 
     return {std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id},
             ov::genai::utils::to_unescaped_language(language)};
+}
+
+std::vector<int64_t> build_window_prompt(const ov::genai::WhisperContextTokens& context_tokens,
+                                         const ov::genai::WhisperGenerationConfig& config,
+                                         const size_t chunk_offset,
+                                         const std::vector<int64_t>& sot_tokens,
+                                         const bool return_timestamps) {
+    std::vector<int64_t> prompt = ov::genai::get_prompt_tokens(context_tokens, config, chunk_offset);
+    prompt.insert(prompt.end(), sot_tokens.begin(), sot_tokens.end());
+    if (!return_timestamps) {
+        prompt.push_back(config.no_timestamps_token_id);
+    }
+    return prompt;
+}
+
+struct AudioState {
+    ov::genai::WhisperFeatures features;
+    size_t chunk_offset = 0;
+    bool return_timestamps = false;
+    std::optional<ov::genai::SotTokensResult> sot;
+    std::vector<int64_t> output_tokens;
+    std::vector<ov::genai::Segment> segments;
+    std::optional<std::vector<ov::genai::WhisperWordTiming>> words;
+
+    [[nodiscard]] bool finished() const noexcept {
+        return chunk_offset >= features.n_frames;
+    }
+};
+
+struct GenerationContext {
+    const ov::genai::WhisperGenerationConfig& config;
+    const ov::genai::WhisperContextTokens& context_tokens;
+    ov::InferRequest& encoder;
+    const std::shared_ptr<ov::genai::WhisperDecoder>& decoder;
+    const ov::genai::WhisperFeatureExtractor& feature_extractor;
+    ov::genai::Sampler& sampler;
+    ov::genai::Tokenizer& tokenizer;
+    const std::shared_ptr<ov::genai::StreamerBase>& streamer;
+    ov::genai::WhisperPerfMetrics& perf_metrics;
+    float time_precision;
+    float frame_length_in_seconds;
+};
+
+void finalize_audio_window(const GenerationContext& ctx,
+                           AudioState& state,
+                           const std::vector<int64_t>& tokens,
+                           bool cancelled,
+                           const ov::Tensor& encoder_hidden_state) {
+    const auto& config = ctx.config;
+    const auto& feature_extractor = ctx.feature_extractor;
+    const size_t window_offset = state.chunk_offset;
+    const float window_time_offset = window_offset * ctx.frame_length_in_seconds;
+
+    if (!state.return_timestamps) {
+        state.output_tokens.insert(state.output_tokens.end(), tokens.begin(), tokens.end());
+        state.chunk_offset = state.features.n_frames;
+    } else {
+        auto extracted = ov::genai::extract_segments(tokens,
+                                                     config,
+                                                     feature_extractor.nb_max_frames,
+                                                     ctx.time_precision,
+                                                     window_time_offset);
+        state.segments.insert(state.segments.end(), extracted.segments.begin(), extracted.segments.end());
+        state.output_tokens.insert(state.output_tokens.end(),
+                                   extracted.non_timestamp_tokens.begin(),
+                                   extracted.non_timestamp_tokens.end());
+        if (ctx.streamer &&
+            ctx.streamer->write(extracted.non_timestamp_tokens) != ov::genai::StreamingStatus::RUNNING) {
+            cancelled = true;
+        }
+        if (!cancelled) {
+            state.chunk_offset += extracted.last_offset;
+        }
+    }
+
+    if (cancelled) {
+        state.chunk_offset = state.features.n_frames;
+        return;
+    }
+
+    if (config.word_timestamps) {
+        const auto n_active_frames =
+            std::min(feature_extractor.nb_max_frames, state.features.n_active_frames - window_offset);
+        const auto word_timestamps_processing_start = std::chrono::steady_clock::now();
+        const auto word_timestamps = ov::genai::add_word_level_timestamps(*state.sot,
+                                                                          tokens,
+                                                                          ctx.tokenizer,
+                                                                          ctx.decoder,
+                                                                          encoder_hidden_state,
+                                                                          config,
+                                                                          n_active_frames,
+                                                                          window_time_offset);
+        ctx.perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations[0] += MicroSeconds(
+            ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - word_timestamps_processing_start));
+        if (!state.words.has_value()) {
+            state.words = std::vector<ov::genai::WhisperWordTiming>{};
+        }
+        state.words->insert(state.words->end(), word_timestamps.begin(), word_timestamps.end());
+    }
+}
+
+void process_audio_window(const GenerationContext& ctx, AudioState& state) {
+    const auto& feature_extractor = ctx.feature_extractor;
+    auto& perf_metrics = ctx.perf_metrics;
+
+    auto mel_window = state.features.get_data_with_offset(state.chunk_offset, feature_extractor.nb_max_frames);
+    ov::Tensor encoder_hidden_state = encode(ctx.encoder,
+                                             mel_window,
+                                             feature_extractor.feature_size,
+                                             feature_extractor.nb_max_frames,
+                                             perf_metrics.raw_metrics,
+                                             perf_metrics.whisper_raw_metrics);
+
+    ov::genai::DecoderRoundGuard round_guard{ctx.decoder, ctx.sampler};
+
+    // prepare sot_tokens just once for whole input
+    if (!state.sot.has_value()) {
+        state.sot = prepare_sot_tokens(encoder_hidden_state, ctx.decoder, ctx.config, perf_metrics.raw_metrics);
+    }
+
+    const std::vector<int64_t> prompt = build_window_prompt(ctx.context_tokens,
+                                                            ctx.config,
+                                                            state.chunk_offset,
+                                                            state.sot->tokens,
+                                                            state.return_timestamps);
+    round_guard.track_request(decode_request_id);
+    auto [decoded, cancelled] = decode(ctx.decoder,
+                                       prompt,
+                                       encoder_hidden_state,
+                                       ctx.streamer,
+                                       ctx.sampler,
+                                       state.return_timestamps,
+                                       ctx.config,
+                                       perf_metrics.raw_metrics,
+                                       perf_metrics.whisper_raw_metrics);
+    ctx.decoder->reset_state();
+    finalize_audio_window(ctx, state, decoded.tokens[0], cancelled, encoder_hidden_state);
+
+    round_guard.dismiss();
 }
 
 }  // namespace
@@ -357,130 +490,53 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
     result.perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations = {{MicroSeconds(0.0f)}};
 
+    AudioState state;
     const auto infer_start = std::chrono::steady_clock::now();
-    auto input_features = feature_extractor.extract(raw_speech);
+    state.features = feature_extractor.extract(raw_speech);
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
     result.perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(infer_ms);
 
-    const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
+    const bool is_shortform = state.features.n_frames <= feature_extractor.nb_max_frames;
     // long-form audio processing requires timestamps to be enabled
-    const bool return_timestamps = config.return_timestamps || !is_shortform;
-
-    SotTokensResult sot_result;
-    std::vector<int64_t>& output_tokens = result.output_tokens;
-    std::vector<Segment> segments;
+    state.return_timestamps = config.return_timestamps || !is_shortform;
 
     // 0.02 by default
     const float time_precision = static_cast<float>(feature_extractor.chunk_length) / model_config.max_source_positions;
-    size_t segment_offset = 0;
 
     OPENVINO_ASSERT(feature_extractor.sampling_rate != 0, "Sampling Rate for Feature Extractor is 0");
-    const float frame_length_in_seconds =
-        static_cast<float>(feature_extractor.hop_length) / feature_extractor.sampling_rate;
 
-    for (size_t chunk_offset = 0; chunk_offset < input_features.n_frames; chunk_offset += segment_offset) {
-        const float chunk_time_offset = chunk_offset * frame_length_in_seconds;
+    GenerationContext ctx{config,
+                          context_tokens,
+                          encoder,
+                          decoder,
+                          feature_extractor,
+                          sampler,
+                          tokenizer,
+                          streamer,
+                          result.perf_metrics,
+                          time_precision,
+                          static_cast<float>(feature_extractor.hop_length) / feature_extractor.sampling_rate};
 
-        auto input_features_chunk = input_features.get_data_with_offset(chunk_offset, feature_extractor.nb_max_frames);
-
-        ov::Tensor hidden_state_tensor = encode(encoder,
-                                                input_features_chunk,
-                                                feature_extractor.feature_size,
-                                                feature_extractor.nb_max_frames,
-                                                raw_metrics,
-                                                result.perf_metrics.whisper_raw_metrics);
-
-        // prepare sot_tokens just once for whole input
-        if (sot_result.tokens.empty()) {
-            sot_result = prepare_sot_tokens(hidden_state_tensor, decoder, config, raw_metrics);
-            result.language = sot_result.language;
-        }
-
-        std::vector<int64_t> chunk_sot_tokens = ov::genai::get_prompt_tokens(context_tokens, config, chunk_offset);
-
-        chunk_sot_tokens.insert(chunk_sot_tokens.end(), sot_result.tokens.begin(), sot_result.tokens.end());
-
-        if (!return_timestamps) {
-            chunk_sot_tokens.push_back(config.no_timestamps_token_id);
-        }
-
-        auto [chunk_result, cancelled] = decode(decoder,
-                                                chunk_sot_tokens,
-                                                hidden_state_tensor,
-                                                streamer,
-                                                sampler,
-                                                return_timestamps,
-                                                config,
-                                                raw_metrics,
-                                                result.perf_metrics.whisper_raw_metrics);
-        decoder->reset_state();
-        std::vector<int64_t> chunk_output_tokens = chunk_result.tokens[0];
-
-        if (return_timestamps) {
-            auto extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
-                                                                  config,
-                                                                  feature_extractor.nb_max_frames,
-                                                                  time_precision,
-                                                                  chunk_time_offset);
-
-            segments.insert(segments.end(), extracted_segments.segments.begin(), extracted_segments.segments.end());
-
-            output_tokens.insert(output_tokens.end(),
-                                 extracted_segments.non_timestamp_tokens.begin(),
-                                 extracted_segments.non_timestamp_tokens.end());
-
-            if (streamer &&
-                streamer->write(extracted_segments.non_timestamp_tokens) != ov::genai::StreamingStatus::RUNNING) {
-                cancelled = true;
-                break;
-            }
-
-            segment_offset = extracted_segments.last_offset;
-        } else {
-            output_tokens.insert(output_tokens.end(), chunk_output_tokens.begin(), chunk_output_tokens.end());
-            segment_offset = input_features.n_frames;
-        }
-
-        if (cancelled) {
-            break;
-        }
-
-        if (config.word_timestamps) {
-            const auto n_active_frames =
-                std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
-
-            const auto word_timestamps_processing_start = std::chrono::steady_clock::now();
-            const auto word_timestamps = add_word_level_timestamps(sot_result,
-                                                                   chunk_output_tokens,
-                                                                   tokenizer,
-                                                                   decoder,
-                                                                   hidden_state_tensor,
-                                                                   config,
-                                                                   n_active_frames,
-                                                                   chunk_time_offset);
-            const auto word_timestamps_processing_duration = ov::genai::PerfMetrics::get_microsec(
-                std::chrono::steady_clock::now() - word_timestamps_processing_start);
-
-            result.perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations[0] +=
-                MicroSeconds(word_timestamps_processing_duration);
-
-            if (!result.words.has_value()) {
-                result.words = std::vector<WhisperWordTiming>{};
-            }
-            result.words->insert(result.words->end(), word_timestamps.begin(), word_timestamps.end());
-        }
+    while (!state.finished()) {
+        process_audio_window(ctx, state);
     }
 
     if (streamer) {
         streamer->end();
     }
 
+    result.output_tokens = std::move(state.output_tokens);
+    if (state.sot.has_value()) {
+        result.language = state.sot->language;
+    }
+    result.words = std::move(state.words);
+
     // if return_timestamps wasn't enabled by user
     if (!config.return_timestamps) {
         return result;
     }
 
-    result.segments = segments;
+    result.segments = std::move(state.segments);
 
     return result;
 }
