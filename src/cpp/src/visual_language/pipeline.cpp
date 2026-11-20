@@ -1222,9 +1222,7 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported, example:
-    // const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // return vlm_config.model_type == VLMModelType::QWEN4_EXP;
+    // No model needs the SDPA backend by default; read the model type from models_dir here for one that does.
     return false;
 }
 

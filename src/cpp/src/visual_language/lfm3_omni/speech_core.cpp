@@ -101,6 +101,26 @@ void check_lfm3_speech_models_loaded(bool loaded) {
                     "and openvino_audio_decoder_model");
 }
 
+ov::Tensor embed_lfm3_token(EmbeddingsModel& embedding, int64_t token_id) {
+    ov::Tensor input_ids(ov::element::i64, {1, 1});
+    input_ids.data<int64_t>()[0] = token_id;
+    CircularBufferQueueElementGuard<EmbeddingsRequest> guard(embedding.get_request_queue().get());
+    const ov::Tensor embeds = embedding.infer(guard.get(), input_ids);
+    return copy_tensor(embeds, embeds.get_shape());
+}
+
+ov::Tensor append_lfm3_prompt_row(const ov::Tensor& prompt, const ov::Tensor& row) {
+    ov::Shape shape = prompt.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && row.get_shape() == ov::Shape({1, 1, shape[2]}) &&
+                        row.get_element_type() == prompt.get_element_type(),
+                    "LFM3-Omni: the appended row does not match the prompt embeddings");
+    shape[1] += 1;
+    ov::Tensor result(prompt.get_element_type(), shape);
+    std::memcpy(result.data(), prompt.data(), prompt.get_byte_size());
+    std::memcpy(static_cast<uint8_t*>(result.data()) + prompt.get_byte_size(), row.data(), row.get_byte_size());
+    return result;
+}
+
 void LFM3SpeechRequest::validate(const OmniTalkerSpeechConfig& speech_config) {
     const auto* speaker = std::get_if<std::string>(&speech_config.speaker);
     OPENVINO_ASSERT(speaker && speaker->empty(),
@@ -348,83 +368,66 @@ LFM3SpeechModels::LFM3SpeechModels(LFM3SpeechModelConfig config,
       m_audio_out_embeddings(compile(submodels.audio_out_embeddings, "audio_out_embeddings", device, properties)),
       m_audio_decoder(compile(submodels.audio_decoder, "audio_decoder", device, properties, AUDIO_DECODER_DEFAULTS)) {}
 
-std::vector<std::vector<int64_t>> LFM3SpeechModels::sample_frames(const ov::Tensor& hidden_states,
-                                                                  const std::vector<LFM3SpeechState*>& states) {
-    const size_t batch = states.size();
+std::vector<int64_t> LFM3SpeechModels::sample_frame(const ov::Tensor& hidden_state, LFM3SpeechState& state) {
     const size_t num_codebooks = m_config.num_codebooks;
     const size_t codebook_size = m_config.codebook_size;
-    OPENVINO_ASSERT(hidden_states.get_shape().size() == 2 && hidden_states.get_shape()[0] == batch,
-                    "LFM3-Omni depth decoder needs one hidden state row per sequence");
-    std::vector<std::vector<int64_t>> codes(batch, std::vector<int64_t>(num_codebooks, 0));
-    ov::Tensor codes_tensor(ov::element::i64, {batch, num_codebooks});
-    ov::Tensor masked(ov::element::boolean, {batch, num_codebooks});
+    OPENVINO_ASSERT(hidden_state.get_shape() == ov::Shape({1, m_config.hidden_size}),
+                    "LFM3-Omni depth decoder needs one hidden state row [1, ",
+                    m_config.hidden_size,
+                    "]");
+    std::vector<int64_t> codes(num_codebooks, 0);
+    ov::Tensor codes_tensor(ov::element::i64, {1, num_codebooks});
+    ov::Tensor masked(ov::element::boolean, {1, num_codebooks});
     std::fill_n(masked.data<bool>(), masked.get_size(), true);
-    // The codebooks of each frame are revealed in a random order, a few per depth decoder pass.
-    std::vector<std::vector<size_t>> orders(batch, std::vector<size_t>(num_codebooks));
-    std::vector<std::vector<std::vector<int64_t>>> histories(batch);
-    for (size_t row = 0; row < batch; ++row) {
-        std::iota(orders[row].begin(), orders[row].end(), 0);
-        std::shuffle(orders[row].begin(), orders[row].end(), states[row]->audio_rng());
-        histories[row] = states[row]->codebook_history();
-    }
+    // The codebooks of a frame are revealed in a random order, a few per depth decoder pass.
+    std::vector<size_t> order(num_codebooks);
+    std::iota(order.begin(), order.end(), 0);
+    std::shuffle(order.begin(), order.end(), state.audio_rng());
+    const std::vector<std::vector<int64_t>> history = state.codebook_history();
 
     size_t revealed = 0;
     for (size_t pass_size : m_config.maskgit_schedule) {
-        for (size_t row = 0; row < batch; ++row) {
-            std::copy(codes[row].begin(), codes[row].end(), codes_tensor.data<int64_t>() + row * num_codebooks);
-        }
-        m_depth_decoder.set_tensor("hidden_states", hidden_states);
+        std::copy(codes.begin(), codes.end(), codes_tensor.data<int64_t>());
+        m_depth_decoder.set_tensor("hidden_states", hidden_state);
         m_depth_decoder.set_tensor("codes", codes_tensor);
         m_depth_decoder.set_tensor("masked", masked);
         m_depth_decoder.infer();
         const ov::Tensor logits = m_depth_decoder.get_tensor("logits");
-        OPENVINO_ASSERT(logits.get_shape() == ov::Shape({batch, num_codebooks, codebook_size}),
-                        "LFM3-Omni depth decoder must return logits [",
-                        batch,
-                        ", ",
+        OPENVINO_ASSERT(logits.get_shape() == ov::Shape({1, num_codebooks, codebook_size}),
+                        "LFM3-Omni depth decoder must return logits [1, ",
                         num_codebooks,
                         ", ",
                         codebook_size,
                         "]");
-        for (size_t row = 0; row < batch; ++row) {
-            for (size_t rank = revealed; rank < revealed + pass_size; ++rank) {
-                const size_t codebook = orders[row][rank];
-                const float* scores_row = logits.data<const float>() + (row * num_codebooks + codebook) * codebook_size;
-                std::vector<float> scores(scores_row, scores_row + codebook_size);
-                codes[row][codebook] = states[row]->audio_sampling().sample(scores,
-                                                                            histories[row][codebook],
-                                                                            {},
-                                                                            states[row]->audio_rng());
-            }
-            for (size_t rank = revealed; rank < revealed + pass_size; ++rank) {
-                masked.data<bool>()[row * num_codebooks + orders[row][rank]] = false;
-            }
+        for (size_t rank = revealed; rank < revealed + pass_size; ++rank) {
+            const size_t codebook = order[rank];
+            const float* scores_row = logits.data<const float>() + codebook * codebook_size;
+            std::vector<float> scores(scores_row, scores_row + codebook_size);
+            codes[codebook] = state.audio_sampling().sample(scores, history[codebook], {}, state.audio_rng());
+        }
+        for (size_t rank = revealed; rank < revealed + pass_size; ++rank) {
+            masked.data<bool>()[order[rank]] = false;
         }
         revealed += pass_size;
     }
     return codes;
 }
 
-ov::Tensor LFM3SpeechModels::embed_frames(const std::vector<std::vector<int64_t>>& frames) {
-    const size_t num_codebooks = m_config.num_codebooks;
-    ov::Tensor codes_tensor(ov::element::i64, {frames.size(), num_codebooks});
-    for (size_t row = 0; row < frames.size(); ++row) {
-        std::copy(frames[row].begin(), frames[row].end(), codes_tensor.data<int64_t>() + row * num_codebooks);
-    }
+ov::Tensor LFM3SpeechModels::embed_frame(const std::vector<int64_t>& codes) {
+    ov::Tensor codes_tensor(ov::element::i64, {1, m_config.num_codebooks});
+    std::copy(codes.begin(), codes.end(), codes_tensor.data<int64_t>());
     m_audio_out_embeddings.set_tensor("codes", codes_tensor);
     m_audio_out_embeddings.infer();
     const ov::Tensor embeds = m_audio_out_embeddings.get_tensor("inputs_embeds");
-    OPENVINO_ASSERT(embeds.get_element_type() == ov::element::f32 &&
-                        embeds.get_shape() == ov::Shape({frames.size(), m_config.hidden_size}),
-                    "LFM3-Omni audio_out_embeddings must return f32 inputs_embeds [",
-                    frames.size(),
-                    ", ",
-                    m_config.hidden_size,
-                    "], got ",
-                    embeds.get_element_type(),
-                    " ",
-                    embeds.get_shape());
-    return copy_tensor(embeds, embeds.get_shape());
+    OPENVINO_ASSERT(
+        embeds.get_element_type() == ov::element::f32 && embeds.get_shape() == ov::Shape({1, m_config.hidden_size}),
+        "LFM3-Omni audio_out_embeddings must return f32 inputs_embeds [1, ",
+        m_config.hidden_size,
+        "], got ",
+        embeds.get_element_type(),
+        " ",
+        embeds.get_shape());
+    return copy_tensor(embeds, {1, 1, m_config.hidden_size});
 }
 
 ov::Tensor LFM3SpeechModels::decode_frames(const std::vector<std::vector<int64_t>>& frames, size_t begin, size_t end) {

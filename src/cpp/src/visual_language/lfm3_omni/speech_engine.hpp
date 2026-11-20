@@ -7,7 +7,6 @@
 #include <memory>
 #include <vector>
 
-#include "circular_buffer_queue.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/runtime/infer_request.hpp"
@@ -56,7 +55,6 @@ private:
     };
 
     StepOutput language_step(const ov::Tensor& inputs_embeds, size_t attention_length);
-    ov::Tensor embed_token(int64_t token_id);
 
     LFM3SpeechModels m_models;
     ov::InferRequest& m_language;

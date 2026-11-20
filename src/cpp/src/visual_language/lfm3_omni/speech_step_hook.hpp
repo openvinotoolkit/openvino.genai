@@ -4,7 +4,6 @@
 #pragma once
 
 #include <exception>
-#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -57,7 +56,7 @@ public:
                         std::optional<ov::Tensor>& prompt_ids,
                         InputsEmbedder& inputs_embedder) override;
     bool needs_hidden_states() const override {
-        return !m_states.empty();
+        return m_active.has_value();
     }
     void before_sampling(const std::vector<SequenceGroup::Ptr>& requests, const ov::Tensor& logits) override;
     std::vector<GeneratedEmbedding> after_sampling(const std::vector<SequenceGroup::Ptr>& requests,
@@ -78,18 +77,33 @@ private:
         std::vector<int64_t> codes;
     };
 
-    /// @brief Flushes the codec, stores the result and erases the state. Any exception cancels the request and is
-    /// kept for rethrow_request_error().
-    void finish_request(std::map<uint64_t, LFM3SpeechState>::iterator it);
+    struct ActiveRequest {
+        ActiveRequest(uint64_t id, const LFM3SpeechModelConfig& config, const PendingRequest& pending);
+
+        uint64_t id;
+        LFM3SpeechState state;
+        std::shared_ptr<StreamerBase> text_streamer;
+        /// @brief Sampled in before_sampling(), fed back by after_sampling() of the same step.
+        std::optional<PendingFrame> frame;
+    };
+
+    void sample_text_slot(const Sequence::Ptr& sequence, const ov::Tensor& logits, size_t row);
+    void sample_frame_slot(const SequenceGroup::Ptr& group, const Sequence::Ptr& sequence);
+
+    /// @brief Finishes the active request if the speech state or the sampler ended it, and reports the outcome to its
+    /// handle and sequences.
+    void finish_if_ended(const SequenceGroup::Ptr& group, SamplerOutput& sampler_output);
+
+    /// @brief Flushes the codec, stores the result and forgets the active request. Any exception cancels the request
+    /// and is kept for rethrow_request_error().
+    void finish_request();
 
     /// @brief Logs the current exception and keeps it, unless the request already failed.
     void keep_request_error(const char* source);
 
     std::unique_ptr<LFM3SpeechModels> m_models;
     std::optional<PendingRequest> m_pending_request;
-    std::map<uint64_t, LFM3SpeechState> m_states;
-    std::shared_ptr<StreamerBase> m_text_streamer;
-    std::vector<PendingFrame> m_pending_frames;
+    std::optional<ActiveRequest> m_active;
     std::optional<LFM3SpeechResult> m_result;
     std::exception_ptr m_request_error;
     bool m_text_streamer_failed = false;

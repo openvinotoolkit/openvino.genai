@@ -277,8 +277,9 @@ public:
     }
 
     void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const override {
-        if (!m_speech_core_supported) {
+        if (!m_is_lfm3_on_plain_core) {
             VLMBackend::check_speech_in_stream(speech_config);
+            return;
         }
         check_lfm3_speech_models_loaded(m_speech_hook != nullptr);
         LFM3SpeechRequest::validate(speech_config);
@@ -294,7 +295,7 @@ private:
     VLMConfig m_vlm_config;
 
     /// LFM3-Omni on a plain continuous batching core, the only core that can decode speech.
-    bool m_speech_core_supported = false;
+    bool m_is_lfm3_on_plain_core = false;
     /// LFM3-Omni speech output; null for other models, other cores and exports without the speech models.
     std::shared_ptr<LFM3SpeechStepHook> m_speech_hook;
 
@@ -309,7 +310,7 @@ private:
             GENAI_DEBUG("LFM3-Omni speech output is unavailable with speculative decoding or prompt lookup");
             return;
         }
-        m_speech_core_supported = true;
+        m_is_lfm3_on_plain_core = true;
         if (!has_speech_models) {
             GENAI_DEBUG("LFM3-Omni speech output is unavailable: the export has no speech models");
             return;

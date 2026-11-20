@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstring>
 
 namespace ov::genai {
 
@@ -64,16 +63,6 @@ LFM3OmniSpeechEngine::StepOutput LFM3OmniSpeechEngine::language_step(const ov::T
     return output;
 }
 
-ov::Tensor LFM3OmniSpeechEngine::embed_token(int64_t token_id) {
-    ov::Tensor input_ids(ov::element::i64, {1, 1});
-    input_ids.data<int64_t>()[0] = token_id;
-    CircularBufferQueueElementGuard<EmbeddingsRequest> guard(m_embedding->get_request_queue().get());
-    const ov::Tensor embeds = m_embedding->infer(guard.get(), input_ids);
-    ov::Tensor result(embeds.get_element_type(), embeds.get_shape());
-    std::memcpy(result.data(), embeds.data(), embeds.get_byte_size());
-    return result;
-}
-
 LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                                                 const ov::Tensor& attention_mask,
                                                 int64_t last_prompt_token,
@@ -85,13 +74,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     ov::Tensor prompt_embeds = inputs_embeds;
     const int64_t marker = state.take_prompt_marker(last_prompt_token);
     if (marker >= 0) {
-        const ov::Tensor marker_embeds = embed_token(marker);
-        const ov::Shape& shape = inputs_embeds.get_shape();
-        prompt_embeds = ov::Tensor(inputs_embeds.get_element_type(), {1, shape[1] + 1, shape[2]});
-        std::memcpy(prompt_embeds.data(), inputs_embeds.data(), inputs_embeds.get_byte_size());
-        std::memcpy(static_cast<uint8_t*>(prompt_embeds.data()) + inputs_embeds.get_byte_size(),
-                    marker_embeds.data(),
-                    marker_embeds.get_byte_size());
+        prompt_embeds = append_lfm3_prompt_row(inputs_embeds, embed_lfm3_token(*m_embedding, marker));
     }
     size_t attention_length = attention_mask.get_shape().at(1) + (marker >= 0 ? 1 : 0);
     state.start(attention_length);
@@ -125,10 +108,8 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     while (!state.finished()) {
         ov::Tensor next_embeds;
         if (state.next_is_frame()) {
-            const std::vector<int64_t> codes =
-                state.accept_frame(m_models.sample_frames(step.hidden_state, {&state}).front(), m_models);
-            next_embeds = m_models.embed_frames({codes});
-            next_embeds.set_shape({1, 1, next_embeds.get_shape().at(1)});
+            next_embeds =
+                m_models.embed_frame(state.accept_frame(m_models.sample_frame(step.hidden_state, state), m_models));
         } else {
             const int64_t token = state.sample_text(step.logits);
             StreamingStatus status = StreamingStatus::RUNNING;
@@ -138,7 +119,7 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                 text_streamer_guard.done = false;
             }
             state.accept_text(token, status);
-            next_embeds = embed_token(token);
+            next_embeds = embed_lfm3_token(*m_embedding, token);
         }
         raw_perf.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf.m_batch_sizes.emplace_back(1);

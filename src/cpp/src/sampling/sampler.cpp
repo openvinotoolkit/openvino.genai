@@ -1337,18 +1337,24 @@ void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
                 continue;
             }
 
-            auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, 0);
             logit_processor.update_generated_len(generated_len);
-            logit_processor.apply(logit_vector);
+            // Declared before the distribution, which reads the logits and must not outlive them.
+            std::optional<Logits> logit_vector;
             std::optional<SamplingDistribution> distribution;
             Token sampled_token;
             if (const auto forced_token = running_sequence->take_forced_next_token()) {
+                // A step hook chose the token, so the logits of this row are not needed.
                 sampled_token = Token(0.0f, *forced_token);
-            } else if (sampling_params.is_greedy_decoding()) {
-                sampled_token = _greedy_sample(logit_vector, sampling_params.logprobs);
             } else {
-                distribution.emplace(logit_vector);
-                sampled_token = _multinomial_sample(sequence_group, *distribution, ctx, sg_sampling_info.sampler_output);
+                logit_vector.emplace(_get_logit_vector(sequence_group_logits, running_sequence_id, 0));
+                logit_processor.apply(*logit_vector);
+                if (sampling_params.is_greedy_decoding()) {
+                    sampled_token = _greedy_sample(*logit_vector, sampling_params.logprobs);
+                } else {
+                    distribution.emplace(*logit_vector);
+                    sampled_token =
+                        _multinomial_sample(sequence_group, *distribution, ctx, sg_sampling_info.sampler_output);
+                }
             }
             // An EAGLE draft samples over its own vocabulary.
             if (d2t) {

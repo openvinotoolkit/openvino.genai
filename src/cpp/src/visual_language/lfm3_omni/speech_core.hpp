@@ -20,6 +20,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "utils.hpp"
+#include "visual_language/embedding_model.hpp"
 
 namespace ov::genai {
 
@@ -33,6 +34,12 @@ bool has_lfm3_speech_models(const ModelsMap& models_map);
 
 /// @brief Throws unless the speech models were found when the pipeline was built.
 void check_lfm3_speech_models_loaded(bool loaded);
+
+/// @brief Language model input [1, 1, hidden_size] of one token, owned copy.
+ov::Tensor embed_lfm3_token(EmbeddingsModel& embedding, int64_t token_id);
+
+/// @brief Prompt embeddings [1, n + 1, hidden_size]: the rows of prompt, then row [1, 1, hidden_size].
+ov::Tensor append_lfm3_prompt_row(const ov::Tensor& prompt, const ov::Tensor& row);
 
 /// @brief Per-call settings of LFM3-Omni speech decoding, checked against what the decoder implements.
 struct LFM3SpeechRequest {
@@ -123,7 +130,6 @@ struct LFM3SpeechSampling {
 class LFM3SpeechState;
 
 /// @brief The three speech models of LFM3-Omni: depth decoder, audio_out_embeddings and the codec decoder.
-/// Frame sampling and embedding take one row per sequence.
 class LFM3SpeechModels {
 public:
     LFM3SpeechModels(const std::filesystem::path& models_dir, const std::string& device, const ov::AnyMap& properties);
@@ -136,13 +142,12 @@ public:
         return m_config;
     }
 
-    /// @param hidden_states Language model hidden state of each sequence, [states.size(), hidden_size].
-    /// @return The codes of one frame per sequence, drawn with each state's sampling settings and speech RNG.
-    std::vector<std::vector<int64_t>> sample_frames(const ov::Tensor& hidden_states,
-                                                    const std::vector<LFM3SpeechState*>& states);
+    /// @param hidden_state Language model hidden state the frame follows, [1, hidden_size].
+    /// @return The codes of one frame, drawn with the state's sampling settings and speech RNG.
+    std::vector<int64_t> sample_frame(const ov::Tensor& hidden_state, LFM3SpeechState& state);
 
-    /// @return Language model input of each frame, [frames.size(), hidden_size], owned copy.
-    ov::Tensor embed_frames(const std::vector<std::vector<int64_t>>& frames);
+    /// @return Language model input [1, 1, hidden_size] of the frame, owned copy.
+    ov::Tensor embed_frame(const std::vector<int64_t>& codes);
 
     /// @brief Waveform [1, (end - begin) * frame_samples] of frames [begin, end), owned copy.
     ov::Tensor decode_frames(const std::vector<std::vector<int64_t>>& frames, size_t begin, size_t end);
