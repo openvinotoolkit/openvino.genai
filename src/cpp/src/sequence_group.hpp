@@ -888,8 +888,13 @@ public:
     }
 
     void clear_scheduled_tokens() {
-        m_num_scheduled_tokens = 0;
+        unschedule_tokens();
         m_num_validation_tokens = 0;
+    }
+
+    // Unlike clear_scheduled_tokens(), keeps the candidates of a validation window to validate in a later step.
+    void unschedule_tokens() {
+        m_num_scheduled_tokens = 0;
         m_output_seq_len = 0;
     }
 
@@ -934,10 +939,17 @@ public:
     }
 
     void finish_iteration() {
+        finish_iteration_before_validation_window();
+        m_num_validation_tokens = 0;
+    }
+
+    // A forward that ends before the validation window, in a prompt or a recompute, leaves its candidates to the
+    // forward that runs the window.
+    void finish_iteration_before_validation_window() {
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
-        clear_scheduled_tokens();
+        unschedule_tokens();
     }
 
     void update_processed_tokens_num(size_t processed_tokens) {
