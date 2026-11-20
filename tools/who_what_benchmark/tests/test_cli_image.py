@@ -316,6 +316,8 @@ def test_multi_image_to_image_genai_with_local_manifest(tmp_path):
             tmp_path,
             "--num-samples",
             "1",
+            "--image-size",
+            "256",
             "--num-inference-steps",
             "2",
             "--device",
@@ -325,4 +327,5 @@ def test_multi_image_to_image_genai_with_local_manifest(tmp_path):
     )
 
     assert gt_file.exists()
-    assert (tmp_path / "reference" / "0.png").exists()
+    with Image.open(tmp_path / "reference" / "0.png") as image:
+        assert image.size == (256, 256)

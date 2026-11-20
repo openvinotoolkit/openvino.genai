@@ -308,7 +308,7 @@ def parse_args():
         "--num-inference-steps",
         type=int,
         default=None,
-        help="Text-to-image/text-to-video specific parameter that defines the number of denoising steps.",
+        help="Defines the number of denoising steps for image and video generation.",
     )
     parser.add_argument(
         "--seed",

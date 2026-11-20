@@ -9,16 +9,16 @@ from .registry import register_evaluator
 
 @register_evaluator("multi-image-to-image")
 class MultiImage2ImageEvaluator(Image2ImageEvaluator):
-    DEFAULT_NUM_INFERENCE_STEPS = 4
-    DEFAULT_IMAGE_SIZE = 256
+    DEFAULT_NUM_INFERENCE_STEPS = 10
+    DEFAULT_IMAGE_SIZE = 512
     DEFAULT_GENERATION_SETTINGS = [
-        {"width": 128, "height": 128, "guidance_scale": 1.0, "negative_prompt": None},
-        {"width": 128, "height": 128, "guidance_scale": 2.0, "negative_prompt": ""},
-        {"width": 128, "height": 128, "guidance_scale": 1.0, "negative_prompt": None},
-        {"width": 128, "height": 128, "guidance_scale": 1.0, "negative_prompt": None},
-        {"width": 256, "height": 256, "guidance_scale": 1.0, "negative_prompt": None},
-        {"width": 256, "height": 128, "guidance_scale": 4.0, "negative_prompt": "blurry, low quality, distorted"},
-        {"width": 128, "height": 128, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 512, "height": 512, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 512, "height": 512, "guidance_scale": 2.0, "negative_prompt": ""},
+        {"width": 512, "height": 512, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 512, "height": 512, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 512, "height": 512, "guidance_scale": 1.0, "negative_prompt": None},
+        {"width": 512, "height": 256, "guidance_scale": 4.0, "negative_prompt": "blurry, low quality, distorted"},
+        {"width": 512, "height": 512, "guidance_scale": 1.0, "negative_prompt": None},
     ]
 
     def _prepare_default_data(self):
