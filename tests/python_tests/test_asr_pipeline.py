@@ -557,21 +557,33 @@ def test_asr_constructors(pipelines_fixture, sample_from_dataset, tmp_path, requ
         audio = np.zeros(3200, dtype=np.float32).tolist()
         generation = {"language": "English", "max_new_tokens": 8}
         exported = ov_genai.ASRPipeline(
-            path, "NPU", **NPUW_CPU_PROPERTIES,
-            MAX_PROMPT_LEN=128, MIN_RESPONSE_LEN=64, BLOB_PATH=str(blob), EXPORT_BLOB=True,
+            path,
+            "NPU",
+            **NPUW_CPU_PROPERTIES,
+            MAX_PROMPT_LEN=128,
+            MIN_RESPONSE_LEN=64,
+            BLOB_PATH=str(blob),
+            EXPORT_BLOB=True,
         )
         expected = exported.generate(audio, **generation)
         assert blob.is_file()
         del exported
         imported = ov_genai.ASRPipeline(
-            path, "NPU", **NPUW_CPU_PROPERTIES,
-            BLOB_PATH=str(blob), WEIGHTS_PATH=str(path / "openvino_language_model.bin"),
+            path,
+            "NPU",
+            **NPUW_CPU_PROPERTIES,
+            BLOB_PATH=str(blob),
+            WEIGHTS_PATH=str(path / "openvino_language_model.bin"),
         )
         actual = imported.generate(audio, **generation)
         assert actual.texts == expected.texts
         assert actual.languages == expected.languages
         default = ov_genai.ASRPipeline(
-            path, "NPU", **NPUW_CPU_PROPERTIES, MAX_PROMPT_LEN=128, MIN_RESPONSE_LEN=64,
+            path,
+            "NPU",
+            **NPUW_CPU_PROPERTIES,
+            MAX_PROMPT_LEN=128,
+            MIN_RESPONSE_LEN=64,
         )
         assert default.generate(audio, **generation).texts == expected.texts
         with pytest.raises(RuntimeError, match="supports only the SDPA attention backend"):
@@ -626,8 +638,12 @@ def test_max_new_tokens(pipelines_fixture, sample_from_dataset, request):
             (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
         )
         small_pipe = ov_genai.ASRPipeline(
-            model_path, "NPU", **NPUW_CPU_PROPERTIES,
-            ATTENTION_BACKEND="SDPA", MAX_PROMPT_LEN=64, MIN_RESPONSE_LEN=16,
+            model_path,
+            "NPU",
+            **NPUW_CPU_PROPERTIES,
+            ATTENTION_BACKEND="SDPA",
+            MAX_PROMPT_LEN=64,
+            MIN_RESPONSE_LEN=16,
         )
         with open(model_path / "preprocessor_config.json", encoding="utf-8") as file:
             preprocessor = json.load(file)

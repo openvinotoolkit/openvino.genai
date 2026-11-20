@@ -28,9 +28,15 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with (
                 mock.patch.object(module, "is_genai_available", return_value=True),
-                mock.patch.object(module.Qwen3ASROptimumPipeline, "init_model", side_effect=AssertionError("HF initialized")),
-                mock.patch.object(module.AutoProcessor, "from_pretrained", side_effect=AssertionError("HF processor loaded")),
-                mock.patch.object(module.AutoTokenizer, "from_pretrained", side_effect=AssertionError("HF tokenizer loaded")),
+                mock.patch.object(
+                    module.Qwen3ASROptimumPipeline, "init_model", side_effect=AssertionError("HF initialized")
+                ),
+                mock.patch.object(
+                    module.AutoProcessor, "from_pretrained", side_effect=AssertionError("HF processor loaded")
+                ),
+                mock.patch.object(
+                    module.AutoTokenizer, "from_pretrained", side_effect=AssertionError("HF tokenizer loaded")
+                ),
                 mock.patch.object(module, "create_genai_speech_2_txt_model", return_value=expected) as factory,
             ):
                 actual = module.create_speech_2_txt_model(
@@ -46,9 +52,7 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
         constructor = mock.Mock(return_value=pipeline)
         module = SimpleNamespace(ASRPipeline=constructor)
         with mock.patch.dict(sys.modules, {"openvino_genai": module}):
-            actual = self.ov_utils.create_genai_speech_2_txt_model(
-                Path("exported-model"), "npu", None, config={}
-            )
+            actual = self.ov_utils.create_genai_speech_2_txt_model(Path("exported-model"), "npu", None, config={})
         self.assertIs(actual[0], pipeline)
         self.assertIs(actual[1], tokenizer)
         self.assertTrue(actual[3])
@@ -174,9 +178,10 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
         self.assertIs(result, expected)
         create_asr.assert_not_called()
         self.assertEqual(args["infer_count"], self.speech.DEFAULT_OUTPUT_TOKEN_SIZE)
-        self.assertEqual(run_vlm.call_args.kwargs["input_list"], [
-            {"prompt": self.speech.DEFAULT_SPEECH_PROMPT, "audio": "audio.wav"}
-        ])
+        self.assertEqual(
+            run_vlm.call_args.kwargs["input_list"],
+            [{"prompt": self.speech.DEFAULT_SPEECH_PROMPT, "audio": "audio.wav"}],
+        )
 
     def test_qwen_npu_omitted_limit_preserves_pipeline_configuration(self):
         unlimited = (1 << 64) - 1

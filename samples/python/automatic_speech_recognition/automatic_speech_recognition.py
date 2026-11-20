@@ -46,7 +46,9 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("wav_file_path", help="Path to the WAV file")
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
-    parser.add_argument("--perf", action="store_true", help="Print performance metrics in addition to the transcription")
+    parser.add_argument(
+        "--perf", action="store_true", help="Print performance metrics in addition to the transcription"
+    )
     args = parser.parse_args()
 
     ov_config = dict()
