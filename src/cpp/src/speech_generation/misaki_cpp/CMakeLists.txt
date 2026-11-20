@@ -4,9 +4,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(misaki_cpp VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 option(MISAKI_CPP_BUILD_PYTHON_BINDINGS "Build Python bindings for misaki_cpp" OFF)
 
 include(FetchContent)
@@ -27,6 +24,7 @@ add_library(misaki_cpp STATIC
   src/english_lexicon.cpp
   src/factory_stub.cpp
 )
+target_compile_features(misaki_cpp PUBLIC cxx_std_17)
 set_target_properties(misaki_cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(misaki_cpp
   PUBLIC
