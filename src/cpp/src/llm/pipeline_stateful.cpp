@@ -13,6 +13,14 @@
 
 namespace ov::genai {
 
+namespace {
+
+// NPUW variable state that reports the stored token count and, with continuous prefill,
+// carries the per-turn keep proposal and grant. The name is defined by the NPU plugin.
+constexpr const char* NPUW_STORED_TOKENS_STATE = "npuw_stored_tokens_state";
+
+} // namespace
+
 StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::InferRequest& request,
     const ov::genai::Tokenizer& tokenizer,
@@ -584,13 +592,13 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len) {
         // slicing must happen at the granted value, never at the proposed one.
         std::optional<ov::VariableState> channel;
         for (auto& st : m_model_runner.query_state()) {
-            if (st.get_name() == utils::NPUW_STORED_TOKENS_STATE) {
+            if (st.get_name() == NPUW_STORED_TOKENS_STATE) {
                 channel = st;
                 break;
             }
         }
         OPENVINO_ASSERT(channel.has_value(),
-                        utils::NPUW_STORED_TOKENS_STATE,
+                        NPUW_STORED_TOKENS_STATE,
                         " is missing while continuous prefill is enabled.");
 
         ov::Tensor proposal(ov::element::i64, {1});
