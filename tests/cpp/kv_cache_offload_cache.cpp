@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <future>
@@ -835,6 +836,49 @@ TEST(TestKVCacheOffloadCache, PluginStoreIsAddressedByTheDigestOfEveryBlockItIsA
     events.clear();
     EXPECT_EQ(offload_cache.probe({unrecorded}), (std::vector<bool>{false}));
     EXPECT_EQ(events, (std::vector<std::string>{"has 910033:none"}));
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheWalksAChainLongerThanOnePrefetchInRounds) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/2);
+    std::vector<std::string> events;
+    auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/false, events, /*num_slots=*/4);
+    // One block per prefetch, so the two-block chain below takes two rounds.
+    offload_cache->set_max_prefetch_bytes(fixture.cache_manager->get_block_layout().get_slot_size());
+
+    BlockManager block_manager(/*num_blocks=*/2, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    block_manager.set_overwritten_block_observer(offload_cache.get());
+
+    const std::vector<int64_t> wanted_tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto producer = make_group(wanted_tokens, /*request_id=*/70);
+    producer->schedule_tokens(wanted_tokens.size());
+    block_manager.append_slots(producer);
+    producer->finish_iteration();
+    block_manager.free_sequence(producer->get_running_sequences().at(0)->get_id());
+
+    const std::vector<int64_t> other_tokens = {40, 41, 42, 43, 44, 45, 46, 47};
+    auto other = make_group(other_tokens, /*request_id=*/71);
+    other->schedule_tokens(other_tokens.size());
+    block_manager.append_slots(other);
+    other->finish_iteration();
+    block_manager.free_sequence(other->get_running_sequences().at(0)->get_id());
+    offload_cache->flush();
+    ASSERT_EQ(offload_cache->get_num_entries(), 2);
+
+    auto consumer = make_group(wanted_tokens, /*request_id=*/72);
+    events.clear();
+    {
+        KVCacheOffloadCache::ScopedReclamationPause keep_entries(*offload_cache);
+        EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), 2);
+    }
+    EXPECT_EQ(std::count(events.begin(), events.end(), "read_blocks 1"), 2) << "each round reads one block";
+    ASSERT_TRUE(block_manager.restore_cached_blocks(consumer));
+
+    const auto consumer_seq_id = consumer->get_running_sequences().at(0)->get_id();
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 2);
+
+    block_manager.set_overwritten_block_observer(nullptr);
+    block_manager.free_sequence(consumer_seq_id);
 }
 
 TEST(TestKVCacheOffloadCache, FileStoreIsNotProbedBeforeWrites) {

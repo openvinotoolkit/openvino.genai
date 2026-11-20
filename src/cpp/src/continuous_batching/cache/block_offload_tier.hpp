@@ -314,10 +314,7 @@ public:
 
     /// Reads the blocks of @p hashes the store holds in one batch; load_into() serves only from this memory.
     void prefetch(const std::vector<std::size_t>& hashes) override {
-        // Bounds the memory a warm-up can hold before it copies the blocks into the device cache.
-        constexpr std::size_t max_prefetch_bytes = 256ull * 1024 * 1024;
-        const std::size_t max_blocks =
-            std::max<std::size_t>(1, max_prefetch_bytes / std::max<std::size_t>(1, m_store->get_block_size()));
+        const std::size_t max_blocks = max_prefetch_blocks();
         std::vector<std::size_t> wanted;
         std::vector<PrefixKey> wanted_keys;
         {
@@ -373,6 +370,15 @@ public:
     void release_prefetched() override {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_prefetched.clear();
+    }
+
+    /// Bounds the memory one prefetch() holds before the warm-up copies the blocks into the device cache.
+    std::size_t max_prefetch_blocks() const override {
+        return std::max<std::size_t>(1, m_max_prefetch_bytes / std::max<std::size_t>(1, m_store->get_block_size()));
+    }
+
+    void set_max_prefetch_bytes(std::size_t bytes) {
+        m_max_prefetch_bytes = bytes;
     }
 
     /// Waits until every queued store has reached the backing file.
@@ -749,6 +755,7 @@ private:
     std::unordered_map<std::size_t, ChainLink> m_links;
     std::deque<std::size_t> m_link_order;
     std::size_t m_max_links = 0;
+    std::size_t m_max_prefetch_bytes = 256ull * 1024 * 1024;
     bool m_track_chains = false;
     // Held for a plugin store, so that Sequence records the digests it is keyed by.
     std::optional<PrefixDigestRegistry::Lease> m_digest_lease;

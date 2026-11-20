@@ -136,7 +136,12 @@ SchedulerConfig make_persistent_store_config(const std::string& plugin_path, con
 /// prompt reads them back instead of recomputing them, with the same output as without any store.
 void run_restart_reuses_stored_blocks(const std::string& model_path, const std::string& plugin_path, bool hybrid) {
     // A hybrid model only reuses a prompt that crosses at least one linear-attention checkpoint interval.
-    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", hybrid ? 310 : 100);
+    size_t repeats = hybrid ? 310 : 100;
+    // A much longer prompt, to see a restore that goes past what one prefetch of the store can hold.
+    if (const char* from_env = std::getenv("OFFLOAD_E2E_RESTART_REPEATS"); from_env != nullptr && *from_env != '\0') {
+        repeats = std::stoul(from_env);
+    }
+    const std::string prompt = repeat("The quick brown fox jumps over the lazy dog. ", repeats);
     constexpr size_t NEW_TOKENS = 8;
     const std::string device = e2e_device();
 

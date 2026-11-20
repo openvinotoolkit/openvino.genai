@@ -205,10 +205,16 @@ public:
 
     /**
      * @brief Lets the source read the blocks a warm-up is about to load in one batch, with no host lock held.
-     * @param hashes Blocks of one prompt's chain, in order; load_into() serves them from memory. The source may read
-     * fewer than asked, within its memory budget; the rest is reported by load_into() as unavailable.
+     * @param hashes At most max_prefetch_blocks() blocks of one prompt's chain, in order; load_into() serves them from
+     * memory. The source may read fewer than asked, within its memory budget; the rest is reported by load_into() as
+     * unavailable.
      */
     virtual void prefetch(const std::vector<size_t>& /*hashes*/) {}
+
+    /// @return How many blocks one prefetch() call reads at most; a warm-up of a longer chain goes on in rounds.
+    virtual size_t max_prefetch_blocks() const {
+        return std::numeric_limits<size_t>::max();
+    }
 
     /// Drops whatever prefetch() read ahead that load_into() did not use.
     virtual void release_prefetched() {}
@@ -2998,38 +3004,13 @@ public:
         // with, so releasing it immediately would make it the very next block the allocator overwrites.
         std::vector<BlocksPerLayer> chain;
 
-        // Read the blocks the walk is going to load in one batch, in chain order, instead of one by one.
-        std::vector<size_t> to_load;
-        const auto note_to_load = [&](size_t hash) {
+        // Blocks to read ahead for the walk, in chain order, so that they are read in one batch and not one by one.
+        const auto note_to_load = [&](std::vector<size_t>& to_load, size_t hash) {
             if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) != 0 &&
                 m_allocator.can_allocate_blocks(to_load.size() + 1)) {
                 to_load.push_back(hash);
             }
         };
-        for (const size_t content_len : walk_lengths) {
-            const auto hash = sequence->get_hash(content_len, m_block_size);
-            if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) == 0) {
-                break;
-            }
-            note_to_load(hash);
-        }
-        // The pipeline takes the execution lock before the manager lock, so no lock is held while the store is read
-        // and the execution lock is taken before the manager lock is taken again.
-        lock.unlock();
-        struct PrefetchRelease {
-            IExternalPrefixSource& source;
-            ~PrefetchRelease() {
-                source.release_prefetched();
-            }
-        } prefetch_release{source};
-        if (!to_load.empty()) {
-            source.prefetch(to_load);
-        }
-        std::unique_lock<std::recursive_mutex> device_phase;
-        if (begin_device_phase) {
-            device_phase = begin_device_phase();
-        }
-        lock.lock();
 
         // @return false when the chain cannot be extended with the block ending at `content_len`.
         const auto extend_chain = [&](size_t content_len) {
@@ -3058,10 +3039,49 @@ public:
             return true;
         };
 
-        for (const size_t content_len : walk_lengths) {
-            if (!extend_chain(content_len)) {
-                break;
+        // The source reads ahead only so many blocks at once, so a long chain is walked in rounds. A round reads its
+        // batch with no lock held, writes it into the device cache and lets the source drop it, which keeps the memory
+        // bounded however long the chain is. The pipeline takes the execution lock before the manager lock, so the
+        // manager lock is given up before each round and the execution lock is taken before it is taken again.
+        const size_t batch_limit = std::max<size_t>(1, source.max_prefetch_blocks());
+        size_t next = 0;
+        bool chain_ended = false;
+        while (next < walk_lengths.size() && !chain_ended) {
+            std::vector<size_t> to_load;
+            size_t batch_end = next;
+            while (batch_end < walk_lengths.size() && to_load.size() < batch_limit) {
+                const auto hash = sequence->get_hash(walk_lengths[batch_end], m_block_size);
+                if (!m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks) && available.count(hash) == 0) {
+                    chain_ended = true;
+                    break;
+                }
+                note_to_load(to_load, hash);
+                ++batch_end;
             }
+
+            lock.unlock();
+            struct PrefetchRelease {
+                IExternalPrefixSource& source;
+                ~PrefetchRelease() {
+                    source.release_prefetched();
+                }
+            } prefetch_release{source};
+            if (!to_load.empty()) {
+                source.prefetch(to_load);
+            }
+            std::unique_lock<std::recursive_mutex> device_phase;
+            if (begin_device_phase) {
+                device_phase = begin_device_phase();
+            }
+            lock.lock();
+
+            for (size_t i = next; i < batch_end; ++i) {
+                if (!extend_chain(walk_lengths[i])) {
+                    chain_ended = true;
+                    break;
+                }
+            }
+            next = batch_end;
         }
 
         // Drop ownership so that the regular restore path can claim the chain by hash.
