@@ -142,10 +142,14 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path,
-                                                        const ov::frontend::gguf::GenAIAdaptOptions& options) {
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path) {
     ov::frontend::gguf::FrontEnd frontend;
-    return ov::frontend::gguf::adapt_to_genai(frontend.convert(frontend.load(model_path)), options);
+    auto converted_model = frontend.convert(frontend.load(model_path));
+    OPENVINO_ASSERT(!converted_model->has_rt_info("gguf_mmproj"),
+                    "GGUF file '",
+                    model_path,
+                    "' is an mmproj and cannot be loaded as a language model.");
+    return ov::frontend::gguf::adapt_to_genai(converted_model);
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
@@ -178,10 +182,10 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
 
         auto models = convert_gguf_with_frontend(model_path);
         auto language = models.find("language");
-        OPENVINO_ASSERT(language != models.end() && language->second,
-                        "GGUF file '",
+        OPENVINO_ASSERT(language != models.end(),
+                        "[GGUF] adaptation of decoder file '",
                         model_path,
-                        "' does not contain a language model; expected a decoder GGUF, not an mmproj file.");
+                        "' did not produce the required language model.");
         model = language->second;
     }
 

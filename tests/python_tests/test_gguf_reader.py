@@ -427,7 +427,7 @@ def test_gguf_frontend_rejects_mmproj_as_language_model(tmp_path):
     writer.write_tensors_to_file()
     writer.close()
 
-    with pytest.raises(RuntimeError, match="does not contain a language model.*decoder GGUF"):
+    with pytest.raises(RuntimeError, match="is an mmproj and cannot be loaded as a language model"):
         ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER="FRONTEND")
 
 
