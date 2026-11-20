@@ -93,6 +93,9 @@ class Text2ImageEvaluator(BaseEvaluator):
             predictions = self._generate_data(
                 model_or_data, gen_image_fn, image_folder
             )
+        if self.num_samples is not None:
+            self.gt_data = self.gt_data.iloc[: self.num_samples]
+            predictions = predictions.iloc[: self.num_samples]
         self.predictions = predictions
 
         all_metrics_per_prompt = {}
