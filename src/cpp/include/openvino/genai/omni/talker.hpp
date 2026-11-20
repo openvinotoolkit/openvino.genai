@@ -12,29 +12,13 @@
 #include "openvino/core/any.hpp"
 #include "openvino/genai/common_types.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
-#include "openvino/genai/omni/talker_perf_metrics.hpp"
+#include "openvino/genai/omni/talker_results.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/properties.hpp"
 
 namespace ov::genai {
-
-/**
- * @brief Output of TalkerBase::generate. Holds the talker-side waveform plus its perf metrics.
- * OmniPipelineImpl combines this with VLMDecodedResults from the VLM stage to produce the
- * public OmniDecodedResults.
- *
- * @note This is a preview API and is subject to change.
- */
-struct OPENVINO_GENAI_EXPORTS TalkerResults {
-    /// Speech output waveforms. Empty when `talker_speech_config.return_audio == false`.
-    std::vector<ov::Tensor> waveforms;
-
-    /// Speech-side perf metrics: wall-clock time and sample count.
-    /// Populated even when `waveforms` is empty so callers can see how long the no-op path took.
-    TalkerPerfMetrics perf_metrics;
-};
 
 /**
  * @brief Public abstract interface for OmniPipeline's speech-output backend.
