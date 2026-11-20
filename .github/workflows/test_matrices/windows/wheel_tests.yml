@@ -299,7 +299,8 @@
 
 - name: DFlash and DSpark speculative decoding tests
   cmd: |-
-    # The DFlash and DSpark drafts need the export from optimum-intel main, which exports Qwen3.5 only with
+    # Selects the DFlash v1, DFlash v2 (qwen3-dflash2), DeepSpec and DSpark pairs, test_dflash.py and
+    # test_dflash_acceptance.py. Their drafts need the export from optimum-intel main, which exports Qwen3.5 only with
     # transformers>=5.15 and exports DFlash v2 drafts since https://github.com/huggingface/optimum-intel/pull/2098.
     # The MiniCPM-V 4.7 pairs need transformers 5.18 and run in their own job.
     python -m pip install transformers==5.15.1
