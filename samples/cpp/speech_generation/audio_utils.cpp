@@ -35,6 +35,18 @@ bool is_wav_buffer(const std::string& buf) {
 
     return true;
 }
+
+void open_wav_writer(drwav& wav, const std::filesystem::path& file_path, uint32_t bits_per_sample, uint32_t sample_rate) {
+    drwav_data_format format;
+    format.container = drwav_container_riff;
+    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+    format.channels = 1;
+    format.sampleRate = sample_rate;
+    format.bitsPerSample = bits_per_sample;
+
+    OPENVINO_ASSERT(drwav_init_file_write(&wav, file_path.string().c_str(), &format, nullptr),
+                    "Failed to initialize WAV writer");
+}
 }  // namespace
 
 namespace utils {
@@ -132,23 +144,30 @@ void save_to_wav(const float* waveform_ptr,
                  const std::filesystem::path& file_path,
                  uint32_t bits_per_sample,
                  uint32_t sample_rate) {
-    drwav_data_format format;
-    format.container = drwav_container_riff;
-    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
-    format.channels = 1;
-    format.sampleRate = sample_rate;
-    format.bitsPerSample = bits_per_sample;
-
     drwav wav;
-    OPENVINO_ASSERT(drwav_init_file_write(&wav, file_path.string().c_str(), &format, nullptr),
-                    "Failed to initialize WAV writer");
+    open_wav_writer(wav, file_path, bits_per_sample, sample_rate);
 
-    size_t total_samples = waveform_size * format.channels;
-
-    drwav_uint64 frames_written = drwav_write_pcm_frames(&wav, total_samples, waveform_ptr);
-    OPENVINO_ASSERT(frames_written == total_samples, "Failed to write not all frames");
+    drwav_uint64 frames_written = drwav_write_pcm_frames(&wav, waveform_size, waveform_ptr);
+    OPENVINO_ASSERT(frames_written == waveform_size, "Failed to write not all frames");
 
     drwav_uninit(&wav);
+}
+
+struct WavWriter::Impl {
+    drwav wav;
+};
+
+WavWriter::WavWriter(const std::filesystem::path& file_path, uint32_t sample_rate) : m_impl{std::make_unique<Impl>()} {
+    open_wav_writer(m_impl->wav, file_path, 32, sample_rate);
+}
+
+WavWriter::~WavWriter() {
+    drwav_uninit(&m_impl->wav);
+}
+
+void WavWriter::write(const float* samples, size_t sample_count) {
+    drwav_uint64 frames_written = drwav_write_pcm_frames(&m_impl->wav, sample_count, samples);
+    OPENVINO_ASSERT(frames_written == sample_count, "Failed to write not all frames");
 }
 
 ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path, const ov::Shape& shape) {
