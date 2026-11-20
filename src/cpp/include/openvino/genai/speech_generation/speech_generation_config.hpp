@@ -122,8 +122,8 @@ public:
     // 0 decodes every chunk alone (audible seams). Costs decoder work per chunk, see the schedule above.
     size_t audio_chunk_left_context_frames = 100;
 
-    // Streaming decoder. When the model directory has the explicit-state streaming codec decoder
-    // (openvino_codec_decoder_stream.xml, exported by optimum-intel), streaming uses it by default: it carries the
+    // Stateful decoder. When the model directory has the stateful codec decoder
+    // (openvino_codec_decoder_stateful.xml, exported by optimum-intel), streaming uses it by default: it carries the
     // decoder's causal state between calls, so nothing is re-decoded and the streamed audio equals the non-streamed
     // decode. It decodes in blocks of 4 frames, so the chunk sizes above are rounded up to a multiple of 4 frames
     // and `audio_chunk_left_context_frames` only sets how many trailing frames of the voice-clone reference codes

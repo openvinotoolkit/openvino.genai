@@ -18,8 +18,8 @@ namespace ov {
 namespace genai {
 
 namespace qwen3_tts {
-class StreamDecoder;
-class StreamDecoderSession;
+class StatefulDecoder;
+class StatefulDecoderSession;
 }  // namespace qwen3_tts
 
 // Shared Qwen3-TTS codec subsystem: every submodel EXCEPT the talker backbone (talker embedding
@@ -168,14 +168,14 @@ public:
         return m_decoder_upsample;
     }
 
-    // Explicit-state streaming decoder (openvino_codec_decoder_stream.xml). Whether it is used is decided, and
-    // the model compiled, when the engine is created, see qwen_stream_decoder_mode() (env variable
+    // Stateful decoder (openvino_codec_decoder_stateful.xml). Whether it is used is decided, and
+    // the model compiled, when the engine is created, see qwen_stateful_decoder_mode() (env variable
     // OV_GENAI_QWEN_TTS_STREAM_DECODER). Returns nullptr when streaming should re-decode left context with
     // decode_speech_chunk() instead. Every returned session owns its decoding state, so sessions of concurrent
     // utterances are independent.
-    std::unique_ptr<qwen3_tts::StreamDecoderSession> create_stream_session();
-    bool has_stream_decoder() const {
-        return static_cast<bool>(m_stream_decoder);
+    std::unique_ptr<qwen3_tts::StatefulDecoderSession> create_stateful_session();
+    bool has_stateful_decoder() const {
+        return static_cast<bool>(m_stateful_decoder);
     }
 
     std::vector<bool> compute_suppress_tokens() const;
@@ -224,9 +224,9 @@ public:
                                                       const ov::Tensor& ref_codec_ids,
                                                       const SpeechGenerationConfig& generation_config);
 
-    // Offline decode through the explicit-state streaming decoder (used when it is selected). `ref_codec_ids` (may
+    // Offline decode through the stateful decoder (used when it is selected). `ref_codec_ids` (may
     // be empty) is a voice-clone reference whose audio is not returned.
-    std::vector<float> decode_with_stream_decoder(const std::vector<int64_t>& codes, const ov::Tensor& ref_codec_ids);
+    std::vector<float> decode_with_stateful_decoder(const std::vector<int64_t>& codes, const ov::Tensor& ref_codec_ids);
 
     std::vector<float> decode_speech_tokenizer_with_reference(const ov::Tensor& ref_codec_ids,
                                                               const std::vector<int64_t>& generated_codes);
@@ -286,7 +286,7 @@ private:
     mutable std::unordered_map<std::string, std::string> m_perf_device;
 
     // Streaming decoder, compiled at construction when selected (null otherwise).
-    std::shared_ptr<qwen3_tts::StreamDecoder> m_stream_decoder;
+    std::shared_ptr<qwen3_tts::StatefulDecoder> m_stateful_decoder;
     std::mutex m_perf_mutex;
 
     uint32_t m_decoder_num_quantizers = 16;

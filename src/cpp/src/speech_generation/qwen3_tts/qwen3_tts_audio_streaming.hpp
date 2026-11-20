@@ -14,7 +14,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_codec_engine.hpp"
-#include "speech_generation/qwen3_tts/qwen3_tts_stream_decoder.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_stateful_decoder.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -30,8 +30,8 @@ namespace qwen3_tts {
 //
 // Two decoding strategies, chosen when the engine is created (OV_GENAI_QWEN_TTS_STREAM_DECODER):
 //
-// * Stateful (explicit-state streaming decoder, default when the model has it). Frames are decoded in
-//   blocks of StreamDecoder::BLOCK_FRAMES as soon as a block is complete, carrying the decoder's causal
+// * Stateful (stateful decoder, default when the model has it). Frames are decoded in
+//   blocks of StatefulDecoder::BLOCK_FRAMES as soon as a block is complete, carrying the decoder's causal
 //   state, so nothing is re-decoded, the samples equal the non-streamed decode, and taking a chunk costs
 //   nothing. The chunk size is rounded up to whole blocks. Voice-clone (ICL) reference codes are not emitted;
 //   the last `left_context_frames` of them only prime the decoder state (frames that do not fill a whole block
@@ -51,11 +51,11 @@ public:
           m_max_chunk_frames(std::max<size_t>(max_chunk_frames, 1)),
           m_target_frames(std::min(std::max<size_t>(first_chunk_frames, 1), m_max_chunk_frames)),
           m_left_context_frames(left_context_frames),
-          m_session(engine.create_stream_session()) {
+          m_session(engine.create_stateful_session()) {
         OPENVINO_ASSERT(first_chunk_frames >= 1 && max_chunk_frames >= 1, "audio chunk sizes must be >= 1");
         const size_t groups = engine.ids().num_code_groups;
         if (m_session) {
-            const size_t block = StreamDecoderSession::block_frames();
+            const size_t block = StatefulDecoderSession::block_frames();
             // Constant chunk size (no schedule): nothing is re-decoded, so small chunks cost nothing extra and
             // give the most playback slack. The size is audio_first_chunk_frames rounded up to whole blocks.
             m_target_frames = round_up(std::max<size_t>(first_chunk_frames, 1), block);
@@ -79,7 +79,7 @@ public:
     void push_frame(const std::vector<int64_t>& groups) {
         if (m_session) {
             m_block_codes.insert(m_block_codes.end(), groups.begin(), groups.end());
-            if (m_block_codes.size() == StreamDecoderSession::block_frames() * groups.size()) {
+            if (m_block_codes.size() == StatefulDecoderSession::block_frames() * groups.size()) {
                 decode_block();
             }
             return;
@@ -143,7 +143,7 @@ public:
         const size_t groups = m_engine.ids().num_code_groups;
         const size_t partial_frames = m_block_codes.size() / groups;
         if (partial_frames > m_discard_frames) {  // else only reference frames are pending: nothing to emit
-            m_block_codes.resize(StreamDecoderSession::block_frames() * groups, 0);
+            m_block_codes.resize(StatefulDecoderSession::block_frames() * groups, 0);
             auto block = m_session->decode_block(m_block_codes.data());
             const size_t per_frame = m_engine.decoder_samples_per_frame();
             m_samples.insert(m_samples.end(),
@@ -178,13 +178,13 @@ private:
     // state cached by an earlier request with the same reference); their audio is discarded. Whole blocks are decoded right away, the remaining newest frames wait in the pending block
     // and are completed by the first generated frames.
     void prime_with_reference(const int64_t* ref_codes, size_t ref_frames, size_t groups) {
-        const size_t block = StreamDecoderSession::block_frames();
+        const size_t block = StatefulDecoderSession::block_frames();
         const size_t frames = std::min(ref_frames, m_left_context_frames);
         const int64_t* ptr = ref_codes + (ref_frames - frames) * groups;
         const size_t whole = frames / block * block;
         if (whole > 0) {
             // The state after the whole blocks depends only on those reference codes: reuse it across requests.
-            const uint64_t key = StreamDecoderSession::primed_key(ptr, whole * groups, whole);
+            const uint64_t key = StatefulDecoderSession::primed_key(ptr, whole * groups, whole);
             if (auto cached = m_session->find_primed(key)) {
                 m_session->restore(*cached);
             } else {
@@ -202,7 +202,7 @@ private:
     size_t m_max_chunk_frames;
     size_t m_target_frames;  // size of the next chunk
     size_t m_left_context_frames;
-    std::unique_ptr<StreamDecoderSession> m_session;  // null: stateless decoding
+    std::unique_ptr<StatefulDecoderSession> m_session;  // null: stateless decoding
     // Stateless: [ref frames..., generated frames...], frame-major.
     std::vector<int64_t> m_codes;
     size_t m_cursor_frame = 0;  // first frame not yet decoded

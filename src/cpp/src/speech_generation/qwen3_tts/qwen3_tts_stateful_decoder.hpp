@@ -28,13 +28,13 @@ namespace genai {
 namespace qwen3_tts {
 
 // Snapshot of a decoding session's state: the state tensors and the number of frames decoded so far.
-struct StreamDecoderSnapshot {
+struct StatefulDecoderSnapshot {
     std::vector<ov::Tensor> tensors;
     size_t frames_decoded = 0;
 };
 
-// Explicit-state ("stateful") streaming codec decoder, exported by optimum-intel as
-// `openvino_codec_decoder_stream.xml`.
+// Stateful (explicit-state) codec decoder, exported by optimum-intel as
+// `openvino_codec_decoder_stateful.xml`.
 //
 // The codec decoder is causal, so instead of re-decoding left context for every chunk, each call consumes a
 // fixed block of new code frames together with the decoder's carried state (convolution histories,
@@ -47,14 +47,14 @@ struct StreamDecoderSnapshot {
 //     keeps the state device-resident and copies nothing.
 //   * NPU: the state stays explicit graph inputs / outputs and is carried by the session on the host.
 // Every stream owns an infer request (and thus its own state), so concurrent streams do not interfere.
-class StreamDecoder : public std::enable_shared_from_this<StreamDecoder> {
+class StatefulDecoder : public std::enable_shared_from_this<StatefulDecoder> {
 public:
     // Frames decoded per call. Streaming granularity is one block (320 ms of audio at 4 frames), and the first
     // audio is available after one block. Blocks must be full, except for the last one of an utterance, which is
     // zero-padded (that is safe because the decoder is causal and the padded output is dropped).
     static constexpr size_t BLOCK_FRAMES = 4;
 
-    StreamDecoder(const std::filesystem::path& model_path,
+    StatefulDecoder(const std::filesystem::path& model_path,
                   const std::string& device,
                   const ov::AnyMap& properties,
                   size_t num_quantizers,
@@ -74,7 +74,7 @@ public:
             }
         }
         OPENVINO_ASSERT(!m_state_inputs.empty(),
-                        "Streaming codec decoder '",
+                        "Stateful codec decoder '",
                         model_path.string(),
                         "' has no 'state.*' inputs; re-export the model with a recent optimum-intel.");
 
@@ -90,7 +90,7 @@ public:
         }
 
         m_compiled = core.compile_model(model, device, properties);
-        ov::genai::utils::print_compiled_model_properties(m_compiled, "codec_decoder_stream");
+        ov::genai::utils::print_compiled_model_properties(m_compiled, "codec_decoder_stateful");
     }
 
     bool uses_explicit_state() const {
@@ -120,7 +120,7 @@ public:
     // Cache of decoder states after priming with voice-clone reference codes. The state depends only on the
     // reference codes, so every request that clones the same voice can restore it instead of re-decoding the
     // reference (25 calls for 100 frames). Keyed by a hash of the primed codes; keeps the last few references.
-    std::shared_ptr<const StreamDecoderSnapshot> find_primed(uint64_t key) const {
+    std::shared_ptr<const StatefulDecoderSnapshot> find_primed(uint64_t key) const {
         std::lock_guard<std::mutex> lock(m_primed_mutex);
         for (auto it = m_primed.begin(); it != m_primed.end(); ++it) {
             if (it->first == key) {
@@ -131,7 +131,7 @@ public:
         return nullptr;
     }
 
-    void store_primed(uint64_t key, std::shared_ptr<const StreamDecoderSnapshot> snapshot) const {
+    void store_primed(uint64_t key, std::shared_ptr<const StatefulDecoderSnapshot> snapshot) const {
         std::lock_guard<std::mutex> lock(m_primed_mutex);
         m_primed.remove_if([key](const auto& entry) { return entry.first == key; });
         m_primed.emplace_front(key, std::move(snapshot));
@@ -166,18 +166,18 @@ private:
 
     static constexpr size_t MAX_PRIMED_REFERENCES = 4;
     mutable std::mutex m_primed_mutex;
-    mutable std::list<std::pair<uint64_t, std::shared_ptr<const StreamDecoderSnapshot>>> m_primed;
+    mutable std::list<std::pair<uint64_t, std::shared_ptr<const StatefulDecoderSnapshot>>> m_primed;
 };
 
 // Decoding state of ONE utterance. Not thread-safe; use from one thread at a time.
-class StreamDecoderSession {
+class StatefulDecoderSession {
 public:
     // `on_infer_ms` (optional) receives the duration of every infer() when perf reporting is enabled.
-    StreamDecoderSession(std::shared_ptr<StreamDecoder> decoder, std::function<void(double)> on_infer_ms = {})
+    StatefulDecoderSession(std::shared_ptr<StatefulDecoder> decoder, std::function<void(double)> on_infer_ms = {})
         : m_decoder(std::move(decoder)),
           m_on_infer_ms(std::move(on_infer_ms)),
           m_request(m_decoder->compiled_model().create_infer_request()),
-          m_codes(ov::element::i64, ov::Shape{1, m_decoder->num_quantizers(), StreamDecoder::BLOCK_FRAMES}),
+          m_codes(ov::element::i64, ov::Shape{1, m_decoder->num_quantizers(), StatefulDecoder::BLOCK_FRAMES}),
           m_position(ov::element::i64, ov::Shape{}) {
         m_request.set_tensor("audio_codes", m_codes);
         m_request.set_tensor("position", m_position);
@@ -192,7 +192,7 @@ public:
     }
 
     static constexpr size_t block_frames() {
-        return StreamDecoder::BLOCK_FRAMES;
+        return StatefulDecoder::BLOCK_FRAMES;
     }
 
     // Back to the zero state at position 0 (start of an utterance).
@@ -212,8 +212,8 @@ public:
     }
 
     // Copies out / restores the decoding state (deep copies: the session keeps decoding afterwards).
-    std::shared_ptr<StreamDecoderSnapshot> snapshot() {
-        auto result = std::make_shared<StreamDecoderSnapshot>();
+    std::shared_ptr<StatefulDecoderSnapshot> snapshot() {
+        auto result = std::make_shared<StatefulDecoderSnapshot>();
         result->frames_decoded = m_frames_decoded;
         if (m_decoder->uses_explicit_state()) {
             for (const auto& state : m_states) {
@@ -232,15 +232,15 @@ public:
         return result;
     }
 
-    void restore(const StreamDecoderSnapshot& snapshot) {
+    void restore(const StatefulDecoderSnapshot& snapshot) {
         if (m_decoder->uses_explicit_state()) {
-            OPENVINO_ASSERT(snapshot.tensors.size() == m_states.size(), "Streaming decoder snapshot does not match the model");
+            OPENVINO_ASSERT(snapshot.tensors.size() == m_states.size(), "Stateful decoder snapshot does not match the model");
             for (size_t i = 0; i < m_states.size(); ++i) {
                 snapshot.tensors[i].copy_to(m_states[i]);
             }
         } else {
             auto variables = m_request.query_state();
-            OPENVINO_ASSERT(snapshot.tensors.size() == variables.size(), "Streaming decoder snapshot does not match the model");
+            OPENVINO_ASSERT(snapshot.tensors.size() == variables.size(), "Stateful decoder snapshot does not match the model");
             for (size_t i = 0; i < variables.size(); ++i) {
                 variables[i].set_state(snapshot.tensors[i]);
             }
@@ -248,23 +248,23 @@ public:
         m_frames_decoded = snapshot.frames_decoded;
     }
 
-    std::shared_ptr<const StreamDecoderSnapshot> find_primed(uint64_t key) const {
+    std::shared_ptr<const StatefulDecoderSnapshot> find_primed(uint64_t key) const {
         return m_decoder->find_primed(key);
     }
 
-    void store_primed(uint64_t key, std::shared_ptr<const StreamDecoderSnapshot> snapshot) const {
+    void store_primed(uint64_t key, std::shared_ptr<const StatefulDecoderSnapshot> snapshot) const {
         m_decoder->store_primed(key, std::move(snapshot));
     }
 
     static uint64_t primed_key(const int64_t* codes, size_t count, size_t frames) {
-        return StreamDecoder::primed_key(codes, count, frames);
+        return StatefulDecoder::primed_key(codes, count, frames);
     }
 
     // Decodes the next BLOCK_FRAMES frames. `frame_major_codes` points at [BLOCK_FRAMES, num_quantizers] int64
     // codes (one row per frame). Returns BLOCK_FRAMES * samples_per_frame samples.
     std::vector<float> decode_block(const int64_t* frame_major_codes) {
         const size_t quantizers = m_decoder->num_quantizers();
-        const size_t block = StreamDecoder::BLOCK_FRAMES;
+        const size_t block = StatefulDecoder::BLOCK_FRAMES;
         int64_t* dst = m_codes.data<int64_t>();
         for (size_t t = 0; t < block; ++t) {
             for (size_t q = 0; q < quantizers; ++q) {
@@ -294,13 +294,13 @@ public:
         const ov::Tensor waveform = m_request.get_tensor("waveform");
         OPENVINO_ASSERT(waveform.get_element_type() == ov::element::f32 &&
                             waveform.get_size() == block * m_decoder->samples_per_frame(),
-                        "Streaming codec decoder produced an unexpected waveform size");
+                        "Stateful codec decoder produced an unexpected waveform size");
         const float* ptr = waveform.data<const float>();
         return std::vector<float>(ptr, ptr + waveform.get_size());
     }
 
 private:
-    std::shared_ptr<StreamDecoder> m_decoder;
+    std::shared_ptr<StatefulDecoder> m_decoder;
     std::function<void(double)> m_on_infer_ms;
     ov::InferRequest m_request;
     ov::Tensor m_codes;

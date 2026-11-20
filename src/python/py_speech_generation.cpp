@@ -111,7 +111,7 @@ auto speech_generation_config_docstring = R"(
     :type ref_codec_ids: openvino.Tensor
 
     Qwen3-TTS audio output streaming (only used when ``speech_streamer`` is passed to ``generate``).
-    If the model directory has the explicit-state streaming codec decoder (``openvino_codec_decoder_stream.xml``) it
+    If the model directory has the stateful codec decoder (``openvino_codec_decoder_stateful.xml``) it
     is used by default: nothing is re-decoded and the streamed audio equals the non-streamed decode. It decodes in
     blocks of 4 frames: every chunk then has ``audio_first_chunk_frames`` frames (rounded up to a multiple of 4,
     there is no chunk schedule), ``audio_chunk_frames`` is ignored and ``audio_chunk_left_context_frames`` only sets

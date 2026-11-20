@@ -32,8 +32,8 @@ constexpr const char* TALKER_EMBEDDINGS_NAME = "openvino_talker_embeddings.xml";
 constexpr const char* TALKER_NAME = "openvino_talker_model.xml";  // 4D float attention_mask, last_hidden_state output
 constexpr const char* CODE_PREDICTOR_NAME = "openvino_code_predictor_model.xml";
 constexpr const char* CODEC_ENCODER_NAME = "openvino_codec_encoder.xml";
-// Optional explicit-state streaming decoder (see qwen3_tts_stream_decoder.hpp).
-constexpr const char* STREAM_DECODER_NAME = "openvino_codec_decoder_stream.xml";
+// Optional stateful decoder (see qwen3_tts_stateful_decoder.hpp).
+constexpr const char* STATEFUL_DECODER_NAME = "openvino_codec_decoder_stateful.xml";
 
 // Constants used for static-window decoder chunking (NPU/GPU).
 // The static window is sized for audio streaming: the default streaming schedule needs
@@ -55,7 +55,7 @@ constexpr const char* TALKER_TEXT_EMBEDDING = "text_embeddings";
 constexpr const char* CODE_PREDICTOR = "code_predictor_model";
 constexpr const char* CODE_PREDICTOR_EMBEDDING = "code_predictor_embeddings";
 constexpr const char* SPEECH_TOKENIZER_DECODER = "codec_decoder";
-constexpr const char* SPEECH_TOKENIZER_DECODER_STREAM = "codec_decoder_stream";
+constexpr const char* SPEECH_TOKENIZER_DECODER_STATEFUL = "codec_decoder_stateful";
 constexpr const char* SPEECH_TOKENIZER_ENCODER = "codec_encoder";
 constexpr const char* SPEAKER_ENCODER = "speaker_encoder";
 constexpr const char* MEL_PREPROCESS = "mel_preprocess";
@@ -243,10 +243,10 @@ inline bool qwen_perf_enabled() {
 }
 
 // Streaming codec decoder selection, read when the pipeline is created: OV_GENAI_QWEN_TTS_STREAM_DECODER =
-//   auto (default): the explicit-state decoder (openvino_codec_decoder_stream.xml) if the model has it,
+//   auto (default): the explicit-state decoder (openvino_codec_decoder_stateful.xml) if the model has it,
 //   stateful:       require it (throws if the model lacks it),
 //   stateless:      never use it; streaming re-decodes left context with every chunk.
-inline std::string qwen_stream_decoder_mode() {
+inline std::string qwen_stateful_decoder_mode() {
     const char* env = std::getenv("OV_GENAI_QWEN_TTS_STREAM_DECODER");
     const std::string mode = env ? to_lower(std::string(env)) : std::string("auto");
     OPENVINO_ASSERT(mode == "auto" || mode == "stateful" || mode == "stateless",
