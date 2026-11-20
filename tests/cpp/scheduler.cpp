@@ -3796,73 +3796,65 @@ TEST(TestScheduler, validation_window_runs_whole_or_waits_for_a_later_step) {
     free_requests(scheduler, requests);
 }
 
-TEST(TestScheduler, validation_window_larger_than_the_token_budget_throws) {
-    constexpr size_t num_candidates = 4;
-    SchedulerConfig scheduler_config;
-    scheduler_config.num_kv_blocks = 32;
-    scheduler_config.dynamic_split_fuse = true;
-    // one row less than the window
-    scheduler_config.max_num_batched_tokens = num_candidates;
-    scheduler_config.max_num_seqs = 4;
-
-    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
-    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0)};
-    start_validation_windows(scheduler, requests, num_candidates);
-
-    EXPECT_THROW(std::ignore = scheduler.schedule(requests), ov::Exception);
-
-    free_requests(scheduler, requests);
-}
-
 namespace {
-GenerationConfig get_parallel_sampling_config() {
+GenerationConfig get_validation_sampling_config(size_t num_sequences) {
     GenerationConfig config = utils::get_greedy_config();
-    config.do_sample = true;
-    config.num_return_sequences = 2;
+    if (num_sequences > 1) {
+        config.do_sample = true;
+        config.num_return_sequences = num_sequences;
+    }
     return config;
 }
 }  // namespace
 
-// The running sequences of a group validate their windows in the same forward.
-TEST(TestScheduler, validation_windows_of_parallel_sequences_run_together) {
+// The running sequences of a group, one or two, validate their windows in the same forward.
+using ValidationWindowBudgetSchedulerTest = ::testing::TestWithParam<size_t>;
+
+TEST_P(ValidationWindowBudgetSchedulerTest, validation_windows_of_all_sequences_run_together) {
+    const size_t num_sequences = GetParam();
     constexpr size_t num_candidates = 3;
     constexpr size_t window = num_candidates + 1;
     SchedulerConfig scheduler_config;
     scheduler_config.num_kv_blocks = 32;
     scheduler_config.dynamic_split_fuse = true;
-    scheduler_config.max_num_batched_tokens = 2 * window;
+    scheduler_config.max_num_batched_tokens = num_sequences * window;
     scheduler_config.max_num_seqs = 4;
 
     ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
-    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0, get_parallel_sampling_config())};
-    start_validation_windows(scheduler, requests, num_candidates, 2);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0, get_validation_sampling_config(num_sequences))};
+    start_validation_windows(scheduler, requests, num_candidates, num_sequences);
 
     const auto out = scheduler.schedule(requests);
     EXPECT_EQ(requests[0]->get_num_scheduled_tokens(), window);
-    EXPECT_EQ(out.m_total_num_scheduled_tokens, 2 * window);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, num_sequences * window);
     requests[0]->finish_iteration();
 
     free_requests(scheduler, requests);
 }
 
-// A budget that fits the window of one sequence but not of both never runs the group.
-TEST(TestScheduler, validation_windows_of_parallel_sequences_larger_than_the_token_budget_throw) {
+// A budget one row short of the windows of all sequences never runs the group.
+TEST_P(ValidationWindowBudgetSchedulerTest, validation_windows_larger_than_the_token_budget_throw) {
+    const size_t num_sequences = GetParam();
     constexpr size_t num_candidates = 3;
     constexpr size_t window = num_candidates + 1;
     SchedulerConfig scheduler_config;
     scheduler_config.num_kv_blocks = 32;
     scheduler_config.dynamic_split_fuse = true;
-    scheduler_config.max_num_batched_tokens = 2 * window - 2;
+    scheduler_config.max_num_batched_tokens = num_sequences * window - 1;
     scheduler_config.max_num_seqs = 4;
 
     ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
-    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0, get_parallel_sampling_config())};
-    start_validation_windows(scheduler, requests, num_candidates, 2);
+    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0, get_validation_sampling_config(num_sequences))};
+    start_validation_windows(scheduler, requests, num_candidates, num_sequences);
 
     EXPECT_THROW(std::ignore = scheduler.schedule(requests), ov::Exception);
 
     free_requests(scheduler, requests);
 }
+
+INSTANTIATE_TEST_SUITE_P(OneAndTwoSequences,
+                         ValidationWindowBudgetSchedulerTest,
+                         ::testing::Values(size_t{1}, size_t{2}));
 
 // With no KV block for the window and no request to preempt, the request runs nothing in this step and still has its
 // candidates to validate.
