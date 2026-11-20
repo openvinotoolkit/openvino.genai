@@ -3946,9 +3946,7 @@ TEST(TestScheduler, recompute_runs_its_validation_window_after_the_rows_before_i
     // the prompt
     EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), TEST_BLOCK_SIZE);
     EXPECT_FALSE(requests[1]->requires_sampling());
-    requests[1]->finish_iteration();
-    // as the sampler does after a forward that ends before the window
-    requests[1]->set_num_validated_tokens(num_candidates);
+    requests[1]->finish_iteration_before_validation_window();
 
     std::ignore = scheduler.schedule(preempted);
     // the token the target sampled and the candidates
