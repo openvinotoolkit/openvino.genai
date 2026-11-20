@@ -77,9 +77,11 @@ def test_activation(
     model_path: Path, pipeline: ClassificationPipeline, activation: ClassificationActivation, use_config: bool
 ):
     if use_config:
-        pipe = ClassificationPipeline(model_path, "CPU", ClassificationPipeline.Config(activation=activation))
+        pipe = ClassificationPipeline(
+            model_path, "CPU", ClassificationPipeline.Config(classification_activation=activation)
+        )
     else:
-        pipe = ClassificationPipeline(model_path, "CPU", activation=activation)
+        pipe = ClassificationPipeline(model_path, "CPU", classification_activation=activation)
 
     result = pipe.classify(PROMPTS[0])
 

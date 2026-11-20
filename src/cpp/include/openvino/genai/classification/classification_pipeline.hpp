@@ -53,7 +53,7 @@ public:
          * NONE for `problem_type == regression`, SIGMOID for `multi_label_classification` or a single label,
          * SOFTMAX otherwise.
          */
-        std::optional<ClassificationActivation> activation;
+        std::optional<ClassificationActivation> classification_activation;
 
         /**
          * @brief Constructs classification pipeline configuration
@@ -63,7 +63,7 @@ public:
         /**
          * @brief Constructs classification pipeline configuration
          *
-         * @param properties configuration options, e.g. {{"activation", ClassificationActivation::SIGMOID}}
+         * @param properties configuration options, e.g. {{"classification_activation", ClassificationActivation::SIGMOID}}
          */
         explicit Config(const ov::AnyMap& properties);
     };
@@ -87,7 +87,7 @@ public:
      * @param models_path Directory with the exported model, tokenizer and config.json
      * @param device Device
      * @param properties Optional plugin properties to pass to ov::Core::compile_model() mixed with
-     * configuration properties (ov::genai::activation).
+     * configuration properties (ov::genai::classification_activation).
      */
     ClassificationPipeline(const std::filesystem::path& models_path,
                            const std::string& device,
@@ -99,7 +99,7 @@ public:
      * @param models_path Directory with the exported model, tokenizer and config.json
      * @param device Device
      * @param properties Configuration and plugin properties, e.g.
-     * ov::genai::activation(ClassificationActivation::SIGMOID)
+     * ov::genai::classification_activation(ClassificationActivation::SIGMOID)
      */
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
@@ -129,7 +129,7 @@ private:
 /**
  * @brief Activation applied to the classifier logits.
  */
-static constexpr ov::Property<ClassificationActivation> activation{"activation"};
+static constexpr ov::Property<ClassificationActivation> classification_activation{"classification_activation"};
 
 }  // namespace genai
 }  // namespace ov

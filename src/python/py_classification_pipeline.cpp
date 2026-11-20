@@ -37,7 +37,7 @@ const auto classification_config_docstring = R"(
 Structure to keep ClassificationPipeline configuration parameters.
 
 Attributes:
-    activation (ClassificationActivation, optional):
+    classification_activation (ClassificationActivation, optional):
         Activation applied to the logits. Derived from config.json when not set: NONE for
         `problem_type == regression`, SIGMOID for `multi_label_classification` or a single label,
         SOFTMAX otherwise.
@@ -81,7 +81,7 @@ void init_classification_pipeline(py::module_& m) {
         .def(py::init([](const py::kwargs& kwargs) {
             return ClassificationPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
         }))
-        .def_readwrite("activation", &ClassificationPipeline::Config::activation);
+        .def_readwrite("classification_activation", &ClassificationPipeline::Config::classification_activation);
 
     classification_pipeline
         .def(py::init([](const std::filesystem::path& models_path,
@@ -107,7 +107,7 @@ void init_classification_pipeline(py::module_& m) {
             models_path (os.PathLike): Path to the model directory.
             device (str): Device to run the model on (e.g., CPU, GPU).
             config (ClassificationPipeline.Config): Optional pipeline configuration.
-            kwargs: Plugin and/or config properties, e.g. CACHE_DIR=/tmp/, activation=ClassificationActivation.SIGMOID.
+            kwargs: Plugin and/or config properties, e.g. CACHE_DIR=/tmp/, classification_activation=ClassificationActivation.SIGMOID.
             )")
         .def(
             "classify",

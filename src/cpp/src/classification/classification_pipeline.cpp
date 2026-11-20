@@ -21,7 +21,7 @@ std::unique_ptr<ClassifierBackend> create_backend(const std::filesystem::path& m
 
 ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     ov::AnyMap plugin_properties = properties;
-    plugin_properties.erase(activation.name());
+    plugin_properties.erase(classification_activation.name());
     return plugin_properties;
 }
 
@@ -31,7 +31,7 @@ namespace ov {
 namespace genai {
 
 ClassificationPipeline::Config::Config(const ov::AnyMap& properties) {
-    utils::read_anymap_param(properties, ov::genai::activation.name(), activation);
+    utils::read_anymap_param(properties, ov::genai::classification_activation.name(), classification_activation);
 }
 
 class ClassificationPipeline::ClassificationPipelineImpl {
@@ -42,7 +42,7 @@ public:
                                const ov::AnyMap& properties) {
         const ClassifierConfig classifier_config{models_path};
         m_backend = create_backend(models_path, device, properties, classifier_config);
-        m_activation = config.activation.value_or(
+        m_activation = config.classification_activation.value_or(
             default_activation(classifier_config.problem_type.value_or(""), m_backend->num_labels()));
     }
 

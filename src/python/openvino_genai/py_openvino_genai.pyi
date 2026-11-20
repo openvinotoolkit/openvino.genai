@@ -1372,12 +1372,12 @@ class ClassificationPipeline:
         Structure to keep ClassificationPipeline configuration parameters.
         
         Attributes:
-            activation (ClassificationActivation, optional):
+            classification_activation (ClassificationActivation, optional):
                 Activation applied to the logits. Derived from config.json when not set: NONE for
                 `problem_type == regression`, SIGMOID for `multi_label_classification` or a single label,
                 SOFTMAX otherwise.
         """
-        activation: openvino_genai.py_openvino_genai.ClassificationActivation | None
+        classification_activation: openvino_genai.py_openvino_genai.ClassificationActivation | None
         @typing.overload
         def __init__(self) -> None:
             ...
@@ -1390,7 +1390,7 @@ class ClassificationPipeline:
                     models_path (os.PathLike): Path to the model directory.
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     config (ClassificationPipeline.Config): Optional pipeline configuration.
-                    kwargs: Plugin and/or config properties, e.g. CACHE_DIR=/tmp/, activation=ClassificationActivation.SIGMOID.
+                    kwargs: Plugin and/or config properties, e.g. CACHE_DIR=/tmp/, classification_activation=ClassificationActivation.SIGMOID.
         """
     def classify(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = []) -> ClassificationResult:
         """

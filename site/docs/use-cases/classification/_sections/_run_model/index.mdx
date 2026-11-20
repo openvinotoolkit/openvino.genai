@@ -3,7 +3,7 @@ import CodeExamplePython from './_code_example_python.mdx';
 
 ## Run Model Using OpenVINO GenAI
 
-`classify()` takes a ready prompt and optional images; no chat template or special tokens are added. It returns `logits` of shape `[1, num_labels]` and `scores` of shape `[1][num_labels]`, both in label ID order. The activation is derived from `config.json` and can be overridden with the `activation` property.
+`classify()` takes a ready prompt and optional images; no chat template or special tokens are added. It returns `logits` of shape `[1, num_labels]` and `scores` of shape `[1][num_labels]`, both in label ID order. The activation is derived from `config.json` and can be overridden with the `classification_activation` property.
 
 The example scores an OCR result with [openbmb/MiniCPM-OCR-Jev](https://huggingface.co/openbmb/MiniCPM-OCR-Jev). The prompt is built as described in the model card, the images are the original region and the rendered OCR text, and `scores[0][1]` is the probability that the OCR text is correct.
 

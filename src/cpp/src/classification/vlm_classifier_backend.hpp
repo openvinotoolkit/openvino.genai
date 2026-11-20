@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <memory>
+#include <unordered_set>
+
 #include "classification/classifier_backend.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "visual_language/inputs_embedder.hpp"

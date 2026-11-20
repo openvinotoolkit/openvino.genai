@@ -11,6 +11,7 @@
 
 #include "json_utils.hpp"
 #include "nlohmann/json.hpp"
+#include "openvino/core/except.hpp"
 #include "openvino/runtime/tensor.hpp"
 
 namespace ov::genai {
@@ -19,7 +20,7 @@ struct ClassifierConfig {
     std::vector<std::string> architectures;
     std::optional<std::string> problem_type;
 
-    ClassifierConfig(const std::filesystem::path& models_path) {
+    explicit ClassifierConfig(const std::filesystem::path& models_path) {
         const std::filesystem::path config_path = models_path / "config.json";
         std::ifstream config_file(config_path);
         OPENVINO_ASSERT(config_file.is_open(), "Failed to open ", config_path);
