@@ -28,7 +28,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
-  HF_HUB_DISABLE_XET: "1"
+  HF_HUB_DISABLE_XET: "1"  # Disable Xet so downloads use HTTP through the proxy instead of Xet.
   HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/b53e4e21/
   OPENVINO_LOG_LEVEL: 1  # Windows fails with out of memory because of too verbose logging

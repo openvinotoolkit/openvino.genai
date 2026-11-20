@@ -19,7 +19,7 @@ description: "Run, write, and fix OpenVINO GenAI Python and WWB tests, and set u
 
 | Variable | Content | Notes |
 |---|---|---|
-| `HF_HOME` | Hugging Face Hub cache (`$HF_HOME/hub`): models, dataset files, adapters | Persistent shared mount in CI. This is the only cache tests may rely on for Hub resources. |
+| `HF_HOME` | Hugging Face Hub cache (`$HF_HOME/hub`): models, dataset files, adapters | Empty at the start of every CI job (`$RUNNER_TEMP/hf-home` on Linux and Windows). Linux and Windows CI download through the caching proxy set in `HF_ENDPOINT`. This is the only cache tests may rely on for Hub resources. |
 | `HF_DATASETS_CACHE` | `datasets` Arrow cache and dataset modules | In CI it points to `/tmp` and is **not** persistent. Never rely on it. |
 | `OV_CACHE` | Converted OpenVINO models (`<OV_CACHE>/<YYYYMMDD>/optimum-intel-<ver>_transformers-<ver>/{downloaded_models,converted_models}`) | Unset means a temporary directory per session. The date and version subfolders make it rebuild daily and on dependency bumps. |
 | `CLEANUP_CACHE` | Removes the `OV_CACHE` session directory after the run | Doesn't touch `HF_HOME`. |
@@ -28,7 +28,7 @@ Converted-model helpers: `utils.hugging_face.download_and_convert_model()`, `uti
 
 ## Rules for Hub Resources in Tests
 
-Every Hub access must resolve to files stored in `$HF_HOME/hub` so that a warm cache is enough to run the test without network access.
+Every Hub access must go through the Hub client and resolve to files stored in `$HF_HOME/hub`. That way CI downloads go through the proxy, and a warm cache is enough to run the test without network access.
 
 ### Models and single files
 
@@ -57,10 +57,10 @@ Pick the helper by dataset size:
 
 ## Warming and Verifying the Cache
 
-1. Run the new or changed test once with network access and the same `HF_HOME` CI uses (`/mount/caches/huggingface/lin` on Linux, `C:/mount/caches/huggingface/win` on Windows). This populates `$HF_HOME/hub`.
+1. Run the new or changed test once with network access. This populates `$HF_HOME/hub`.
 2. Re-run it with network access disabled. It must pass using only cached files.
 3. Check what was cached: `ls $HF_HOME/hub/{models,datasets}--<org>--<name>/snapshots/*/`.
-4. macOS CI uses per-run, non-persistent `HF_HOME` directories, so nothing is warm there.
+4. CI starts every job with an empty `HF_HOME`, so nothing is warm at job start. On Linux and Windows the proxy keeps downloaded files between jobs; macOS downloads from the Hub directly.
 
 ## Known Pitfalls
 

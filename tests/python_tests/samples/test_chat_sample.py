@@ -47,9 +47,10 @@ class TestChatSample:
         model = MODELS[model_name]
         
         from transformers import AutoTokenizer, AutoModelForCausalLM
-        tokenizer = AutoTokenizer.from_pretrained(model['name'])
-        model = AutoModelForCausalLM.from_pretrained(model['name'])
-        
+
+        tokenizer = AutoTokenizer.from_pretrained(model["name"])
+        model = AutoModelForCausalLM.from_pretrained(model["name"])
+
         def gen_prompt(prompt):
             return {'role': 'user', 'content': prompt}
         def gen_answer(answer):

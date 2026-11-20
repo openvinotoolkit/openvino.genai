@@ -30,7 +30,7 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
-  HF_HUB_DISABLE_XET: "1"
+  HF_HUB_DISABLE_XET: "1"  # Disable Xet so downloads use HTTP through the proxy instead of Xet.
   # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/b53e4e21/

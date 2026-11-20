@@ -120,7 +120,8 @@ class TestBeamSearchCausalLM:
             return
         
         import transformers
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'])
+
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model["name"])
         for prompt in sample_args:
             if tokenizer.chat_template:
                 prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
