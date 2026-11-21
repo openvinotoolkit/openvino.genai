@@ -748,8 +748,8 @@ TEST(LogitProcessorGeneratedHistory, PenalizesOnlyTokensThatRemainAfterRemoval) 
         for (const int64_t token : {3, 3, 4}) {
             processor.register_new_generated_token(token);
         }
-        processor.decrease_generated_token_occurance(3);
-        processor.decrease_generated_token_occurance(4);
+        processor.decrease_generated_token_occurrence(3);
+        processor.decrease_generated_token_occurrence(4);
 
         float input[]{1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
         Logits logits(input, 5);
