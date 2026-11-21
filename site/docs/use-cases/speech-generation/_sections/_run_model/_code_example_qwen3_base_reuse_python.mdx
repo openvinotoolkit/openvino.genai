@@ -1,0 +1,47 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import numpy as np
+import openvino as ov
+import openvino_genai
+import soundfile as sf
+
+def read_ref_audio_24k(path: str) -> ov.Tensor:
+    audio, sr = sf.read(path, dtype="float32", always_2d=False)
+    if int(sr) != 24000:
+        raise RuntimeError("Qwen3-TTS Base reference audio must be 24 kHz")
+    if audio.ndim == 2:
+        audio = audio.mean(axis=1).astype(np.float32)
+    return ov.Tensor(np.ascontiguousarray(audio, dtype=np.float32))
+
+pipe = openvino_genai.Text2SpeechPipeline("./qwen3_tts_base_ov", "CPU")
+
+# 1) Build cloning prompt from reference audio + transcript.
+first = pipe.generate(
+    "Hello from Qwen3 Base.",
+    None,
+    ref_audio=read_ref_audio_24k("clone.wav"),
+    ref_text="Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.",
+)
+
+sf.write(
+    "first.wav",
+    np.array(first.speeches[0].data).reshape(-1),
+    samplerate=first.output_sample_rate,
+)
+
+# 2) Reuse extracted artifacts for follow-up prompts.
+second = pipe.generate(
+    "Hello again, without re-reading reference audio.",
+    first.speaker_embedding,
+    ref_codec_ids=first.ref_codec_ids,
+    ref_text="Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.",
+)
+
+sf.write(
+    "second.wav",
+    np.array(second.speeches[0].data).reshape(-1),
+    samplerate=second.output_sample_rate,
+)
+`}
+</CodeBlock>

@@ -1,102 +1,171 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFile } from 'node:fs/promises';
+import { addon as ov } from 'openvino-node';
+import { readFile, writeFile } from 'node:fs/promises';
+import { decode, encode } from 'node-wav';
 
-function parseWavPcm16Mono(buffer) {
-  if (buffer.length < 44) {
-    throw new Error('Invalid WAV payload: file is too small.');
+function decodeWavWithDataView(wavBuffer) {
+  const bytes = new Uint8Array(wavBuffer.buffer, wavBuffer.byteOffset, wavBuffer.byteLength);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  if (bytes.byteLength < 44) {
+    throw new Error('WAV file is too small to contain a valid header.');
   }
 
-  if (buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WAVE') {
-    throw new Error('Invalid WAV payload: RIFF/WAVE header is missing.');
+  const riff = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+  const wave = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+  if (riff !== 'RIFF' || wave !== 'WAVE') {
+    throw new Error('Unsupported WAV container. Expected RIFF/WAVE.');
   }
 
-  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   let offset = 12;
+  let fmt = null;
+  let dataOffset = -1;
+  let dataSize = -1;
 
-  let audioFormat;
-  let channels;
-  let sampleRate;
-  let bitsPerSample;
-  let dataOffset;
-  let dataSize;
-
-  while (offset + 8 <= buffer.length) {
-    const chunkId = buffer.toString('ascii', offset, offset + 4);
+  while (offset + 8 <= bytes.byteLength) {
+    const chunkId = String.fromCharCode(
+      bytes[offset],
+      bytes[offset + 1],
+      bytes[offset + 2],
+      bytes[offset + 3],
+    );
     const chunkSize = view.getUint32(offset + 4, true);
     const chunkDataOffset = offset + 8;
 
-    if (chunkDataOffset + chunkSize > buffer.length) {
-      throw new Error('Invalid WAV payload: malformed chunk size.');
+    if (chunkDataOffset + chunkSize > bytes.byteLength) {
+      throw new Error(
+        `Malformed WAV: chunk "${chunkId}" at offset ${offset} declares ${chunkSize} bytes, `
+        + `which exceeds file size ${bytes.byteLength}.`,
+      );
     }
 
-    if (chunkId === 'fmt ') {
-      if (chunkSize < 16) {
-        throw new Error('Invalid WAV payload: fmt chunk is too small.');
-      }
-      audioFormat = view.getUint16(chunkDataOffset, true);
-      channels = view.getUint16(chunkDataOffset + 2, true);
-      sampleRate = view.getUint32(chunkDataOffset + 4, true);
-      bitsPerSample = view.getUint16(chunkDataOffset + 14, true);
+    if (chunkId === 'fmt ' && chunkSize >= 16) {
+      fmt = {
+        audioFormat: view.getUint16(chunkDataOffset, true),
+        numChannels: view.getUint16(chunkDataOffset + 2, true),
+        sampleRate: view.getUint32(chunkDataOffset + 4, true),
+        blockAlign: view.getUint16(chunkDataOffset + 12, true),
+        bitsPerSample: view.getUint16(chunkDataOffset + 14, true),
+      };
     } else if (chunkId === 'data') {
       dataOffset = chunkDataOffset;
       dataSize = chunkSize;
     }
 
+    // WAV chunks are word-aligned.
     offset = chunkDataOffset + chunkSize + (chunkSize % 2);
   }
 
-  if (audioFormat !== 1) {
-    throw new Error('Unsupported WAV format: only PCM is supported.');
+  if (!fmt || dataOffset < 0 || dataSize < 0) {
+    throw new Error('WAV file must contain both fmt and data chunks.');
+  }
+  const isPcm16 = fmt.audioFormat === 1 && fmt.bitsPerSample === 16;
+  const isFloat32 = fmt.audioFormat === 3 && fmt.bitsPerSample === 32;
+  if (!isPcm16 && !isFloat32) {
+    throw new Error(
+      `DataView decoder supports only PCM16 (format=1, bits=16) or float32 (format=3, bits=32), got format=${fmt.audioFormat}, bits=${fmt.bitsPerSample}.`,
+    );
+  }
+  if (fmt.numChannels <= 0) {
+    throw new Error('WAV has invalid channel count.');
+  }
+  if (dataSize % fmt.blockAlign !== 0) {
+    throw new Error('WAV data chunk size is not aligned with block alignment.');
   }
 
-  if (channels !== 1 && channels !== 2) {
-    throw new Error('WAV file must be mono or stereo.');
-  }
+  const samplesPerChannel = dataSize / fmt.blockAlign;
+  const channelData = Array.from({ length: fmt.numChannels }, () => new Float32Array(samplesPerChannel));
 
-  if (sampleRate !== 16000) {
-    throw new Error(`WAV file must be 16 kHz, but got ${sampleRate}.`);
-  }
-
-  if (bitsPerSample !== 16) {
-    throw new Error(`Unsupported WAV bit depth: ${bitsPerSample}. Only 16-bit PCM is supported.`);
-  }
-
-  if (dataOffset === undefined || dataSize === undefined) {
-    throw new Error('Invalid WAV payload: missing data chunk.');
-  }
-
-  const bytesPerFrame = channels * 2;
-  const frameCount = Math.floor(dataSize / bytesPerFrame);
-  const mono = new Float32Array(frameCount);
-
-  for (let index = 0; index < frameCount; index++) {
-    const frameOffset = dataOffset + index * bytesPerFrame;
-    if (channels === 1) {
-      const sample = view.getInt16(frameOffset, true);
-      mono[index] = sample / 32768.0;
-    } else {
-      const left = view.getInt16(frameOffset, true);
-      const right = view.getInt16(frameOffset + 2, true);
-      mono[index] = (left + right) / 65536.0;
+  for (let i = 0; i < samplesPerChannel; i += 1) {
+    for (let ch = 0; ch < fmt.numChannels; ch += 1) {
+      const sampleIndex = i * fmt.numChannels + ch;
+      if (isFloat32) {
+        const sampleOffset = dataOffset + sampleIndex * 4;
+        channelData[ch][i] = view.getFloat32(sampleOffset, true);
+      } else {
+        const sampleOffset = dataOffset + sampleIndex * 2;
+        // Match native sample paths: signed 16-bit PCM normalized by 32768.
+        channelData[ch][i] = view.getInt16(sampleOffset, true) / 32768.0;
+      }
     }
   }
 
-  return mono;
+  return {
+    sampleRate: fmt.sampleRate,
+    channelData,
+  };
+}
+
+function decodeWavRobust(wavBuffer) {
+  try {
+    return decodeWavWithDataView(wavBuffer);
+  } catch (err) {
+    // Fallback to node-wav for formats not covered by the DataView path.
+    return decode(Uint8Array.from(wavBuffer));
+  }
 }
 
 /**
- * Read WAV file and convert to 16kHz mono Float32Array for speech recognition pipelines.
+ * Read WAV file and convert to mono Float32Array.
  * @param {string} audioPath
+ * @param {number|undefined} expectedSampleRate
  * @returns {Promise<Float32Array>}
  */
-export async function readAudio(audioPath) {
+export async function readAudio(audioPath, expectedSampleRate = 16000) {
   const wavBuffer = await readFile(audioPath);
 
   if (wavBuffer.length === 0) {
     throw new Error('Audio file is empty.');
   }
 
-  return parseWavPcm16Mono(wavBuffer);
+  const decoded = decodeWavRobust(wavBuffer);
+  if (expectedSampleRate !== undefined && decoded.sampleRate !== expectedSampleRate) {
+    throw new Error(`WAV file must be ${expectedSampleRate} Hz, but got ${decoded.sampleRate}.`);
+  }
+
+  const channels = decoded.channelData;
+  if (!channels || channels.length === 0) {
+    throw new Error('WAV file contains no channels.');
+  }
+
+  if (channels.length === 1) {
+    return channels[0];
+  }
+
+  const length = channels[0].length;
+  const mono = new Float32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    let sum = 0;
+    for (const channel of channels) {
+      sum += channel[i];
+    }
+    mono[i] = sum / channels.length;
+  }
+  return mono;
+}
+
+/**
+ * Read WAV file and wrap mono float samples as an f32 OpenVINO tensor.
+ * @param {string} audioPath
+ * @param {number|undefined} expectedSampleRate
+ * @returns {Promise<import('openvino-node').Tensor>}
+ */
+export async function readWavAsTensor(audioPath, expectedSampleRate = 16000) {
+  const mono = await readAudio(audioPath, expectedSampleRate);
+  return new ov.Tensor('f32', [mono.length], mono);
+}
+
+/**
+ * Write mono samples as IEEE float WAV (format=3, 32-bit float).
+ * @param {string} audioPath
+ * @param {Float32Array|number[]} monoSamples
+ * @param {number} sampleRate
+ * @returns {Promise<void>}
+ */
+export async function writeFloatWav(audioPath, monoSamples, sampleRate) {
+  const samples = monoSamples instanceof Float32Array ? monoSamples : Float32Array.from(monoSamples);
+  const wavData = encode([samples], { sampleRate, float: true, bitDepth: 32 });
+  await writeFile(audioPath, wavData);
 }

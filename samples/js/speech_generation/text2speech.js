@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { basename } from 'node:path';
-import { writeFile } from 'node:fs/promises';
 
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
-import { encode } from 'node-wav';
 import { Text2SpeechPipeline } from 'openvino-genai-node';
 import { readSpeakerEmbedding } from './embedding_utils.js';
+import { writeFloatWav } from '../wav_utils.js';
 
 /**
  * Parse CLI arguments, run TTS inference and write the output WAV file.
@@ -40,9 +39,21 @@ async function main() {
           .option('speaker_embedding', {
             type: 'string',
             describe:
-              'Path to the binary file with a speaker embedding '
-              + '(512 float32 values)',
+              'Path to the binary file with a speaker embedding.',
             alias: 's',
+          })
+          .option('speaker_embedding_file_path', {
+            type: 'string',
+            describe: 'Path to the binary file with a speaker embedding.',
+          })
+          .option('language', {
+            type: 'string',
+            describe: 'Optional language (for example: en-us, en-gb, es, fr-fr, hi, it, pt-br)',
+          })
+          .option('speed', {
+            type: 'number',
+            describe: 'Optional speech speed multiplier (Kokoro)',
+            default: 1.0,
           })
           .option('output', {
             type: 'string',
@@ -63,18 +74,30 @@ async function main() {
   const pipeline = await Text2SpeechPipeline(modelDir, device);
 
   const generateOptions = {};
-  if (argv.speaker_embedding) {
+  const speakerEmbeddingPath = argv.speaker_embedding_file_path ?? argv.speaker_embedding;
+  if (speakerEmbeddingPath) {
+    const expectedShape = pipeline.getSpeakerEmbeddingShape();
     generateOptions.speakerEmbedding =
-      await readSpeakerEmbedding(argv.speaker_embedding);
+      await readSpeakerEmbedding(speakerEmbeddingPath, expectedShape);
+  }
+
+  const generationConfig = {};
+  if (argv.language) {
+    generationConfig.language = argv.language;
+  }
+  if (argv.speed !== 1.0) {
+    generationConfig.speed = argv.speed;
+  }
+  if (Object.keys(generationConfig).length > 0) {
+    generateOptions.generationConfig = generationConfig;
   }
 
   const result = await pipeline.generate(text, generateOptions);
 
   console.assert(result.speeches.length === 1, "Expected only one waveform for the requested input text");
 
-  const sampleRate = 16000;
-  const wavData = encode([result.speeches[0].data], { sampleRate });
-  await writeFile(outputPath, wavData);
+  const sampleRate = result.outputSampleRate;
+  await writeFloatWav(outputPath, result.speeches[0].data, sampleRate);
 
   console.log(`[Info] Text successfully converted to audio file "${outputPath}".`);
 
