@@ -84,6 +84,9 @@ LCMScheduler::LCMScheduler(const Config& scheduler_config)
 }
 
 void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
+    OPENVINO_ASSERT(num_inference_steps > 0,
+                    "`num_inference_steps` must be greater than 0");
+
     m_timesteps.clear();
     m_num_inference_steps = num_inference_steps;
 
@@ -124,6 +127,9 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
 
 std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
     ov::Shape shape = latents.get_shape();
+    // batch is num_images_per_prompt, so 0 would crash with an integer division by zero below
+    OPENVINO_ASSERT(!shape.empty() && shape[0] > 0,
+                    "`num_images_per_prompt` must be greater than 0");
     size_t batch_size = shape[0], latent_size = ov::shape_size(shape) / batch_size;
     float* noise_pred_data = noise_pred.data<float>();
     float* latents_data = latents.data<float>();
