@@ -3,6 +3,9 @@
 
 import time
 import logging
+from functools import cache
+from pathlib import Path
+from huggingface_hub import snapshot_download
 from huggingface_hub.utils import HfHubHTTPError
 from subprocess import CalledProcessError # nosec B404
 from requests.exceptions import RequestException
@@ -48,3 +51,11 @@ def retry_request(func, retries=7):
                 time.sleep(timeout)
             else:
                 raise
+
+
+@cache
+def snapshot_download_once(model: str) -> str:
+    """snapshot_download() at most once per process; local paths are returned as is."""
+    if Path(model).exists():
+        return model
+    return retry_request(lambda: snapshot_download(model))
