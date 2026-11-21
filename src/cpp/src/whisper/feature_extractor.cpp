@@ -11,6 +11,7 @@
 #include <cassert>
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <openvino/core/except.hpp>
