@@ -10,8 +10,10 @@ import torch
 import openvino_genai
 
 from .registry import register_evaluator, BaseEvaluator
+from .artifacts_manager import Metrics
 
 from .whowhat_metrics import VideoSimilarity
+from .video_metrics import ObjectPresence, VideoQuality
 
 
 @register_evaluator("text-to-video")
@@ -44,12 +46,18 @@ class Text2VideoEvaluator(BaseEvaluator):
         )
 
         self.test_data = test_data
-        self.metrics = metrics
+        self.metrics = [metrics] if isinstance(metrics, str) else list(metrics)
         self.crop_prompt = crop_prompts
         self.num_samples = num_samples
         self.num_inference_steps = num_inference_steps or self.DEF_NUM_INF_STEPS
         self.seed = seed
-        self.similarity = VideoSimilarity()
+        # similarity compares target with base videos; the others score each video on its own
+        self.similarity = VideoSimilarity() if Metrics.SIMILARITY.value in self.metrics else None
+        self.extra_metrics = []
+        if Metrics.VIDEO_QUALITY.value in self.metrics:
+            self.extra_metrics.append(VideoQuality())
+        if Metrics.OBJECT_PRESENCE.value in self.metrics:
+            self.extra_metrics.append(ObjectPresence())
         self.last_cmp = None
         self.gt_dir = os.path.dirname(gt_data)
         self.generation_fn = gen_video_fn
@@ -81,10 +89,12 @@ class Text2VideoEvaluator(BaseEvaluator):
         all_metrics_per_prompt = {}
         all_metrics = {}
 
-        if self.similarity:
-            metric_dict, metric_per_frame = self.similarity.evaluate(self.gt_data, predictions)
+        for metric in [self.similarity, *self.extra_metrics]:
+            if metric is None:
+                continue
+            metric_dict, metric_per_video = metric.evaluate(self.gt_data, predictions)
             all_metrics.update(metric_dict)
-            all_metrics_per_prompt.update(metric_per_frame)
+            all_metrics_per_prompt.update(metric_per_video)
 
         n = min(len(self.gt_data), len(predictions))
         self.last_cmp = all_metrics_per_prompt
@@ -98,6 +108,8 @@ class Text2VideoEvaluator(BaseEvaluator):
     def worst_examples(self, top_k: int = 5, metric="similarity"):
         assert self.last_cmp is not None
 
+        if metric not in self.last_cmp.columns:  # similarity was not requested: rank by the first computed metric
+            metric = next(c for c in self.last_cmp.columns if pd.api.types.is_numeric_dtype(self.last_cmp[c]))
         res = self.last_cmp.nsmallest(top_k, metric)
         formatted_res = []
         for _, row in res.iterrows():
@@ -148,7 +160,6 @@ class Text2VideoEvaluator(BaseEvaluator):
 
         generation_fn = gen_video_fn or default_gen_video_fn
 
-        data_keys = ["prompt", "negative_prompt", "width", "height", "guidance_scale"]
         if self.test_data:
             if isinstance(self.test_data, str):
                 data = pd.read_csv(self.test_data)
@@ -162,8 +173,12 @@ class Text2VideoEvaluator(BaseEvaluator):
         else:
             data = pd.DataFrame.from_dict(self.collect_default_data())
 
-        inputs = data.values if self.num_samples is None else data.values[: self.num_samples]
-        res_data = dict(zip(data_keys, map(list, zip(*inputs))))
+        if self.num_samples is not None:
+            data = data.iloc[: self.num_samples]
+
+        # columns are read by name, as in Image2VideoEvaluator; "objects" feeds the object_presence metric
+        res_keys = ["prompt", "negative_prompt", "width", "height", "guidance_scale", "objects"]
+        res_data = {key: data[key].tolist() for key in res_keys if key in data.columns}
         videos = []
 
         rng = torch.Generator(device="cpu")
@@ -171,21 +186,20 @@ class Text2VideoEvaluator(BaseEvaluator):
         if not os.path.exists(videos_dir):
             os.makedirs(videos_dir)
 
-        for i, input in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
+        for i, (_, row) in tqdm(enumerate(data.iterrows()), total=len(data), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
-            guidance_rescale = input[5] if len(input) > 5 else self.DEF_GUIDANCE_RESCALE
             frames = generation_fn(
                 model,
-                prompt=input[0],
-                negative_prompt=input[1],
+                prompt=row["prompt"],
+                negative_prompt=row.get("negative_prompt", ""),
                 num_inference_steps=self.num_inference_steps,
-                width=input[2],
-                height=input[3],
+                width=int(row.get("width", self.DEF_WIDTH)),
+                height=int(row.get("height", self.DEF_HEIGHT)),
                 num_frames=self.num_frames,
                 frame_rate=self.frame_rate,
-                guidance_scale=input[4],
-                guidance_rescale=guidance_rescale,
+                guidance_scale=row.get("guidance_scale", self.DEF_GUIDANCE_SCALE),
+                guidance_rescale=row.get("guidance_rescale", self.DEF_GUIDANCE_RESCALE),
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
                 empty_adapters=self.empty_adapters,
             )
