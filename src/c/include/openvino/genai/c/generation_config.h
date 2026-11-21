@@ -275,7 +275,7 @@ ov_genai_generation_config_set_repetition_penalty(ov_genai_generation_config* co
 
 /**
  * @brief Set the presence penalty, which reduces absolute log prob if the
- * tokeov_genai_generation_config_set_presence_penaltyn was generated at least once.
+ * token was generated at least once.
  * @param handle A pointer to the ov_genai_generation_config instance.
  * @param value The value of parameter for presence penalty.
  * @return ov_status_e A status code, return OK(0) if successful.

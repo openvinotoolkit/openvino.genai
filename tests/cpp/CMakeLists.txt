@@ -25,6 +25,9 @@ if(NOT ENABLE_GGUF)
     file(GLOB gguf_tests_src "test_gguf_*.cpp")
     list(REMOVE_ITEM tests_src ${gguf_tests_src})
 endif()
+if(NOT TARGET openvino::genai::c)
+    list(REMOVE_ITEM tests_src "${CMAKE_CURRENT_SOURCE_DIR}/test_c_api_generation_config.cpp")
+endif()
 
 set(TEST_TARGET_NAME "tests_continuous_batching")
 
@@ -35,6 +38,9 @@ add_executable(tests_cache_allocation_failure allocation_failure/prepared_cache.
 add_subdirectory(custom_op)
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> gtest_main gmock_main)
+if(TARGET openvino::genai::c)
+    target_link_libraries(${TEST_TARGET_NAME} PRIVATE openvino::genai::c)
+endif()
 
 # Add OpenCL support if enabled via OpenVINO configuration (consistent with main library)
 if(ENABLE_SYSTEM_OPENCL)
