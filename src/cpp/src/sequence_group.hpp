@@ -466,7 +466,7 @@ public:
         return m_prefix_publication_limit;
     }
 
-    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
+    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimension) {
 
         ov::Coordinate begin;
         ov::Coordinate end;
@@ -475,7 +475,7 @@ public:
             end = ov::Coordinate{position_ids_elem_shape[0], 1, idx + 1};
         }
         else if (position_ids_elem_shape.size() == 2) {
-            if (need_batch_dimention) {
+            if (need_batch_dimension) {
                 begin = ov::Coordinate{0, idx};
                 end = ov::Coordinate{1, idx + 1};
             }
