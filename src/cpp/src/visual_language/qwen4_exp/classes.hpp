@@ -83,6 +83,8 @@ protected:
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
     ) override;
 
+    std::string get_expanded_video_tag(const EncodedVideo& encoded_video) const override;
+
 private:
     // Extra inputs to pass to the language model
     // Re-init as empty to clear inputs inherited from Qwen3-VL (deepstack_visual_embeds, visual_pos_masks)

@@ -73,12 +73,7 @@ protected:
 
     bool has_lm_extra_input(const std::string& input_name) const;
 
-    void expand_video_tags_in_prompt(
-        std::string& unified_prompt,
-        const std::vector<EncodedVideo>& encoded_videos,
-        const std::vector<size_t>& videos_sequence,
-        size_t video_base_id
-    ) const override;
+    std::string get_expanded_video_tag(const EncodedVideo& encoded_video) const override;
 
     /**
      * @brief Run vision embeddings merger with position interpolation.
