@@ -11,6 +11,7 @@
 #include <memory>
 #include <regex>
 
+#include "openvino/runtime/auto/properties.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
@@ -464,9 +465,53 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
         return result;
     }
     for (const auto& property : role_it->second.as<ov::AnyMap>()) {
+        if (property.first == "device" || property.first == "DEVICE") {
+            continue;
+        }
         result.insert_or_assign(property.first, property.second);
     }
     return result;
+}
+
+std::pair<std::string, ov::AnyMap> get_per_layer_embeddings_device_and_properties(
+    const ov::AnyMap& properties,
+    const std::string& default_device) {
+    const std::string model_role = "text_embeddings_per_layer";
+    std::string resolved_device = default_device;
+
+    // 1. Check for explicit device override in MODEL_PROPERTIES["text_embeddings_per_layer"]["device" / "DEVICE"]
+    std::optional<std::string> explicit_role_device;
+    auto mp_it = properties.find(PER_MODEL_PROPERTIES);
+    if (mp_it != properties.end()) {
+        const auto& model_map = mp_it->second.as<ov::AnyMap>();
+        auto role_it = model_map.find(model_role);
+        if (role_it != model_map.end()) {
+            const auto& role_props = role_it->second.as<ov::AnyMap>();
+            for (const auto& [key, val] : role_props) {
+                if (key == "device" || key == "DEVICE") {
+                    explicit_role_device = val.as<std::string>();
+                    break;
+                }
+            }
+        }
+    }
+
+    if (explicit_role_device.has_value()) {
+        resolved_device = *explicit_role_device;
+    } else if (default_device.find("GPU") != std::string::npos) {
+        // Follow the NPU sub-model pattern: use AUTO with CPU priority so the multi-GB
+        // per-layer embedding lookup table is memory-mapped (mmap) in OS file cache
+        // rather than allocated in GPU USM / private committed memory.
+        resolved_device = "AUTO";
+    }
+
+    ov::AnyMap resolved_props = get_model_properties(properties, model_role, resolved_device);
+    if (resolved_device == "AUTO" && !explicit_role_device.has_value()) {
+        resolved_props.insert(ov::device::priorities("CPU"));
+        resolved_props.insert(ov::intel_auto::enable_startup_fallback(false));
+    }
+
+    return {std::move(resolved_device), std::move(resolved_props)};
 }
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
