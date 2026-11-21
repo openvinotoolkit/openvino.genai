@@ -48,6 +48,14 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer), m_cache_state(model) {
+    constexpr auto llama_cpp_resources_key = "llama_cpp_resources";
+    const auto resources = model->get_rt_info().find(llama_cpp_resources_key);
+    const bool is_llama_cpp_model = resources != model->get_rt_info().end();
+    if (is_llama_cpp_model) {
+        // llama.cpp-backed weight Constants may reference memory owned by these resources.
+        m_model_resources = resources->second;
+    }
+
     if (device.find("NPU") != std::string::npos) {
         m_is_npu = true;
         m_use_full_chat_history = true;

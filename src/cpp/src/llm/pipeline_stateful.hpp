@@ -8,12 +8,14 @@
 
 #include "llm/pipeline_base.hpp"
 #include "lm_encoding.hpp"
+#include "openvino/core/any.hpp"
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
 
 class StatefulLLMPipeline final : public LLMPipelineImplBase {
+    ov::Any m_model_resources;
     ov::InferRequest m_model_runner;
     Sampler m_sampler;
 
