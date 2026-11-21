@@ -93,7 +93,7 @@ public:
             m_clip_text_encoder = std::make_shared<CLIPTextModel>(
                 root_dir / "text_encoder",
                 device,
-                *properties_for_text_encoder(*updated_properties, "lora_te1")
+                *with_adapter_prefix(*updated_properties, "lora_te1")
             );
             updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
@@ -108,7 +108,7 @@ public:
             m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(
                 root_dir / "text_encoder_2",
                 device,
-                *properties_for_text_encoder(*updated_properties, "lora_te2")
+                *with_adapter_prefix(*updated_properties, "lora_te2")
             );
             updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
@@ -206,9 +206,13 @@ public:
         update_adapters_from_properties(properties, m_generation_config.adapters);
         auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
         // updated_properies are for passing to the pipeline subcomponents only, not for the generation config
-        m_clip_text_encoder->compile(text_encode_device, *updated_properties);
-        m_clip_text_encoder_with_projection->compile(text_encode_device, *updated_properties);
-        m_unet->compile(denoise_device, *updated_properties);
+        // Adapters may arrive here instead of the constructor - Model Server builds a pipeline from
+        // disk and only passes properties to compile(), so the per-submodel prefixes have to be
+        // applied on this path too. Both encoders would otherwise fall back to CLIPTextModel's
+        // default "lora_te" and match none of a kohya adapter's lora_te1_/lora_te2_ tensors.
+        m_clip_text_encoder->compile(text_encode_device, *with_adapter_prefix(*updated_properties, "lora_te1"));
+        m_clip_text_encoder_with_projection->compile(text_encode_device, *with_adapter_prefix(*updated_properties, "lora_te2"));
+        m_unet->compile(denoise_device, *with_adapter_prefix(*updated_properties, "lora_unet"));
 
         // EISW-176450
         if (vae_device.find("NPU") != std::string::npos) {
@@ -466,7 +470,11 @@ private:
         }
     }
 
-    utils::SharedOptional<const ov::AnyMap> properties_for_text_encoder(const ov::AnyMap& properties, const std::string& tensor_name_prefix) {
+    // Pins the LoRA tensor-name prefix a submodel resolves its adapter tensors by, unless the
+    // caller already set one. A pipeline holds several submodels whose kohya names differ only
+    // by that prefix (lora_te1 vs lora_te2, lora_unet), so every path that hands adapters to a
+    // submodel has to say which one it is - the constructor and compile() both do.
+    utils::SharedOptional<const ov::AnyMap> with_adapter_prefix(const ov::AnyMap& properties, const std::string& tensor_name_prefix) {
         return update_adapters_in_properties(properties,
             [&tensor_name_prefix](const AdapterConfig& adapters) -> std::optional<AdapterConfig> {
                 if(!adapters.get_tensor_name_prefix()) {
