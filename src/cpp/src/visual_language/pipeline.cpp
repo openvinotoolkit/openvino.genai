@@ -8,6 +8,7 @@
 #include <optional>
 #include <random>
 
+#include "generate_with_parsers.hpp"
 #include "lm_encoding.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -1344,6 +1345,21 @@ VLMPipeline::VLMPipeline(
 
 VLMPipeline::~VLMPipeline() = default;
 
+namespace {
+
+// The AnyMap overloads: parsers come from the effective config, as in LLMPipeline.
+VLMDecodedResults generate_with_parsers(const VLMPipeline& pipe,
+                                        const ov::AnyMap& config_map,
+                                        const std::function<VLMDecodedResults(void)>& generate_callable) {
+    GenerationConfig config = utils::get_config_from_map(config_map).value_or(pipe.get_generation_config());
+    config.update_generation_config(config_map);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(config,
+                                                               utils::get_streamer_from_map(config_map),
+                                                               generate_callable);
+}
+
+}  // namespace
+
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
@@ -1351,7 +1367,9 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, images, videos, generation_config, streamer);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(generation_config, streamer, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(prompt, images, videos, generation_config, streamer);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1360,7 +1378,9 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, images, generation_config, streamer);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(generation_config, streamer, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(prompt, images, generation_config, streamer);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1369,7 +1389,9 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, std::vector<ov::Tensor>{image}, generation_config, streamer);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(generation_config, streamer, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(prompt, std::vector<ov::Tensor>{image}, generation_config, streamer);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1381,7 +1403,9 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(generation_config, streamer, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1401,7 +1425,9 @@ VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const ov::AnyMap& config_map
 ) {
-    return m_pimpl->generate(prompt, config_map);
+    return generate_with_parsers(*this, config_map, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(prompt, config_map);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1411,7 +1437,9 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(history, images, videos, generation_config, streamer);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(generation_config, streamer, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(history, images, videos, generation_config, streamer);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1420,7 +1448,9 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(history, images, generation_config, streamer);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(generation_config, streamer, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(history, images, generation_config, streamer);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1429,7 +1459,9 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(history, std::vector<ov::Tensor>{image}, generation_config, streamer);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(generation_config, streamer, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(history, std::vector<ov::Tensor>{image}, generation_config, streamer);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1441,7 +1473,9 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
+    return utils::run_generate_with_parsers<VLMDecodedResults>(generation_config, streamer, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
+    });
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1461,7 +1495,9 @@ VLMDecodedResults VLMPipeline::generate(
     const ChatHistory& history,
     const ov::AnyMap& config_map
 ) {
-    return m_pimpl->generate(history, config_map);
+    return generate_with_parsers(*this, config_map, [&]() -> VLMDecodedResults {
+        return m_pimpl->generate(history, config_map);
+    });
 }
 
 void VLMPipeline::start_chat(const std::string& system_message) {
