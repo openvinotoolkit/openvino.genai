@@ -3,6 +3,7 @@
 
 import dataclasses
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -529,6 +530,23 @@ def test_truncation_disabled_by_default(hf_ov_genai_models):
 
     assert np.all(ov_truncated_res.input_ids.data == hf_truncated_res["input_ids"])
     assert ov_truncated_res.input_ids.data.shape[1] == max_length
+
+
+@pytest.mark.parametrize(
+    "hf_ov_genai_models",
+    [("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", {"padding_side": None})],
+    indirect=True,
+)
+@pytest.mark.parametrize("max_length", [2**31, 2**32 + 2, sys.maxsize])
+def test_truncation_with_max_length_above_int32(hf_ov_genai_models, max_length):
+    # A max_length longer than the prompt must not truncate it, however large it is
+    _, genai_tokenizer = hf_ov_genai_models
+    prompt = "What is the previous answers?"
+
+    untruncated = genai_tokenizer.encode(prompt)
+    truncated = genai_tokenizer.encode(prompt, max_length=max_length, truncation=True)
+
+    assert np.all(truncated.input_ids.data == untruncated.input_ids.data)
 
 
 # Define model base configs
