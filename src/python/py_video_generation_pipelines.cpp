@@ -25,6 +25,8 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("guidance_rescale", &ov::genai::VideoGenerationConfig::guidance_rescale)
         .def_readwrite("num_frames", &ov::genai::VideoGenerationConfig::num_frames)
         .def_readwrite("frame_rate", &ov::genai::VideoGenerationConfig::frame_rate)
+        .def_readwrite("decode_timestep", &ov::genai::VideoGenerationConfig::decode_timestep)
+        .def_readwrite("decode_noise_scale", &ov::genai::VideoGenerationConfig::decode_noise_scale)
         .def_readwrite("num_videos_per_prompt", &ov::genai::VideoGenerationConfig::num_videos_per_prompt)
         .def_readwrite("negative_prompt", &ov::genai::VideoGenerationConfig::negative_prompt)
         .def_readwrite("generator", &ov::genai::VideoGenerationConfig::generator)
@@ -109,7 +111,28 @@ void init_video_generation_pipelines(py::module_& m) {
                 }
                 return result;
             },
-            py::arg("prompt"));
+            py::arg("prompt"))
+        .def("decode",
+             [](ov::genai::Text2VideoPipeline& pipe,
+                const ov::Tensor& latent,
+                const std::optional<ov::genai::VideoGenerationConfig>& generation_config) {
+                 py::gil_scoped_release rel;
+                 return pipe.decode(latent, generation_config);
+             },
+             py::arg("latent"),
+             py::arg("generation_config") = py::none(),
+             R"(
+                Decode a packed latent tensor into a video.
+
+                The latent tensor must be obtained from the generation callback.
+
+                :param latent: Packed latent tensor produced during denoising.
+                :type latent: openvino.Tensor
+                :param generation_config: Optional configuration for this decode only; defaults to the saved generation config.
+                :type generation_config: VideoGenerationConfig | None
+                :return: Decoded video and performance metrics.
+                :rtype: VideoGenerationResult
+             )");
 
     py::class_<ov::genai::Image2VideoPipeline>(m, "Image2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {
@@ -176,10 +199,23 @@ void init_video_generation_pipelines(py::module_& m) {
             py::arg("image"),
             py::arg("prompt"))
         .def("decode",
-             [](ov::genai::Image2VideoPipeline& pipe, const ov::Tensor& latent) {
+             [](ov::genai::Image2VideoPipeline& pipe,
+                const ov::Tensor& latent,
+                const std::optional<ov::genai::VideoGenerationConfig>& generation_config) {
                  py::gil_scoped_release rel;
-                 return pipe.decode(latent);
+                 return pipe.decode(latent, generation_config);
              },
-             py::arg("latent"))
+             py::arg("latent"),
+             py::arg("generation_config") = py::none(),
+             R"(
+                Decode a packed latent tensor into a video.
+
+                :param latent: Packed latent tensor produced during denoising.
+                :type latent: openvino.Tensor
+                :param generation_config: Optional configuration for this decode only; defaults to the saved configuration.
+                :type generation_config: VideoGenerationConfig | None
+                :return: Decoded video and performance metrics.
+                :rtype: VideoGenerationResult
+             )")
         .def("get_performance_metrics", &ov::genai::Image2VideoPipeline::get_performance_metrics);
 }
