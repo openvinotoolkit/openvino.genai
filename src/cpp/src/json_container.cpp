@@ -137,7 +137,7 @@ JsonContainer& JsonContainer::operator=(const JsonContainer& other) {
     return *this;
 }
 
-JsonContainer& JsonContainer::operator=(JsonContainer&& other) noexcept {
+JsonContainer& JsonContainer::operator=(JsonContainer&& other) {
     if (this != &other) {
         auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Write);
         auto other_json_value_ptr = other.m_impl->get_json_value_ptr(other.m_path, AccessMode::Read);
