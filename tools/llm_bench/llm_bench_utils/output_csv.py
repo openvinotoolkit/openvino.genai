@@ -6,7 +6,7 @@ import numpy as np
 import copy
 from pathlib import Path
 import llm_bench_utils.output_json as output_json
-from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput
+from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput, get_latency_samples
 from llm_bench_utils.memory_monitor import MemThreadHandler, MemoryUnit
 
 
@@ -84,6 +84,12 @@ def output_comments(result, use_case, writer):
 
 
 def output_avg_min_median(iter_data_list, include_tts_metrics=False):
+    latency_keys = (
+        "first_token_latency",
+        "other_tokens_avg_latency",
+        "first_token_infer_latency",
+        "other_tokens_infer_avg_latency",
+    )
     prompt_idxs = []
     for iter_data in iter_data_list:
         prompt_idxs.append(iter_data['prompt_idx'])
@@ -100,10 +106,7 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
             "generation_time",
             "output_size",
             "latency",
-            "first_token_latency",
-            "other_tokens_avg_latency",
-            "first_token_infer_latency",
-            "other_tokens_infer_avg_latency",
+            *latency_keys,
             "tokenization_time",
             "detokenization_time",
             "throughput_token_count",
@@ -120,6 +123,8 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
                 for prompt in same_prompt_datas:
                     if key in prompt and prompt[key] != "":
                         values.append(prompt[key])
+                if key in latency_keys:
+                    values = get_latency_samples(values)
                 if len(values) > 0:
                     result[prompt_idx][0][key] = np.mean(values)
                     result[prompt_idx][1][key] = np.min(values)
