@@ -57,7 +57,9 @@ is exported through Optimum from the same GGUF weights. No model binaries are st
 in this repository; reference IRs and serialization outputs use pytest temporary directories.
 Tests cover PA, SDPA and automatic backend selection, exact generation comparisons,
 batched prompts, beam search, encoded inputs, tokenizer whitespace, streaming and saved-IR reloads. Batch and beam tests
-use PA/default; native SDPA attention masks currently support batch one. The Optimum
+use PA/default; native SDPA attention masks currently support batch one. A continuous batching
+pipeline built directly from each GGUF serves greedy and beam-search requests with different lengths
+together; it checks GGUF tokenizer IDs, generated token IDs and beam scores. The Optimum
 Gemma-3 reference requires Transformers 5.0, matching the regular LLM job. The existing reader
 suite separately retains its model/quantization and native-tokenizer coverage.
 
@@ -93,47 +95,58 @@ These tests fetch a SHA-256-verified source archive of llama.cpp at
 reference runner (CMake >=3.24 and a C++17 compiler are required). Both use the same
 revision. `generate.cpp` reuses the upstream `test-llama-archs` factory for architecture
 metadata, tensor shapes and seeded random weights. It removes unrelated metadata and
-optional bias/RoPE/quantization-scale tensors, retains required biases, and centers
-normalization weights around one (Gemma applies its own offset). MoE fixtures select
-two of four experts. The runner reloads the finalized GGUFs and independently produces
+optional bias/RoPE/quantization-scale tensors and the LFM2 audio-detokenizer head, retains
+required biases (all Jais2/GPT-OSS biases and the GLM4-MoE/LFM2-MoE/MiniMax-M2 expert-selection
+bias), and centers normalization weights around one (Gemma applies its own offset). MoE fixtures select
+two of four experts. The pinned saver cannot export AFMoE, DeepSeek2-OCR, EXAONE-MoE, Gemma3,
+Gemma4, Mellum, Muse-Glimmer or PLaMo3, and the pinned revision predates LFM3. These use the
+OpenVINO GGUF frontend accuracy fixtures instead: two- to four-layer F32 GGUFs with a 32-token
+vocabulary, downloaded from OpenVINO `0a3e3fb5e92b7c8bec70dece0bcaafe09703a1f6` and checked against
+pinned SHA-256 digests. The runner reloads the finalized or downloaded GGUFs and independently produces
 greedy token IDs and log probabilities using llama.cpp CPU, with OpenVINO disabled in
-that build. Both sides use F32 inference/KV caches and no dynamic quantization.
-GenAI checks prefill/decode with SDPA, PA and automatic selection, plus concurrent
-PA requests with chunked prefill. Inputs include a sliding-window-boundary case.
+that build. The LFM3 fixture instead provides one-token references from its stored llama.cpp logits.
+Both sides use F32 inference/KV caches and no dynamic quantization.
+GenAI checks prefill/decode with SDPA, PA and automatic selection. Continuous batching runs
+concurrent requests with chunked prefill, whole-prompt scheduling, KV-cache preemption
+(three 32-token CPU blocks, below the total demand) and prefix caching (the second round must report
+at least one full cached block of prompt hits), comparing
+token IDs and log probabilities. Inputs include a sliding-window-boundary case.
 The fixtures have no text vocabulary, so an auxiliary tokenizer only satisfies the
 pipeline constructor; comparisons use token IDs. The Optimum suite above separately
 checks real tokenizer behavior.
 
 Build outputs, GGUFs and references are generated in pytest temporary directories,
-not committed or downloaded as model binaries. For repeated local runs,
+not committed. Only the pinned OpenVINO fixtures (under 1 MiB each) are downloaded. For repeated local runs,
 `GGUF_LLAMA_BUILD_DIR=/absolute/path` reuses the reference build, rebuilding as needed.
-A local run took 87 seconds including the clean four-job CPU build (about 79 seconds),
-and about 10 seconds with that build cached. The combined Optimum/generated suite took
-117 seconds with build/download caches warm; CI timings depend on the runner.
+With that build cached, a local generated-suite run took about 45 seconds (270 passed,
+41 skipped and 17 xfailed), and the Optimum suite took about 80 seconds with download
+caches warm. A clean four-job CPU reference build adds about 80 seconds.
 On the Linux precommit runner for [PR #4318 at `af609b39`](https://github.com/openvinotoolkit/openvino.genai/actions/runs/38698456185/job/116311682631),
-the combined suites took 295 seconds in pytest (189 passed, 36 skipped and 10 xfailed).
-The full job took about 9 minutes including setup, dependency installation and cleanup;
-the preceding run took about 10 minutes. The job has a 30-minute timeout. These timings
-precede the standalone-tokenizer case added here and can vary with download caches and
-runner load.
+the combined suites took 295 seconds in pytest before the coverage added here.
+The job has a 30-minute timeout. CI timings depend on download caches and runner load.
 
-The 23 model variants cover 20 architecture IDs: BailingMoE2, ERNIE4.5-MoE, EXAONE4,
-Gemma, Gemma2, GPT-OSS, Hunyuan-Dense, Llama, Maincoder, Mamba2, MiniCPM, Mistral3,
-Nemotron-H, OLMoE, Phi3, Qwen2, Qwen3, Qwen3.5, Qwen3MoE and SmolLM3. Llama, MiniCPM
-and Mistral3 have separate dense and MoE cases. Each two-layer F32 model is about 4-12 MiB.
+The 41 model cases cover 36 architecture IDs. Generated cases: BailingMoE2, ERNIE4.5-MoE,
+EXAONE4, Gemma, Gemma2, GLM4-MoE, GPT-OSS, Hunyuan-Dense, Hunyuan-MoE, Jais2, LFM2, LFM2-MoE,
+Llama, Maincoder, Mamba2, MiniCPM, MiniMax-M2, Mistral3, Nemotron-H, OLMoE, Phi3, Qwen2, Qwen3,
+Qwen3.5, Qwen3.5-MoE, Qwen3MoE and SmolLM3. Llama, MiniCPM and Mistral3 have separate dense and
+MoE cases. Each two-layer generated F32 model is about 4-12 MiB. OpenVINO fixture cases: AFMoE,
+DeepSeek2-OCR, EXAONE-MoE, Gemma3, Gemma4 (MoE, MQA and per-layer-embedding variants), LFM3,
+Mellum, Muse-Glimmer and PLaMo3. Together they cover the frontend's text decoder architectures,
+except the speculative-decoding draft head (`dspark`) and the embedding-only `llama-embed`.
 The architecture list is explicit: missing exports fail setup rather than silently
-skipping coverage. The pinned factory/saver cannot export Gemma3, Gemma4,
-DeepSeek2-OCR, Mellum or Muse-Glimmer; Gemma3 remains covered by the Optimum suite.
+skipping coverage. Continuous batching log probabilities allow F32 reduction-order drift:
+`rtol=1e-4` for generated models and `rtol=5e-3` for the OpenVINO fixtures, which drift more
+(up to about 4e-3 relative) and whose frontend accuracy tests accept an NMSE up to 1e-5.
+The single-token LFM3 references skip the preemption and prefix-caching scenarios.
 
 Known limitations are isolated from the passing cases:
 
 | Cases | Status |
 | --- | --- |
-| Qwen3.5 PA/default/continuous batching | Skipped: recurrent state needs SDPA |
 | Mamba2 explicit PA/continuous batching | Non-strict xfail: no SDPA node for PA conversion |
 | Nemotron-H explicit PA/continuous batching | Non-strict xfail: SelectiveSSM fusion-count check fails during PA conversion |
 | Gemma2 explicit PA/continuous batching | Non-strict xfail: soft-capped attention has no SDPA node for PA conversion; automatic fallback passes |
-| GPT-OSS SDPA/PA/default/continuous batching | Non-strict xfail: first-token mismatch against llama.cpp CPU |
+| Qwen3.5/Qwen3.5-MoE prefix-caching continuous batching | Non-strict xfail: GatedDeltaNet state restored from a prefix-cache checkpoint drifts by about 3e-3 in log probs (token IDs match; LFM2 restores exactly) |
 
 Expected failures still execute. Unexpected passes are reported as XPASS without failing
 the suite; remove their markers after confirming the fixes are available in the tested
@@ -158,6 +171,9 @@ When adding a new architecture or fixing its integration:
 2. Add an explicit case to `test_gguf_generated.py:ARCHITECTURES` / `MODEL_CASES` when the
    pinned llama.cpp factory supports it. For a newly supported factory, update its pinned
    revision and source hash together and verify the generator and reference runner.
+   When the pinned saver cannot export the architecture, add its OpenVINO GGUF frontend
+   accuracy fixture to `OPENVINO_FIXTURES` with its SHA-256, bumping `OPENVINO_FIXTURE_REVISION`
+   if needed, and confirm the pinned llama.cpp runner loads it.
    Run every applicable SDPA, PA, automatic and continuous-batching case against the
    independent llama.cpp reference; include dense/MoE variants where applicable.
 3. For tokenizer or end-to-end integration coverage, add a small GGUF to

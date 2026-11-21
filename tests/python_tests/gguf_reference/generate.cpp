@@ -58,16 +58,21 @@ int main(int argc, char** argv) {
         // llama.logit_scale=0. Preserve the factory inputs instead, without its dummy tensors.
         llama_model_saver saver(arch, output.get());
         saver.model = model_and_ctx.first.get();
-        // The user-model factory creates every optional tensor. Leave optional biases
-        // and RoPE factors out to exercise the ordinary decoder configuration. F32
-        // weights do not need the randomly initialized quantization scale tensors.
+        // The user-model factory creates every optional tensor. Leave optional biases,
+        // RoPE factors and the LFM2 audio-detokenizer head out to exercise the ordinary
+        // decoder configuration. F32 weights do not need the randomly initialized
+        // quantization scale tensors.
+        const bool keep_biases = arch == LLM_ARCH_OPENAI_MOE || arch == LLM_ARCH_JAIS2;
+        const bool keep_expert_bias =
+            arch == LLM_ARCH_GLM4_MOE || arch == LLM_ARCH_LFM2MOE || arch == LLM_ARCH_MINIMAX_M2;
         for (const auto& [name, tensor] : model_and_ctx.first->tensors_by_name) {
-            if ((arch != LLM_ARCH_OPENAI_MOE && name.find("ssm_dt.bias") == std::string::npos &&
+            if ((!keep_biases && name.find("ssm_dt.bias") == std::string::npos &&
                  name.find("ssm_conv1d.bias") == std::string::npos &&
+                 !(keep_expert_bias && name.find("exp_probs_b.bias") != std::string::npos) &&
                  name.find(".bias") != std::string::npos) ||
                 name.find("rope_freqs") != std::string::npos || name.find("rope_factors") != std::string::npos ||
                 name.find(".scale") != std::string::npos || name.find(".input_scale") != std::string::npos ||
-                gguf_find_tensor(output.get(), name.c_str()) >= 0)
+                name.rfind("dense_2.", 0) == 0 || gguf_find_tensor(output.get(), name.c_str()) >= 0)
                 continue;
             if (name.find("norm.weight") != std::string::npos && arch != LLM_ARCH_GEMMA && arch != LLM_ARCH_GEMMA2) {
                 // Non-Gemma norms need unit-centered weights so the residual does not

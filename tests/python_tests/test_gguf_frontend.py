@@ -287,6 +287,38 @@ def test_tiny_gguf_streaming(tiny_gguf_model, gguf_pipeline):
     assert "".join(chunks) == actual
 
 
+def test_tiny_gguf_continuous_batching(tiny_gguf_model):
+    # Requests with different decoding parameters share one scheduler. Random fixtures can generate
+    # partial UTF-8 tokens whose display differs across tokenizers, so compare token IDs and beam scores.
+    prompts = ["Why is the Sun yellow?", "Hello", "table is made of"]
+    generation_configs = [
+        genai.GenerationConfig(max_new_tokens=16, min_new_tokens=16),
+        genai.GenerationConfig(max_new_tokens=8, min_new_tokens=8),
+        genai.GenerationConfig(max_new_tokens=12, min_new_tokens=12, num_beams=3, num_return_sequences=2),
+    ]
+    reference = tiny_gguf_model.reference
+    pipeline = create_ov_pipeline(
+        tiny_gguf_model.gguf_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+        ov_config=reference_properties(),
+        gguf_reader="FRONTEND",
+    )
+    inputs = [pipeline.get_tokenizer().encode(prompt).input_ids for prompt in prompts]
+    actual = pipeline.generate(inputs, generation_configs)
+    assert len(actual) == len(prompts)
+    for prompt, input_ids, config, result in zip(prompts, inputs, generation_configs, actual):
+        assert input_ids.data.tolist() == [reference.hf_tokenizer.encode(prompt)]
+        hf_config = generation_config_to_hf(reference.opt_model.generation_config, config)
+        expected = reference.opt_model.generate(
+            torch.from_numpy(input_ids.data.copy()),
+            generation_config=hf_config,
+            **extra_generate_kwargs(hf_config),
+        )
+        assert result.m_generation_ids == expected.sequences[:, input_ids.shape[1] :].tolist(), prompt
+        if config.is_beam_search():
+            np.testing.assert_allclose(result.m_scores, expected.sequences_scores.numpy(), atol=0.02, rtol=0)
+
+
 def test_tiny_gguf_saved_ir(tiny_gguf_model, pipeline_type, tmp_path):
     # Serialization writes beside the GGUF; never modify the shared Hub cache.
     gguf_path = tmp_path / tiny_gguf_model.gguf_path.name
