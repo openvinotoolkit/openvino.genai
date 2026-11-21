@@ -703,6 +703,70 @@ def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline
     assert res_after_chat == res_before_chat
 
 
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("input_type", ["string", "tokenized"])
+def test_generate_works_same_before_and_after_chat_history(llm_model: OVConvertedModelSchema, input_type: str) -> None:
+    # generate(ChatHistory) is used without start_chat(), so a later plain generate() must not
+    # see its chat state
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    config = ov_genai.GenerationConfig(max_new_tokens=10, apply_chat_template=False)
+    prompt = QUESTIONS[0] if input_type == "string" else ov_pipe.get_tokenizer().encode(QUESTIONS[0])
+
+    def generate():
+        result = ov_pipe.generate(prompt, generation_config=config)
+        return result if input_type == "string" else result.tokens
+
+    res_before_chat = generate()
+
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": QUESTIONS[1]}])
+    ov_pipe.generate(chat_history, generation_config=ov_genai.GenerationConfig(max_new_tokens=10))
+
+    assert generate() == res_before_chat
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_generate_works_same_after_failed_chat_history(llm_model: OVConvertedModelSchema) -> None:
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    config = ov_genai.GenerationConfig(max_new_tokens=10, apply_chat_template=False)
+
+    res_before_chat = ov_pipe.generate(QUESTIONS[0], generation_config=config)
+
+    with pytest.raises(RuntimeError, match="must not be empty"):
+        ov_pipe.generate(ov_genai.ChatHistory(), generation_config=ov_genai.GenerationConfig(max_new_tokens=10))
+
+    assert ov_pipe.generate(QUESTIONS[0], generation_config=config) == res_before_chat
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_chat_history_continuation_reuses_kv_cache(llm_model: OVConvertedModelSchema) -> None:
+    config = ov_genai.GenerationConfig(max_new_tokens=10)
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": QUESTIONS[0]}])
+    answer = ov_pipe.generate(chat_history, generation_config=config)
+    chat_history.append({"role": "assistant", "content": answer.texts[0]})
+    chat_history.append({"role": "user", "content": QUESTIONS[1]})
+    continued = ov_pipe.generate(chat_history, generation_config=config)
+
+    fresh_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    from_scratch = fresh_pipe.generate(chat_history, generation_config=config)
+
+    assert continued.texts == from_scratch.texts
+    assert continued.perf_metrics.get_num_input_tokens() < from_scratch.perf_metrics.get_num_input_tokens()
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_start_chat_with_chat_history_rejects_string_input(llm_model: OVConvertedModelSchema) -> None:
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    config = ov_genai.GenerationConfig(max_new_tokens=10)
+
+    ov_pipe.start_chat()
+    ov_pipe.generate(ov_genai.ChatHistory([{"role": "user", "content": QUESTIONS[0]}]), generation_config=config)
+    with pytest.raises(RuntimeError, match="switching between input types"):
+        ov_pipe.generate(QUESTIONS[1], generation_config=config)
+    ov_pipe.finish_chat()
+
+
 @pytest.mark.transformers_dependent(
     reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
 )
