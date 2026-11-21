@@ -82,7 +82,12 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 ```sh
 python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav
 ```
+An optional third positional argument selects the device. GPU and NPU runs cache compiled models in `asr_cache`.
+Performance diagnostics are opt-in so the default transcription and timestamp output remains consistent with the other language samples:
 
+```sh
+python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav NPU --perf
+```
 Output:
 
 ```text
@@ -231,7 +236,19 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 #  He has gone and gone for good answered Polychrome who...
 ```
 
-## Continuous batching with Qwen3-ASR
+## Qwen3-ASR on NPU and continuous batching
+
+The current Qwen3-ASR split export contains an audio encoder, text embeddings and a language model.
+`ASRPipeline` on NPU runs the audio encoder and language model on NPU, while text embeddings run on CPU.
+Audio is split into nominal 60-second segments, with up to five additional seconds for boundary selection.
+The audio encoder processes fixed-size windows sequentially; short windows are zero-padded. CPU/GPU retain
+dynamic batched encoder inference. Padding can introduce numerical differences for sub-window audio; check
+transcription accuracy on the intended model and inputs. NPU uses the SDPA backend and supports greedy and
+multinomial decoding, but not beam search.
+
+On NPU, an explicit output limit must fit the compiled KV cache; adjust `MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN`
+if needed. For a weightless decoder blob imported with `BLOB_PATH`, set `WEIGHTS_PATH` to the original
+`openvino_language_model.bin` for split exports or `openvino_decoder_model.bin` for legacy encoder-decoder exports.
 
 Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
 

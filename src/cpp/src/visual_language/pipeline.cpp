@@ -8,6 +8,7 @@
 #include <optional>
 #include <random>
 
+#include "automatic_speech_recognition/models/qwen3-asr/npu_generation.hpp"
 #include "lm_encoding.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -228,7 +229,11 @@ private:
         if (!device_properties.empty()) {
             properties_copy[ov::device::properties.name()] = device_properties;
         }
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
+        const auto audio_encoder_device = m_is_npu && m_vlm_config.model_type == VLMModelType::QWEN3_ASR
+                                              ? std::optional<std::string>{device}
+                                              : std::nullopt;
+        m_inputs_embedder =
+            std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy, audio_encoder_device);
 
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
@@ -1131,6 +1136,19 @@ private:
         // Update perf metrics with num_input_tokens
         perf_metrics.num_input_tokens = prompt_ids.get_size();
 
+        size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
+        bool qwen_capacity_limited = false;
+        const bool qwen_npu = m_is_npu && m_vlm_config.model_type == VLMModelType::QWEN3_ASR;
+        if (m_is_npu) {
+            max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
+            if (qwen_npu) {
+                OPENVINO_ASSERT(max_kv_cache_size > 0, "Qwen3-ASR NPU KV-cache capacity must be positive.");
+                // The shared VLM loop stops one token earlier than the legacy ASR decoder.
+                qwen_capacity_limited =
+                    limit_qwen3_asr_npu_generation(prompt_ids.get_size(), generation_config,
+                                                    m_max_prompt_len, max_kv_cache_size - 1);
+            }
+        }
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config);
         requests.push_back(std::move(sequence_group));
 
@@ -1169,11 +1187,7 @@ private:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
-        if (m_is_npu) {
-            max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
-        }
-        return ov::genai::get_lm_encoded_results(
+        auto result = ov::genai::get_lm_encoded_results(
             m_language,
             inputs_embeds,
             new_atten_mask,
@@ -1188,8 +1202,16 @@ private:
             use_intermediate_remote_tensor,
             lm_extra_inputs,
             std::move(per_layer_callback),
-            std::move(ngram_embeddings_callback)
+            std::move(ngram_embeddings_callback),
+            qwen_npu
         );
+        if (qwen_capacity_limited &&
+            std::find(result.results.finish_reasons.begin(), result.results.finish_reasons.end(),
+                      GenerationFinishReason::LENGTH) != result.results.finish_reasons.end()) {
+            GENAI_ERR("Qwen3-ASR NPU KV-cache capacity was reached; the returned transcription may be truncated. "
+                      "Increase MAX_PROMPT_LEN or MIN_RESPONSE_LEN to allow longer output.");
+        }
+        return result;
     }
 
     void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const override {

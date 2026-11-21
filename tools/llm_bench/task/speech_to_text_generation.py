@@ -23,6 +23,23 @@ DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE = 400
 DEFAULT_SPEECH_PROMPT = "Transcribe this audio."
 
 
+def _uses_native_npu_qwen3_asr_decoder(device, use_genai, model_type):
+    return use_genai and model_type == "qwen3-asr" and device.upper() == "NPU"
+
+
+def _get_output_token_size(processor, text, use_genai, num_generated_tokens=None):
+    if processor is None:
+        if num_generated_tokens is None:
+            raise RuntimeError("The speech-to-text backend did not report the generated token count.")
+        return num_generated_tokens
+    if use_genai:
+        return processor.encode(text).input_ids.size
+    tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else processor
+    output = tokenizer(text, return_tensors="pt")
+    tokens = output["input_ids"] if "input_ids" in output else output
+    return tokens[0].numel()
+
+
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     result_md5_list = []
     pipe = input_param["pipe"]
@@ -39,7 +56,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     speech_language = input_param["speech_param"].get("language", default_language)
     ret_timestamps = input_param["speech_param"].get("timestamp", True)
     max_gen_tokens = args["infer_count"]
-    if max_gen_tokens is None:
+    if max_gen_tokens is None and not (use_genai and input_param.get("native_qwen3_asr_npu", False)):
         max_gen_tokens = (
             DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE if use_case.model_type in ["whisper"] else DEFAULT_OUTPUT_TOKEN_SIZE
         )
@@ -49,7 +66,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     mem_consumption.start(num)
     if use_genai:
         generation_config = pipe.get_generation_config()
-        generation_config.max_new_tokens = max_gen_tokens
+        if max_gen_tokens is not None:
+            generation_config.max_new_tokens = max_gen_tokens
         generation_config.language = speech_language
         generation_config.return_timestamps = ret_timestamps
         if use_case.model_type in ["whisper"]:
@@ -143,13 +161,9 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         log.debug('latency of all infers:')
         [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
 
-    if processor is None:
-        out_token_size = num_generated_tokens
-    else:
-        tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else processor
-        out_data = tokenizer(result_text, return_tensors="pt")
-        out_tokens = out_data["input_ids"] if "input_ids" in out_data else out_data
-        out_token_size = out_tokens[0].numel()
+    # SenseVoice exports may contain only a detokenizer; use the reported CTC token count.
+    count_processor = None if use_case.model_type == "sense-voice" else processor
+    out_token_size = _get_output_token_size(count_processor, result_text, use_genai, num_generated_tokens)
 
     result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if len(md5_list[num]) == 0:
@@ -252,7 +266,10 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         "mem_consumption": mem_consumption,
         "processor": processor,
         "use_genai": use_genai,
+        "native_qwen3_asr_npu": _uses_native_npu_qwen3_asr_decoder(device, use_genai, args["use_case"].model_type),
     }
+    if input_param["native_qwen3_asr_npu"] and args["infer_count"] is None:
+        log.info("No --infer_count specified; using the Qwen3-ASR pipeline's generation limits.")
     if args["use_case"].model_type == "sense-voice":
         input_param["dither"] = json.loads((Path(model_path) / "config.json").read_text(encoding="utf-8")).get(
             "dither", 1.0

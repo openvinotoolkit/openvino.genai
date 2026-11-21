@@ -13,7 +13,8 @@ class TestAutomaticSpeechRecognition:
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
-    def test_sample_automatic_speech_recognition(self, convert_model, download_test_content):
+    @pytest.mark.parametrize("show_perf", [False, True])
+    def test_sample_automatic_speech_recognition(self, convert_model, download_test_content, show_perf):
         # Run C++ sample
         cpp_sample = SAMPLES_CPP_DIR / "automatic_speech_recognition"
         cpp_command = [cpp_sample, convert_model, download_test_content]
@@ -22,6 +23,8 @@ class TestAutomaticSpeechRecognition:
         # Run Python sample
         py_script = SAMPLES_PY_DIR / "automatic_speech_recognition/automatic_speech_recognition.py"
         py_command = [sys.executable, py_script, convert_model, download_test_content]
+        if show_perf:
+            py_command.append("--perf")
         py_result = run_sample(py_command)
 
         # Run C sample
@@ -35,6 +38,29 @@ class TestAutomaticSpeechRecognition:
         js_result = run_sample(js_command)
 
         # Compare results
-        assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
-        assert py_result.stdout == js_result.stdout, "Python and JS results should match"
-        assert py_result.stdout == c_result.stdout, "Python and C results should match"
+        py_text = py_result.stdout
+        if show_perf:
+            py_text, separator, metrics = py_text.partition("\n=== Performance Metrics ===\n")
+            assert separator
+            assert "Encoder inference:" in metrics
+            assert "Decoder inference:" in metrics
+            metric_prefixes = (
+                "Load time:",
+                "Total generate duration:",
+                "Encoder inference:",
+                "Decoder TTFT:",
+                "Decoder inference:",
+                "TPOT:",
+                "Throughput:",
+                "Encoder raw calls:",
+                "Decoder raw steps:",
+            )
+            py_text += "".join(
+                line for line in metrics.splitlines(keepends=True) if not line.startswith(metric_prefixes)
+            )
+        else:
+            assert "=== Performance Metrics ===" not in py_text
+
+        assert py_text == cpp_result.stdout, "Python and C++ results should match"
+        assert py_text == js_result.stdout, "Python and JS results should match"
+        assert py_text == c_result.stdout, "Python and C results should match"

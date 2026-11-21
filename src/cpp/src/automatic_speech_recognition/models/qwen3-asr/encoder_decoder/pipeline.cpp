@@ -12,13 +12,16 @@ namespace ov::genai {
 Qwen3EncoderDecoderASR::Qwen3EncoderDecoderASR(const std::filesystem::path& models_path,
                                                const std::string& device,
                                                const ov::AnyMap& properties)
-    : Qwen3ASRPipelineBase(models_path, properties) {
+    : Qwen3EncoderDecoderASR(models_path, properties) {
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
     m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties_copy);
     m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy);
     m_decoder->set_seed(m_generation_config.rng_seed);
 }
+
+Qwen3EncoderDecoderASR::Qwen3EncoderDecoderASR(const std::filesystem::path& models_path, const ov::AnyMap& properties)
+    : Qwen3ASRPipelineBase(models_path, properties) {}
 
 std::string Qwen3EncoderDecoderASR::extend_audio_tokens(const std::string& prompt, size_t audio_length) const {
     static const std::string audio_token = "<|audio_pad|>";
