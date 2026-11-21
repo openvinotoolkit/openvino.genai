@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
+#include "automatic_speech_recognition/audio_chunk.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "openvino/genai/automatic_speech_recognition/forced_aligner.hpp"
 #include "whisper/feature_extractor.hpp"

@@ -36,5 +36,6 @@ struct AudioChunk {
 
 std::vector<AudioChunk> split_audio_into_chunks(const AudiosView& raw_speech,
                                                 const size_t sr,
-                                                const size_t max_chunk_sec);
+                                                const size_t max_chunk_sec,
+                                                const size_t boundary_search_sec = CHUNK_BOUNDARY_SEARCH_SECONDS);
 }  // namespace ov::genai
