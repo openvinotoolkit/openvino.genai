@@ -1016,6 +1016,18 @@ def test_embedding_constructors(emb_model):
     )
 
 
+@pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
+def test_embed_documents_empty_input(emb_model):
+    pipeline = TextEmbeddingPipeline(emb_model.models_path, "CPU")
+    # on a fresh pipeline, and after a normal request (which used to be returned again as a stale result)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="should not be empty"):
+            pipeline.embed_documents([])
+        with pytest.raises(RuntimeError, match="should not be empty"):
+            pipeline.start_embed_documents_async([])
+        pipeline.embed_documents(["warm up"])
+
+
 @pytest.mark.parametrize("emb_model", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
     "config",
@@ -1170,6 +1182,16 @@ def test_rerank_constructors(rerank_model):
         top_n=2,
         PERFORMANCE_HINT_NUM_REQUESTS=2,
     )
+
+
+@pytest.mark.parametrize("rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
+def test_rerank_empty_documents(rerank_model):
+    pipeline = TextRerankPipeline(rerank_model.models_path, "CPU")
+    with pytest.raises(RuntimeError, match="should not be empty"):
+        pipeline.rerank("query", [])
+    with pytest.raises(RuntimeError, match="should not be empty"):
+        pipeline.start_rerank_async("query", [])
+    assert len(pipeline.rerank("query", ["document"])) == 1
 
 
 @pytest.mark.parametrize("rerank_model", RERANK_TEST_MODELS, indirect=True)

@@ -210,6 +210,9 @@ private:
     }
 
     void start_embed_async(std::vector<std::string>& texts) {
+        // an empty batch would run inference on 0-row tensors and read back an uninitialized or stale output
+        OPENVINO_ASSERT(!texts.empty(), "List of texts passed to pipeline should not be empty");
+
         if (m_config.batch_size.has_value()) {
             // if batch_size is set, model shape is fixed
             // provide user friendly error message if number of texts is not equal to batch_size
