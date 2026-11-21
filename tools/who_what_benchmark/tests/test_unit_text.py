@@ -6,8 +6,6 @@ from whowhatbench.text_evaluator import TextEvaluator
 
 
 def test_text_evaluator_batch_generation_path(monkeypatch):
-    monkeypatch.setattr("whowhatbench.text_evaluator.TextSimilarity", lambda _: None)
-
     class DummyGenerationConfig:
         pass
 
