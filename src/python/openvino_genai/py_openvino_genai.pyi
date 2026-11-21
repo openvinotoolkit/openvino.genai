@@ -5614,7 +5614,7 @@ class TalkerBase:
     def __init__(self) -> None:
         ...
     @typing.overload
-    def generate(self, vlm_result: VLMDecodedResults, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], StreamingStatus] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
+    def generate(self, vlm_result: VLMDecodedResults, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], int | None] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
         """
         Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.
         """
