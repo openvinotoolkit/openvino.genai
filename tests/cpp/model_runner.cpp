@@ -2,11 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+#include <chrono>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <numeric>
+#include <sstream>
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/convert.hpp"
 #include "openvino/op/parameter.hpp"
+#include "openvino/op/unsqueeze.hpp"
+#include "openvino/pass/serialize.hpp"
 
 #include "visual_language/inputs_embedder.hpp"
 #include "continuous_batching/model_runner.hpp"
@@ -345,4 +353,118 @@ TEST(TestModelRunnerDFlashDraft, batched_windows_use_their_own_rows) {
               (std::vector<int64_t>{9, 10, 11, 15, 16, 17}));
     EXPECT_EQ(first->get_output_seq_len(), 3);
     EXPECT_EQ(second->get_output_seq_len(), 3);
+}
+
+namespace {
+
+std::pair<std::string, ov::Tensor> serialize_model(const std::shared_ptr<ov::Model>& model) {
+    std::ostringstream xml, weights;
+    ov::pass::Serialize(xml, weights).run_on_model(model);
+    const std::string weights_data = weights.str();
+    ov::Tensor weights_tensor(ov::element::u8, {weights_data.size()});
+    std::memcpy(weights_tensor.data(), weights_data.data(), weights_data.size());
+    return {xml.str(), std::move(weights_tensor)};
+}
+
+// forward() needs an inputs embedder for embeddings inputs; a muse_glimmer one can be built from in-memory models.
+std::shared_ptr<InputsEmbedder> create_dummy_inputs_embedder() {
+    auto input_ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, -1});
+    input_ids->output(0).get_tensor().set_names({"input_ids"});
+    auto embeds =
+        std::make_shared<ov::op::v0::Unsqueeze>(std::make_shared<ov::op::v0::Convert>(input_ids, ov::element::f32),
+                                                ov::op::v0::Constant::create(ov::element::i64, {1}, {2}));
+    const auto model =
+        serialize_model(std::make_shared<ov::Model>(ov::OutputVector{embeds}, ov::ParameterVector{input_ids}));
+
+    const auto config_dir =
+        std::filesystem::temp_directory_path() /
+        ("genai-model-runner-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(config_dir);
+    std::ofstream(config_dir / "config.json") << R"({"model_type":"muse_glimmer"})";
+    // The vision encoder is never run, so it reuses the text embeddings model.
+    auto embedder =
+        std::make_shared<InputsEmbedder>(ModelsMap{{"vision_embeddings", model}, {"text_embeddings", model}},
+                                         Tokenizer{},
+                                         config_dir,
+                                         "CPU",
+                                         ov::AnyMap{});
+    std::filesystem::remove_all(config_dir);
+    return embedder;
+}
+
+std::shared_ptr<ov::Model> create_dummy_embeddings_model(const ov::PartialShape& position_ids_shape) {
+    ov::ParameterVector params;
+    auto add_input = [&](const std::string& name, const ov::element::Type& type, const ov::PartialShape& pshape) {
+        auto p = std::make_shared<ov::op::v0::Parameter>(type, pshape);
+        p->output(0).get_tensor().set_names({name});
+        params.push_back(p);
+    };
+    add_input("inputs_embeds", ov::element::f32, ov::PartialShape::dynamic(2));
+    add_input("position_ids", ov::element::i64, position_ids_shape);
+    add_input("past_lens", ov::element::i32, ov::PartialShape::dynamic(1));
+    add_input("subsequence_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+    add_input("block_indices", ov::element::i32, ov::PartialShape::dynamic(1));
+    add_input("block_indices_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+    add_input("max_context_len", ov::element::i32, ov::PartialShape{});
+
+    auto logits = ov::op::v0::Constant::create(ov::element::f32, {1, 1, 8}, {0.0f});
+    logits->output(0).get_tensor().set_names({"logits"});
+    return std::make_shared<ov::Model>(ov::OutputVector{logits}, params);
+}
+
+// position_ids_shape is [1, num_tokens], or [3, 1, num_tokens] for M-RoPE.
+SequenceGroup::Ptr make_embeddings_group(uint64_t request_id,
+                                         std::vector<int64_t> position_ids,
+                                         const ov::Shape& position_ids_shape) {
+    std::vector<float> embeds(position_ids_shape.back(), 0.0f);
+    return std::make_shared<SequenceGroup>(request_id,
+                                           ov::Tensor(ov::element::f32, {1, embeds.size(), 1}, embeds.data()),
+                                           utils::get_greedy_config(),
+                                           std::nullopt,
+                                           ov::Tensor(ov::element::i64, position_ids_shape, position_ids.data()));
+}
+
+}  // namespace
+
+TEST(TestModelRunnerEmbeddings, copies_position_ids_of_scheduled_tokens) {
+    ov::Core core;
+    ov::InferRequest request =
+        core.compile_model(create_dummy_embeddings_model(ov::PartialShape::dynamic(1)), "CPU").create_infer_request();
+    ModelRunner runner(request, /*block_size=*/4, /*num_decoder_layers=*/1);
+    runner.set_inputs_embedder(create_dummy_inputs_embedder());
+
+    // Position ids differ from token indices, so the values must come from the sequences.
+    auto first = make_embeddings_group(0, {10, 11, 12}, {1, 3});
+    auto second = make_embeddings_group(1, {20, 21, 22, 23}, {1, 4});
+    first->schedule_tokens(3);
+    // The second request runs its second prefill chunk.
+    second->update_processed_tokens_num(2);
+    second->schedule_tokens(2);
+    const ContinuousBatchingScheduler::Output::LinearAttentionPagingData no_linear_attention;
+    const auto out = make_output_for_sequences({{first->get_running_sequences()[0]->get_id(), no_linear_attention},
+                                                {second->get_running_sequences()[0]->get_id(), no_linear_attention}},
+                                               5);
+    std::ignore = runner.forward({first, second}, out);
+
+    EXPECT_EQ(tensor_values<int64_t>(runner.get_infer_request().get_tensor("position_ids")),
+              (std::vector<int64_t>{10, 11, 12, 22, 23}));
+}
+
+TEST(TestModelRunnerEmbeddings, copies_mrope_position_ids) {
+    ov::Core core;
+    ov::InferRequest request =
+        core.compile_model(create_dummy_embeddings_model(ov::PartialShape{3, -1}), "CPU").create_infer_request();
+    ModelRunner runner(request, /*block_size=*/4, /*num_decoder_layers=*/1);
+    runner.set_inputs_embedder(create_dummy_inputs_embedder());
+
+    const std::vector<int64_t> positions = {10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33};
+    auto group = make_embeddings_group(0, positions, {3, 1, 4});
+    group->schedule_tokens(4);
+    const auto seq_id = group->get_running_sequences()[0]->get_id();
+    const auto out = make_output_for_single_sequence(seq_id, 4, BlocksPerLayer{std::make_shared<CacheBlock>(0)});
+    std::ignore = runner.forward({group}, out);
+
+    const ov::Tensor position_ids = runner.get_infer_request().get_tensor("position_ids");
+    EXPECT_EQ(position_ids.get_shape(), (ov::Shape{3, 4}));
+    EXPECT_EQ(tensor_values<int64_t>(position_ids), positions);
 }
