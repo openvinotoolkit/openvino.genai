@@ -117,11 +117,13 @@ public:
                 [py_parser](const std::string& content) -> JsonContainer {
                     py::object parsed = py_parser.attr("extract_reasoning")(content, py::none());
                     if (py::isinstance<py::tuple>(parsed) && py::len(parsed) == 2) {
-                        auto msg_str_1 = parsed.attr("__getitem__")(0).cast<std::string>();
-                        auto msg_str_2 = parsed.attr("__getitem__")(1).cast<std::string>();
+                        // vLLM returns None for a missing part, e.g. no content after </think>
+                        auto to_json = [](const py::object& part) {
+                            return part.is_none() ? JsonContainer(nullptr) : JsonContainer(part.cast<std::string>());
+                        };
                         JsonContainer new_message;
-                        new_message["reasoning"] = msg_str_1;
-                        new_message["content"] = msg_str_2;
+                        new_message["reasoning"] = to_json(parsed.attr("__getitem__")(0));
+                        new_message["content"] = to_json(parsed.attr("__getitem__")(1));
                         return new_message;
                     } else {
                         OPENVINO_THROW("Parsed object is not a tuple of length 2");
