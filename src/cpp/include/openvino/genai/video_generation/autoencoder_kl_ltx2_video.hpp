@@ -60,6 +60,24 @@ public:
 
     ov::Tensor decode(const ov::Tensor& latent);
 
+    /**
+     * Decodes a latent video in overlapping chunks of latent frames (temporal tiling) and cross-fades the
+     * overlapping video frames linearly. The decoder runs once per chunk, so its peak memory is bounded by the
+     * chunk instead of the whole clip. Sizes are in video frames, as in diffusers' AutoencoderKLLTX2Video.
+     * A chunk that does not start the video still gets one video frame out of its first latent frame. That
+     * frame is dropped, because the previous chunk has already produced it.
+     * @param latent A latent video [B, C, F, H, W]
+     * @param tile_sample_min_num_frames A chunk length in video frames, a multiple of the temporal compression
+     * ratio. 0 disables tiling. A latent video that fits into one chunk is decoded in a single call as well.
+     * @param tile_sample_stride_num_frames A distance between chunk starts in video frames, a multiple of the
+     * temporal compression ratio not greater than tile_sample_min_num_frames. The difference is the overlap.
+     * @returns A decoded video [B, F, H, W, C]
+     * @note The decoder must accept a dynamic number of frames, so it cannot be combined with reshape().
+     */
+    ov::Tensor decode(const ov::Tensor& latent,
+                      size_t tile_sample_min_num_frames,
+                      size_t tile_sample_stride_num_frames);
+
 private:
     void merge_vae_video_post_processing() const;
 
