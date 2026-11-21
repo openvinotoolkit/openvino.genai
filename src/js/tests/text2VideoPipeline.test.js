@@ -316,26 +316,33 @@ describe("Text2VideoPipeline concurrency", { skip: os.platform() === "darwin" },
     await generating;
   });
 
-  it("generate() rejects while a decode() is in progress", async () => {
+  it("handles generate() called immediately after decode()", async () => {
     const decoding = pipeline.decode(latent);
-    await assert.rejects(
-      pipeline.generate("a tiny robot", SMALL_VIDEO),
-      /generate\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+    // The native worker can finish decoding before the next call reaches the busy check.
+    const generating = pipeline.generate("a tiny robot", SMALL_VIDEO).then(
+      (result) => assert.deepStrictEqual(result.video.getShape(), [1, 9, 32, 32, 3]),
+      (error) =>
+        assert.match(
+          error.message,
+          /generate\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+        ),
     );
-    await decoding;
+    const [decoded] = await Promise.all([decoding, generating]);
+    assert.deepStrictEqual(decoded.video.getShape(), [1, 9, 32, 32, 3]);
   });
 
-  it("a rejected generate() does not release a decode() in progress", async () => {
-    const decoding = pipeline.decode(latent);
-    await assert.rejects(
+  it("a rejected generate() keeps the active generation busy", async () => {
+    // Generation holds its guard until completion runs on the JavaScript thread.
+    const generating = pipeline.generate("a tiny robot", SMALL_VIDEO);
+    const rejectedGeneration = assert.rejects(
       pipeline.generate("a tiny robot", SMALL_VIDEO),
       /generate\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
     );
-    await assert.rejects(
+    const rejectedDecode = assert.rejects(
       pipeline.decode(latent),
       /decode\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
     );
-    await decoding;
+    await Promise.all([generating, rejectedGeneration, rejectedDecode]);
   });
 
   it("the generation config can't be accessed while a generate() is in progress", async () => {
