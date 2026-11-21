@@ -123,6 +123,65 @@ jobs:
         docker_tag=$(cat openvino/.github/dockerfiles/docker_tag)
         echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
 
+  genai_build_cpp20:
+    name: Build C++20
+    needs: [ openvino_download ]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Unix Makefiles
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      BUILD_DIR: ${{ github.workspace }}/build-cpp20
+      SRC_DIR: ${{ github.workspace }}/src
+
+    steps:
+      - name: Normalize sccache Azure endpoint
+        run: |
+          SCCACHE_AZURE_CONNECTION_STRING="$(sed -E 's#(^|;)(BlobEndpoint=[^;]*[^/;])/+(;|$)#\1\2\3#g' <<< "$SCCACHE_AZURE_CONNECTION_STRING")"
+          echo "::add-mask::$SCCACHE_AZURE_CONNECTION_STRING"
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$SCCACHE_AZURE_CONNECTION_STRING" >> "$GITHUB_ENV"
+
+      - name: Clone openvino.genai
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Configure and build
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                -DBUILD_TOKENIZERS=OFF \
+                -DCMAKE_CXX_STANDARD=20 \
+                -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DENABLE_PYTHON=OFF \
+                -DENABLE_SAMPLES=OFF \
+                -DENABLE_TESTS=OFF \
+                -DENABLE_TOOLS=OFF \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+                -S ${{ env.SRC_DIR }} \
+                -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --target openvino_genai --parallel $(nproc) --verbose
+
   genai_build_cmake:
     name: Build Archive - ${{ matrix.build-type }}
     strategy:
@@ -1168,7 +1227,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests, genai_wwb_standalone_install]
+    needs: [smart_ci, openvino_download, genai_build_cpp20, prepare_test_matrices, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests, genai_wwb_standalone_install]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

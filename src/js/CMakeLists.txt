@@ -4,9 +4,6 @@
 
 cmake_minimum_required(VERSION 3.18)
 
-# Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
-
 set(dist_folder "${CMAKE_SOURCE_DIR}/bin/")
 
 if(WIN32)

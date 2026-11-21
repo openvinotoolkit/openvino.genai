@@ -758,7 +758,7 @@ public:
         OPENVINO_ASSERT(finished_seqs.size() == num_total_seqs(), "Internal error: get_finished_sequences() must be called when all sequences are "
             "either finished / ignored by OOM or dropped via GenerationStream::stop() / GenerationStream::cancel()");
 
-        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
+        std::sort(finished_seqs.begin(), finished_seqs.end(), [this] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
             bool is_beam_search = m_sampling_params.is_beam_search();
             const float score_1 = is_beam_search ? s1->get_beam_search_score(m_sampling_params) : s1->get_cumulative_log_prob();
             const float score_2 = is_beam_search ? s2->get_beam_search_score(m_sampling_params) : s2->get_cumulative_log_prob();
