@@ -35,8 +35,8 @@ def export_command(model: str, output: Path | str, options: list[str] | tuple[st
     return ["optimum-cli", "export", "openvino", "--model", str(model), *options, str(output)]
 
 
-def export_with_genai_cli(model: str, output: Path | str, options: list[str] | tuple[str, ...] = ()) -> None:
-    """Exports a model with genai-cli; raises CalledProcessError with the tool output on failure."""
+def export_with_genai_cli(model: str, output: Path | str, options: list[str] | tuple[str, ...] = ()) -> str:
+    """Exports a model with genai-cli and returns the tool output; raises CalledProcessError with it on failure."""
     command = genai_cli_command(model, output, options)
     logger.info(f"Conversion command: {' '.join(command)}")
     result = subprocess.run(
@@ -45,3 +45,4 @@ def export_with_genai_cli(model: str, output: Path | str, options: list[str] | t
     if result.returncode != 0:
         logger.error(f"genai-cli returned {result.returncode}. Output:\n{result.stdout}")
         raise subprocess.CalledProcessError(result.returncode, command, output=result.stdout)
+    return result.stdout
