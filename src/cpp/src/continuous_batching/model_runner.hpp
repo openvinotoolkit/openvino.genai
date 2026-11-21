@@ -522,6 +522,16 @@ public:
         return m_request;
     }
 
+    /// @brief Exports the "hidden_states" output, as the SDPA pipelines read it, whatever else the model outputs.
+    void use_hidden_states_output() {
+        OPENVINO_ASSERT(m_has_hidden_states_output, "The language model has no hidden_states output to export");
+        m_use_hidden_states_output = true;
+    }
+
+    bool is_hidden_state_export_enabled() const {
+        return _is_hs_export();
+    }
+
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
@@ -1149,10 +1159,12 @@ public:
 
         if (_is_hs_export()) {
             // Use "hidden_states" output only when the model also exports "intermediate_hidden_states"
-            // (Qwen3-Omni pattern). Otherwise prefer "last_hidden_state" to preserve existing behavior
-            // for speculative decoding and other models.
+            // (Qwen3-Omni pattern) or a step hook asked for it (LFM3-Omni). Otherwise prefer "last_hidden_state"
+            // to preserve existing behavior for speculative decoding and other models.
             // Use "next_hidden_states" for model which has it, e.g., Qwen4Exp MTP draft use it between draft model iterations.
-            m_hidden_states = (m_has_hidden_states_output && m_has_intermediate_hidden_states_output)
+            const bool use_hidden_states =
+                m_has_hidden_states_output && (m_has_intermediate_hidden_states_output || m_use_hidden_states_output);
+            m_hidden_states = use_hidden_states
                 ? m_request.get_tensor("hidden_states")
                 : m_has_next_hidden_states_output ? m_request.get_tensor("next_hidden_states")
                                                   : m_request.get_tensor("last_hidden_state");
@@ -1197,6 +1209,25 @@ public:
         }
         // return logits
         return m_request.get_tensor("logits");
+    }
+
+    /**
+     * @brief Stores a ready-made input embedding [1, 1, hidden_size] for the last generated token of sequence, so
+     * append_embeddings() does not embed that token id. Used when the next input is not the embedding of a token,
+     * e.g. an LFM3-Omni speech frame.
+     */
+    void append_generated_embedding(const SequenceGroup::Ptr& sequence_group,
+                                    const Sequence::Ptr& sequence,
+                                    const ov::Tensor& embedding) {
+        const size_t token_idx = sequence->get_generated_ids_embeds().size();
+        OPENVINO_ASSERT(token_idx + 1 == sequence->get_generated_len(),
+                        "A generated embedding can only be set for the last generated token");
+        OPENVINO_ASSERT(embedding.get_size() == sequence_group->get_hidden_size(),
+                        "A generated embedding must have the hidden size of the prompt embeddings");
+        const size_t position_id = token_idx + sequence_group->get_prompt_len();
+        sequence->append_position_ids(
+            m_inputs_embedder->get_generation_phase_position_ids(1, position_id, sequence->get_rope_delta()).first);
+        sequence->append_generated_ids_embeds(embedding);
     }
 
     bool _has_missing_generated_embeddings(const std::vector<SequenceGroup::Ptr>& sequence_groups,
@@ -1278,6 +1309,8 @@ private:
     ov::Tensor m_intermediate_hidden_states;
     // Whether model has "hidden_states" vs "last_hidden_state" output name
     bool m_has_hidden_states_output = false;
+    // Export "hidden_states" even without "intermediate_hidden_states" (set by a step hook).
+    bool m_use_hidden_states_output = false;
     // Whether model has intermediate_hidden_states output (e.g., Qwen3-Omni)
     bool m_has_intermediate_hidden_states_output = false;
     // Whether model has next_hidden_states output (e.g., Qwen4Exp MTP draft)

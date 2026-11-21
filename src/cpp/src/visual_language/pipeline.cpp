@@ -3,8 +3,6 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 
-#include <algorithm>
-#include <array>
 #include <optional>
 #include <random>
 
@@ -63,8 +61,6 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
 
     device_properties["AUTO"] = auto_properties;
 }
-
-constexpr std::array<const char*, 3> LFM3_SPEECH_MODELS{"depth_decoder", "audio_out_embeddings", "audio_decoder"};
 
 }
 
@@ -264,10 +260,7 @@ private:
         }
 
         finalize_initialization(language_model, kv_pos);
-        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && !m_is_npu &&
-            std::all_of(LFM3_SPEECH_MODELS.begin(), LFM3_SPEECH_MODELS.end(), [&models_dir](const char* name) {
-                return std::filesystem::exists(models_dir / ("openvino_" + std::string(name) + "_model.xml"));
-            })) {
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && !m_is_npu && has_lfm3_speech_models(models_dir)) {
             m_speech_engine =
                 std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device, properties_copy);
         }
@@ -324,10 +317,7 @@ private:
             m_adapter_controller->apply(m_language);
         }
         finalize_initialization(language_model, kv_pos);
-        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI &&
-            std::all_of(LFM3_SPEECH_MODELS.begin(), LFM3_SPEECH_MODELS.end(), [&models_map](const char* name) {
-                return models_map.count(name) > 0;
-            })) {
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && has_lfm3_speech_models(models_map)) {
             m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(models_map,
                                                                      config_dir_path,
                                                                      m_language,
@@ -1196,10 +1186,7 @@ private:
         if (m_vlm_config.model_type != VLMModelType::LFM3_OMNI || m_is_npu) {
             VLMBackend::check_speech_in_stream(speech_config);
         }
-        OPENVINO_ASSERT(
-            m_speech_engine,
-            "LFM3-Omni speech output needs openvino_depth_decoder_model, openvino_audio_out_embeddings_model "
-            "and openvino_audio_decoder_model");
+        check_lfm3_speech_models_loaded(m_speech_engine != nullptr);
         LFM3SpeechRequest::validate(speech_config);
     }
 
@@ -1235,10 +1222,8 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. An explicit PA request still gets PA.
-    // LFM3-Omni speech output is decoded in the stateful language model loop, which only SDPA provides.
-    const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::LFM3_OMNI;
+    // No model needs the SDPA backend by default; read the model type from models_dir here for one that does.
+    return false;
 }
 
 VLMPipeline::VLMPipeline(
