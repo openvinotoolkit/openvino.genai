@@ -233,6 +233,7 @@ public:
             std::make_shared<QwenImage21Pipeline>(m_pipeline_type, *text_encoder, transformer, vae);
 
         pipeline->m_root_dir = m_root_dir;
+        pipeline->m_reshaped_condition_size = m_reshaped_condition_size;
         pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
         pipeline->set_generation_config(m_generation_config);
         return pipeline;
