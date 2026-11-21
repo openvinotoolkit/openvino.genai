@@ -185,6 +185,12 @@ Add a system message at the beginning to set the assistant's behavior:
     </TabItemJS>
 </LanguageTabs>
 
+The Python and C++ `chat_sample` applications demonstrate this by initializing the
+history with a system message. Edit `system_prompt` in the sample source to customize it.
+Add the message once, before the first user message, and keep it in the history for
+subsequent turns. The model's chat template must support the `system` role; otherwise,
+initialize an empty `ChatHistory` to omit the system message.
+
 ### Chat History Metadata
 
 Additionally, `ChatHistory` manages optional metadata for consistent chat template application:

@@ -93,9 +93,21 @@ Recommended models: meta-llama/Llama-2-7b-chat-hf, TinyLlama/TinyLlama-1.1B-Chat
   ```bash
   ./chat_sample <MODEL_DIR>
   ```
+
+#### System prompt
+
+The sample starts the chat history with a `system` message. Edit `system_prompt` in
+`chat_sample.cpp` to customize the assistant's role and behavior. The message is added
+once, before the first user message, and remains in the history throughout the conversation.
+Use a model whose chat template supports the `system` role; otherwise, initialize an empty
+`ChatHistory` to omit the system message. See the [System Prompt guide](https://openvinotoolkit.github.io/openvino.genai/docs/guides/chat-scenario#system-prompt)
+for more information.
+
 #### Missing chat template
 If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To work this around, manually add the chat template to tokenizer_config.json of your model or update it using call `pipe.get_tokenizer().set_chat_template(new_chat_template)`.
-The following template can be used as a default, but it may not work properly with every model:
+The following fallback template may not work properly with every model. It only handles
+`user` and `assistant` messages and ignores the system prompt. To use a
+system prompt, choose a chat template that supports the `system` role instead.
 ```
 "chat_template": "{% for message in messages %}{% if (message['role'] == 'user') %}{{'<|im_start|>user\n' + message['content'] + '<|im_end|>\n<|im_start|>assistant\n'}}{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|im_end|>\n'}}{% endif %}{% endfor %}",
 ```
