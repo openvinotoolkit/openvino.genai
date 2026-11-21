@@ -7,6 +7,7 @@
 import argparse
 from dataclasses import dataclass, field
 import logging
+import math
 import os
 import re
 import shlex
@@ -332,6 +333,16 @@ class OptimumWWBTargetEvaluationTool(ToolWrapper):
                 err_msg=f"{self.logger_prefix}: Failed to parse WWB metrics value from output.",
             )
 
+        if not math.isfinite(metrics_value):
+            return ToolResult(
+                name=self.name,
+                success=False,
+                err_msg=(
+                    f"{self.logger_prefix}: WWB similarity {metrics_value} is not a finite number "
+                    f"(NaN or infinity); expected a finite value >= {WWB_SIMILARITY_THRESHOLD:.2f}."
+                ),
+            )
+
         if metrics_value < WWB_SIMILARITY_THRESHOLD:
             return ToolResult(
                 name=self.name,
@@ -380,6 +391,16 @@ class GenAIWWBTargetEvaluationTool(ToolWrapper):
                 name=self.name,
                 success=False,
                 err_msg=f"{self.logger_prefix}: Failed to parse WWB metrics value from output.",
+            )
+
+        if not math.isfinite(metrics_value):
+            return ToolResult(
+                name=self.name,
+                success=False,
+                err_msg=(
+                    f"{self.logger_prefix}: WWB similarity {metrics_value} is not a finite number "
+                    f"(NaN or infinity); expected a finite value >= {WWB_SIMILARITY_THRESHOLD:.2f}."
+                ),
             )
 
         if metrics_value < WWB_SIMILARITY_THRESHOLD:
