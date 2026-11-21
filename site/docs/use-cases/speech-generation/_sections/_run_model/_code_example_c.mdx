@@ -2,9 +2,11 @@ import CodeBlock from '@theme/CodeBlock';
 
 <CodeBlock language="c" showLineNumbers>
 {`#include <stdint.h>
-#include <stdio.h>
 
 #include "openvino/genai/c/text2speech_pipeline.h"
+
+// Sample helper from samples/c/common/audio_utils.h
+int save_wav_file(const char* path, const float* data, size_t sample_count, uint32_t sample_rate);
 
 int main(int argc, char** argv) {
     if (argc != 2) return 1;
@@ -13,7 +15,6 @@ int main(int argc, char** argv) {
     ov_genai_speech_generation_config* config = NULL;
     ov_genai_text2speech_decoded_results* results = NULL;
     ov_tensor_t* speech = NULL;
-    FILE* output = NULL;
     int status = 1;
 
     if (ov_genai_text2speech_pipeline_create(argv[1], "${props.device || 'CPU'}", 0, &pipeline) != OK ||
@@ -30,14 +31,11 @@ int main(int argc, char** argv) {
         ov_genai_text2speech_decoded_results_get_output_sample_rate(results, &sample_rate) != OK)
         goto cleanup;
 
-    output = fopen("speech.f32", "wb");
-    if (!output || fwrite(samples, sizeof(float), sample_count, output) != sample_count)
+    if (sample_count == 0 || !save_wav_file("output_audio.wav", (const float*)samples, sample_count, sample_rate))
         goto cleanup;
-    printf("Saved %zu float32 samples at %u Hz\\n", sample_count, sample_rate);
     status = 0;
 
 cleanup:
-    if (output) fclose(output);
     ov_tensor_free(speech);
     ov_genai_text2speech_decoded_results_free(results);
     ov_genai_speech_generation_config_free(config);
