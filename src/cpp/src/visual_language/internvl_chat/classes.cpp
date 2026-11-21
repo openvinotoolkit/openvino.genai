@@ -210,6 +210,12 @@ ov::Tensor merge_text_and_image_embeddings_internvl(
 
 } // namespace
 
+InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(const VLMModels& models,
+                                                       const Tokenizer& tokenizer,
+                                                       const std::string& device,
+                                                       const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties) {}
+
 InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,

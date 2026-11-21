@@ -3,11 +3,43 @@
 
 #include "visual_language/llava/classes.hpp"
 
+#include <cstring>
+
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
 
 namespace ov::genai {
+ov::Tensor merge_image_embeddings_with_slots(const std::vector<bool>& image_slots,
+                                             const ov::Tensor& text_embeddings,
+                                             const std::vector<ov::Tensor>& image_embeddings) {
+    const auto& shape = text_embeddings.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && image_slots.size() >= shape[1],
+                    "Image slots must cover the language embedding suffix");
+    const size_t prefix = image_slots.size() - shape[1];
+    const size_t row_bytes = shape[2] * text_embeddings.get_element_type().size();
+    ov::Tensor merged(text_embeddings.get_element_type(), shape);
+    text_embeddings.copy_to(merged);
+    auto* destination = static_cast<uint8_t*>(merged.data());
+    size_t token = shape[1];
+    for (auto image = image_embeddings.rbegin(); image != image_embeddings.rend(); ++image) {
+        const auto& image_shape = image->get_shape();
+        OPENVINO_ASSERT(image->get_element_type() == text_embeddings.get_element_type() && image_shape.size() == 3 &&
+                            image_shape[0] == 1 && image_shape[2] == shape[2],
+                        "Image embeddings must match the language embedding width and type");
+        const auto* source = static_cast<const uint8_t*>(image->data());
+        for (size_t row = image_shape[1]; row > 0; --row) {
+            while (token && !image_slots[prefix + token - 1])
+                --token;
+            if (!token)
+                return merged;
+            --token;
+            std::memcpy(destination + token * row_bytes, source + (row - 1) * row_bytes, row_bytes);
+        }
+    }
+    return merged;
+}
+
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
     // Resize
     clip_image_u8 resized_image;
@@ -61,13 +93,21 @@ EncodedImage VisionEncoderLLaVA::encode( const ov::Tensor& image, const ov::AnyM
     return {std::move(image_features), resized_source_size};
 }
 
+InputsEmbedderLLaVA::InputsEmbedderLLaVA(const VLMModels& models,
+                                         const Tokenizer& tokenizer,
+                                         const std::string& device,
+                                         const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties),
+      m_image_token_is_placeholder(models.config.image_token_is_placeholder) {}
+
 InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
     const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) { }
+    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config),
+    m_image_token_is_placeholder(vlm_config.image_token_is_placeholder) { }
 
 InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const VLMConfig& vlm_config,
@@ -76,7 +116,8 @@ InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
+    m_image_token_is_placeholder(vlm_config.image_token_is_placeholder) { }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
@@ -129,13 +170,75 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_pro
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
         return inputs_embeds;
     }
+    if (m_image_token_is_placeholder)
+        return merge_image_embeddings_with_slots(m_image_slots, text_embeds, image_embeds);
     auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+    const auto encoded_image_token =
+        m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
     return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+}
+
+ov::Tensor InputsEmbedderLLaVA::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
+    if (!m_image_token_is_placeholder || prompt.find(m_vlm_config.im_start) == std::string::npos) {
+        auto ids = IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
+        if (m_image_token_is_placeholder)
+            m_image_slots.assign(ids.get_size(), false);
+        return ids;
+    }
+
+    std::string rendered = prompt;
+    if (!m_is_chat_conversation && m_prompt_formatting == PromptFormatting::NeedsTemplate) {
+        const auto start = std::chrono::steady_clock::now();
+        rendered = m_tokenizer.apply_chat_template({{{"role", "user"}, {"content", prompt}}}, true);
+        metrics.raw_metrics.chat_template_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start));
+    }
+    const bool add_special = m_add_special_tokens_is_set
+                                 ? m_add_special_tokens
+                                 : !m_is_chat_conversation && m_prompt_formatting == PromptFormatting::Raw;
+    const auto start = std::chrono::steady_clock::now();
+    std::vector<int64_t> tokens;
+    m_image_slots.clear();
+    const auto& marker = m_vlm_config.im_start;
+    size_t offset = 0;
+    bool first = true;
+    bool defer_eos = false;
+    while (true) {
+        const auto next = rendered.find(marker, offset);
+        const auto text = rendered.substr(offset, next == std::string::npos ? next : next - offset);
+        if (!text.empty() || first) {
+            const auto encoded = m_tokenizer.encode(text, add_special_tokens(first && add_special)).input_ids;
+            size_t encoded_size = encoded.get_size();
+            if (first && add_special && m_vlm_config.add_eos_token && m_tokenizer.get_eos_token_id() >= 0) {
+                OPENVINO_ASSERT(encoded_size > 0 &&
+                                encoded.data<const int64_t>()[encoded_size - 1] == m_tokenizer.get_eos_token_id());
+                --encoded_size;
+                defer_eos = true;
+            }
+            tokens.insert(tokens.end(), encoded.data<const int64_t>(), encoded.data<const int64_t>() + encoded_size);
+            m_image_slots.resize(tokens.size(), false);
+        }
+        first = false;
+        if (next == std::string::npos)
+            break;
+        // Insert image slots directly; the marker is not a vocabulary token.
+        tokens.push_back(m_vlm_config.image_token_id);
+        m_image_slots.push_back(true);
+        offset = next + marker.size();
+    }
+    if (defer_eos) {
+        tokens.push_back(m_tokenizer.get_eos_token_id());
+        m_image_slots.push_back(false);
+    }
+    ov::Tensor ids(ov::element::i64, {1, tokens.size()});
+    std::copy(tokens.begin(), tokens.end(), ids.data<int64_t>());
+    metrics.raw_metrics.tokenization_durations.emplace_back(
+        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start));
+    return ids;
 }
 
 } // namespace ov::genai

@@ -207,8 +207,10 @@ configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.cpp.in"
 # Object library
 if(NOT ENABLE_GGUF)
     set(GGUF_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf.cpp
+                     ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_clip_adapter.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp
+                     ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_multimodal.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/building_blocks.cpp)
     list(REMOVE_ITEM SOURCE_FILES ${GGUF_SOURCES})
 endif()
@@ -230,8 +232,8 @@ endif()
 if(ENABLE_GGUF)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
-    # GGUF conversion routes through the OpenVINO GGUF frontend + its GenAIExtension
-    # (header openvino/frontend/gguf/extension/genai.hpp). The frontend is a LINKABLE_FRONTEND
+    # GGUF conversion routes through the OpenVINO GGUF frontend and its adapt_to_genai()
+    # entry point. The frontend is a LINKABLE_FRONTEND
     # exported by OpenVINO as openvino::frontend::gguf.
     if(TARGET openvino::frontend::gguf)
         target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::frontend::gguf)

@@ -21,6 +21,11 @@ public:
 
 class InputsEmbedderQwen3VL : public InputsEmbedderQwen2VL {
 public:
+    InputsEmbedderQwen3VL(const VLMModels& models,
+                          const Tokenizer& tokenizer,
+                          const std::string& device,
+                          const ov::AnyMap& properties);
+
     InputsEmbedderQwen3VL(const VLMConfig& vlm_config,
                           const std::filesystem::path& model_dir,
                           const Tokenizer& tokenizer,
@@ -65,6 +70,8 @@ protected:
     // device (faster, deterministic on GPU). Setting the VISION_POS_EMBEDS=CPP environment
     // variable disables the patch and falls back to a C++ weighted sum on the host.
     bool m_use_patched_pos_model = true;
+
+    void compile_pos_model(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties);
 
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs{
         {"deepstack_visual_embeds", ov::Tensor()},
