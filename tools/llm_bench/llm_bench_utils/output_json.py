@@ -124,6 +124,12 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         "tts_output_duration",
         "tts_rtf",
     ]
+    sentinel_keys = {
+        "first_latency",
+        "second_avg_latency",
+        "first_infer_latency",
+        "second_infer_avg_latency",
+    }
     results_averaged = {}
     for key in keys_to_average:
         values = []
@@ -132,6 +138,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
                 continue
             value = entry.get(key, "")
             if value != "" and value is not None:
+                if key in sentinel_keys and value < 0:
+                    continue
                 values.append(value)
         if len(values) > 0:
             results_averaged[key] = round(sum(values) / len(values), 5)
