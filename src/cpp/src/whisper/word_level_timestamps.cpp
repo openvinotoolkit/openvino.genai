@@ -430,18 +430,18 @@ std::vector<ov::genai::WhisperWordTiming> match_words_to_alignment_path(
     const std::vector<std::pair<size_t, size_t>>& alignment_path,
     const float chunk_time_offset) {
     // jumps = np.pad(np.diff(alignment.index1s), (1, 0), constant_values=1).astype(bool)
-    std::vector<size_t> jumps_indicies;
-    jumps_indicies.push_back(0);  // First element is always a jump
+    std::vector<size_t> jumps_indices;
+    jumps_indices.push_back(0);  // First element is always a jump
     for (size_t i = 1; i < alignment_path.size(); ++i) {
         auto prev_token_idx = alignment_path[i - 1].first;
         auto curr_token_idx = alignment_path[i].first;
         if (curr_token_idx != prev_token_idx) {
-            jumps_indicies.push_back(i);
+            jumps_indices.push_back(i);
         }
     }
 
     std::vector<float> jump_times;
-    for (const auto& jump_idx : jumps_indicies) {
+    for (const auto& jump_idx : jumps_indices) {
         const auto frame_idx = alignment_path[jump_idx].second;
         jump_times.push_back(frame_idx * 0.02f);  // 20ms per frame
     }
@@ -483,7 +483,7 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(const std::vector<ov:
     const auto reduced_batch_tensor = reduce_batch_dim(filtered_alignment_qks);
     const auto matrix = mean_across_heads(reduced_batch_tensor);
 
-    // matix shape: [sot_tokens.size():-1]
+    // matrix shape: [sot_tokens.size():-1]
     auto matrix_text_tokens_slice =
         std::vector<std::vector<float>>(matrix.begin() + sot_tokens.size(), matrix.end() - 1);
 

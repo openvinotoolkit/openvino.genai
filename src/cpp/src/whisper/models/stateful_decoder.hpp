@@ -8,13 +8,13 @@
 
 namespace ov::genai {
 
-class WhisperStatefullDecoder : public WhisperDecoder {
+class WhisperStatefulDecoder : public WhisperDecoder {
 public:
-    WhisperStatefullDecoder(const std::filesystem::path& models_path,
-                            const std::string& device,
-                            const ov::AnyMap& properties,
-                            const ov::PartialShape& lhs_shape,
-                            const bool decompose_cross_attention_spda_ops);
+    WhisperStatefulDecoder(const std::filesystem::path& models_path,
+                           const std::string& device,
+                           const ov::AnyMap& properties,
+                           const ov::PartialShape& lhs_shape,
+                           const bool decompose_cross_attention_spda_ops);
 
     void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) override;
 

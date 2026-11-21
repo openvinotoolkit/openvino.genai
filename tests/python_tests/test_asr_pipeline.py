@@ -1289,6 +1289,36 @@ def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
     result_handler.reset()
 
 
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_interrupted_streaming_leaves_pipeline_reusable(model_descr, sample_from_dataset):
+    class RaiseOnThirdWrite(ov_genai.StreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.writes = 0
+
+        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+            self.writes += 1
+            if self.writes == 3:
+                raise ValueError("streamer failure")
+            return ov_genai.StreamingStatus.RUNNING
+
+        def end(self) -> None:
+            pass
+
+    _, path, _, _ = read_asr_model(model_descr)
+    genai_pipe = ov_genai.WhisperPipeline(path, "CPU", ENABLE_MMAP=False)
+    expected = genai_pipe.generate(sample_from_dataset, language="en").texts
+
+    genai_pipe.generate(sample_from_dataset, language="en", min_new_tokens=200)
+    assert genai_pipe.generate(sample_from_dataset, language="en").texts == expected
+
+    with pytest.raises(ValueError, match="streamer failure"):
+        genai_pipe.generate(sample_from_dataset, language="en", min_new_tokens=200, streamer=RaiseOnThirdWrite())
+
+    assert genai_pipe.generate(sample_from_dataset, language="en").texts == expected
+
+
 @pytest.mark.parametrize(
     "pipelines_fixture",
     get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]) + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
