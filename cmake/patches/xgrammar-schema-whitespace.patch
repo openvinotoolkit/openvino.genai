@@ -1,0 +1,16 @@
+diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
+index 80145a1..18f2707 100644
+--- a/cpp/json_schema_converter.cc
++++ b/cpp/json_schema_converter.cc
+@@ -56,4 +56,4 @@ class IndentManager {
+         max_whitespace_cnt_(max_whitespace_cnt) {
+-    if (max_whitespace_cnt.has_value() && max_whitespace_cnt.value() <= 0) {
+-      XGRAMMAR_LOG(FATAL) << ("max_whitespace_cnt must be positive.");
++    if (max_whitespace_cnt.has_value() && max_whitespace_cnt.value() < 0) {
++      XGRAMMAR_LOG(FATAL) << ("max_whitespace_cnt must be non-negative.");
+     }
+@@ -655,3 +655,3 @@ void JSONSchemaConverter::AddBasicRules(JSONFormat json_format) {
+   if (any_whitespace_) {
+-    indentManager_ = IndentManager(std::nullopt, ",", true, std::nullopt);
++    indentManager_ = IndentManager(std::nullopt, ",", true, max_whitespace_cnt_);
+   } else {

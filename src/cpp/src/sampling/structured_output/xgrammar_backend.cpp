@@ -69,7 +69,12 @@ xgrammar::Grammar XGrammarStructuredOutput::create_grammar(const std::optional<S
     }
 
     if (structured_output_config.value().json_schema.has_value()) {
-        return xgrammar::Grammar::FromJSONSchema(structured_output_config.value().json_schema.value());
+        return xgrammar::Grammar::FromJSONSchema(*structured_output_config->json_schema,
+                                                 /*any_whitespace=*/true,
+                                                 /*indent=*/std::nullopt,
+                                                 /*separators=*/std::nullopt,
+                                                 /*strict_mode=*/true,
+                                                 structured_output_config->max_whitespace_cnt);
     } else if (structured_output_config.value().regex.has_value()) {
         return xgrammar::Grammar::FromRegex(structured_output_config.value().regex.value());
     } else if (structured_output_config.value().grammar.has_value()) {
