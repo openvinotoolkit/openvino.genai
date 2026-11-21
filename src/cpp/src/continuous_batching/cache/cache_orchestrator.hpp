@@ -23,6 +23,7 @@
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "continuous_batching/cache/plugin_managed_kv_cache_manager.hpp"
 #include "logger.hpp"
 
 namespace ov::genai {
@@ -183,9 +184,13 @@ public:
             (la_mgr ? la_mgr->get_num_cache_tensors() : 0);
         const std::string allocation_device = kv_mgr ? kv_mgr->get_device()
                                             : (la_mgr ? la_mgr->get_device() : std::string{});
-        const size_t total_available_memory = allocation_device.empty()
-                                                  ? std::numeric_limits<size_t>::max()
-                                                  : get_available_memory(allocation_device, num_cache_tensors);
+        const auto managed_available_memory = kv_mgr ? kv_mgr->get_available_memory() : std::nullopt;
+        size_t total_available_memory = std::numeric_limits<size_t>::max();
+        if (managed_available_memory) {
+            total_available_memory = *managed_available_memory;
+        } else if (!allocation_device.empty()) {
+            total_available_memory = get_available_memory(allocation_device, num_cache_tensors);
+        }
         const size_t cache_interval = get_linear_attention_cache_interval(kv_mgr.get(), la_mgr.get(), config);
 
         // Only an explicitly requested count is a hard ceiling.
@@ -801,6 +806,17 @@ public:
         return first_cache_manager.get_device();
     }
 
+    /// Memory the caches can still take when their manager knows it (a plugin-managed cache); std::nullopt:
+    /// measure get_device().
+    std::optional<size_t> get_available_memory() const {
+        for (const auto& [type, cache_mgr] : m_cache_managers) {
+            if (auto available = cache_mgr->get_available_memory()) {
+                return available;
+            }
+        }
+        return std::nullopt;
+    }
+
     size_t get_num_cache_tensors() const {
         size_t total = 0;
         for (const auto& [type, cache_mgr] : m_cache_managers) {
@@ -1095,12 +1111,18 @@ private:
      *        Validates that LA-specific config fields are not set when no LA cache is present.
      *        Returns a tuple of (kv_manager, la_manager).
      */
-    static std::tuple<std::unique_ptr<KVCacheManager>, std::unique_ptr<LinearAttentionCacheManager>>
+    static std::tuple<std::unique_ptr<IKVCacheManager>, std::unique_ptr<LinearAttentionCacheManager>>
     detect_cache_managers(ov::InferRequest& infer_request, const SchedulerConfig& config) {
         ov::CompiledModel compiled_model = infer_request.get_compiled_model();
 
-        std::unique_ptr<KVCacheManager> kv_manager;
-        if (KVCacheManager::has_cache_inputs(compiled_model)) {
+        std::unique_ptr<IKVCacheManager> kv_manager;
+        // Asked first: a plugin that manages the cache, e.g. because it splits it across devices, may report
+        // cache inputs the application cannot allocate.
+        if (auto managed_cache = PluginManagedKVCacheManager::find(compiled_model)) {
+            kv_manager = std::make_unique<PluginManagedKVCacheManager>(
+                std::move(managed_cache),
+                compiled_model.get_property(ov::execution_devices).at(0));
+        } else if (KVCacheManager::has_cache_inputs(compiled_model)) {
             kv_manager = std::make_unique<KVCacheManager>(infer_request);
         }
 
@@ -1115,7 +1137,7 @@ private:
         return {std::move(kv_manager), std::move(la_manager)};
     }
 
-    static size_t get_linear_attention_cache_interval(const KVCacheManager* kv_manager,
+    static size_t get_linear_attention_cache_interval(const IKVCacheManager* kv_manager,
                                                       const LinearAttentionCacheManager* la_manager,
                                                       const SchedulerConfig& config) {
         if (!la_manager || !config.enable_prefix_caching) {
@@ -1159,7 +1181,7 @@ private:
      *        Returns a tuple of (num_kv_blocks, num_la_blocks).
      */
     static std::tuple<size_t, size_t>
-    normalize_block_counts(const KVCacheManager* kv_manager,
+    normalize_block_counts(const IKVCacheManager* kv_manager,
                           const LinearAttentionCacheManager* la_manager,
                           const SchedulerConfig& config,
                           size_t cache_interval,
@@ -1253,7 +1275,7 @@ private:
     /**
      * @brief Create a BlockManager for KV cache and register it with this orchestrator.
      */
-    void register_kv_cache(std::unique_ptr<KVCacheManager> kv_manager,
+    void register_kv_cache(std::unique_ptr<IKVCacheManager> kv_manager,
                            const SchedulerConfig& config) {
         const bool per_layer_control = config.use_cache_eviction;
         const size_t num_block_table_layers = per_layer_control ? kv_manager->get_num_layers() : 1;
