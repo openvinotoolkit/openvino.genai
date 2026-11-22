@@ -690,6 +690,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
+    m_validated_windows.clear();
 
     _pull_awaiting_requests();
     _validate_linear_verifier_constraints();
@@ -819,6 +820,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         m_pipeline_metrics.sampling_duration =
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
+        m_validated_windows = sampler_output.validated_windows;
         timer.end();
     }
 

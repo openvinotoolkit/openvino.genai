@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
-#include <optional>
 #include <thread>
 
 #include "openvino/genai/text_streamer.hpp"
@@ -240,9 +239,6 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         for (const auto& candidate : draft_generated_requests) {
             auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
             num_submitted_candidates += update_result.inserted_tokens_cnt;
-            if (update_result.inserted_tokens_cnt > 0) {
-                add_to_validation_window(candidate.first, update_result.inserted_tokens_cnt);
-            }
             update_sequence_info.insert({{candidate.first, update_result}});
         }
         m_main_pipeline->sync_generated_embeddings();
@@ -305,7 +301,14 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
             auto updated_seq_info = update_sequence_info[request_id];
             m_sd_metrics.update_draft_generated_len(request_id, updated_seq_info.inserted_tokens_cnt);
         }
-        count_validated_windows();
+        // A validation window runs in one forward, so the main model's step validated each of its windows in full.
+        for (const auto& [request_id, window] : m_main_pipeline->get_validated_windows()) {
+            m_perf_metrics.num_draft_tokens += window.num_candidates;
+            m_perf_metrics.num_accepted_tokens += window.num_accepted;
+            m_sd_metrics.update_acceptance_rate(request_id,
+                                                100.f * static_cast<float>(window.num_accepted) / window.num_candidates);
+            m_sd_metrics.update_draft_accepted_tokens(request_id, window.num_accepted);
+        }
 
         const auto step_end = std::chrono::steady_clock::now();
         const auto step_microsec_duration = PerfMetrics::get_microsec(step_end - step_start);
@@ -341,64 +344,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_main_pipeline->fail_pipeline(error);
         m_draft_pipeline->fail_pipeline(error);
         m_draft_generations.clear();
-        m_validation_windows.clear();
         std::rethrow_exception(error);
-    }
-}
-
-void ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_to_validation_window(uint64_t request_id,
-                                                                                   size_t num_candidates) {
-    const SequenceGroup::Ptr main_request = m_main_pipeline->find_request(request_id);
-    OPENVINO_ASSERT(main_request, "Request ", request_id, " got candidates while the main model does not run it.");
-    ValidationWindow& window = m_validation_windows[request_id];
-    // A window of an earlier request with the same id is dropped.
-    if (window.main_request != main_request) {
-        window = ValidationWindow{};
-        window.main_request = main_request;
-        for (const auto& sequence : main_request->get_running_sequences()) {
-            window.num_accepted_before[sequence->get_grouped_id()] = sequence->get_num_accepted_candidates();
-        }
-    }
-    window.num_candidates += num_candidates;
-}
-
-void ContinuousBatchingPipeline::SpeculativeDecodingImpl::count_validated_windows() {
-    for (auto window_it = m_validation_windows.begin(); window_it != m_validation_windows.end();) {
-        const uint64_t request_id = window_it->first;
-        ValidationWindow& window = window_it->second;
-        const SequenceGroup::Ptr& main_request = window.main_request;
-        const bool is_main_running = m_main_pipeline->find_request(request_id) == main_request;
-        // A step that does not schedule the request validates none of the candidates.
-        if (is_main_running && main_request->get_num_tokens_to_validate() > 0) {
-            ++window_it;
-            continue;
-        }
-        const auto& main_sequences = main_request->get_sequences();
-        const bool is_main_out_of_memory =
-            std::any_of(main_sequences.begin(), main_sequences.end(), [](const Sequence::Ptr& sequence) {
-                return sequence->out_of_memory();
-            });
-        std::optional<size_t> num_accepted;
-        if (is_main_running || !(is_main_out_of_memory || main_request->handle_stopped() ||
-                                 main_request->handle_cancelled())) {
-            // A finished request validated the rest of its candidates; a stopped one or one out of memory did not.
-            num_accepted = window.num_candidates;
-            for (const auto& sequence : main_sequences) {
-                const auto before_it = window.num_accepted_before.find(sequence->get_grouped_id());
-                if (before_it == window.num_accepted_before.end()) {
-                    continue;
-                }
-                num_accepted = std::min(*num_accepted, sequence->get_num_accepted_candidates() - before_it->second);
-            }
-        }
-        if (num_accepted.has_value()) {
-            m_perf_metrics.num_draft_tokens += window.num_candidates;
-            m_perf_metrics.num_accepted_tokens += *num_accepted;
-            m_sd_metrics.update_acceptance_rate(request_id,
-                                                100.f * static_cast<float>(*num_accepted) / window.num_candidates);
-            m_sd_metrics.update_draft_accepted_tokens(request_id, *num_accepted);
-        }
-        window_it = m_validation_windows.erase(window_it);
     }
 }
 

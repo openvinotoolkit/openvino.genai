@@ -84,12 +84,13 @@ public:
     UpdateRequestResult update_request(uint64_t request_id,
                                        const GeneratedSequences& candidates,
                                        bool is_update_logit_processor);
-    // Returns the request with the given id that the pipeline runs, or nullptr if there is none.
-    SequenceGroup::Ptr find_request(uint64_t request_id) const;
     void sync_generated_embeddings();
     bool is_requests_empty();
 
     size_t get_processed_tokens_per_iteration();
+    const std::unordered_map<uint64_t, SamplerOutput::ValidatedWindow>& get_validated_windows() const {
+        return m_validated_windows;
+    }
 
     // Rewinds an awaiting request to an earlier processed-prefix position and synchronizes
     // physical block tables with the updated logical context.

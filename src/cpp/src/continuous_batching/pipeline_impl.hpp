@@ -39,6 +39,8 @@ protected:
 
     // for perf metrics
     size_t m_batch_size = 0; // stored number of processed tokens on last step
+    // the validation windows that the last step validated, by request id
+    std::unordered_map<uint64_t, SamplerOutput::ValidatedWindow> m_validated_windows;
 
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
