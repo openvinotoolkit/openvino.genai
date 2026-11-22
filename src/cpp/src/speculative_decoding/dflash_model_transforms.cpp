@@ -43,20 +43,22 @@ constexpr const char* DFLASH_HIDDEN_STATES_RT_INFO_KEY = "hidden_states_decoder_
 constexpr const char* LAST_HIDDEN_STATE_OUTPUT_NAME = "last_hidden_state";
 constexpr const char* DFLASH_GPU_MIN_ACTIVATIONS_SCALE_FACTOR = "dflash_gpu_min_activations_scale_factor";
 
-float parse_dflash_gpu_min_activations_scale_factor(const std::string& value) {
+// extract_dflash_info_from_config() checks the range, which also covers a value passed as a property.
+float parse_dflash_float(const char* name, const std::string& value) {
     size_t parsed_characters = 0;
-    float scale_factor = 0.0f;
+    float parsed = 0.0f;
     try {
-        scale_factor = std::stof(value, &parsed_characters);
+        parsed = std::stof(value, &parsed_characters);
     } catch (const std::logic_error&) {
         parsed_characters = 0;
     }
-    OPENVINO_ASSERT(parsed_characters > 0 && parsed_characters == value.size() && std::isfinite(scale_factor) &&
-                        scale_factor > 0.0f,
-                    "DFlash-2 gpu_min_activations_scale_factor must be a finite positive number, got '",
+    OPENVINO_ASSERT(parsed_characters > 0 && parsed_characters == value.size(),
+                    "DFlash ",
+                    name,
+                    " must be a number, got '",
                     value,
                     "'.");
-    return scale_factor;
+    return parsed;
 }
 
 constexpr const char* DFLASH_MARKOV_RANK = "dflash_markov_rank";
@@ -478,16 +480,16 @@ void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& propert
             model,
             {"dflash", "gpu_min_activations_scale_factor"})) {
         properties[DFLASH_GPU_MIN_ACTIVATIONS_SCALE_FACTOR] =
-            parse_dflash_gpu_min_activations_scale_factor(*gpu_min_scale);
+            parse_dflash_float("gpu_min_activations_scale_factor", *gpu_min_scale);
     }
     if (auto input_scale = get_rt_info_value<std::string>(model, {"dflash", "input_embedding_scale"})) {
-        properties["dflash_input_embedding_scale"] = std::stof(*input_scale);
+        properties["dflash_input_embedding_scale"] = parse_dflash_float("input_embedding_scale", *input_scale);
     }
     if (auto output_multiplier = get_rt_info_value<std::string>(model, {"dflash", "output_multiplier"})) {
-        properties["dflash_output_multiplier"] = std::stof(*output_multiplier);
+        properties["dflash_output_multiplier"] = parse_dflash_float("output_multiplier", *output_multiplier);
     }
     if (auto softcap = get_rt_info_value<std::string>(model, {"dflash", "final_logit_softcapping"})) {
-        properties["dflash_final_logit_softcapping"] = std::stof(*softcap);
+        properties["dflash_final_logit_softcapping"] = parse_dflash_float("final_logit_softcapping", *softcap);
     }
     // Drafts with a Markov head, such as DSpark. A missing or zero markov_rank is a plain DFlash draft.
     if (auto markov_rank = get_rt_info_value<std::string>(model, {"dflash", "markov_rank"})) {
@@ -549,7 +551,7 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
         config.erase(gpu_min_scale_it);
         OPENVINO_ASSERT(
             std::isfinite(info.gpu_min_activations_scale_factor) && info.gpu_min_activations_scale_factor > 0.0f,
-            "DFlash gpu_min_activations_scale_factor must be a finite positive number, got ",
+            "DFlash gpu_min_activations_scale_factor must be positive and finite, got ",
             info.gpu_min_activations_scale_factor,
             ".");
     }
@@ -567,6 +569,19 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
         info.final_logit_softcapping = softcap_it->second.as<float>();
         config.erase(softcap_it);
     }
+    // An infinite value passes the sign checks, and gives the draft logits NaN or infinite values.
+    OPENVINO_ASSERT(std::isfinite(info.input_embedding_scale) && info.input_embedding_scale > 0.0f,
+                    "DFlash input_embedding_scale must be positive and finite, got ",
+                    info.input_embedding_scale,
+                    ".");
+    OPENVINO_ASSERT(std::isfinite(info.output_multiplier) && info.output_multiplier > 0.0f,
+                    "DFlash output_multiplier must be positive and finite, got ",
+                    info.output_multiplier,
+                    ".");
+    OPENVINO_ASSERT(std::isfinite(info.final_logit_softcapping) && info.final_logit_softcapping >= 0.0f,
+                    "DFlash final_logit_softcapping must be finite and not negative, got ",
+                    info.final_logit_softcapping,
+                    ".");
     if (auto rank_it = config.find(DFLASH_MARKOV_RANK); rank_it != config.end()) {
         info.markov_rank = rank_it->second.as<size_t>();
         config.erase(rank_it);
