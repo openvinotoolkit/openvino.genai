@@ -38,7 +38,6 @@ bool should_use_stateful_pipeline(bool is_npu_requested,
                                   const std::string& attention_backend,
                                   const std::shared_ptr<ov::Model>& main_model,
                                   const ov::AnyMap& properties) {
-    ov::genai::utils::dflash::reject_dflash_draft_on_npu(is_npu_requested, properties);
     if (is_npu_requested) {
         return true;
     }
@@ -258,6 +257,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
+    utils::dflash::reject_dflash_draft_on_npu(is_npu_requested, properties);
     utils::extract_extensions_to_core(properties);
 
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
@@ -303,6 +303,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
+    utils::dflash::reject_dflash_draft_on_npu(is_npu_requested, properties);
 
     // The reader choice determines whether tokenizer metadata is available on the model.
     const auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
@@ -365,6 +366,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
+    utils::dflash::reject_dflash_draft_on_npu(is_npu_requested, properties);
     utils::extract_extensions_to_core(properties);
 
     std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
