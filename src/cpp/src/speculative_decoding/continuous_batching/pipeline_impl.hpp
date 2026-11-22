@@ -192,6 +192,7 @@ public:
     void set_hidden_state_export_needed(bool is_needed) {
         if (m_model_runner) {
             m_model_runner->enable_hidden_state_export(is_needed);
+            m_model_runner->enable_unscheduled_hidden_state_preservation(is_needed);
         }
     }
 
