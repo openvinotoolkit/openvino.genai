@@ -1690,11 +1690,14 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     LogitProcessor& logit_processor = ctx.logit_processor;
     const std::pair<size_t, std::set<std::string>>& stop_strings = ctx.stop_strings;
 
-    OPENVINO_ASSERT(!is_validation_mode_enabled || num_tokens_to_process < output_seq_len,
-                    "The validation window of sequence group ", sequence_group->get_request_id(), " has ",
-                    num_tokens_to_process, " candidates but ", output_seq_len,
-                    " rows; the scheduler runs a validation window in one forward");
-    if (num_tokens_to_process > output_seq_len - 1) {
+    if (is_validation_mode_enabled) {
+        OPENVINO_ASSERT(num_tokens_to_process < output_seq_len,
+                        "The validation window of sequence group ", sequence_group->get_request_id(), " has ",
+                        num_tokens_to_process, " candidates but ", output_seq_len,
+                        " rows; the scheduler runs a validation window in one forward");
+    } else if (num_tokens_to_process > output_seq_len - 1) {
+        // A draft request can run the tokens it took over from the main model over several forwards; the rest stay
+        // pending.
         auto delta = num_tokens_to_process - (output_seq_len - 1);
         assisting_pipeline_info.updated_validation_len = std::max(assisting_pipeline_info.updated_validation_len, delta);
         num_tokens_to_process -= delta;
