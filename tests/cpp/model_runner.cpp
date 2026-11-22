@@ -383,6 +383,7 @@ TEST(TestModelRunnerHiddenStateExport, unscheduled_sequence_keeps_its_rows) {
     ov::InferRequest request = core.compile_model(create_dummy_hidden_state_export_model(), "CPU").create_infer_request();
     ModelRunner runner(request, /*block_size=*/4, /*num_decoder_layers=*/1);
     runner.enable_hidden_state_export(true);
+    runner.enable_unscheduled_hidden_state_preservation(true);
 
     const std::vector<int64_t> first_prompt = {1, 2, 3};
     const std::vector<int64_t> second_prompt = {4, 5, 6};

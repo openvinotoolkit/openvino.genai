@@ -409,6 +409,8 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
+    // Speculative decoding reads the hidden state of a sequence after a forward that did not run it.
+    bool m_preserve_unscheduled_hidden_states = false;
     bool m_mtp_draft_positions = false;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
@@ -525,6 +527,7 @@ public:
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
+    void enable_unscheduled_hidden_state_preservation(bool on) { m_preserve_unscheduled_hidden_states = on; }
 
     // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
     void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on && !m_has_mrope_position_ids; }
@@ -1459,7 +1462,7 @@ private:
     void _preserve_hidden_states_of_unscheduled_sequences(
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
         const ContinuousBatchingScheduler::Output& scheduler_output) const {
-        if (m_sequence_hidden_state_mapping.empty()) {
+        if (!m_preserve_unscheduled_hidden_states || m_sequence_hidden_state_mapping.empty()) {
             return;
         }
         std::vector<bool> is_scheduled(sequence_groups.size(), false);
