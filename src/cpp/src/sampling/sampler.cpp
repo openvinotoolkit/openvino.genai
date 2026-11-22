@@ -1112,7 +1112,9 @@ align_all_sequence_len(SequenceGroup::Ptr& sequence_group,
 size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
                                   const ov::Tensor& sequence_group_logits,
                                   LogitProcessor& logit_processor,
-                                  size_t num_tokens_to_validate) {
+                                  size_t num_tokens_to_validate,
+                                  size_t& num_accepted_candidates) {
+    num_accepted_candidates = 0;
     OPENVINO_ASSERT(num_tokens_to_validate > 0,
                     "verify_draft_tree: num_tokens_to_validate must be > 0, got ",
                     num_tokens_to_validate);
@@ -1233,7 +1235,7 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
                         num_tokens_to_validate,
                         ")");
         logit_idx = num_tokens_to_validate - retrieve_index_u;
-        sequence->count_accepted_candidate();
+        ++num_accepted_candidates;
 
         if (is_stop_token_id_hit(pred_token, sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
             // The accepted token is EOS/stop; treat it as the bonus token so the sequence
@@ -1383,9 +1385,11 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
                                                     : SamplingDistribution(logits).sample(ctx.rng_engine);
     };
     size_t num_sampled_rows = 0;
+    size_t num_accepted = num_candidates;
     const std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
     for (size_t running_sequence_id = 0; running_sequence_id < running_sequences.size(); ++running_sequence_id) {
         const Sequence::Ptr& running_sequence = running_sequences[running_sequence_id];
+        size_t num_accepted_by_sequence = 0;
         // Row i predicts the position of candidate i, and the last row the token after the window.
         for (size_t i = 0; i <= num_tokens_to_process; ++i) {
             if (running_sequence->has_finished())
@@ -1443,7 +1447,7 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
             }
             running_sequence->update_generated_log_prob(candidate_index, verdict.token.m_log_prob);
             running_sequence->clear_draft_proposal(candidate_index);
-            running_sequence->count_accepted_candidate();
+            ++num_accepted_by_sequence;
             logit_processor.register_new_generated_token(candidate);
             finish_at_stop_token(verdict.token,
                                  running_sequence,
@@ -1451,8 +1455,15 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
                                  sampling_params,
                                  sg_sampling_info);
         }
+        num_accepted = std::min(num_accepted, num_accepted_by_sequence);
         assisting_pipeline_info.min_generated_len =
             std::min(assisting_pipeline_info.min_generated_len, running_sequence->get_generated_len());
+    }
+
+    if (num_candidates > 0) {
+        sg_sampling_info.sampler_output.validated_windows.emplace(
+            sequence_group->get_request_id(),
+            SamplerOutput::ValidatedWindow{num_candidates, num_accepted});
     }
 
     if (sampling_params.is_greedy_decoding() && num_candidates > 0) {
@@ -1750,10 +1761,15 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             // Target-model validation pass: validate the candidate tree against target logits.
             std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
             OPENVINO_ASSERT(running_sequences.size() == 1);
+            size_t num_accepted_candidates = 0;
             size_t valid_tokens = verify_draft_tree(running_sequences[0],
                                                     sequence_group_logits,
                                                     logit_processor,
-                                                    num_generated_tokens_to_validate);
+                                                    num_generated_tokens_to_validate,
+                                                    num_accepted_candidates);
+            sg_sampling_info.sampler_output.validated_windows.emplace(
+                request_id,
+                SamplerOutput::ValidatedWindow{num_generated_tokens_to_validate, num_accepted_candidates});
             assisting_pipeline_info.max_removed_tokens_per_request =
                 std::max(assisting_pipeline_info.max_removed_tokens_per_request,
                          num_generated_tokens_to_validate + 1 - valid_tokens);
@@ -1933,6 +1949,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             sampler_output.acceptance_by_sequence.insert(
                 sg_sampling_info.sampler_output.acceptance_by_sequence.begin(),
                 sg_sampling_info.sampler_output.acceptance_by_sequence.end());
+            sampler_output.validated_windows.insert(sg_sampling_info.sampler_output.validated_windows.begin(),
+                                                    sg_sampling_info.sampler_output.validated_windows.end());
 
             // Merge sampler output from sequence group to the main one
             sampler_output.m_dropped_sequences.insert(

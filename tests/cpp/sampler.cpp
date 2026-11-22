@@ -1160,11 +1160,37 @@ TEST(SamplerValidationMode, counts_the_stop_token_accepted_on_a_tree_path) {
         5.f, 0, 0, 0, 0,
     };
     Sampler sampler;
-    sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
+    const SamplerOutput output =
+        sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
 
-    const auto sequence = group->get_sequences().front();
-    EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{0, 1, 4}));
-    EXPECT_EQ(sequence->get_num_accepted_candidates(), 2u);
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 4}));
+    const auto window = output.validated_windows.find(group->get_request_id());
+    ASSERT_NE(window, output.validated_windows.end());
+    EXPECT_EQ(window->second.num_candidates, 3u);
+    EXPECT_EQ(window->second.num_accepted, 2u);
+}
+
+// The sampler reports the candidates of a validated window and the ones the main model accepted before it rejected
+// one.
+TEST(SamplerValidationMode, reports_the_accepted_candidates_of_a_validation_window) {
+    auto config = ov::genai::utils::get_greedy_config();
+    config.max_new_tokens = 30;
+    auto group = make_validation_group(config, {1, 2, 3});
+    std::vector<float> logits = {
+        0, 5.f, 0, 0, 0,
+        0, 0, 5.f, 0, 0,
+        0, 0, 0, 0, 5.f,
+        5.f, 0, 0, 0, 0,
+    };
+    Sampler sampler;
+    const SamplerOutput output =
+        sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
+
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 2, 4}));
+    const auto window = output.validated_windows.find(group->get_request_id());
+    ASSERT_NE(window, output.validated_windows.end());
+    EXPECT_EQ(window->second.num_candidates, 3u);
+    EXPECT_EQ(window->second.num_accepted, 2u);
 }
 
 // Accepted candidates report the main model's log-probabilities, and the sequence score must follow them.

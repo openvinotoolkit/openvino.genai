@@ -185,22 +185,6 @@ protected:
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
-    // The candidates of a request that the main model has not validated in full: the window counts in the acceptance
-    // metrics after the last of them is validated, also when the main request finished or the draft request ended.
-    struct ValidationWindow {
-        // Kept until the window counts, which can be after the main pipeline removed the request.
-        SequenceGroup::Ptr main_request;
-        size_t num_candidates = 0;
-        // The candidates that each main sequence, by grouped id, had accepted before the window. The window counts the
-        // ones the sampler accepted, which a matched stop string can remove from the generated tokens.
-        std::map<uint64_t, size_t> num_accepted_before;
-    };
-    std::map<uint64_t, ValidationWindow> m_validation_windows;
-
-    // Adds the candidates that update_request() just put in the main request to the window of the request.
-    void add_to_validation_window(uint64_t request_id, size_t num_candidates);
-    // Counts the windows whose candidates the main model validated in this step in the acceptance metrics.
-    void count_validated_windows();
 
     void reset_generate_metrics() {
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
