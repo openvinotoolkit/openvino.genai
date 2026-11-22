@@ -3765,14 +3765,18 @@ void free_requests(ContinuousBatchingScheduler& scheduler, const std::vector<Seq
 }
 }  // namespace
 
+// The validation window tests run with dynamic split fuse and without it: the vLLM prompt phase runs a prompt whole,
+// and both schedule the generation phase the same way.
+using ValidationWindowSchedulerTest = ::testing::TestWithParam<bool>;
+
 // The token budget has room for one validation window: the window of the second request waits for the next step
 // instead of running in part.
-TEST(TestScheduler, validation_window_runs_whole_or_waits_for_a_later_step) {
+TEST_P(ValidationWindowSchedulerTest, validation_window_runs_whole_or_waits_for_a_later_step) {
     constexpr size_t num_candidates = 3;
     constexpr size_t window = num_candidates + 1;
     SchedulerConfig scheduler_config;
     scheduler_config.num_kv_blocks = 32;
-    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.dynamic_split_fuse = GetParam();
     scheduler_config.max_num_batched_tokens = window + window / 2;
     scheduler_config.max_num_seqs = 4;
 
@@ -3807,16 +3811,18 @@ GenerationConfig get_validation_sampling_config(size_t num_sequences) {
 }
 }  // namespace
 
-// The running sequences of a group, one or two, validate their windows in the same forward.
-using ValidationWindowBudgetSchedulerTest = ::testing::TestWithParam<size_t>;
+// The running sequences of a group, one or two, validate their windows in the same forward, with dynamic split fuse
+// and without it. The windows are longer than the prompt, so the vLLM prompt phase runs it in a budget one row short of
+// them.
+using ValidationWindowBudgetSchedulerTest = ::testing::TestWithParam<std::tuple<size_t, bool>>;
 
 TEST_P(ValidationWindowBudgetSchedulerTest, validation_windows_of_all_sequences_run_together) {
-    const size_t num_sequences = GetParam();
-    constexpr size_t num_candidates = 3;
+    const auto [num_sequences, dynamic_split_fuse] = GetParam();
+    constexpr size_t num_candidates = TEST_BLOCK_SIZE;
     constexpr size_t window = num_candidates + 1;
     SchedulerConfig scheduler_config;
     scheduler_config.num_kv_blocks = 32;
-    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     scheduler_config.max_num_batched_tokens = num_sequences * window;
     scheduler_config.max_num_seqs = 4;
 
@@ -3834,12 +3840,12 @@ TEST_P(ValidationWindowBudgetSchedulerTest, validation_windows_of_all_sequences_
 
 // A budget one row short of the windows of all sequences never runs the group.
 TEST_P(ValidationWindowBudgetSchedulerTest, validation_windows_larger_than_the_token_budget_throw) {
-    const size_t num_sequences = GetParam();
-    constexpr size_t num_candidates = 3;
+    const auto [num_sequences, dynamic_split_fuse] = GetParam();
+    constexpr size_t num_candidates = TEST_BLOCK_SIZE;
     constexpr size_t window = num_candidates + 1;
     SchedulerConfig scheduler_config;
     scheduler_config.num_kv_blocks = 32;
-    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     scheduler_config.max_num_batched_tokens = num_sequences * window - 1;
     scheduler_config.max_num_seqs = 4;
 
@@ -3854,16 +3860,16 @@ TEST_P(ValidationWindowBudgetSchedulerTest, validation_windows_larger_than_the_t
 
 INSTANTIATE_TEST_SUITE_P(OneAndTwoSequences,
                          ValidationWindowBudgetSchedulerTest,
-                         ::testing::Values(size_t{1}, size_t{2}));
+                         ::testing::Combine(::testing::Values(size_t{1}, size_t{2}), ::testing::Bool()));
 
 // With no KV block for the window and no request to preempt, the request runs nothing in this step and still has its
 // candidates to validate.
-TEST(TestScheduler, validation_window_without_kv_blocks_keeps_its_candidates) {
+TEST_P(ValidationWindowSchedulerTest, validation_window_without_kv_blocks_keeps_its_candidates) {
     constexpr size_t num_candidates = 3;
     SchedulerConfig scheduler_config;
     // the block of the prompt
     scheduler_config.num_kv_blocks = 1;
-    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.dynamic_split_fuse = GetParam();
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.max_num_seqs = 4;
 
@@ -3880,45 +3886,57 @@ TEST(TestScheduler, validation_window_without_kv_blocks_keeps_its_candidates) {
 }
 
 // The window of the first request takes the KV block of the second one. The second request then recomputes its tokens
-// up to the end of its sequence, so the row of the token the target sampled validates the first candidate.
-TEST(TestScheduler, recompute_of_a_validation_window_runs_its_base_token) {
-    constexpr size_t num_candidates = 3;
+// up to the end of its sequence: in the main model the row of the token the target sampled validates the first
+// candidate, and a draft request samples its next candidate after the last token it took over from the main model.
+using RecomputeOfPendingTokensSchedulerTest = ::testing::TestWithParam<std::tuple<bool, bool>>;
+
+TEST_P(RecomputeOfPendingTokensSchedulerTest, recompute_runs_to_the_end_of_the_sequence) {
+    const auto [is_validation_mode_enabled, dynamic_split_fuse] = GetParam();
+    constexpr size_t num_pending_tokens = 3;
     SchedulerConfig scheduler_config;
     // the blocks of the two prompts
     scheduler_config.num_kv_blocks = 2;
-    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.max_num_seqs = 4;
 
-    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config),
+                                          scheduler_config,
+                                          true,
+                                          1,
+                                          is_validation_mode_enabled);
     std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0), make_validating_request(1)};
-    start_validation_windows(scheduler, requests, num_candidates);
+    start_validation_windows(scheduler, requests, num_pending_tokens);
 
     std::ignore = scheduler.schedule(requests);
-    ASSERT_EQ(requests[0]->get_num_scheduled_tokens(), num_candidates + 1);
+    ASSERT_EQ(requests[0]->get_num_scheduled_tokens(), num_pending_tokens + 1);
     ASSERT_EQ(requests[1]->get_num_processed_tokens(), 0u);
-    EXPECT_EQ(requests[1]->get_num_tokens_to_validate(), num_candidates);
+    EXPECT_EQ(requests[1]->get_num_tokens_to_validate(), num_pending_tokens);
     requests[0]->finish_iteration();
     free_requests(scheduler, {requests[0]});
 
     std::vector<SequenceGroup::Ptr> preempted = {requests[1]};
     std::ignore = scheduler.schedule(preempted);
-    // the prompt, the token the target sampled and the candidates
-    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), TEST_BLOCK_SIZE + 1 + num_candidates);
+    // the prompt, the token the target sampled and the pending tokens
+    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), TEST_BLOCK_SIZE + 1 + num_pending_tokens);
     EXPECT_TRUE(requests[1]->requires_sampling());
     requests[1]->finish_iteration();
 
     free_requests(scheduler, requests);
 }
 
+INSTANTIATE_TEST_SUITE_P(MainAndDraftRequests,
+                         RecomputeOfPendingTokensSchedulerTest,
+                         ::testing::Combine(::testing::Bool(), ::testing::Bool()));
+
 // The token budget ends inside the validation window of a recompute: the replay runs the rows before the window, and
 // the window runs whole in the next step.
-TEST(TestScheduler, recompute_runs_its_validation_window_after_the_rows_before_it) {
+TEST_P(ValidationWindowSchedulerTest, recompute_runs_its_validation_window_after_the_rows_before_it) {
     constexpr size_t num_candidates = 3;
     SchedulerConfig scheduler_config;
     // the blocks of the two prompts
     scheduler_config.num_kv_blocks = 2;
-    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.dynamic_split_fuse = GetParam();
     // the prompt and part of the window
     scheduler_config.max_num_batched_tokens = TEST_BLOCK_SIZE + 2;
     scheduler_config.max_num_seqs = 4;
@@ -3949,36 +3967,4 @@ TEST(TestScheduler, recompute_runs_its_validation_window_after_the_rows_before_i
     free_requests(scheduler, requests);
 }
 
-// A draft request runs the tokens it took over from the main model and samples its next candidate after the last of
-// them. After a recompute preemption it still runs to the end of its sequence, so the candidate follows the last token.
-TEST(TestScheduler, recompute_of_a_draft_request_runs_the_tokens_it_took_over) {
-    constexpr size_t num_taken_over_tokens = 3;
-    SchedulerConfig scheduler_config;
-    // the blocks of the two prompts
-    scheduler_config.num_kv_blocks = 2;
-    scheduler_config.dynamic_split_fuse = true;
-    scheduler_config.max_num_batched_tokens = 32;
-    scheduler_config.max_num_seqs = 4;
-
-    ContinuousBatchingScheduler scheduler(init_cache_orchestrator(scheduler_config),
-                                          scheduler_config,
-                                          true,
-                                          1,
-                                          false);
-    std::vector<SequenceGroup::Ptr> requests = {make_validating_request(0), make_validating_request(1)};
-    start_validation_windows(scheduler, requests, num_taken_over_tokens);
-
-    std::ignore = scheduler.schedule(requests);
-    ASSERT_EQ(requests[0]->get_num_scheduled_tokens(), num_taken_over_tokens + 1);
-    ASSERT_EQ(requests[1]->get_num_processed_tokens(), 0u);
-    requests[0]->finish_iteration();
-    free_requests(scheduler, {requests[0]});
-
-    std::vector<SequenceGroup::Ptr> preempted = {requests[1]};
-    std::ignore = scheduler.schedule(preempted);
-    EXPECT_EQ(requests[1]->get_num_scheduled_tokens(), TEST_BLOCK_SIZE + 1 + num_taken_over_tokens);
-    EXPECT_TRUE(requests[1]->requires_sampling());
-    requests[1]->finish_iteration();
-
-    free_requests(scheduler, requests);
-}
+INSTANTIATE_TEST_SUITE_P(WithAndWithoutDynamicSplitFuse, ValidationWindowSchedulerTest, ::testing::Bool());
