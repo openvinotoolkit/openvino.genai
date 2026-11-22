@@ -105,7 +105,8 @@ void read_markov_head(const std::filesystem::path& models_path, ov::AnyMap& prop
  *   draft_hidden_states [T, hidden], the backbone's final hidden state of every row. The T rows hold N blocks back
  *   to back; block n spans rows subsequence_begins[n] to subsequence_begins[n + 1], and its anchor token precedes
  *   its first row. The graph does not check subsequence_begins; callers validate it with
- *   dflash_cb::validate_subsequence_begins().
+ *   dflash_cb::validate_subsequence_begins(). draft_logits are the backbone logits before output_multiplier and
+ *   final_logit_softcapping; a head whose scores need them applies them itself, as the DFlash-2 head does.
  * These port names are the contract with the exporter, so a port whose meaning changes needs a new name.
  *
  * top_k TOP_K_FOR_MARKOV_STEP (0) keeps the dense step. Any other top_k keeps the candidate scorer with that K,
