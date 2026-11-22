@@ -2142,6 +2142,45 @@ TEST(DFlashCBCandidateSelection, CandidateScorerDraftsTheGreedyLatticePathOfEver
     EXPECT_TRUE(first->get_running_sequences().front()->get_draft_proposal(1).empty());
 }
 
+TEST(DFlashCBCandidateSelection, CandidateScorerReadsTheUnscaledBackboneLogits) {
+    // An exported scorer applies output_multiplier and final_logit_softcapping itself. This one scores the candidates
+    // 3 and 5 with their draft logit plus a transition score of 0 and 1.5: token 3 wins on the logits 4 and 2, and
+    // would lose on the logits halved by the output multiplier.
+    ov::ParameterVector params;
+    const auto draft_logits = add_named_input(params,
+                                              "draft_logits",
+                                              ov::element::f32,
+                                              ov::PartialShape{-1, static_cast<int64_t>(SELECTOR_VOCAB_SIZE)});
+    add_named_input(params, "anchor_token_ids", ov::element::i64, ov::PartialShape{-1});
+    add_named_input(params, "subsequence_begins", ov::element::i64, ov::PartialShape{-1});
+    const auto unary_scores = std::make_shared<ov::op::v8::Gather>(
+        draft_logits,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{SELECTOR_TOP_K}, {3, 5}),
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {1}));
+    const auto edge_scores = std::make_shared<ov::op::v1::Add>(
+        std::make_shared<ov::op::v0::Unsqueeze>(unary_scores,
+                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {1})),
+        ov::op::v0::Constant::create(ov::element::f32,
+                                     ov::Shape{1, SELECTOR_TOP_K, SELECTOR_TOP_K},
+                                     {0.0f, 1.5f, 0.0f, 1.5f}));
+    auto scores_result = std::make_shared<ov::op::v0::Result>(edge_scores);
+    scores_result->output(0).set_names({"edge_scores"});
+    auto ids_result = std::make_shared<ov::op::v0::Result>(
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2, SELECTOR_TOP_K}, {3, 5, 3, 5}));
+    ids_result->output(0).set_names({"candidate_ids"});
+    const auto scorer = std::make_shared<ov::Model>(ov::ResultVector{scores_result, ids_result}, params);
+    ov::Tensor logits = make_zero_logits(2);
+    for (size_t row = 0; row < 2; ++row) {
+        logits.data<float>()[row * SELECTOR_VOCAB_SIZE + 3] = 4.0f;
+        logits.data<float>()[row * SELECTOR_VOCAB_SIZE + 5] = 2.0f;
+    }
+    auto request = make_block_request(0, 7, 2, block_config());
+
+    draft_blocks(make_selector(scorer, 0.5f), {request}, logits);
+
+    EXPECT_EQ(drafted(request), (std::vector<int64_t>{3, 3}));
+}
+
 TEST(DFlashCBCandidateSelection, CandidateScorerSkipsARequestWithoutCandidatesLeft) {
     // Rows 0-1 and 3-4 hold the blocks; row 2 belongs to a request that has no candidate left to draft, so the
     // scorer packs the rows of the other two blocks back to back.
