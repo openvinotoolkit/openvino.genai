@@ -284,11 +284,36 @@ TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, explicit_auto_priorities_pres
     EXPECT_EQ(props.at(ov::device::priorities.name()).as<std::string>(), "GPU,CPU");
 }
 
-TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, cpu_and_npu_preserve_default_device) {
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, cpu_and_meta_devices_preserve_default_device) {
     ov::AnyMap main_props = {};
     auto [cpu_dev, cpu_props] = get_per_layer_embeddings_device_and_properties(main_props, "CPU");
     EXPECT_EQ(cpu_dev, "CPU");
     EXPECT_EQ(cpu_props.count(ov::device::priorities.name()), 0u);
+
+    auto [auto_dev, auto_props] = get_per_layer_embeddings_device_and_properties(main_props, "AUTO");
+    EXPECT_EQ(auto_dev, "AUTO");
+    EXPECT_EQ(auto_props.count(ov::device::priorities.name()), 0u);
+    EXPECT_EQ(auto_props.count(ov::intel_auto::enable_startup_fallback.name()), 0u);
+
+    auto [auto_gpu_dev, auto_gpu_props] = get_per_layer_embeddings_device_and_properties(main_props, "AUTO:GPU");
+    EXPECT_EQ(auto_gpu_dev, "AUTO:GPU");
+    EXPECT_EQ(auto_gpu_props.count(ov::device::priorities.name()), 0u);
+
+    auto [multi_dev, multi_props] = get_per_layer_embeddings_device_and_properties(main_props, "MULTI:GPU,CPU");
+    EXPECT_EQ(multi_dev, "MULTI:GPU,CPU");
+    EXPECT_EQ(multi_props.count(ov::device::priorities.name()), 0u);
+}
+
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, non_ple_role_does_not_strip_device_key) {
+    ov::AnyMap main_props = {
+        {PER_MODEL_PROPERTIES, ov::AnyMap{
+            {"vision_embeddings", ov::AnyMap{
+                {"device", std::string("CPU")},
+            }},
+        }},
+    };
+    auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
+    EXPECT_EQ(result.count("device"), 1u);
 }
 
 // --- validate_vlm_model_properties tests ---
