@@ -105,3 +105,117 @@ Refer to the [Speculative Decoding](/docs/concepts/optimization-techniques/specu
 :::info
 For more information, refer to [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/speculative_decoding_lm.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/speculative_decoding_lm.cpp) speculative decoding samples.
 :::
+
+#### Speculative Decoding with a Custom Drafter (NPU)
+
+With the main model on NPU, your own drafter can propose the candidate tokens instead of a draft model.
+A drafter is a class derived from `Drafter`.
+At every step it proposes a tree of candidate tokens, the main model verifies the whole tree in one inference and keeps the longest branch that matches greedy decoding, plus its own next token.
+
+| Method | Called | Meaning |
+|---|---|---|
+| `max_draft_tokens()` | when the pipeline is created | Largest tree a step verifies. The main model is compiled to verify `max_draft_tokens() + 1` tokens per step. |
+| `start(prompt, config)` | once per `generate()` call, before the main model processes the prompt | Prompt token ids and the generation config. |
+| `propose(root, position, max_nodes)` | every step | Returns a `DraftTree(tokens, parents)` for the tokens after `root`, the last generated token. `parents[i]` is `-1` for children of `root`, otherwise the index of an earlier node. An empty tree runs a regular decoding step. |
+| `accept(tokens, positions, features)` | after the prompt, then every step | Tokens that entered the main model's KV cache: first the prompt, then the root and the accepted candidates of every step. `features` holds the main model's `last_hidden_state` rows for them when the model has that output, otherwise it is empty. |
+| `finish()` | when `generate()` ends | Optional clean-up. |
+
+`num_assistant_tokens` limits the tree size of every step (at most `max_draft_tokens()`, the default); `0` disables drafting.
+Custom drafters need the main model on NPU, greedy decoding and batch size 1.
+Beam search, repetition / presence / frequency penalties, `min_new_tokens`, `stop_strings`, `logprobs`, `echo`, structured output and LoRA adapters aren't supported.
+
+The drafter below proposes the tokens that followed the latest earlier occurrence of the last two tokens (prompt lookup) as a chain:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai
+
+        class PromptLookupDrafter(openvino_genai.Drafter):
+            def __init__(self):
+                super().__init__()
+                self.history = []
+
+            def max_draft_tokens(self):
+                return 8
+
+            def start(self, prompt, config):
+                self.history = []
+
+            def propose(self, root, position, max_nodes):
+                text = self.history + [root]
+                for begin in range(len(text) - 3, -1, -1):
+                    if text[begin:begin + 2] == text[-2:]:
+                        tokens = text[begin + 2:begin + 2 + max_nodes]
+                        # A chain: the first node follows the root, every other node follows the previous one.
+                        return openvino_genai.DraftTree(tokens, list(range(-1, len(tokens) - 1)))
+                return openvino_genai.DraftTree([], [])
+
+            def accept(self, tokens, positions, features):
+                self.history.extend(tokens)
+
+        pipe = openvino_genai.LLMPipeline(model_path, "NPU", drafter=PromptLookupDrafter())
+
+        config = openvino_genai.GenerationConfig()
+        config.max_new_tokens = 100
+        print(pipe.generate(prompt, config))
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include "openvino/genai/llm_pipeline.hpp"
+
+        class PromptLookupDrafter : public ov::genai::Drafter {
+        public:
+            size_t max_draft_tokens() const override {
+                return 8;
+            }
+
+            void start(const std::vector<int64_t>& prompt, const ov::genai::GenerationConfig& config) override {
+                m_history.clear();
+            }
+
+            ov::genai::DraftTree propose(int64_t root, int64_t position, size_t max_nodes) override {
+                std::vector<int64_t> text = m_history;
+                text.push_back(root);
+                ov::genai::DraftTree tree;
+                for (size_t begin = text.size() >= 3 ? text.size() - 2 : 0; begin-- > 0;) {
+                    if (text[begin] == text[text.size() - 2] && text[begin + 1] == text.back()) {
+                        // A chain: the first node follows the root, every other node follows the previous one.
+                        for (size_t i = begin + 2; i < text.size() && tree.tokens.size() < max_nodes; ++i) {
+                            tree.parents.push_back(static_cast<int64_t>(tree.tokens.size()) - 1);
+                            tree.tokens.push_back(text[i]);
+                        }
+                        break;
+                    }
+                }
+                return tree;
+            }
+
+            void accept(const std::vector<int64_t>& tokens,
+                        const std::vector<int64_t>& positions,
+                        const ov::Tensor& features) override {
+                m_history.insert(m_history.end(), tokens.begin(), tokens.end());
+            }
+
+        private:
+            std::vector<int64_t> m_history;
+        };
+
+        int main(int argc, char* argv[]) {
+            std::string model_path = argv[1];
+            std::string prompt = argv[2];
+
+            ov::genai::LLMPipeline pipe(model_path, "NPU", ov::genai::drafter(std::make_shared<PromptLookupDrafter>()));
+
+            ov::genai::GenerationConfig config;
+            config.max_new_tokens = 100;
+            std::cout << pipe.generate(prompt, config) << std::endl;
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info
+For a drafter that proposes a tree of several branches, refer to the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/custom_drafter_lm.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/custom_drafter_lm.cpp) custom drafter samples.
+:::

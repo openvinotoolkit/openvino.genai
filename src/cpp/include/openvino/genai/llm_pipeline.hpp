@@ -18,6 +18,7 @@
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/common_types.hpp"
 #include "openvino/genai/json_container.hpp"
+#include "openvino/genai/speculative_decoding/drafter.hpp"
 
 namespace ov {
 namespace genai {

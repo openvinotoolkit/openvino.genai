@@ -295,6 +295,13 @@
   components:
     - speculative_decoding
 
+- name: Speculative decoding with a custom drafter
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_drafter.py
+  timeout: 30
+  components:
+    - speculative_decoding
+
 - name: Gemma4 MTP speculative decoding tests
   cmd: |-
     python -m pip install git+https://github.com/openvino-agent/optimum-intel.git@support_mtp

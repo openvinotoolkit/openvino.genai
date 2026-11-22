@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniStreamerBase', 'OmniTalkerSpeechConfig', 'OmniTextSourceBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'SpeechOutputMode', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'DraftTree', 'Drafter', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniStreamerBase', 'OmniTalkerSpeechConfig', 'OmniTextSourceBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'SpeechOutputMode', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -1436,6 +1436,65 @@ class DeepSeekR1ReasoningIncrementalParser(IncrementalParser):
 class DeepSeekR1ReasoningParser(ReasoningParser):
     def __init__(self) -> None:
         ...
+class DraftTree:
+    """
+    
+                Candidate tokens proposed by a Drafter for one verification step, as a tree.
+                Node i holds token tokens[i]; parents[i] is -1 when its parent is the root (the last generated token) or
+                the index of an earlier node. A chain of k guesses has parents [-1, 0, ..., k - 2].
+            
+    """
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, tokens: collections.abc.Sequence[typing.SupportsInt], parents: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def parents(self) -> list[int]:
+        ...
+    @parents.setter
+    def parents(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def tokens(self) -> list[int]:
+        ...
+    @tokens.setter
+    def tokens(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+class Drafter:
+    """
+    
+                Base class for user-defined drafters of speculative decoding: LLMPipeline(models_path, "NPU", drafter=...).
+                Each step the pipeline asks for a DraftTree following the last generated token, verifies it with the main
+                model in one inference (greedy) and reports the tokens that entered the main model's KV cache (the prompt,
+                then the accepted tokens) with the main model's last_hidden_state rows for them. Supported with the main
+                model on NPU, greedy decoding and batch size 1. Tensors passed to the drafter are only valid during the
+                call.
+            
+    """
+    def __init__(self) -> None:
+        ...
+    def accept(self, tokens: collections.abc.Sequence[typing.SupportsInt], positions: collections.abc.Sequence[typing.SupportsInt], features: openvino._pyopenvino.Tensor) -> None:
+        """
+        Tokens that entered the main model's KV cache, their positions and main model last_hidden_state rows (empty without that output): first the prompt, then after every step the root followed by the accepted tokens. The main model's next token (the next root) follows them.
+        """
+    def finish(self) -> None:
+        """
+        Called when a generate() call ends.
+        """
+    def max_draft_tokens(self) -> int:
+        """
+        Largest tree a proposal may have; the main model verifies max_draft_tokens() + 1 tokens per step.
+        """
+    def propose(self, root: typing.SupportsInt, position: typing.SupportsInt, max_nodes: typing.SupportsInt) -> DraftTree:
+        """
+        Returns a DraftTree of at most max_nodes candidates following root, the last generated token at position.
+        """
+    def start(self, prompt: collections.abc.Sequence[typing.SupportsInt], config: GenerationConfig) -> None:
+        """
+        New generate() call, before the main model processes the prompt: prompt token ids and the generation config. The prompt's tokens and features follow in accept().
+        """
 class EmbedResult:
     embeddings: openvino._pyopenvino.Tensor
     def __init__(self, embeddings: openvino._pyopenvino.Tensor) -> None:

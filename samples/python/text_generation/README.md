@@ -342,6 +342,29 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   The sample prints finish reason for each generation turn. In the tool-calling turn, generation is stopped with `TOOL_CALL` as soon as the incremental parser successfully parses the `functools[...]` payload.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
+### 14. Speculative Decoding with a Custom Drafter (`custom_drafter_lm`)
+- **Description:**
+  This sample shows how to plug your own drafting logic into speculative decoding. A drafter is a Python (or C++) class derived from `openvino_genai.Drafter`: at every step it proposes a tree of candidate tokens, the main model verifies the whole tree in one inference (tree attention) and keeps the longest branch that matches its greedy choice, plus its own next token. The output follows greedy decoding of the main model; as the main model processes several tokens per inference, rounding can resolve a near-tie between two tokens differently than one-token-at-a-time decoding.
+
+  The sample drafter does prompt lookup: it finds earlier occurrences of the latest n-gram and proposes their continuations, one branch per occurrence. A drafter can also run its own models: `accept()` receives the main model's `last_hidden_state` rows for the prompt and the accepted tokens when the main model has that output (as EAGLE-style main models do).
+
+  | Method | Called | Meaning |
+  |---|---|---|
+  | `max_draft_tokens()` | once, when the pipeline is created | Largest tree a proposal may have; the main model is compiled to verify `max_draft_tokens() + 1` tokens per step. |
+  | `start(prompt, config)` | once per `generate()` call, before the main model processes the prompt | Prompt token ids and the generation config. |
+  | `propose(root, position, max_nodes)` | every step | Returns `DraftTree(tokens, parents)` for the tokens after `root`; `parents[i]` is `-1` for children of `root`, otherwise the index of an earlier node. An empty tree runs a regular decoding step. |
+  | `accept(tokens, positions, features)` | after the prompt, then every step | Tokens that entered the main model's KV cache with the main model's features for them: first the prompt, then the root and the accepted candidates of every step. |
+  | `finish()` | when `generate()` ends | Optional clean-up. |
+
+  `config.num_assistant_tokens` limits the tree size of every step (at most `max_draft_tokens()`, which is the default); `0` disables drafting.
+- **Main Feature:** Speculative decoding with a user-defined, tree-shaped draft.
+- **Run Command:**
+  ```bash
+  python custom_drafter_lm.py model_dir prompt
+  ```
+- **Notes:**
+  Custom drafters are supported with the main model on NPU, greedy decoding and batch size 1.
+
 
 ## Troubleshooting
 
