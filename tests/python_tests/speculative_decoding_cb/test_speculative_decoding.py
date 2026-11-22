@@ -426,13 +426,21 @@ def test_batched_prompts_with_chunked_prefill_match_target(model_pair):
 
 
 @pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
-def test_rejects_a_token_budget_below_the_validation_window(model_pair):
-    # The target validates the seed and its 3 candidates in one forward, which a budget of 3 tokens never fits.
-    config = _greedy_config(num_assistant_tokens=3)
-    scheduler_config = _scheduler_config(dynamic_split_fuse=True, max_num_batched_tokens=3)
+def test_rejects_a_request_whose_validation_window_exceeds_the_token_budget(model_pair):
+    # The target validates the seed and its 4 candidates in one forward, which a budget of 4 tokens never fits. The
+    # pipeline rejects that request when it is added and serves the next request under the same id.
+    scheduler_config = _scheduler_config(dynamic_split_fuse=True, max_num_batched_tokens=4)
+    prompts = PROMPTS_4[:1]
+    reference = _run_add_requests(
+        _target_pipeline(model_pair, scheduler_config), prompts, _greedy_config(num_assistant_tokens=0), {0: 0}
+    )
+    pipe = _cb_pipeline(model_pair, scheduler_config)
 
-    with pytest.raises(RuntimeError, match="too small to ever schedule the speculative validation window"):
-        _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4[:1], [config])
+    with pytest.raises(RuntimeError, match="too small to ever schedule the speculative validation windows"):
+        pipe.add_request(0, prompts[0], _greedy_config(num_assistant_tokens=4))
+    assert not pipe.has_non_finished_requests()
+
+    assert _run_add_requests(pipe, prompts, _greedy_config(num_assistant_tokens=3), {0: 0}) == reference
 
 
 @pytest.mark.parametrize("model_pair", [QWEN3_DEEPSPEC], indirect=True)
