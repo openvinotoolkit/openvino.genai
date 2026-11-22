@@ -63,11 +63,6 @@ public:
         return m_candidate_scorer.has_value() || m_markov_step.has_value();
     }
 
-    // A gated Markov head (DFlash-2) also scores the draft's last_hidden_state of every row.
-    bool reads_hidden_states() const {
-        return m_reads_hidden_states;
-    }
-
     // The draft request whose last_hidden_state holds the hidden state of every logits row.
     void set_draft_request(ov::InferRequest draft_request) {
         m_draft_request = std::move(draft_request);
@@ -100,6 +95,7 @@ private:
     float scaled_logit(float logit) const;
     const float* markov_bias(size_t block) const;
 
+    // a gated Markov head (DFlash-2) also scores the draft's last_hidden_state of every row
     bool m_reads_hidden_states = false;
     // the backbone logits are scaled by output_multiplier, then soft-capped
     float m_output_multiplier = 1.0f;

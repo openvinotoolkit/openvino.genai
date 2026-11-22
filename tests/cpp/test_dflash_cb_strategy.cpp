@@ -2269,7 +2269,6 @@ TEST(DFlashCBCandidateSelection, TokenOutsideTheCandidatesEndsTheBlock) {
 TEST(DFlashCBCandidateSelection, GatedCandidateScorerScoresTheHiddenStatesOfTheBlockRows) {
     const auto [edge_scores, candidate_ids] = make_two_block_lattice();
     const auto selector = make_selector(make_fixed_candidate_scorer(edge_scores, candidate_ids, /*gated=*/true));
-    ASSERT_TRUE(selector->reads_hidden_states());
     // Rows 0-1 and 3-4 hold the blocks; row 2 belongs to a request that has no candidate left to draft, so the scorer
     // reads the hidden states of rows 0, 1, 3 and 4. They move row 0 to candidate 0 and row 3 to candidate 1.
     selector->set_draft_request(
