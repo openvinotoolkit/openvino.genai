@@ -362,6 +362,20 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     }
     OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len,
                     "'max_length' must be greater than the number of prompt tokens");
+    if (m_is_validation_mode_enabled && sampling_params_copy.is_assisting_generation()) {
+        // The scheduler runs the validation windows of all sequences of a request in one forward, so a request whose
+        // windows exceed the budget would fail every request of the pipeline. A confidence-driven draft proposes at
+        // least one candidate.
+        const size_t num_candidates = std::max<size_t>(sampling_params_copy.num_assistant_tokens.value_or(0), 1);
+        const size_t validation_window = num_candidates + 1;
+        const size_t max_num_batched_tokens = m_scheduler->get_config().max_num_batched_tokens;
+        OPENVINO_ASSERT(max_num_batched_tokens >= validation_window * sampling_params_copy.num_return_sequences,
+                        "max_num_batched_tokens (", max_num_batched_tokens,
+                        ") is too small to ever schedule the speculative validation windows of ",
+                        sampling_params_copy.num_return_sequences, " sequences of ", validation_window,
+                        " tokens each (1 base + ", num_candidates, " candidates) for request ", request_id,
+                        "; increase max_num_batched_tokens to at least (num_assistant_tokens + 1) * num_return_sequences");
+    }
 
     std::shared_ptr<SequenceGroup> sequence_group;
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {

@@ -173,14 +173,21 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
-    // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
-    // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, prompt_ids)});
-    return m_main_pipeline->add_request(request_id,
-                                        input_ids,
-                                        sampling_params,
-                                        prompt_ids,
-                                        lm_extra_inputs);
+    try {
+        // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
+        // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
+        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, prompt_ids)});
+        return m_main_pipeline->add_request(request_id,
+                                            input_ids,
+                                            sampling_params,
+                                            prompt_ids,
+                                            lm_extra_inputs);
+    } catch (...) {
+        m_main_pipeline->discard_awaiting_request(request_id);
+        m_draft_pipeline->discard_awaiting_request(request_id);
+        m_draft_generations.erase(request_id);
+        throw;
+    }
 }
 
 GenerationHandle
@@ -189,8 +196,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  const ov::genai::GenerationConfig& sampling_params) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
-    return m_main_pipeline->add_request(request_id, prompt, sampling_params);
+    try {
+        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
+        return m_main_pipeline->add_request(request_id, prompt, sampling_params);
+    } catch (...) {
+        m_main_pipeline->discard_awaiting_request(request_id);
+        m_draft_pipeline->discard_awaiting_request(request_id);
+        m_draft_generations.erase(request_id);
+        throw;
+    }
 }
 
 bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_requests() {
