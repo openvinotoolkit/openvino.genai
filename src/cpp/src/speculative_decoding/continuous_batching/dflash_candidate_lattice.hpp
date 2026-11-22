@@ -4,7 +4,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -17,7 +16,10 @@
 #include "openvino/core/except.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "sampling/block_row_source.hpp"
+#include "sampling/candidates_validation.hpp"
 #include "sampling/draft_proposal.hpp"
+#include "sampling/logit_transformers.hpp"
+#include "sampling/sampling_distribution.hpp"
 
 namespace ov::genai::dflash_cb {
 
@@ -154,8 +156,9 @@ inline std::optional<size_t> find_candidate(const ov::Tensor& candidate_ids, siz
 }
 
 // Draws the candidates of the lattice rows [first_row, first_row + num_positions) of one block: every position from
-// the softmax, at `temperature`, of the row that follows the candidate drafted before it. Each candidate carries that
-// distribution over the row's K candidates, which the target verifies it against.
+// the row that follows the candidate drafted before it, as multinomial sampling at `temperature` draws from the K
+// tokens a top-k filter keeps. Each candidate carries that distribution over the row's K candidates, which the target
+// verifies it against.
 inline std::vector<BlockToken> sample_candidate_path(const ov::Tensor& edge_scores,
                                                      const ov::Tensor& candidate_ids,
                                                      size_t first_row,
@@ -168,31 +171,25 @@ inline std::vector<BlockToken> sample_candidate_path(const ov::Tensor& edge_scor
     const size_t top_k = candidate_ids.get_shape()[1];
     const auto* scores = edge_scores.data<const float>();
     const auto* ids = candidate_ids.data<const int64_t>();
+    LogitTransformers::TemperatureLogitTransform temperature_transform(temperature, /*defer_expf=*/true);
     std::vector<BlockToken> candidates;
     candidates.reserve(num_positions);
     size_t previous_index = 0;
     for (size_t position = first_row; position < first_row + num_positions; ++position) {
         const auto* row = scores + (position * top_k + previous_index) * top_k;
-        const float max_score = *std::max_element(row, row + top_k);
-        DraftProposal proposal;
-        proposal.token_ids.assign(ids + position * top_k, ids + (position + 1) * top_k);
-        proposal.probabilities.resize(top_k);
-        // In float, each weight of a long tail of low scores would round away against the leading 1.
-        double probability_sum = 0.0;
+        Logits logits(nullptr, top_k);
+        logits.m_vector.reserve(top_k);
         for (size_t index = 0; index < top_k; ++index) {
-            proposal.probabilities[index] = std::exp((row[index] - max_score) / temperature);
-            probability_sum += proposal.probabilities[index];
+            logits.m_vector.emplace_back(row[index], ids[position * top_k + index]);
         }
-        OPENVINO_ASSERT(probability_sum > 0.0 && std::isfinite(probability_sum),
-                        "The DFlash candidate lattice produced an invalid proposal distribution.");
-        for (auto& probability : proposal.probabilities) {
-            probability = static_cast<float>(probability / probability_sum);
-        }
-        std::discrete_distribution<size_t> distribution(proposal.probabilities.begin(), proposal.probabilities.end());
-        const size_t selected = distribution(rng);
-        candidates.push_back({proposal.token_ids[selected],
-                              std::log(proposal.probabilities[selected]),
-                              std::make_shared<const DraftProposal>(std::move(proposal))});
+        temperature_transform.apply(logits);
+        const SamplingDistribution distribution(logits);
+        // the candidates keep their lattice order, so the drawn index is the candidate's index in the row
+        const size_t selected = distribution.draw(rng);
+        candidates.push_back(
+            {distribution.token_id(selected),
+             distribution.log_probability(selected),
+             std::make_shared<const DraftProposal>(ov::genai::detail::make_draft_proposal(distribution))});
         previous_index = selected;
     }
     return candidates;
