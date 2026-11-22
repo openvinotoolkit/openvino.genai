@@ -768,12 +768,11 @@ private:
                 std::optional<LinearAttentionReservationTransaction::GroupReservation>
                     linear_attention_group_reservation;
 
-                // Speculative LA paging requires the whole validation window in one step.
+                // Speculative LA paging runs the whole validation window in one step, with no rows before it.
                 const bool is_speculative_linear_attention_window =
                     linear_attention_mode &&
                     linear_attention_mode->step() == detail::LinearAttentionPagingStep::VERIFY;
                 if (is_speculative_linear_attention_window) {
-                    // LA validation must fit one base token plus all candidates.
                     const size_t validation_window = sequence_group->get_num_tokens_to_validate() + 1;
                     OPENVINO_ASSERT(num_available_tokens_per_seq == validation_window,
                                     "Speculative linear-attention validation window must be scheduled atomically as ",
@@ -781,20 +780,6 @@ private:
                                     " candidates) for sequence group ", sequence_group->get_request_id(), ", but ",
                                     num_available_tokens_per_seq, " tokens are pending; recompute/eviction of a validating "
                                     "sequence is not supported with linear-attention speculative decoding");
-                    OPENVINO_ASSERT(m_config.max_num_batched_tokens >= num_available_tokens_per_seq,
-                                    "max_num_batched_tokens (", m_config.max_num_batched_tokens,
-                                    ") is too small to ever schedule the speculative linear-attention validation window of ",
-                                    num_available_tokens_per_seq, " tokens for sequence group ", sequence_group->get_request_id(),
-                                    "; increase max_num_batched_tokens to at least the validation window size");
-                    if (available_tokens_per_seq_in_megabatch < num_available_tokens_per_seq) {
-                        // Remaining megabatch budget cannot fit the full window: defer to a later step without scheduling
-                        continue;
-                    }
-                    linear_attention_group_reservation = linear_attention_reservations.try_reserve_group(
-                        sequence_group, num_available_tokens_per_seq);
-                    if (!linear_attention_group_reservation) {
-                        continue;
-                    }
                 }
 
                 size_t num_scheduled_tokens_per_seq = _fit_validation_window(
@@ -804,6 +789,13 @@ private:
                 if (!num_scheduled_tokens_per_seq) {
                     // the validation window waits for a step with room for it
                     continue;
+                }
+                if (is_speculative_linear_attention_window) {
+                    linear_attention_group_reservation =
+                        linear_attention_reservations.try_reserve_group(sequence_group, num_scheduled_tokens_per_seq);
+                    if (!linear_attention_group_reservation) {
+                        continue;
+                    }
                 }
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
