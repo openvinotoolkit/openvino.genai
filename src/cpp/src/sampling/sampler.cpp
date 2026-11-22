@@ -1511,23 +1511,23 @@ int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
                                      const ov::genai::GenerationConfig& sampling_params,
                                      Logits& logits,
                                      RequestSamplerContext& context) {
-    LogitProcessor& logit_processor = context.logit_processor;
-    logit_processor.update_generated_len(sequence->get_generated_len());
-    logit_processor.apply(logits);
-    std::optional<SamplingDistribution> distribution;
-    Token token;
+    context.logit_processor.update_generated_len(sequence->get_generated_len());
+    context.logit_processor.apply(logits);
+    BlockToken block_token;
     if (sampling_params.is_greedy_decoding()) {
-        token = _greedy_sample(logits, sampling_params.logprobs);
+        const Token token = _greedy_sample(logits, sampling_params.logprobs);
+        block_token = {token.m_index, token.m_log_prob, nullptr};
     } else {
-        distribution.emplace(logits);
-        token = distribution->sample(context.rng_engine);
+        const SamplingDistribution distribution(logits);
+        const Token token = distribution.sample(context.rng_engine);
+        block_token = {token.m_index,
+                       token.m_log_prob,
+                       m_collect_draft_proposals
+                           ? std::make_shared<const DraftProposal>(detail::make_draft_proposal(distribution))
+                           : nullptr};
     }
-    append_sampled_token(token, sequence, logit_processor);
-    pause_if_unconfident(token, sequence, logit_processor);
-    if (m_collect_draft_proposals && sampling_params.is_multinomial()) {
-        sequence->set_draft_proposal(sequence->get_generated_len() - 1, detail::make_draft_proposal(*distribution));
-    }
-    return token.m_index;
+    _append_block_token(sequence, block_token, context);
+    return block_token.token;
 }
 
 void Sampler::_append_block_token(const Sequence::Ptr& sequence,
