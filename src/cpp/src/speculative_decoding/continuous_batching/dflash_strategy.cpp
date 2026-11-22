@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <limits>
 #include <string>
 #include <vector>
@@ -56,19 +55,6 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     : m_rt_info(rt_info) {
     OPENVINO_ASSERT(m_rt_info.dflash_mode, "DFlash continuous batching requires dflash_mode=true.");
     OPENVINO_ASSERT(!m_rt_info.target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
-    // An infinite value passes the sign checks, and gives the draft logits NaN or infinite values.
-    OPENVINO_ASSERT(std::isfinite(m_rt_info.input_embedding_scale) && m_rt_info.input_embedding_scale > 0.0f,
-                    "DFlash input_embedding_scale must be positive and finite, got ",
-                    m_rt_info.input_embedding_scale,
-                    ".");
-    OPENVINO_ASSERT(std::isfinite(m_rt_info.output_multiplier) && m_rt_info.output_multiplier > 0.0f,
-                    "DFlash output_multiplier must be positive and finite, got ",
-                    m_rt_info.output_multiplier,
-                    ".");
-    OPENVINO_ASSERT(std::isfinite(m_rt_info.final_logit_softcapping) && m_rt_info.final_logit_softcapping >= 0.0f,
-                    "DFlash final_logit_softcapping must be finite and not negative, got ",
-                    m_rt_info.final_logit_softcapping,
-                    ".");
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model, "DFlash requires both target and draft models.");

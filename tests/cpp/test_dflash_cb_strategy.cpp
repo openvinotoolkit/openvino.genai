@@ -1074,31 +1074,40 @@ TEST_F(DFlashStrategyTest, RejectsADraftWithoutTokenTypeIds) {
     }
 }
 
-TEST_F(DFlashStrategyTest, RejectsScalingValuesThatAreNotFinite) {
-    using ov::genai::utils::dflash::DFlashRTInfo;
-    const std::vector<std::pair<std::function<void(DFlashRTInfo&)>, std::string>> cases = {
-        {[](DFlashRTInfo& rt_info) { rt_info.input_embedding_scale = std::numeric_limits<float>::infinity(); },
+TEST(DFlashModelTransforms, RejectsScalingValuesThatAreNotFinite) {
+    const std::vector<std::tuple<std::string, float, std::string>> cases = {
+        {"dflash_input_embedding_scale",
+         std::numeric_limits<float>::infinity(),
          "input_embedding_scale must be positive and finite"},
-        {[](DFlashRTInfo& rt_info) { rt_info.output_multiplier = std::numeric_limits<float>::infinity(); },
-         "output_multiplier must be positive and finite"},
-        {[](DFlashRTInfo& rt_info) { rt_info.final_logit_softcapping = std::numeric_limits<float>::infinity(); },
-         "final_logit_softcapping must be finite"},
-        {[](DFlashRTInfo& rt_info) { rt_info.final_logit_softcapping = std::numeric_limits<float>::quiet_NaN(); },
-         "final_logit_softcapping must be finite"},
+        {"dflash_output_multiplier", std::numeric_limits<float>::infinity(), "output_multiplier must be positive and finite"},
+        {"dflash_final_logit_softcapping", std::numeric_limits<float>::infinity(), "final_logit_softcapping must be finite"},
+        {"dflash_final_logit_softcapping", std::numeric_limits<float>::quiet_NaN(), "final_logit_softcapping must be finite"},
     };
-    for (const auto& [make_invalid, expected_message] : cases) {
+    for (const auto& [key, value, expected_message] : cases) {
         SCOPED_TRACE(expected_message);
-        DFlashRTInfo rt_info;
-        rt_info.dflash_mode = true;
-        rt_info.mask_token_id = MASK_TOKEN;
-        rt_info.target_layer_ids = {0};
-        make_invalid(rt_info);
+        ov::AnyMap config;
+        config["dflash_mode"] = true;
+        config["dflash_mask_token_id"] = MASK_TOKEN;
+        config["dflash_target_layer_ids"] = std::vector<int32_t>{0};
+        config[key] = value;
         try {
-            DFlashDecodingImpl strategy(ov::genai::ModelDesc{}, ov::genai::ModelDesc{}, rt_info);
+            ov::genai::utils::dflash::extract_dflash_info_from_config(config);
             FAIL() << "Expected the DFlash scaling value to be rejected";
         } catch (const ov::Exception& exception) {
             EXPECT_NE(std::string(exception.what()).find(expected_message), std::string::npos) << exception.what();
         }
+    }
+}
+
+TEST(DFlashModelTransforms, RejectsScalingMetadataThatIsNotANumber) {
+    for (const std::string key :
+         {"gpu_min_activations_scale_factor", "input_embedding_scale", "output_multiplier", "final_logit_softcapping"}) {
+        SCOPED_TRACE(key);
+        auto model = make_annotated_stateful_sdpa_model();
+        model->set_rt_info(true, "dflash_mode");
+        model->set_rt_info(std::string("1.25x"), {"dflash", key});
+        ov::AnyMap properties;
+        EXPECT_THROW(ov::genai::utils::dflash::apply_dflash_rt_info(model, properties), ov::Exception);
     }
 }
 
@@ -1673,7 +1682,8 @@ TEST(DFlash2ModelTransforms, ValidatesAndPromotesGpuActivationScale) {
     model->set_rt_info(std::string("0"), {"dflash", "target_layer_ids"});
     model->set_rt_info(std::string("0"), {"dflash", "gpu_min_activations_scale_factor"});
     ov::AnyMap zero_scale;
-    EXPECT_THROW(ov::genai::utils::dflash::apply_dflash_rt_info(model, zero_scale), ov::Exception);
+    ov::genai::utils::dflash::apply_dflash_rt_info(model, zero_scale);
+    EXPECT_THROW(ov::genai::utils::dflash::extract_dflash_info_from_config(zero_scale), ov::Exception);
 
     // At compile time on GPU, the scale is the exported one unless a larger one is requested.
     ov::genai::utils::dflash::DFlashRTInfo info;
