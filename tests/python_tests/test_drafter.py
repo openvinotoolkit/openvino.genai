@@ -3,6 +3,7 @@
 
 import pytest
 
+import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_default_llm_properties
@@ -22,7 +23,9 @@ def get_npu_llm_properties_for_test():
 
 
 def greedy_config(**kwargs):
-    return ov_genai.GenerationConfig(max_new_tokens=MAX_NEW_TOKENS, ignore_eos=True, do_sample=False, **kwargs)
+    return ov_genai.GenerationConfig(
+        **{"max_new_tokens": MAX_NEW_TOKENS, "ignore_eos": True, "do_sample": False, **kwargs}
+    )
 
 
 class ScriptedDrafter(ov_genai.Drafter):
@@ -30,7 +33,7 @@ class ScriptedDrafter(ov_genai.Drafter):
 
     Modes: "chain" proposes the next tokens as a chain, "branch" adds a wrong first child of the root before the
     chain, "empty" proposes nothing, "invalid" returns a node whose parent is not an earlier node, "raise" raises in
-    propose() and "raise_in_finish" raises in finish().
+    propose(), "raise_in_start" raises in start() and "raise_in_finish" raises in finish().
     """
 
     def __init__(self):
@@ -52,6 +55,8 @@ class ScriptedDrafter(ov_genai.Drafter):
     def start(self, prompt, config):
         self.prompt_len = len(prompt)
         self.started.append(list(prompt))
+        if self.mode == "raise_in_start":
+            raise ValueError("scripted start failure")
 
     def propose(self, root, position, max_nodes):
         self.proposals += 1
@@ -111,6 +116,11 @@ def test_drafter_output_matches_greedy(drafter_pipe, reference, mode):
     result = pipe.generate(inputs, greedy_config())
 
     assert list(result.tokens[0]) == reference_tokens
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.LENGTH]
+    perf = result.perf_metrics
+    assert perf.get_num_generated_tokens() == MAX_NEW_TOKENS
+    assert perf.get_ttft().mean > 0
+    assert perf.get_throughput().mean > 0
     metrics = result.extended_perf_metrics
     assert metrics is not None
     if mode == "empty":
@@ -142,6 +152,82 @@ def test_drafter_receives_prompt_and_accepted_tokens(drafter_pipe, reference):
     assert tokens == reference_tokens[: len(tokens)]
     assert positions == list(range(len(prompt), len(prompt) + len(tokens)))
     assert len(drafter.accepted) == drafter.proposals + 1
+
+
+@pytest.mark.parametrize("max_new_tokens", [1, 2, 3, MAX_DRAFT_TOKENS + 2])
+def test_drafter_receives_only_output_tokens(drafter_pipe, reference, max_new_tokens):
+    pipe, drafter = drafter_pipe
+    inputs, reference_tokens = reference
+    drafter.reset("chain", reference_tokens)
+
+    result = pipe.generate(inputs, greedy_config(max_new_tokens=max_new_tokens))
+
+    output = list(result.tokens[0])
+    assert output == reference_tokens[:max_new_tokens]
+    # Near the limit the steps verify fewer nodes: the drafter gets every output token but the last (the next root).
+    accepted = [token for step in drafter.accepted[1:] for token in step[0]]
+    assert accepted == output[:-1]
+
+
+def test_stop_token_ends_generation(drafter_pipe, reference):
+    pipe, drafter = drafter_pipe
+    inputs, reference_tokens = reference
+    drafter.reset("chain", reference_tokens)
+    # Stop at the first output token, from the third on, that doesn't appear earlier (EOS also stops).
+    stop_token = next(token for i, token in enumerate(reference_tokens) if i >= 2 and token not in reference_tokens[:i])
+    eos_token = pipe.get_generation_config().eos_token_id
+    end = next(i for i, token in enumerate(reference_tokens) if token in (stop_token, eos_token))
+
+    result = pipe.generate(
+        inputs, ov_genai.GenerationConfig(max_new_tokens=MAX_NEW_TOKENS, do_sample=False, stop_token_ids={stop_token})
+    )
+
+    assert list(result.tokens[0]) == reference_tokens[: end + 1]
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.STOP]
+
+
+@pytest.mark.parametrize(
+    "status,reason",
+    [
+        pytest.param(ov_genai.StreamingStatus.STOP, ov_genai.GenerationFinishReason.STOP, id="stop"),
+        pytest.param(
+            ov_genai.StreamingStatus.TOOL_CALL_STOP, ov_genai.GenerationFinishReason.TOOL_CALL, id="tool_call_stop"
+        ),
+    ],
+)
+def test_streamer_stop_sets_finish_reason(drafter_pipe, reference, status, reason):
+    pipe, drafter = drafter_pipe
+    inputs, reference_tokens = reference
+    drafter.reset("chain", reference_tokens)
+
+    class StopAtSecondWrite(ov_genai.StreamerBase):
+        def __init__(self):
+            super().__init__()
+            self.writes = 0
+
+        def write(self, token):
+            self.writes += 1
+            return status if self.writes == 2 else ov_genai.StreamingStatus.RUNNING
+
+        def end(self):
+            pass
+
+    result = pipe.generate(inputs, greedy_config(), streamer=StopAtSecondWrite())
+
+    assert len(result.tokens[0]) < MAX_NEW_TOKENS
+    assert result.finish_reasons == [reason]
+
+
+def test_masked_prompt_rejected(drafter_pipe, reference):
+    pipe, drafter = drafter_pipe
+    inputs, reference_tokens = reference
+    drafter.reset("chain", reference_tokens)
+    mask = inputs.attention_mask.data.copy()
+    mask[0, 0] = 0
+
+    with pytest.raises(RuntimeError, match="attention masks"):
+        pipe.generate(ov_genai.TokenizedInputs(inputs.input_ids, ov.Tensor(mask)), greedy_config())
+    assert drafter.started == []
 
 
 def test_zero_assistant_tokens_skips_drafter(drafter_pipe, reference):
@@ -218,7 +304,12 @@ def test_invalid_draft_tree_rejected(drafter_pipe, reference):
 
 
 @pytest.mark.parametrize(
-    "mode,message", [("raise", "scripted drafter failure"), ("raise_in_finish", "scripted finish failure")]
+    "mode,message",
+    [
+        ("raise", "scripted drafter failure"),
+        ("raise_in_start", "scripted start failure"),
+        ("raise_in_finish", "scripted finish failure"),
+    ],
 )
 def test_drafter_exception_propagates(drafter_pipe, reference, mode, message):
     pipe, drafter = drafter_pipe

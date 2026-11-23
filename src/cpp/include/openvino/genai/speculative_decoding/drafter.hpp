@@ -45,8 +45,8 @@ struct OPENVINO_GENAI_EXPORTS DraftTree {
  * @endcode
  * GenerationConfig::num_assistant_tokens limits the tree size of every step (at most max_draft_tokens(), which is
  * the default); 0 disables drafting. Beam search, repetition / presence / frequency penalties, min_new_tokens,
- * stop_strings, logprobs, echo, structured output and LoRA adapters aren't supported. Tensors passed to the drafter
- * are only valid during the call.
+ * stop_strings, logprobs, echo, structured output, LoRA adapters and attention masks that exclude prompt tokens aren't
+ * supported. Tensors passed to the drafter are only valid during the call.
  */
 class OPENVINO_GENAI_EXPORTS Drafter {
 public:

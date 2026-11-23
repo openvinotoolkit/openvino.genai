@@ -72,6 +72,19 @@ ov::Tensor make_tree_mask(const DraftTree& tree, ov::element::Type type) {
     return mask;
 }
 
+bool attends_to_all_tokens(const ov::Tensor& attention_mask, const ov::Shape& input_shape) {
+    if (!attention_mask) {
+        return true;
+    }
+    if (attention_mask.get_shape() != input_shape) {
+        return false;
+    }
+    const int64_t* data = attention_mask.data<const int64_t>();
+    return std::all_of(data, data + attention_mask.get_size(), [](int64_t value) {
+        return value == 1;
+    });
+}
+
 }  // namespace drafter_utils
 
 namespace {
@@ -98,6 +111,15 @@ ov::genai::StreamingStatus stream_tokens(const std::shared_ptr<ov::genai::Stream
         return streamer->write(tokens);
     }
     return ov::genai::StreamingStatus::RUNNING;
+}
+
+/// Pipeline-level metrics: every batch of generated tokens with its time (TTFT, TPOT and throughput follow from them).
+void record_generated(ov::genai::RawPerfMetrics& raw, double ms, size_t tokens) {
+    const ov::genai::MicroSeconds duration(static_cast<float>(ms * 1000.0));
+    raw.m_token_infer_durations.emplace_back(duration);
+    raw.m_inference_durations[0] += duration;
+    raw.m_new_token_times.emplace_back(SteadyClock::now());
+    raw.m_batch_sizes.emplace_back(tokens);
 }
 
 }  // namespace
@@ -322,6 +344,9 @@ EncodedResults StatefulDrafterLLMPipeline::generate_tokens(const EncodedInputs& 
         input_ids = *tensor_input;
     } else if (const auto* tokenized_input = std::get_if<TokenizedInputs>(&inputs)) {
         input_ids = tokenized_input->input_ids;
+        // Every prompt token goes into the KV cache and gets a position: a mask can't exclude tokens.
+        OPENVINO_ASSERT(drafter_utils::attends_to_all_tokens(tokenized_input->attention_mask, input_ids.get_shape()),
+                        "Speculative decoding with a drafter doesn't support attention masks that exclude tokens");
     }
     OPENVINO_ASSERT(input_ids.get_shape().size() == 2 && input_ids.get_shape().at(0) == 1,
                     "Speculative decoding with a drafter supports batch size 1 only");
@@ -338,8 +363,8 @@ EncodedResults StatefulDrafterLLMPipeline::generate_tokens(const EncodedInputs& 
         return !config.ignore_eos && is_stop_token_id_hit(token, config.stop_token_ids);
     };
 
-    // The drafter is told about the end of the generation however the loop ends. A generation that completes calls
-    // finish() after the loop, so its errors reach the caller; the guard covers a generation that throws.
+    // The drafter is told about the end of the generation however it ends, also when start() fails. A generation
+    // that completes calls finish() after the loop, so its errors reach the caller; the guard covers one that throws.
     struct FinishGuard {
         Drafter* drafter = nullptr;
         ~FinishGuard() {
@@ -355,8 +380,8 @@ EncodedResults StatefulDrafterLLMPipeline::generate_tokens(const EncodedInputs& 
     double draft_start_ms = 0.0;
     auto start = SteadyClock::now();
     if (node_limit > 0) {
-        impl.drafter->start(prompt, config);
         finish_guard.drafter = impl.drafter.get();
+        impl.drafter->start(prompt, config);
         draft_start_ms = elapsed_ms(start);
     }
 
@@ -369,6 +394,7 @@ EncodedResults StatefulDrafterLLMPipeline::generate_tokens(const EncodedInputs& 
     impl.run_target(prompt, positions, prompt_len, single_row_mask);
     Impl::record(impl.target_raw, elapsed_ms(start), 1);
     std::vector<int64_t> tokens = {impl.argmax_row(0, 1)};
+    record_generated(m_sd_perf_metrics.raw_metrics, elapsed_ms(start), 1);
     size_t context = prompt_len;  // tokens in the main model's KV cache
 
     auto streaming_status = stream_tokens(streamer_ptr, tokens);
@@ -382,19 +408,22 @@ EncodedResults StatefulDrafterLLMPipeline::generate_tokens(const EncodedInputs& 
     std::vector<size_t> accepted_rows;
 
     while (!stop && streaming_status == ov::genai::StreamingStatus::RUNNING) {
+        const auto step_start = SteadyClock::now();
         // The verification window (root + nodes) must fit into the KV cache.
         const size_t room = impl.kv_capacity > context ? impl.kv_capacity - context : 0;
         if (room == 0) {
             break;
         }
+        // A step outputs at most nodes + 1 tokens, so no node is verified, accepted or reported past max_new_tokens.
+        const size_t max_nodes = std::min({node_limit, room - 1, max_new_tokens - tokens.size() - 1});
         const int64_t root = tokens.back();
         DraftTree tree;
-        if (node_limit > 0 && room > 1) {
+        if (max_nodes > 0) {
             start = SteadyClock::now();
-            tree = impl.drafter->propose(root, static_cast<int64_t>(context), std::min(node_limit, room - 1));
+            tree = impl.drafter->propose(root, static_cast<int64_t>(context), max_nodes);
             Impl::record(impl.draft_raw, elapsed_ms(start), tree.tokens.size());
         }
-        const std::vector<size_t> depths = drafter_utils::tree_depths(tree, std::min(node_limit, room - 1));
+        const std::vector<size_t> depths = drafter_utils::tree_depths(tree, max_nodes);
         const size_t rows = tree.tokens.size() + 1;
         std::vector<int64_t> ids(rows), pos(rows);
         ids[0] = root;
@@ -428,13 +457,9 @@ EncodedResults StatefulDrafterLLMPipeline::generate_tokens(const EncodedInputs& 
         total_accepted += accepted_rows.size() - 1;
         total_proposed += rows - 1;
 
-        const size_t budget = max_new_tokens - tokens.size();
-        if (emitted.size() >= budget) {
-            emitted.resize(budget);
-            stop = true;
-        }
         tokens.insert(tokens.end(), emitted.begin(), emitted.end());
-        stop = stop || (!emitted.empty() && is_stop(emitted.back()));
+        stop = is_stop(emitted.back()) || tokens.size() >= max_new_tokens;
+        record_generated(m_sd_perf_metrics.raw_metrics, elapsed_ms(step_start), emitted.size());
         streaming_status = stream_tokens(streamer_ptr, emitted);
     }
 
@@ -449,6 +474,15 @@ EncodedResults StatefulDrafterLLMPipeline::generate_tokens(const EncodedInputs& 
     EncodedResults results;
     results.tokens = {tokens};
     results.scores = {0.0f};
+    // A generation the KV cache cut short keeps NONE, as in LLMPipeline's other NPU paths.
+    results.finish_reasons = {GenerationFinishReason::NONE};
+    if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+        results.finish_reasons[0] = GenerationFinishReason::TOOL_CALL;
+    } else if (streaming_status == ov::genai::StreamingStatus::STOP || is_stop(tokens.back())) {
+        results.finish_reasons[0] = GenerationFinishReason::STOP;
+    } else if (tokens.size() >= max_new_tokens) {
+        results.finish_reasons[0] = GenerationFinishReason::LENGTH;
+    }
     generate_timer.end();
 
     m_sd_perf_metrics.num_input_tokens = prompt_len;

@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <limits>
 #include <map>
 #include <vector>
@@ -117,6 +118,20 @@ TEST(DrafterUtils, AcceptGreedyWithEmptyTree) {
         rows);
     EXPECT_EQ(generated, (std::vector<int64_t>{3}));
     EXPECT_EQ(rows, (std::vector<size_t>{0}));
+}
+
+TEST(DrafterUtils, AttentionMaskMustKeepEveryToken) {
+    const ov::Shape shape{1, 3};
+    ov::Tensor ones(ov::element::i64, shape);
+    std::fill_n(ones.data<int64_t>(), 3, int64_t{1});
+    ov::Tensor padded(ov::element::i64, shape);
+    const int64_t padded_values[] = {0, 1, 1};
+    std::copy_n(padded_values, 3, padded.data<int64_t>());
+
+    EXPECT_TRUE(drafter_utils::attends_to_all_tokens(ones, shape));
+    EXPECT_TRUE(drafter_utils::attends_to_all_tokens(ov::Tensor{}, shape));
+    EXPECT_FALSE(drafter_utils::attends_to_all_tokens(padded, shape));
+    EXPECT_FALSE(drafter_utils::attends_to_all_tokens(ones, ov::Shape{1, 4}));
 }
 
 TEST(DrafterUtils, DrafterPropertyRejectsNull) {

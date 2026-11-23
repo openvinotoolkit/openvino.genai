@@ -51,6 +51,9 @@ std::vector<size_t> tree_depths(const DraftTree& tree, size_t max_nodes);
 /// node i): each row sees itself and its ancestors.
 ov::Tensor make_tree_mask(const DraftTree& tree, ov::element::Type type);
 
+/// True when `attention_mask` (i64, shaped like the input ids) keeps every token, or isn't set.
+bool attends_to_all_tokens(const ov::Tensor& attention_mask, const ov::Shape& input_shape);
+
 /// Greedy acceptance walk. `greedy_token(row)` returns the main model's token after verifier row `row`. Fills
 /// `accepted_rows` with the root row 0 followed by the accepted nodes' rows and returns the generated tokens (the
 /// accepted nodes' tokens plus the main model's next token); stops early after a token `is_stop` accepts.
