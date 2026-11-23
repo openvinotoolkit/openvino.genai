@@ -35,6 +35,18 @@ bool is_wav_buffer(const std::string& buf) {
 
     return true;
 }
+
+void open_wav_writer(drwav& wav, const std::filesystem::path& file_path, uint32_t bits_per_sample, uint32_t sample_rate) {
+    drwav_data_format format;
+    format.container = drwav_container_riff;
+    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+    format.channels = 1;
+    format.sampleRate = sample_rate;
+    format.bitsPerSample = bits_per_sample;
+
+    OPENVINO_ASSERT(drwav_init_file_write(&wav, file_path.string().c_str(), &format, nullptr),
+                    "Failed to initialize WAV writer");
+}
 }  // namespace
 
 namespace utils {
@@ -83,8 +95,8 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename, uint32_t expecte
     const auto channels = wav.channels;
 
     // The header's frame count, not the buffer size: an in-memory buffer also holds the header.
-    std::vector<int16_t> pcm16(wav.totalPCMFrameCount * channels);
-    const uint64_t n = drwav_read_pcm_frames_s16(&wav, wav.totalPCMFrameCount, pcm16.data());
+    std::vector<float> interleaved_pcmf32(wav.totalPCMFrameCount * channels);
+    const uint64_t n = drwav_read_pcm_frames_f32(&wav, wav.totalPCMFrameCount, interleaved_pcmf32.data());
     drwav_uninit(&wav);
 
     // convert to mono, float
@@ -92,11 +104,11 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename, uint32_t expecte
     pcmf32.resize(n);
     if (channels == 1) {
         for (uint64_t i = 0; i < n; i++) {
-            pcmf32[i] = float(pcm16[i]) / 32768.0f;
+            pcmf32[i] = interleaved_pcmf32[i];
         }
     } else {
         for (uint64_t i = 0; i < n; i++) {
-            pcmf32[i] = float(pcm16[2 * i] + pcm16[2 * i + 1]) / 65536.0f;
+            pcmf32[i] = (interleaved_pcmf32[2 * i] + interleaved_pcmf32[2 * i + 1]) * 0.5f;
         }
     }
 
@@ -132,23 +144,30 @@ void save_to_wav(const float* waveform_ptr,
                  const std::filesystem::path& file_path,
                  uint32_t bits_per_sample,
                  uint32_t sample_rate) {
-    drwav_data_format format;
-    format.container = drwav_container_riff;
-    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
-    format.channels = 1;
-    format.sampleRate = sample_rate;
-    format.bitsPerSample = bits_per_sample;
-
     drwav wav;
-    OPENVINO_ASSERT(drwav_init_file_write(&wav, file_path.string().c_str(), &format, nullptr),
-                    "Failed to initialize WAV writer");
+    open_wav_writer(wav, file_path, bits_per_sample, sample_rate);
 
-    size_t total_samples = waveform_size * format.channels;
-
-    drwav_uint64 frames_written = drwav_write_pcm_frames(&wav, total_samples, waveform_ptr);
-    OPENVINO_ASSERT(frames_written == total_samples, "Failed to write not all frames");
+    drwav_uint64 frames_written = drwav_write_pcm_frames(&wav, waveform_size, waveform_ptr);
+    OPENVINO_ASSERT(frames_written == waveform_size, "Failed to write not all frames");
 
     drwav_uninit(&wav);
+}
+
+struct WavWriter::Impl {
+    drwav wav;
+};
+
+WavWriter::WavWriter(const std::filesystem::path& file_path, uint32_t sample_rate) : m_impl{std::make_unique<Impl>()} {
+    open_wav_writer(m_impl->wav, file_path, 32, sample_rate);
+}
+
+WavWriter::~WavWriter() {
+    drwav_uninit(&m_impl->wav);
+}
+
+void WavWriter::write(const float* samples, size_t sample_count) {
+    drwav_uint64 frames_written = drwav_write_pcm_frames(&m_impl->wav, sample_count, samples);
+    OPENVINO_ASSERT(frames_written == sample_count, "Failed to write not all frames");
 }
 
 ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path, const ov::Shape& shape) {

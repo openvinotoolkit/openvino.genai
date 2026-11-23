@@ -21,6 +21,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 
 
@@ -261,12 +262,11 @@ void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any valu
     }
 }
 
-bool is_npuw_enabled(const ov::AnyMap& config) {
-    constexpr const char* npu_use_npuw = "NPU_USE_NPUW";
+bool is_property_enabled(const ov::AnyMap& config, const std::string& name) {
     constexpr const char* yes = "YES";
     constexpr const char* no = "NO";
 
-    auto it = config.find(npu_use_npuw);
+    auto it = config.find(name);
     if (it == config.end()) {
         return false;
     }
@@ -285,10 +285,14 @@ bool is_npuw_enabled(const ov::AnyMap& config) {
             return false;
         }
 
-        OPENVINO_THROW("'", npu_use_npuw, "' must be '", yes, "' or '", no, "', got '", str_value, "'");
+        OPENVINO_THROW("'", name, "' must be '", yes, "' or '", no, "', got '", str_value, "'");
     }
 
-    OPENVINO_THROW("'", npu_use_npuw, "' must be bool or string, got type: ", value.type_info().name());
+    OPENVINO_THROW("'", name, "' must be bool or string, got type: ", value.type_info().name());
+}
+
+bool is_npuw_enabled(const ov::AnyMap& config) {
+    return is_property_enabled(config, "NPU_USE_NPUW");
 }
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
@@ -342,7 +346,9 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     std::shared_ptr<ov::Node> matmul = as_lm_head(last_node);
 
     // in case of PA all tokens are moved to batch dimension and we have to slice / gather accordingly
-    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension");
+    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension")
+        || has_op_with_type(model, "PagedSparseAttention");
+
     int64_t slice_gather_dim = pa_based_model ? 0 : 1;
 
     // There are several patterns for matmul we are looking for:
@@ -425,13 +431,15 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 } // namespace
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+const std::string FORWARDED_ADAPTERS_PROPERTY = "FORWARDED_ADAPTERS";
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
         // Ignore MODEL_PROPERTIES as they are used only within this function
         // to construct final properties map for a given model.
-        if (property.first == PER_MODEL_PROPERTIES) {
+        // FORWARDED_ADAPTERS_PROPERTY is read by sub-model constructors and is meaningless for a plugin.
+        if (property.first == PER_MODEL_PROPERTIES || property.first == FORWARDED_ADAPTERS_PROPERTY) {
             continue;
         }
         // When a concrete device is known, DEVICE_PROPERTIES[device] is
@@ -991,6 +999,10 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "multi_modal_projector",
         "audio_encoder",
         "language_model",
+        "ngram_embeddings",
+        "depth_decoder",
+        "audio_out_embeddings",
+        "audio_decoder",
     };
     const auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {
@@ -1314,11 +1326,14 @@ ov::genai::GenerationConfig get_multinomial_config() {
     return multinomial_config;
 }
 
-void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
-    std::string chat_template = tokenizer.get_chat_template();
+std::string patch_chat_template_multiline_strings(const std::string& chat_template) {
     const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
-    chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
-    tokenizer.set_chat_template(chat_template);
+    return std::regex_replace(chat_template, multiline_string_concatenation, "");
+}
+
+std::string patch_chat_template_undefined_tests(const std::string& chat_template) {
+    const std::regex var_is_undefined{R"((\b[\w\.]+)\s+is\s+undefined)"};
+    return std::regex_replace(chat_template, var_is_undefined, "not $1 is defined");
 }
 
 }  // namespace utils

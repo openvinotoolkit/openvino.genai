@@ -29,12 +29,14 @@ public:
         return instance;
     }
     ~Logger() = default;
-    void do_log(ov::log::Level level, const char* file, int line, const std::string& msg);
+    // Never throws: if writing fails, the message goes to stderr with the reason.
+    void do_log(ov::log::Level level, const char* file, int line, std::string_view msg) noexcept;
 
 #if defined(__GNUC__) || defined(__clang__)
     __attribute__((format(printf, 5, 6)))
 #endif
-    void log_format(ov::log::Level level, const char* file, int line, const char* format, ...);
+    void
+    log_format(ov::log::Level level, const char* file, int line, const char* format, ...) noexcept;
 
     void set_log_level(ov::log::Level level);
 
@@ -44,8 +46,8 @@ private:
     Logger();
     std::atomic<ov::log::Level> log_level{ov::log::Level::NO};
     std::mutex log_mutex;
-    void write_message(ov::log::Level level, const char* file, int line, const std::string& msg);
-    void log_format_impl(ov::log::Level level, const char* file, int line, const char* format, va_list args);
+    // Returns false if the stream rejected the write.
+    bool write_message(ov::log::Level level, const char* file, int line, std::string_view msg);
     std::string format_from_variadic(const char* format, va_list args) const;
     std::string_view get_filename(std::string_view file_path) const;
     std::ostream& format_prefix(std::ostream& out, ov::log::Level level, const char* file, int line) const;
@@ -65,7 +67,7 @@ inline void log_message(ov::log::Level level, const char* file, int line, const 
     if (!logger.should_log(level)) {
         return;
     }
-    logger.do_log(level, file, line, msg ? std::string(msg) : std::string());
+    logger.do_log(level, file, line, msg ? msg : "");
 }
 
 template <typename... Args, typename = std::enable_if_t<(sizeof...(Args) > 0)>>

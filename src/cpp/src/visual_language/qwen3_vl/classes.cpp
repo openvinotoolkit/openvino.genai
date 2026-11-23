@@ -29,40 +29,40 @@ namespace {
 
 constexpr float DEFAULT_METADATA_FPS = 24.0f;
 
+}  // namespace
+
 /**
  * @brief Calculates timestamps for video frames based on encoded video metadata.
  * @return Vector of float timestamps corresponding to each video frame.
  */
-std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, size_t merge_size) {
+std::vector<float> calculate_video_timestamps(const VideoMetadata& video_metadata, size_t temporal_patch_size) {
     OPENVINO_ASSERT(video_metadata.fps >= 0.0f, "Video metadata fps must be non-negative for timestamp calculation.");
 
     float metadata_fps = video_metadata.fps;
     if (metadata_fps == 0.0f) {
-        GENAI_WARN("Qwen3-VL requires frame timestamps to construct prompts, but VideoMetadata is missing or fps is not set. "
+        GENAI_WARN("The model requires frame timestamps to construct prompts, but VideoMetadata is missing or fps is not set. "
             "Defaulting to 24 fps. Please provide VideoMetadata with fps for more accurate results.");
         metadata_fps = DEFAULT_METADATA_FPS;
     }
 
     // Copy frames_indices since padding may be needed
     std::vector<size_t> frames_indices = video_metadata.frames_indices;
-    if (frames_indices.size() % merge_size != 0) {
+    if (frames_indices.size() % temporal_patch_size != 0) {
         frames_indices.resize(
-            frames_indices.size() + (merge_size - frames_indices.size() % merge_size),
+            frames_indices.size() + (temporal_patch_size - frames_indices.size() % temporal_patch_size),
             frames_indices.back()
         );
     }
 
     std::vector<float> timestamps;
-    timestamps.reserve(frames_indices.size() / merge_size);
-    for (size_t i = 0; i < frames_indices.size(); i += merge_size) {
-        const float timestamp = (static_cast<float>(frames_indices[i] + frames_indices[i + merge_size - 1]))
+    timestamps.reserve(frames_indices.size() / temporal_patch_size);
+    for (size_t i = 0; i < frames_indices.size(); i += temporal_patch_size) {
+        const float timestamp = (static_cast<float>(frames_indices[i] + frames_indices[i + temporal_patch_size - 1]))
             / 2.0f / metadata_fps;
         timestamps.push_back(timestamp);
     }
     return timestamps;
 }
-
-}  // namespace
 
 /**
  * @brief Populates video metadata and computes frame sampling indices based on video processor config.
@@ -100,20 +100,20 @@ void fill_video_metadata(EncodedVideo& encoded_video,
         num_frames = static_cast<size_t>(
             total_num_frames / static_cast<double>(video_metadata.fps) * static_cast<double>(video_config.fps)
         );
-        num_frames = std::clamp(num_frames, video_config.min_frames, std::min(video_config.max_frames, total_num_frames));
+        // Not std::clamp: min_frames may exceed total_num_frames, and the transformers processors cap at the total.
+        num_frames = std::min({std::max(num_frames, video_config.min_frames), video_config.max_frames, total_num_frames});
     } else if (num_frames == 0) {
-        num_frames = std::clamp(total_num_frames, video_config.min_frames, video_config.max_frames);
+        num_frames = std::min(std::max(total_num_frames, video_config.min_frames), video_config.max_frames);
     }
 
     OPENVINO_ASSERT(num_frames > 1 && num_frames <= total_num_frames,
                     "Invalid number of frames (" + std::to_string(num_frames) + ") for video sampling.");
 
     video_metadata.frames_indices.reserve(num_frames);
+    // np.linspace(0, total - 1, n).round() of the transformers processors: i * step, then halves rounded to even.
+    const double step = static_cast<double>(total_num_frames - 1) / static_cast<double>(num_frames - 1);
     for (size_t i = 0; i < num_frames; ++i) {
-        size_t frame_idx = static_cast<size_t>(std::round(
-            static_cast<double>(i) * static_cast<double>(total_num_frames - 1) / static_cast<double>(num_frames - 1)
-        ));
-        video_metadata.frames_indices.push_back(frame_idx);
+        video_metadata.frames_indices.push_back(static_cast<size_t>(std::nearbyint(static_cast<double>(i) * step)));
     }
 }
 
@@ -446,7 +446,7 @@ void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(
 
         const auto& encoded_video = encoded_videos.at(video_id - video_base_id);
         const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
-        auto timestamps = calculate_timestamps(encoded_video.metadata, spatial_merge_size);
+        auto timestamps = calculate_video_timestamps(encoded_video.metadata, spatial_merge_size);
         OPENVINO_ASSERT(timestamps.size() == grid_t, "Timestamps size does not match the number of frames");
 
         std::string expanded_tag;
@@ -625,6 +625,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddi
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
+    apply_vision_adapters(vision_embeddings_merger);
 
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
 

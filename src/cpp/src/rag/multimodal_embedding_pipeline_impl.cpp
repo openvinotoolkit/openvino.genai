@@ -119,7 +119,7 @@ void MultimodalEmbeddingPipelineImpl::init_multimodal(const std::filesystem::pat
             utils::get_model_properties(properties_copy, "language_model", device);
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_copy);
-        m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_prompt_formatting(PromptFormatting::Raw);
         std::shared_ptr<ov::Model> language_model =
             utils::singleton_core().read_model(models_path / "openvino_language_model.xml");
         language_model = utils::apply_postprocessing(language_model, m_config);

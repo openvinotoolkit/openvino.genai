@@ -400,6 +400,21 @@ ov::genai::StopCriteria js_to_cpp<ov::genai::StopCriteria>(const Napi::Env& env,
 }
 
 template <>
+ov::genai::SpeechOutputMode js_to_cpp<ov::genai::SpeechOutputMode>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsNumber(), "talkerSpeechConfig.output_mode must be a SpeechOutputMode value.");
+    // Compared as a double: Int32Value() would turn 0.5, 1.5 or NaN into a valid mode.
+    const double mode = value.As<Napi::Number>().DoubleValue();
+    if (mode == static_cast<double>(ov::genai::SpeechOutputMode::INTERLEAVED)) {
+        return ov::genai::SpeechOutputMode::INTERLEAVED;
+    }
+    if (mode == static_cast<double>(ov::genai::SpeechOutputMode::SPEECH_ONLY)) {
+        return ov::genai::SpeechOutputMode::SPEECH_ONLY;
+    }
+    OPENVINO_THROW("Invalid talkerSpeechConfig.output_mode: " + value.ToString().Utf8Value() +
+                   ". Expected 0 (INTERLEAVED) or 1 (SPEECH_ONLY).");
+}
+
+template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value) {
     if (value.IsArray()) {
         auto array = value.As<Napi::Array>();
@@ -800,6 +815,9 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
         OPENVINO_ASSERT(field.IsBoolean(), "talkerSpeechConfig.return_audio must be a boolean.");
         config.return_audio = field.ToBoolean().Value();
     }
+    if (const Napi::Value field = object.Get("output_mode"); !field.IsUndefined() && !field.IsNull()) {
+        config.output_mode = js_to_cpp<ov::genai::SpeechOutputMode>(env, field);
+    }
     if (const Napi::Value field = object.Get("speaker"); !field.IsUndefined() && !field.IsNull()) {
         if (field.IsString()) {
             config.speaker = js_to_cpp<std::string>(env, field);
@@ -809,6 +827,10 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
     }
     if (const Napi::Value field = object.Get("audio_chunk_frames"); !field.IsUndefined() && !field.IsNull()) {
         config.audio_chunk_frames = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("audio_chunk_left_context_frames");
+        !field.IsUndefined() && !field.IsNull()) {
+        config.audio_chunk_left_context_frames = js_to_cpp<size_t>(env, field);
     }
     if (const Napi::Value field = object.Get("max_new_tokens"); !field.IsUndefined() && !field.IsNull()) {
         config.max_new_tokens = js_to_cpp<size_t>(env, field);
@@ -830,6 +852,9 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
     }
     if (const Napi::Value field = object.Get("cp_top_k"); !field.IsUndefined() && !field.IsNull()) {
         config.cp_top_k = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("cp_repetition_penalty"); !field.IsUndefined() && !field.IsNull()) {
+        config.cp_repetition_penalty = js_to_cpp<float>(env, field);
     }
     return config;
 }
@@ -1149,6 +1174,85 @@ Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, co
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::Number::New(env, value[i]);
+    }
+    return js_array;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::Any, Napi::Value>(const Napi::Env& env, const ov::Any& value) {
+    if (value.empty()) {
+        return env.Null();
+    }
+    if (value.is<std::string>()) {
+        return Napi::String::New(env, value.as<std::string>());
+    }
+    if (value.is<bool>()) {
+        return Napi::Boolean::New(env, value.as<bool>());
+    }
+    if (value.is<int>()) {
+        return Napi::Number::New(env, value.as<int>());
+    }
+    if (value.is<int64_t>()) {
+        return cpp_to_js<int64_t, Napi::Value>(env, value.as<int64_t>());
+    }
+    if (value.is<size_t>()) {
+        return cpp_to_js<size_t, Napi::Value>(env, value.as<size_t>());
+    }
+    if (value.is<float>()) {
+        return Napi::Number::New(env, value.as<float>());
+    }
+    if (value.is<double>()) {
+        return Napi::Number::New(env, value.as<double>());
+    }
+    if (value.is<ov::AnyMap>()) {
+        return cpp_to_js<ov::AnyMap, Napi::Value>(env, value.as<ov::AnyMap>());
+    }
+    if (value.is<std::vector<std::string>>()) {
+        return cpp_to_js<std::vector<std::string>, Napi::Value>(env, value.as<std::vector<std::string>>());
+    }
+    if (value.is<std::vector<int64_t>>()) {
+        const auto& vec = value.as<std::vector<int64_t>>();
+        auto js_array = Napi::Array::New(env, vec.size());
+        for (size_t i = 0; i < vec.size(); ++i) {
+            js_array[i] = cpp_to_js<int64_t, Napi::Value>(env, vec[i]);
+        }
+        return js_array;
+    }
+    if (value.is<std::vector<double>>()) {
+        return cpp_to_js<std::vector<double>, Napi::Value>(env, value.as<std::vector<double>>());
+    }
+    if (value.is<std::vector<float>>()) {
+        return cpp_to_js<std::vector<float>, Napi::Value>(env, value.as<std::vector<float>>());
+    }
+    if (value.is<std::vector<ov::Any>>()) {
+        const auto& vec = value.as<std::vector<ov::Any>>();
+        auto js_array = Napi::Array::New(env, vec.size());
+        for (size_t i = 0; i < vec.size(); ++i) {
+            js_array[i] = cpp_to_js<ov::Any, Napi::Value>(env, vec[i]);
+        }
+        return js_array;
+    }
+    OPENVINO_THROW("Cannot convert ov::Any to a JS value: unsupported stored type '", value.type_info().name(), "'");
+}
+
+template <>
+Napi::Value cpp_to_js<ov::AnyMap, Napi::Value>(const Napi::Env& env, const ov::AnyMap& value) {
+    auto js_object = Napi::Object::New(env);
+    for (const auto& [key, item] : value) {
+        js_object.DefineProperty(Napi::PropertyDescriptor::Value(
+            Napi::String::New(env, key),
+            cpp_to_js<ov::Any, Napi::Value>(env, item),
+            static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable)));
+    }
+    return js_object;
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::AnyMap>, Napi::Value>(const Napi::Env& env,
+                                                            const std::vector<ov::AnyMap>& value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (size_t i = 0; i < value.size(); ++i) {
+        js_array[i] = cpp_to_js<ov::AnyMap, Napi::Value>(env, value[i]);
     }
     return js_array;
 }
@@ -1929,6 +2033,9 @@ Napi::Object to_asr_decoded_result(const Napi::Env& env, const ov::genai::ASRDec
     }
     if (results.words.has_value()) {
         obj.Set("words", to_nested_chunks(results.words.value()));
+    }
+    if (results.metadata.has_value()) {
+        obj.Set("metadata", cpp_to_js<std::vector<ov::AnyMap>, Napi::Value>(env, results.metadata.value()));
     }
     return obj;
 }

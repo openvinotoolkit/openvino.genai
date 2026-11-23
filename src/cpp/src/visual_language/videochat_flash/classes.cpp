@@ -1127,7 +1127,7 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(const std::string
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
         std::string templated_prompt;
-        if (m_apply_chat_template) {
+        if (m_prompt_formatting == PromptFormatting::NeedsTemplate) {
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);

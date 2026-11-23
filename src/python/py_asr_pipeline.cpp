@@ -36,20 +36,25 @@ namespace common_utils = ov::genai::common_bindings::utils;
 namespace {
 
 auto asr_generate_docstring = R"(
-    High level generate that receives raw speech as a vector of floats and returns decoded output.
+    High level generate that receives raw speech as a single audio input or a batch of audio inputs and returns decoded output.
+    The generation configuration applies to all audio inputs. Batch results are returned in input order.
+    Batches must be non-empty. Models without batching support accept at most one audio input per call,
+    either directly or as a batch of one.
 
-    :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-    :type audio_inputs: list[float]
+    :param audio_inputs: a single audio input as a list of floats, or a non-empty list of such lists for a batch.
+                         Each audio input is required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+    :type audio_inputs: list[float] | list[list[float]]
 
     :param generation_config: generation_config
     :type generation_config: ASRGenerationConfig
 
-    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
-                     Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
-    :type : Callable[[str], bool], ov.genai.StreamerBase
+    :param streamer: streamer either as a callback or as a StreamerBase instance.
+                     The callback receives decoded text and may return None or an integer StreamingStatus value.
+                     Handling of stop statuses depends on the model. Streaming is not supported for batches larger than one.
+    :type streamer: Callable[[str], int | None] | StreamerBase | None
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to ASRGenerationConfig fields.
-    :type : dict
+    :type kwargs: dict
 
     :return: return results in decoded form
     :rtype: ASRDecodedResults
@@ -67,6 +72,11 @@ auto asr_decoded_results_docstring = R"(
     perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
     words:              optional chunks of resulting words with timestamps
+    metadata:           optional model-specific metadata for each transcription.
+                        Models without metadata support leave this unset (None in Python).
+                        When present, metadata[i] corresponds to texts[i]. Each map holds
+                        model-defined key/value metadata and may be empty when no metadata
+                        is predicted.
 )";
 
 auto asr_decoded_result_chunk_docstring = R"(
@@ -331,6 +341,18 @@ void init_asr_pipeline(py::module_& m) {
         .def_readonly("languages", &ASRDecodedResults::languages)
         .def_readonly("chunks", &ASRDecodedResults::chunks)
         .def_readonly("words", &ASRDecodedResults::words)
+        .def_property_readonly("metadata",
+                               [](const ASRDecodedResults& dr)
+                                   -> py::typing::Optional<py::typing::List<py::typing::Dict<py::str, py::object>>> {
+                                   if (!dr.metadata.has_value()) {
+                                       return py::none();
+                                   }
+                                   py::list metadata;
+                                   for (const auto& entry : dr.metadata.value()) {
+                                       metadata.append(pyutils::any_map_to_py_object(entry));
+                                   }
+                                   return metadata;
+                               })
         .def_readonly("perf_metrics", &ASRDecodedResults::perf_metrics)
         .def("__repr__", [](const ASRDecodedResults& dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
@@ -377,7 +399,7 @@ void init_asr_pipeline(py::module_& m) {
                 return call_asr_common_generate(pipe, audio_inputs, generation_config, streamer, kwargs);
             },
             py::arg("audio_inputs"),
-            "List of floats representing raw speech audio. "
+            "List of floats representing raw speech audio, or a list of such lists for a batch. "
             "Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.",
             py::arg("generation_config") = std::nullopt,
             "generation_config",

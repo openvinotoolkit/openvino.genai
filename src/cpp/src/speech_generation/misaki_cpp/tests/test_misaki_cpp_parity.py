@@ -287,3 +287,33 @@ def test_misaki_cpp_vs_python_english_with_tokens(text: str, language: str) -> N
         f"C++ norm: {cpp_token_norm}\n"
         f"Python norm: {py_token_norm}"
     )
+
+
+CURRENCY_CASES = [
+    "$2.3 billion",
+    "$5 million",
+    "£1.2 billion",
+    "€3 trillion",
+    "It cost $2.3 Billion last year.",
+    "$2.30",
+    "£5",
+    "£1.20",
+    "€1.01",
+]
+
+
+@pytest.mark.skipif(not HAS_MISAKI_PYTHON, reason="misaki Python module not available")
+@pytest.mark.parametrize("language", ["en-us", "en-gb"])
+@pytest.mark.parametrize("text", CURRENCY_CASES)
+def test_misaki_cpp_vs_python_currency(text: str, language: str) -> None:
+    """Compare currency amounts, including amounts followed by a scale word (e.g. "$2.3 billion")."""
+    cpp_result = _build_cpp_engine(language).phonemize_with_tokens(text)
+    py_phonemes, py_tokens = _python_phonemize_with_tokens(language, text)
+
+    assert _normalize_phonemes_for_parity(cpp_result["phonemes"]) == _normalize_phonemes_for_parity(py_phonemes)
+
+    cpp_token_phonemes = [_normalize_phonemes_for_parity(token.get("phonemes") or "") for token in cpp_result["tokens"]]
+    py_token_phonemes = [
+        _normalize_phonemes_for_parity((token.phonemes or "") if token is not None else "") for token in py_tokens
+    ]
+    assert cpp_token_phonemes == py_token_phonemes

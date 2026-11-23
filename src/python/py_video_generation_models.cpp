@@ -312,6 +312,18 @@ void init_ltx2_video_transformer_3d_model(py::module_& m) {
         .def_readonly("perturbed_attn", &ov::genai::LTX2VideoTransformer3DModel::Config::perturbed_attn);
 
     ltx2_transformer.def("get_config", &ov::genai::LTX2VideoTransformer3DModel::get_config)
+        .def("has_input", &ov::genai::LTX2VideoTransformer3DModel::has_input, py::arg("name"),
+             "Returns whether the export has an input with this exact name.")
+        .def("set_rope_coords",
+             &ov::genai::LTX2VideoTransformer3DModel::set_rope_coords,
+             py::arg("video_coords"),
+             py::arg("audio_coords"),
+             R"(
+                Initializes positional inputs from f32 patch boundaries.
+                video_coords (ov.Tensor): Shape [B, 3, video_sequence_length, 2].
+                audio_coords (ov.Tensor): Shape [B, 1, audio_sequence_length, 2].
+                Computes and binds external RoPE, or binds coordinates for legacy exports.
+            )")
         .def(
             "compile",
             [](ov::genai::LTX2VideoTransformer3DModel& self, const std::string& device, const py::kwargs& kwargs) {

@@ -140,8 +140,9 @@ std::string Tokenizer::apply_chat_template(const ChatHistory& history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template,
                                            const std::optional<JsonContainer>& tools,
-                                           const std::optional<JsonContainer>& extra_context) const {
-    return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
+                                           const std::optional<JsonContainer>& extra_context,
+                                           const ov::AnyMap& properties) const {
+    return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context, properties);
 }
 
 std::string Tokenizer::get_chat_template() const {
@@ -154,6 +155,10 @@ std::string Tokenizer::get_original_chat_template() const {
 
 void Tokenizer::set_chat_template(const std::string& chat_template) {
     m_pimpl->set_chat_template(chat_template);
+}
+
+void set_chat_template_patcher(Tokenizer& tokenizer, std::function<std::string(const std::string&)> patcher) {
+    tokenizer.m_pimpl->set_chat_template_patcher(std::move(patcher));
 }
 
 Vocab Tokenizer::get_vocab() const {

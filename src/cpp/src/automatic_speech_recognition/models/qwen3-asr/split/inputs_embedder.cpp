@@ -178,7 +178,7 @@ ov::Tensor InputsEmbedderQwen3ASR::get_inputs_embeds(
 
     const bool is_chat_history = !history_vision_count.empty();
 
-    if (m_apply_chat_template) {
+    if (m_prompt_formatting == PromptFormatting::NeedsTemplate) {
         const auto template_start = std::chrono::steady_clock::now();
         std::string system_context;
         auto audio_content = JsonContainer::array();
