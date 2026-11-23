@@ -91,20 +91,21 @@ python -m pytest tests/python_tests/test_gguf_generated.py -v
 ```
 
 These tests fetch a SHA-256-verified source archive of llama.cpp at
-`03fa73cb27f5c251b9528489b18d303b1366aca4` and build only its CPU generator and a
+`19cce6919992fdffd92e0ac152caaf1e2b8f254e` and build only its CPU generator and a
 reference runner (CMake >=3.24 and a C++17 compiler are required). Both use the same
 revision. `generate.cpp` reuses the upstream `test-llama-archs` factory for architecture
-metadata, tensor shapes and seeded random weights. It removes unrelated metadata and
+metadata and tensor shapes, and preserves the previous per-tensor seeded random weights.
+It removes unrelated metadata and
 optional bias/RoPE/quantization-scale tensors and the LFM2 audio-detokenizer head, retains
 required biases (all Jais2/GPT-OSS biases and the GLM4-MoE/LFM2-MoE/MiniMax-M2 expert-selection
 bias), and centers normalization weights around one (Gemma applies its own offset). MoE fixtures select
-two of four experts. The pinned saver cannot export AFMoE, DeepSeek2-OCR, EXAONE-MoE, Gemma3,
-Gemma4, Mellum, Muse-Glimmer or PLaMo3, and the pinned revision predates LFM3. These use the
-OpenVINO GGUF frontend accuracy fixtures instead: two- to four-layer F32 GGUFs with a 32-token
-vocabulary, downloaded from OpenVINO `0a3e3fb5e92b7c8bec70dece0bcaafe09703a1f6` and checked against
-pinned SHA-256 digests. The runner reloads the finalized or downloaded GGUFs and independently produces
-greedy token IDs and log probabilities using llama.cpp CPU, with OpenVINO disabled in
-that build. The LFM3 fixture instead provides one-token references from its stored llama.cpp logits.
+two of four experts. The tiny-model factory cannot provide usable models for AFMoE, DeepSeek2-OCR,
+EXAONE-MoE, Gemma3, Gemma4, LFM3, Mellum, Muse-Glimmer or PLaMo3, so these use OpenVINO GGUF frontend
+accuracy fixtures: two- to four-layer F32 GGUFs with a 32-token vocabulary, downloaded from OpenVINO
+`0a3e3fb5e92b7c8bec70dece0bcaafe09703a1f6` and checked against pinned SHA-256 digests. The runner
+reloads the finalized or downloaded GGUFs and independently produces greedy token IDs and log
+probabilities using llama.cpp CPU, with OpenVINO disabled in that build. The LFM3 fixture uses the same
+runner for full 16-token prefill/decode references.
 Both sides use F32 inference/KV caches and no dynamic quantization.
 GenAI checks prefill/decode with SDPA, PA and automatic selection. Continuous batching runs
 concurrent requests with chunked prefill, whole-prompt scheduling, KV-cache preemption
@@ -118,11 +119,14 @@ checks real tokenizer behavior.
 Build outputs, GGUFs and references are generated in pytest temporary directories,
 not committed. Only the pinned OpenVINO fixtures (under 1 MiB each) are downloaded. For repeated local runs,
 `GGUF_LLAMA_BUILD_DIR=/absolute/path` reuses the reference build, rebuilding as needed.
-With that build cached, a local generated-suite run took about 45 seconds (270 passed,
-41 skipped and 17 xfailed), and the Optimum suite took about 80 seconds with download
-caches warm. A clean four-job CPU reference build adds about 80 seconds.
-On the Linux precommit runner for [PR #4318 at `af609b39`](https://github.com/openvinotoolkit/openvino.genai/actions/runs/38698456185/job/116311682631),
-the combined suites took 295 seconds in pytest before the coverage added here.
+With the build cached, the generated suite took 47.85 seconds locally (271 passed,
+39 skipped and 18 xfailed); the first run, including the reference build, took 120.35 seconds.
+The Optimum suite took about 80 seconds with download caches warm.
+In Linux wheel CI, the GGUF test job collected 239 cases and took 281.62 seconds on the PR base
+([run](https://github.com/openvinotoolkit/openvino.genai/actions/runs/44161491215/job/134324571639)),
+versus 456 cases and 339.88 seconds on the original test-expansion branch
+([run](https://github.com/openvinotoolkit/openvino.genai/actions/runs/44180112823/job/134395293098)).
+The new llama.cpp pin and LFM3 decode coverage have not yet been measured in CI.
 The job has a 30-minute timeout. CI timings depend on download caches and runner load.
 
 The 41 model cases cover 36 architecture IDs. Generated cases: BailingMoE2, ERNIE4.5-MoE,
@@ -137,7 +141,7 @@ The architecture list is explicit: missing exports fail setup rather than silent
 skipping coverage. Continuous batching log probabilities allow F32 reduction-order drift:
 `rtol=1e-4` for generated models and `rtol=5e-3` for the OpenVINO fixtures, which drift more
 (up to about 4e-3 relative) and whose frontend accuracy tests accept an NMSE up to 1e-5.
-The single-token LFM3 references skip the preemption and prefix-caching scenarios.
+LFM3 runs the same preemption and prefix-caching scenarios as the other architectures.
 
 Known limitations are isolated from the passing cases:
 
@@ -146,7 +150,8 @@ Known limitations are isolated from the passing cases:
 | Mamba2 explicit PA/continuous batching | Non-strict xfail: no SDPA node for PA conversion |
 | Nemotron-H explicit PA/continuous batching | Non-strict xfail: SelectiveSSM fusion-count check fails during PA conversion |
 | Gemma2 explicit PA/continuous batching | Non-strict xfail: soft-capped attention has no SDPA node for PA conversion; automatic fallback passes |
-| Qwen3.5/Qwen3.5-MoE prefix-caching continuous batching | Non-strict xfail: GatedDeltaNet state restored from a prefix-cache checkpoint drifts by about 3e-3 in log probs (token IDs match; LFM2 restores exactly) |
+| LFM3 prefix-caching continuous batching | Non-strict xfail, [CVS-196941](https://jira.devtools.intel.com/browse/CVS-196941): restored cached state changes log probabilities by up to 0.047 on the synthetic fixture (token IDs match) |
+| Qwen3.5/Qwen3.5-MoE prefix-caching continuous batching | Non-strict xfail, [CVS-196941](https://jira.devtools.intel.com/browse/CVS-196941): restored GatedDeltaNet state changes log probabilities by about 3e-3 on synthetic fixtures (token IDs match; LFM2 restores exactly) |
 
 Expected failures still execute. Unexpected passes are reported as XPASS without failing
 the suite; remove their markers after confirming the fixes are available in the tested

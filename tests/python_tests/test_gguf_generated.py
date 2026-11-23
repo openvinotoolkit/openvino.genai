@@ -71,7 +71,7 @@ MOE_ARCHITECTURES = {
 }
 # The pinned llama.cpp saver cannot export these architectures. Use the OpenVINO GGUF frontend's
 # accuracy fixtures instead: two- to four-layer F32 GGUFs with a 32-token vocabulary, pinned by
-# OpenVINO revision and SHA-256. The pinned llama.cpp still produces their references.
+# OpenVINO revision and SHA-256. The pinned llama.cpp produces their references.
 OPENVINO_FIXTURE_REVISION = "0a3e3fb5e92b7c8bec70dece0bcaafe09703a1f6"
 OPENVINO_FIXTURE_URL = (
     "https://raw.githubusercontent.com/openvinotoolkit/openvino/{revision}"
@@ -90,9 +90,6 @@ OPENVINO_FIXTURES = {
     "muse-glimmer": ("muse-glimmer", "9fb2126e4f32c7d7d31f8e8cd6ef3d5395df71107185e438ccb1d07a327b29af"),
     "plamo3": ("plamo3", "12aa3e2f509109cdf69ed5959dfcdaeb89e239a16f0442da09dcdcca10390533"),
 }
-# The pinned llama.cpp predates LFM3. Its fixture stores llama.cpp logits after the token
-# batches [1, 2, 3], [4], [5, 6]; with preserved state they score these prefixes.
-STORED_LOGITS_PROMPTS = [[1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5, 6]]
 MODEL_CASES = (
     [pytest.param((arch, arch, "moe" if arch in MOE_ARCHITECTURES else "dense"), id=arch) for arch in ARCHITECTURES]
     + [pytest.param((arch, arch, "moe"), id=f"{arch}-moe") for arch in ("llama", "minicpm", "mistral3")]
@@ -165,17 +162,7 @@ def download_openvino_fixture(name):
     data = retry_request(download)
     assert hashlib.sha256(data).hexdigest() == sha256, f"{url}: SHA-256 mismatch"
     with np.load(io.BytesIO(data)) as fixture:
-        return fixture["model"].tobytes(), fixture["logits"]
-
-
-def stored_logits_references(logits):
-    assert logits.shape == (len(STORED_LOGITS_PROMPTS), logits.shape[1])
-    references = []
-    for prompt, row in zip(STORED_LOGITS_PROMPTS, logits.astype(np.float64)):
-        token = int(np.argmax(row))
-        log_prob = -np.log(np.exp(row - row[token]).sum())
-        references.append({"input_ids": prompt, "generated_ids": [token], "log_probs": [log_prob]})
-    return references
+        return fixture["model"].tobytes()
 
 
 @pytest.fixture(scope="module", params=MODEL_CASES)
@@ -184,11 +171,9 @@ def generated_model(request, llama_reference_tools, tmp_path_factory):
     generator, oracle = llama_reference_tools
     directory = tmp_path_factory.mktemp(f"gguf_{name}")
     if variant == "fixture":
-        weights, logits = download_openvino_fixture(name)
+        weights = download_openvino_fixture(name)
         model = directory / f"{name}.gguf"
         model.write_bytes(weights)
-        if arch == "lfm3":
-            return arch, variant, model, stored_logits_references(logits)
     else:
         run_reference_command([str(generator), arch, str(directory), variant])
         model = directory / f"{arch}-{variant}.gguf"
@@ -307,10 +292,12 @@ def kv_blocks_required(reference):
 def test_generated_gguf_continuous_batching(request, generated_model, numeric_tokenizer, scenario):
     arch, variant, model, references = generated_model
     mark_backend_limitation(request, arch, variant, "PA")
-    if scenario in {"preemption", "prefix_caching"} and references[-1]["input_ids"] != PROMPTS[-1]:
-        pytest.skip("Stored-logits references are too short to fill a KV block")
-    if scenario == "prefix_caching" and arch in {"qwen35", "qwen35moe"}:
-        reason = "GatedDeltaNet state restored from a prefix-cache checkpoint drifts by about 3e-3 in log probs"
+    if scenario == "prefix_caching" and arch in {"lfm3", "qwen35", "qwen35moe"}:
+        reason = "CVS-196941: cached recurrent-state restoration changes log probabilities; generated token IDs match"
+        if arch == "lfm3":
+            reason += " (up to 0.047 on the synthetic fixture)"
+        else:
+            reason += " (about 3e-3 on the synthetic fixture)"
         request.node.add_marker(pytest.mark.xfail(strict=False, raises=AssertionError, reason=reason))
     scheduler = genai.SchedulerConfig()
     for name, value in CB_SCHEDULERS[scenario].items():

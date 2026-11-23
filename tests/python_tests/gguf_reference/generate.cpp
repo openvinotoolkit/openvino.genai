@@ -7,6 +7,26 @@
 #undef main
 
 #include "src/llama-model.h"
+#include "src/llama-model-saver.h"
+
+// Keep generated weights stable when the upstream fixture factory changes its initializer.
+static void reset_fixture_tensor(struct ggml_tensor* tensor) {
+    const size_t seed = 1 ^ std::hash<std::string>{}(tensor->name);
+    std::mt19937 generator(seed);
+    std::normal_distribution<float> distribution(0.0f, 0.01f);
+    std::vector<float> values(ggml_nelements(tensor));
+    for (auto& value : values)
+        value = distribution(generator);
+    if (tensor->type == GGML_TYPE_F32) {
+        ggml_backend_tensor_set(tensor, values.data(), 0, ggml_nbytes(tensor));
+    } else if (tensor->type == GGML_TYPE_F16) {
+        std::vector<ggml_fp16_t> half_values(values.size());
+        std::transform(values.begin(), values.end(), half_values.begin(), ggml_fp32_to_fp16);
+        ggml_backend_tensor_set(tensor, half_values.data(), 0, ggml_nbytes(tensor));
+    } else {
+        throw std::runtime_error("Expected F32 or F16 fixture weights");
+    }
+}
 
 int main(int argc, char** argv) {
     if (argc != 4) {
@@ -16,7 +36,7 @@ int main(int argc, char** argv) {
     try {
         common_init();
         const auto arch = llm_arch_from_string(argv[1]);
-        if (arch == LLM_ARCH_UNKNOWN || !arch_supported(arch) || !llama_model_saver_supports_arch(arch))
+        if (arch == LLM_ARCH_UNKNOWN || !arch_supported(arch) || !llama_arch_supports_save(arch))
             throw std::runtime_error("Architecture is not supported by the pinned fixture factory/saver");
         const std::string variant = argv[3];
         const bool moe = variant == "moe";
@@ -24,6 +44,7 @@ int main(int argc, char** argv) {
             (!moe && moe_mandatory(arch)))
             throw std::runtime_error("Variant is not supported by the pinned fixture factory");
         auto metadata = get_gguf_ctx(arch, moe);
+        gguf_set_val_str(metadata.get(), "tokenizer.ggml.model", "none");
         const std::string prefix = std::string(argv[1]) + ".";
         // The generic fixture sets residual/SWA metadata even for architectures
         // that ignore it. MiniCPM has its own backward-compatible scale defaults.
@@ -51,13 +72,12 @@ int main(int argc, char** argv) {
             gguf_set_val_f32(metadata.get(), (prefix + "attn_logit_softcapping").c_str(), 50.0f);
             gguf_set_val_f32(metadata.get(), (prefix + "final_logit_softcapping").c_str(), 30.0f);
         }
-        auto model_and_ctx = get_model_and_ctx(metadata.get(), nullptr, 1, {});
-        gguf_context_ptr output(gguf_init_empty());
-        gguf_set_kv(output.get(), metadata.get());
+        init_normal_pool(1, 0.01f);
+        auto model_and_ctx = get_model_and_ctx(metadata.get(), nullptr, 1, 0.01f, {});
         // add_kv_from_model() emits unused hparam defaults as real metadata, e.g.
         // llama.logit_scale=0. Preserve the factory inputs instead, without its dummy tensors.
-        llama_model_saver saver(arch, output.get());
-        saver.model = model_and_ctx.first.get();
+        llama_model_saver saver(model_and_ctx.first.get());
+        gguf_set_kv(saver.gguf_ctx, metadata.get());
         // The user-model factory creates every optional tensor. Leave optional biases,
         // RoPE factors and the LFM2 audio-detokenizer head out to exercise the ordinary
         // decoder configuration. F32 weights do not need the randomly initialized
@@ -72,8 +92,10 @@ int main(int argc, char** argv) {
                  name.find(".bias") != std::string::npos) ||
                 name.find("rope_freqs") != std::string::npos || name.find("rope_factors") != std::string::npos ||
                 name.find(".scale") != std::string::npos || name.find(".input_scale") != std::string::npos ||
-                name.rfind("dense_2.", 0) == 0 || gguf_find_tensor(output.get(), name.c_str()) >= 0)
+                name.rfind("dense_2.", 0) == 0 || name.rfind("cls.output.", 0) == 0 ||
+                gguf_find_tensor(saver.gguf_ctx, name.c_str()) >= 0)
                 continue;
+            reset_fixture_tensor(tensor);
             if (name.find("norm.weight") != std::string::npos && arch != LLM_ARCH_GEMMA && arch != LLM_ARCH_GEMMA2) {
                 // Non-Gemma norms need unit-centered weights so the residual does not
                 // overwhelm attention/FFN. Gemma applies its own +1 in the graph.
@@ -88,12 +110,8 @@ int main(int argc, char** argv) {
             saver.add_tensor(tensor);
         }
         const std::string path = std::string(argv[2]) + "/" + argv[1] + (moe ? "-moe.gguf" : "-dense.gguf");
-        FILE* file = fopen(path.c_str(), "wb");
-        if (!file)
-            throw std::runtime_error("Cannot create generated GGUF");
-        saver.save(file);
-        if (fclose(file) != 0)
-            throw std::runtime_error("Cannot finish generated GGUF");
+        if (!gguf_write_to_file(saver.gguf_ctx, path.c_str(), false))
+            throw std::runtime_error("Cannot write generated GGUF");
     } catch (const std::exception& error) {
         fprintf(stderr, "%s\n", error.what());
         return 1;
