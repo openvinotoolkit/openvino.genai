@@ -115,7 +115,7 @@ class TestBeamSearchCausalLM:
         model_name = request.node.callspec.params['convert_model']
         model = MODELS[model_name]
 
-        # some GGUF models return different result than transformers
+        # some GGUF models return different result than transformers.
         if model.get("gguf_filename", None):
             return
         
