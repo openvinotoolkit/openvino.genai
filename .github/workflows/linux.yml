@@ -1166,6 +1166,78 @@ jobs:
       - name: Smoke test
         run: wwb --help
 
+  # Reproduces EIO from the /mount share on file operations the cached test helpers rely on. Not part of Overall_Status.
+  share_io_check:
+    name: Shared cache I/O check
+    needs: [ openvino_download ]
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-8-cores-32gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+    steps:
+      - name: Show the mount
+        run: |
+          findmnt -T "${{ env.OV_CACHE }}" || mount | grep /mount
+          stat -f -c 'type=%T' "${{ env.OV_CACHE }}" "${{ env.HF_HOME }}"
+
+      - name: Install filelock
+        run: python -m pip install filelock==4.3.0
+
+      - name: Create, rename and remove files on the share
+        run: |
+          python - <<'EOF'
+          import os
+          import shutil
+          import sys
+          import uuid
+          from pathlib import Path
+
+          from filelock import FileLock
+
+          ITERATIONS = 20
+
+
+          def check(root: Path) -> str | None:
+              base = root / f".share-io-check-{uuid.uuid4().hex}"
+              renamed = base.with_name(base.name + "-renamed")
+
+              def lock():
+                  with FileLock(str(renamed / "probe.lock")):
+                      pass
+
+              ops = [
+                  ("mkdir", lambda: base.mkdir(parents=True)),
+                  ("create", lambda: (base / "probe").write_bytes(b"probe")),
+                  ("unlink", lambda: (base / "probe").unlink()),
+                  ("rename dir", lambda: base.rename(renamed)),
+                  ("filelock", lock),
+              ]
+              try:
+                  for name, op in ops:
+                      try:
+                          op()
+                      except OSError as error:
+                          return f"{name}: {error!r}"
+                  return None
+              finally:
+                  shutil.rmtree(renamed if renamed.exists() else base, ignore_errors=True)
+
+
+          failed = False
+          for root in (Path(os.environ["OV_CACHE"]), Path(os.environ["HF_HOME"])):
+              errors = [error for error in (check(root) for _ in range(ITERATIONS)) if error]
+              print(f"{root}: {len(errors)}/{ITERATIONS} iterations failed")
+              for error in errors:
+                  print(f"  {error}")
+              failed |= bool(errors)
+          sys.exit(1 if failed else 0)
+          EOF
+
   Overall_Status:
     name: ci/gha_overall_status_linux
     needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests, genai_wwb_standalone_install]
