@@ -182,16 +182,43 @@ bool Tokenizer::supports_paired_input() const {
     return m_pimpl->is_paired_input;
 }
 
+Tokenizer::TokenizerImpl::~TokenizerImpl() {
+    if (m_ireq_queue_tokenizer) {
+        for (size_t i = 0; i < m_ireq_queue_tokenizer->size(); ++i) {
+            try {
+                m_ireq_queue_tokenizer->get(static_cast<int>(i)).wait();
+            } catch (...) {
+            }
+        }
+        if (m_ireq_queue_tokenizer->size() > 0) {
+            try {
+                m_ireq_queue_tokenizer->get(0).get_compiled_model().release_memory();
+            } catch (...) {
+            }
+        }
+        m_ireq_queue_tokenizer.reset();
+    }
+    if (m_ireq_queue_detokenizer) {
+        for (size_t i = 0; i < m_ireq_queue_detokenizer->size(); ++i) {
+            try {
+                m_ireq_queue_detokenizer->get(static_cast<int>(i)).wait();
+            } catch (...) {
+            }
+        }
+        if (m_ireq_queue_detokenizer->size() > 0) {
+            try {
+                m_ireq_queue_detokenizer->get(0).get_compiled_model().release_memory();
+            } catch (...) {
+            }
+        }
+        m_ireq_queue_detokenizer.reset();
+    }
+    m_structured_output_controller.reset();
+    m_shared_object_ov_tokenizers.reset();
+}
+
 Tokenizer::~Tokenizer() {
     m_pimpl.reset();
-
-    // release CPU plugin ()
-    try {
-        get_core_singleton().unload_plugin("CPU");
-    } catch (const ov::Exception&) {
-        // Note: in a theory it can throw an exception when 2 different Tokenizers are created from
-        // different threads and then both of them unload plugin for 'device' from ov::Core
-    }
 }
 
 }  // namespace genai

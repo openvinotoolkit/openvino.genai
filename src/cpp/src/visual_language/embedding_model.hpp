@@ -45,6 +45,15 @@ public:
                     const ov::AnyMap& properties);
 
     EmbeddingsModel() = default;
+    ~EmbeddingsModel() {
+        if (m_embeddings_requests_queue && m_embeddings_requests_queue->size() > 0) {
+            try {
+                m_embeddings_requests_queue->get(0).ireq.get_compiled_model().release_memory();
+            } catch (...) {
+            }
+        }
+        m_embeddings_requests_queue.reset();
+    }
 
     static Ptr create(const std::filesystem::path& model_dir,
                       const float scale_emb,

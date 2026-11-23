@@ -77,6 +77,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     Sampler m_sampler;
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
+    std::string m_device;
     bool m_has_position_ids = true;
     size_t m_image_id = 0;
     size_t m_video_id = 0;
@@ -134,6 +135,7 @@ private:
         const std::string& device,
         const ov::AnyMap& properties
     ) {
+        m_device = device;
         m_is_npu = device.find("NPU") != std::string::npos;
 
         utils::validate_vlm_model_properties(properties);
@@ -217,6 +219,7 @@ private:
         const std::string& device,
         const ov::AnyMap& properties
     ) {
+        m_device = device;
         m_is_npu = device.find("NPU") != std::string::npos;
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
@@ -334,6 +337,26 @@ public:
             utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json")
         } {
         initialize_from_model_and_map(language_model, models_map, tokenizer, config_dir_path, device, properties);
+    }
+
+    ~VLMPipelineImpl() override {
+        m_encoded_images.clear();
+        m_encoded_videos.clear();
+        m_encoded_audios.clear();
+        m_embeddings_registry.reset();
+        if (m_language) {
+            try {
+                m_language.get_compiled_model().release_memory();
+            } catch (...) {
+            }
+            m_language = {};
+        }
+        m_embedding.reset();
+        m_inputs_embedder.reset();
+        m_adapter_controller.reset();
+        m_sampler.set_tokenizer({});
+        m_tokenizer = {};
+        utils::release_core_plugin(m_device);
     }
 
     VLMDecodedResults generate(

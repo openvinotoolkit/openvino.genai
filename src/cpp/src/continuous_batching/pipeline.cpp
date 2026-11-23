@@ -87,7 +87,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         utils::get_model_properties(properties_without_draft_model, "language_model"));
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
-    auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
+    auto tokenizer = ov::genai::Tokenizer(
+        models_path,
+        tokenizer_properties.empty() ? utils::get_model_properties(properties_without_draft_model_without_gguf, "tokenizer", "CPU")
+                                     : tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
     std::shared_ptr<InputsEmbedder> embedder;
@@ -155,7 +158,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     auto model = language_model;
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
-    auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
+    auto tokenizer = ov::genai::Tokenizer(
+        models_path,
+        tokenizer_properties.empty() ? utils::get_model_properties(properties_without_draft_model_without_gguf, "tokenizer", "CPU")
+                                     : tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
     std::shared_ptr<InputsEmbedder> embedder;

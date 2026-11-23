@@ -3,6 +3,7 @@
 
 #pragma once
 #include <memory>
+#include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/infer_request.hpp"
 
 #include "openvino/genai/common_types.hpp"
@@ -213,6 +214,16 @@ public:
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap properties);
+
+    virtual ~VisionEncoder() {
+        if (m_ireq_queue_vision_encoder && m_ireq_queue_vision_encoder->size() > 0) {
+            try {
+                m_ireq_queue_vision_encoder->get(0).get_compiled_model().release_memory();
+            } catch (...) {
+            }
+        }
+        m_ireq_queue_vision_encoder.reset();
+    }
 };
 
 } // namespace ov::genai

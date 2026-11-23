@@ -46,6 +46,10 @@ public:
         return m_data[value];
     }
 
+    size_t size() const {
+        return m_data.size();
+    }
+
     std::future<int> get_idle() {
         int value;
         std::promise<int> idle_promise;

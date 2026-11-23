@@ -343,7 +343,7 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedd
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
                                const ov::AnyMap device_config) :
-    InputsEmbedder(model_dir, Tokenizer(model_dir, device_config), device, device_config) {}
+    InputsEmbedder(model_dir, Tokenizer(model_dir, utils::get_model_properties(device_config, "tokenizer", "CPU")), device, device_config) {}
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const Tokenizer& tokenizer,
