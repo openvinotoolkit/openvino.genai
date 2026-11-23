@@ -101,6 +101,9 @@ std::vector<std::pair<size_t, size_t>> js_to_cpp<std::vector<std::pair<size_t, s
 /** @brief  A template specialization for TargetType ov::genai::StopCriteria (accepts number 0, 1, 2) */
 template <>
 ov::genai::StopCriteria js_to_cpp<ov::genai::StopCriteria>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::SpeechOutputMode (accepts number 0, 1) */
+template <>
+ov::genai::SpeechOutputMode js_to_cpp<ov::genai::SpeechOutputMode>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType std::vector<double> (e.g. raw speech) */
 template <>
 std::vector<double> js_to_cpp<std::vector<double>>(const Napi::Env& env, const Napi::Value& value);
