@@ -9,6 +9,10 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
+import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
+
+patch_pyav_for_servercore.install_av_stub_module_for_windows()
+
 
 class SpeechBenchmarkGenAITest(unittest.TestCase):
     @classmethod
