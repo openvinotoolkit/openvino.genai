@@ -1166,7 +1166,7 @@ jobs:
       - name: Smoke test
         run: wwb --help
 
-  # Reproduces EIO from the /mount share on file operations the cached test helpers rely on. Not part of Overall_Status.
+  # Reproduces EIO from filelock 4.3.0 on the blobfuse2 /mount share for a tox-dev/filelock report. Not part of Overall_Status.
   share_io_check:
     name: Shared cache I/O check
     needs: [ openvino_download ]
@@ -1180,63 +1180,106 @@ jobs:
       volumes:
         - /mount:/mount
     steps:
-      - name: Show the mount
+      - name: Show the environment
         run: |
-          findmnt -T "${{ env.OV_CACHE }}" || mount | grep /mount
-          stat -f -c 'type=%T' "${{ env.OV_CACHE }}" "${{ env.HF_HOME }}"
+          findmnt -T "$OV_CACHE" || mount | grep /mount
+          uname -r
+          python --version
 
-      - name: Install filelock
-        run: python -m pip install filelock==4.3.0
-
-      - name: Create, rename and remove files on the share
+      - name: Check system calls the filelock probe makes
         run: |
           python - <<'EOF'
+          import errno
+          import fcntl
           import os
           import shutil
-          import sys
           import uuid
           from pathlib import Path
 
-          from filelock import FileLock
+          ITERATIONS = 5
+          root = Path(os.environ["OV_CACHE"]) / f".syscall-check-{uuid.uuid4().hex}"
+          root.mkdir(parents=True)
 
-          ITERATIONS = 20
+
+          def create(path):
+              return os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
 
 
-          def check(root: Path) -> str | None:
-              base = root / f".share-io-check-{uuid.uuid4().hex}"
-              renamed = base.with_name(base.name + "-renamed")
+          def close_then_unlink(path):
+              os.close(create(path))
+              os.unlink(path)
 
-              def lock():
-                  with FileLock(str(renamed / "probe.lock")):
-                      pass
 
-              ops = [
-                  ("mkdir", lambda: base.mkdir(parents=True)),
-                  ("create", lambda: (base / "probe").write_bytes(b"probe")),
-                  ("unlink", lambda: (base / "probe").unlink()),
-                  ("rename dir", lambda: base.rename(renamed)),
-                  ("filelock", lock),
-              ]
+          def unlink_while_open(path):
+              fd = create(path)
               try:
-                  for name, op in ops:
-                      try:
-                          op()
-                      except OSError as error:
-                          return f"{name}: {error!r}"
-                  return None
+                  os.unlink(path)
               finally:
-                  shutil.rmtree(renamed if renamed.exists() else base, ignore_errors=True)
+                  os.close(fd)
 
 
-          failed = False
-          for root in (Path(os.environ["OV_CACHE"]), Path(os.environ["HF_HOME"])):
-              errors = [error for error in (check(root) for _ in range(ITERATIONS)) if error]
-              print(f"{root}: {len(errors)}/{ITERATIONS} iterations failed")
-              for error in errors:
-                  print(f"  {error}")
-              failed |= bool(errors)
-          sys.exit(1 if failed else 0)
+          def flock_close_then_unlink(path):
+              fd = create(path)
+              try:
+                  fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                  fcntl.flock(fd, fcntl.LOCK_UN)
+              finally:
+                  os.close(fd)
+              os.unlink(path)
+
+
+          def o_tmpfile(_):
+              os.close(os.open(root, os.O_TMPFILE | os.O_RDWR | os.O_EXCL, 0o600))
+
+
+          try:
+              for case in (close_then_unlink, unlink_while_open, flock_close_then_unlink, o_tmpfile):
+                  results = []
+                  for i in range(ITERATIONS):
+                      try:
+                          case(str(root / f"{case.__name__}-{i}"))
+                          results.append("ok")
+                      except OSError as error:
+                          results.append(errno.errorcode.get(error.errno, str(error.errno)))
+                  print(f"{case.__name__}: {', '.join(results)}")
+          finally:
+              shutil.rmtree(root, ignore_errors=True)
           EOF
+
+      - name: Check FileLock with filelock 4.2.12 and 4.3.0
+        run: |
+          cat > /tmp/lock_check.py <<'EOF'
+          import shutil
+          import sys
+          import traceback
+          import uuid
+          from pathlib import Path
+
+          import filelock
+
+          root = Path(sys.argv[1]) / f".filelock-check-{uuid.uuid4().hex}"
+          root.mkdir(parents=True)
+          failed = False
+          # huggingface_hub's WeakFileLock() passes mode=0o664.
+          for kwargs in ({}, {"mode": 0o664}):
+              label = f"filelock {filelock.__version__} FileLock({', '.join(f'{k}={v:#o}' for k, v in kwargs.items())})"
+              try:
+                  with filelock.FileLock(str(root / f"{len(kwargs)}.lock"), **kwargs):
+                      pass
+                  print(f"{label}: ok")
+              except OSError:
+                  failed = True
+                  print(f"{label}: failed")
+                  traceback.print_exc(file=sys.stdout)
+          shutil.rmtree(root, ignore_errors=True)
+          sys.exit(int(failed))
+          EOF
+          status=0
+          for version in 4.2.12 4.3.0; do
+            python -m pip install -q --no-deps --target "/tmp/filelock-$version" "filelock==$version"
+            PYTHONPATH="/tmp/filelock-$version" python /tmp/lock_check.py "$OV_CACHE" || status=1
+          done
+          exit $status
 
   Overall_Status:
     name: ci/gha_overall_status_linux
