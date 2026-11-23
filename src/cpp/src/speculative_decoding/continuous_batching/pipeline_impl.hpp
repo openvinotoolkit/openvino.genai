@@ -122,6 +122,20 @@ public:
         return found == m_awaiting_requests.end() ? nullptr : *found;
     }
 
+    void discard_awaiting_request(uint64_t request_id) {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+            if ((*request)->get_request_id() != request_id) {
+                continue;
+            }
+            for (const auto& sequence : (*request)->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            m_awaiting_requests.erase(request);
+            return;
+        }
+    }
+
     size_t restore_awaiting_prefix(uint64_t request_id, size_t ceiling) {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         for (const auto& group : m_awaiting_requests) {

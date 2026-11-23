@@ -108,6 +108,9 @@ protected:
 
     void _validate_linear_verifier_constraints() const;
 
+    /// Takes stop_token_ids and eos_token_id from m_generation_config when sampling_params leave them unset.
+    GenerationConfig _with_default_stop_tokens(GenerationConfig sampling_params) const;
+
     /// Reserves LA live + scratch rows for speculative verification.
     void _reserve_linear_attention_scratch();
 
@@ -172,8 +175,13 @@ public:
 
     bool has_non_finished_requests() override;
 
-    // Removes a request that add_request() queued and no step has pulled yet.
-    void discard_awaiting_request(uint64_t request_id);
+    // The prompt length of input_ids of shape [seq_len], [1, seq_len] or [1, seq_len, hidden_size].
+    static size_t get_prompt_len(const ov::Tensor& input_ids);
+
+    // Throws for a request of prompt_len tokens that add_request() would reject, and changes nothing.
+    void validate_request(uint64_t request_id,
+                          size_t prompt_len,
+                          const ov::genai::GenerationConfig& sampling_params) const;
 
     virtual void generate_candidates_for_prompt_lookup();
 
