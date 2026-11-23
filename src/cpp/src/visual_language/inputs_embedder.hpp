@@ -398,7 +398,7 @@ private:
             const std::filesystem::path& model_dir,
             const Tokenizer& tokenizer,
             const std::string& device,
-            ov::AnyMap device_config);
+            const ov::AnyMap device_config);
 
         IInputsEmbedder(
             const VLMConfig& vlm_config,
@@ -406,9 +406,9 @@ private:
             const Tokenizer& tokenizer,
             const std::filesystem::path& config_dir_path,
             const std::string& device,
-            ov::AnyMap device_config);
+            const ov::AnyMap device_config);
 
-        const ov::AnyMap& handle_lora(ov::AnyMap& device_config);
+        ov::AnyMap handle_lora(const ov::AnyMap& device_config);
 
         virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 

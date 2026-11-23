@@ -108,10 +108,10 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const std::filesystem::path& model_dir,
         const Tokenizer& tokenizer,
         const std::string& device,
-        ov::AnyMap device_config) :
+        const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
     m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, handle_lora(device_config))),
-    m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
+    m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, *extract_adapters_from_properties(device_config))),
     m_tokenizer{tokenizer},
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
@@ -121,7 +121,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
-        ov::AnyMap device_config) :
+        const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
     m_vision_encoder(VisionEncoder::create(
         models_map,
@@ -135,15 +135,14 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         utils::get_model_weights_pair(models_map, "text_embeddings").second,
         m_vlm_config.scale_emb,
         device,
-        device_config
+        *extract_adapters_from_properties(device_config)
     )),
     m_tokenizer(tokenizer),
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
-const ov::AnyMap& InputsEmbedder::IInputsEmbedder::handle_lora(ov::AnyMap& device_config) {
+ov::AnyMap InputsEmbedder::IInputsEmbedder::handle_lora(const ov::AnyMap& device_config) {
     update_adapters_from_properties(device_config, m_adapters);
-    device_config.erase(AdaptersProperty::name());
-    return device_config;
+    return *extract_adapters_from_properties(device_config);
 }
 
 void InputsEmbedder::IInputsEmbedder::set_adapters(const std::optional<AdapterConfig>& adapters) {
