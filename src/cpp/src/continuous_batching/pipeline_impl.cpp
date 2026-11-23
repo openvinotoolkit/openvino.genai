@@ -439,10 +439,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifi
         }
 
         const auto& sampling_params = sequence_group->get_sampling_parameters();
+        // experiment: sampled prompt-lookup verification on linear attention — the exact-sampling
+        // machinery from #4769 records per-token distributions; whether the LA rewind reproduces
+        // the target distribution must be checked statistically (see tests with TV metric)
         OPENVINO_ASSERT(!m_scheduler->get_config().enable_prefix_caching ||
                             ((m_model_input_type == ModelInputType::TOKENS || supports_embedding_prefix_verification()) &&
-                             sampling_params.is_greedy_decoding()),
-                        "Prefix linear-attention verification requires greedy decoding and a supported strategy for embedding input");
+                             (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial())),
+                        "Prefix linear-attention verification requires greedy or multinomial decoding and a supported strategy for embedding input");
         OPENVINO_ASSERT(sampling_params.assistant_confidence_threshold == 0.f,
                         "Linear-attention verifier speculative decoding supports a static candidate count only; assistant_confidence_threshold>0 (dynamic candidate count) is not yet supported.");
         OPENVINO_ASSERT(sampling_params.num_return_sequences == 1,

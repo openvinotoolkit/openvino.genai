@@ -1123,9 +1123,10 @@ private:
             if (mode.history() == detail::LinearAttentionPagingHistory::PREFIX_CHECKPOINTS &&
                 mode.step() == detail::LinearAttentionPagingStep::VERIFY) {
                 const auto& params = sequence_group->get_sampling_parameters();
-                OPENVINO_ASSERT(params.is_greedy_decoding() && params.num_return_sequences == 1 &&
+                // experiment: sampled prompt-lookup verification on linear attention (see pipeline_impl.cpp)
+                OPENVINO_ASSERT((params.is_greedy_decoding() || params.is_multinomial()) && params.num_return_sequences == 1 &&
                                     params.assistant_confidence_threshold == 0.f,
-                                "Prefix linear-attention verification requires one greedy sequence and a static window");
+                                "Prefix linear-attention verification requires one greedy or multinomial sequence and a static window");
             }
         }
     }
