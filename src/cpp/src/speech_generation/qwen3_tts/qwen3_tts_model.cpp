@@ -308,12 +308,13 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         auto [talker_device, talker_properties] =
             resolve_component_target(device, base_properties, roles::TALKER);
         if (talker_device.find("NPU") != std::string::npos) {
-            // Apply TTS-specific static-shape sizing unless the caller already set it.
+            // Apply TTS-specific NPU defaults unless the caller already set them.
             constexpr int64_t DEFAULT_MAX_PROMPT_LEN = 1024;
             constexpr int64_t DEFAULT_MIN_RESPONSE_LEN = 128;
             ov::AnyMap npu_talker_properties = talker_properties;
             npu_talker_properties.emplace("MAX_PROMPT_LEN", DEFAULT_MAX_PROMPT_LEN);
             npu_talker_properties.emplace("MIN_RESPONSE_LEN", DEFAULT_MIN_RESPONSE_LEN);
+            npu_talker_properties.emplace("NPUW_LLM_PREFILL_HINT", "STATIC");
 
             const auto talker_path = models_path / TALKER_NAME;
             auto talker_model = ov::genai::utils::singleton_core().read_model(talker_path);

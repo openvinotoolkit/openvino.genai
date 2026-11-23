@@ -370,6 +370,14 @@ export type GenericGenerationConfig = {
   stop_strings?: Set<string>;
   /** a set of tokens that will cause pipeline to stop generating further tokens. */
   stop_token_ids?: Set<Uint>;
+  /** OmniPipeline only: start speech generation while text is still being generated, feeding the
+   * talker one thinker step at a time instead of after the whole response. Requires speech output
+   * (`return_audio`) and the continuous batching backend. The generated text is unchanged, and with
+   * the same talker `rng_seed` so is the waveform, unless the thinker generates an `<|im_start|>`
+   * token. With `stop_strings`, a token reaches the talker only once no stop string can remove it,
+   * which delays speech by the token length of the longest stop string. Has no effect on LFM3-Omni:
+   * it has no talker and decodes speech together with the text. */
+  stream_text2speech?: boolean;
 };
 
 export type StructuredOutputGenerationConfig = {

@@ -53,7 +53,9 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     OmniDecodedResults,
     OmniPipeline,
+    OmniStreamerBase,
     OmniTalkerSpeechConfig,
+    OmniTextSourceBase,
     SpeechOutputMode,
     Talker,
     TalkerBase,
