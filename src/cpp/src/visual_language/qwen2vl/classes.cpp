@@ -7,6 +7,7 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
+#include "lora/helper.hpp"
 #include "openvino/op/interpolate.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/clamp.hpp"
@@ -26,6 +27,16 @@
 namespace ov::genai {
 
 namespace {
+
+constexpr char LORA_VISION_TENSOR_SUBPATH[] = "model.visual.";
+
+AdapterConfig to_vision_config(AdapterConfig config) {
+    if (config.get_tensor_name_prefix()) {
+        config.set_tensor_name_prefix(std::string("base_model.model.") + LORA_VISION_TENSOR_SUBPATH);
+    }
+    set_foreign_tensor_name_prefix(config, std::nullopt);
+    return config;
+}
 
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::f32);
@@ -266,7 +277,7 @@ ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pi
     }
 
     size_t h_bar = std::round(static_cast<float>(height) / factor) * factor;
-    size_t w_bar = std::round(static_cast<float>(width) / factor) * factor; 
+    size_t w_bar = std::round(static_cast<float>(width) / factor) * factor;
 
     if (h_bar * w_bar > max_pixels) {
         double beta = std::sqrt((height * width) / static_cast<double>(max_pixels));
@@ -948,6 +959,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     if (std::filesystem::exists(merger_path)) {
         auto model = utils::singleton_core().read_model(merger_path);
         utils::request_vl_sdpa_transformations(model);
+        init_vision_lora(model, device, device_config);
 
         auto compiled_model = utils::singleton_core().compile_model(
             model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
@@ -982,6 +994,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
         utils::request_vl_sdpa_transformations(model);
+        init_vision_lora(model, device, device_config);
 
         auto compiled_model = utils::singleton_core().compile_model(
             model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
@@ -1310,6 +1323,37 @@ std::string InputsEmbedderQwen2VL::get_last_pruned_prompt(const std::string& ori
     return pruned_prompt;
 }
 
+void InputsEmbedderQwen2VL::init_vision_lora(const std::shared_ptr<ov::Model>& merger,
+                                          const std::string& device,
+                                          const ov::AnyMap& properties) {
+    auto forwarded = properties.find(utils::FORWARDED_ADAPTERS_PROPERTY);
+    if (forwarded == properties.end()) {
+        return;
+    }
+    auto adapters = forwarded->second.as<AdapterConfig>();
+    if (!adapters) {
+        return;
+    }
+    adapters.set_tensor_name_prefix("base_model.model.");
+    const auto vision_config = to_vision_config(adapters);
+    m_lora_tensor_prefix = vision_config.get_tensor_name_prefix();
+    m_vision_adapter_controller = AdapterController(merger, vision_config, device);
+}
+
+std::optional<std::string> InputsEmbedderQwen2VL::get_lora_tensor_prefix() const {
+    return m_lora_tensor_prefix;
+}
+
+void InputsEmbedderQwen2VL::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_vision_adapters = adapters ? std::optional(to_vision_config(*adapters)) : std::nullopt;
+}
+
+void InputsEmbedderQwen2VL::apply_vision_adapters(ov::InferRequest& request) {
+    if (m_vision_adapter_controller) {
+        m_vision_adapter_controller->apply(request, m_vision_adapters);
+    }
+}
+
 void InputsEmbedderQwen2VL::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
     m_position_ids = ov::Tensor();
@@ -1344,6 +1388,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2VL::run_video_image_embeddi
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
+    apply_vision_adapters(vision_embeddings_merger);
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
     if (m_with_cu_seqlens_input) {
         ov::Tensor cu_seq_lens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw, reordered_videos_grid_thw);

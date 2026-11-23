@@ -27,7 +27,8 @@ protected:
 public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids,
-                   std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr
+                   std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr,
+                   const std::set<int64_t>& suppressed_token_ids = {}
     ) {
         for (const auto& input_id : input_ids) {
             m_unique_prompt_token_ids->insert(input_id);
@@ -42,6 +43,11 @@ public:
         if ((sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) && sampling_params.logprobs > 0) {
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::FullVocabLogSumExpTransform>());
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::CopyLogitsToVectorTransform>());
+        }
+
+        if (!suppressed_token_ids.empty()) {
+            m_logit_transformers.push_back(
+                std::make_shared<LogitTransformers::SuppressTokensTransform>(suppressed_token_ids));
         }
 
         if (sampling_params.min_new_tokens > 0) {
@@ -93,7 +99,7 @@ public:
                 //   2. top_p == 1.0: TopPFilter will NOT run (it requires normalised probs).
                 //   3. min_p == 0.0: MinPFilter will NOT run (it also requires normalised probs).
                 // When deferred, TemperatureLogitTransform only scales logits by 1/T;
-                // expf and CDF scan are fused in _multinomial_sample.
+                // SamplingDistribution computes the expf.
                 const bool min_p_active = (sampling_params.min_p > 0.0f);
                 const bool defer_expf = top_k_active && (sampling_params.top_p == 1.0f) && !min_p_active;
                 m_logit_transformers.push_back(std::make_shared<LogitTransformers::TemperatureLogitTransform>(
@@ -145,9 +151,13 @@ public:
         }
     }
 
-    void decrease_generated_token_occurance(int64_t token_id) {
-        OPENVINO_ASSERT(m_unique_generated_token_ids->count(token_id) > 0);
-        m_unique_generated_token_ids->at(token_id)--;
+    void decrease_generated_token_occurrence(int64_t token_id) {
+        auto it = m_unique_generated_token_ids->find(token_id);
+        OPENVINO_ASSERT(it != m_unique_generated_token_ids->end() && it->second > 0);
+        // Repetition and presence penalties apply to every token in the map, whatever its count.
+        if (--it->second == 0) {
+            m_unique_generated_token_ids->erase(it);
+        }
     }
 
 };

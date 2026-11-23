@@ -16,6 +16,7 @@ from optimum.intel import OVModelForTextToSpeechSeq2Seq
 
 from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_converted_models_dir
+from utils.export import export_command
 from utils.network import retry_request
 
 logger = logging.getLogger(__name__)
@@ -69,15 +70,7 @@ def _prepare_qwen3_tts_ov_model(
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        command = [
-            "optimum-cli",
-            "export",
-            "openvino",
-            "--model",
-            model_id,
-            "--trust-remote-code",
-            str(temp_dir),
-        ]
+        command = export_command(model_id, temp_dir, ["--trust-remote-code"])
         logger.info("Qwen3 TTS export command: %s", " ".join(command))
         retry_request(
             lambda: subprocess.run(

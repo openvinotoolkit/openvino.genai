@@ -4,6 +4,8 @@
 import pytest
 import numpy as np
 
+from pathlib import Path
+
 import openvino as ov
 import openvino_genai as ov_genai
 
@@ -13,6 +15,7 @@ from utils.hugging_face import (
     generate_and_save_gemma4_mtp_assistant_model,
     run_hugging_face,
 )
+from test_vlm_pipeline import _get_ov_model
 from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import convert_decoded_results_to_generation_result
 
@@ -203,6 +206,42 @@ def test_extended_perf_metrics():
         assert std_gen_duration == 0
 
 
+def test_perf_metrics_reset_between_generate_calls():
+    """Perf metrics of each generate() call must not include the previous calls."""
+    main_model, draft_model, prompt = models_and_input[0]
+    main_model_path = download_and_convert_model(main_model).models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    ov_draft_model = ov_genai.draft_model(draft_model_path, "NPU", **get_npu_llm_properties_for_test())
+    ov_pipe = ov_genai.LLMPipeline(
+        main_model_path, "NPU", get_npu_llm_properties_for_test(), draft_model=ov_draft_model
+    )
+    generation_config = ov_genai.GenerationConfig(max_new_tokens=5, ignore_eos=True, num_assistant_tokens=5)
+
+    def generate_and_count() -> dict:
+        results = ov_pipe.generate([prompt], generation_config)
+        raw_metrics = results.perf_metrics.raw_metrics
+        extended_perf_metrics = results.extended_perf_metrics
+        assert np.isclose(
+            extended_perf_metrics.get_generate_duration().mean,
+            extended_perf_metrics.raw_metrics.generate_durations[0] / 1000,
+        )
+        return {
+            "tokenization": len(raw_metrics.tokenization_durations),
+            "detokenization": len(raw_metrics.detokenization_durations),
+            "generated": results.perf_metrics.get_num_generated_tokens(),
+            "sd_iterations": len(extended_perf_metrics.raw_metrics.m_batch_sizes),
+            "main_iterations": len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations),
+            "draft_iterations": len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations),
+        }
+
+    first = generate_and_count()
+    second = generate_and_count()
+    assert first["tokenization"] == 1 and first["detokenization"] == 1
+    assert first["generated"] <= generation_config.max_new_tokens
+    assert second == first
+
+
 # assistant model is randomly generated from the target model
 gemma4_mtp_models_and_input = [
     (
@@ -365,6 +404,85 @@ def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
         "Per-model perf metrics accumulate across generate() calls instead of being reset. "
         f"first={first}, second={second}"
     )
+
+
+QWEN38_FLASH_NEXT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen38-flash-next"
+QWEN38_FLASH_NEXT_PROMPT = "OpenVINO is"
+
+
+@pytest.fixture(scope="module")
+def qwen38_flash_next_mtp_model_path(request) -> Path:
+    model_path = Path(_get_ov_model(QWEN38_FLASH_NEXT_MODEL_ID))
+    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5/8 export must include the MTP draft model"
+    return model_path
+
+
+@pytest.fixture(scope="module")
+def qwen38_flash_next_mtp_llm_pipe(qwen38_flash_next_mtp_model_path: Path) -> ov_genai.LLMPipeline:
+    return ov_genai.LLMPipeline(
+        qwen38_flash_next_mtp_model_path,
+        "CPU",
+        get_default_llm_properties(),
+        draft_model=ov_genai.draft_model(qwen38_flash_next_mtp_model_path, "CPU"),
+    )
+
+
+@pytest.fixture(scope="module")
+def qwen38_flash_next_mtp_cb_pipe(qwen38_flash_next_mtp_model_path: Path) -> ov_genai.ContinuousBatchingPipeline:
+    return ov_genai.ContinuousBatchingPipeline(
+        qwen38_flash_next_mtp_model_path,
+        ov_genai.SchedulerConfig(),
+        "CPU",
+        get_default_llm_properties() | {"draft_model": ov_genai.draft_model(qwen38_flash_next_mtp_model_path, "CPU")},
+    )
+
+
+def assert_mtp_draft_was_used(extended_perf_metrics) -> None:
+    assert extended_perf_metrics is not None
+    assert extended_perf_metrics.draft_model_metrics is not None
+    assert extended_perf_metrics.draft_model_metrics.get_num_generated_tokens() > 0
+    assert extended_perf_metrics.get_num_draft_tokens() > 0
+
+
+def test_qwen38_flash_next_mtp_llm_pipeline(qwen38_flash_next_mtp_llm_pipe: ov_genai.LLMPipeline):
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False, max_new_tokens=10, ignore_eos=True, num_assistant_tokens=3
+    )
+
+    results = qwen38_flash_next_mtp_llm_pipe.generate([QWEN38_FLASH_NEXT_PROMPT], generation_config)
+    assert len(results.texts) == 1
+    assert_mtp_draft_was_used(results.extended_perf_metrics)
+
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": QWEN38_FLASH_NEXT_PROMPT}])
+    chat_results = qwen38_flash_next_mtp_llm_pipe.generate(chat_history, generation_config)
+    assert len(chat_results.texts) == 1
+    assert_mtp_draft_was_used(chat_results.extended_perf_metrics)
+
+
+def test_qwen38_flash_next_mtp_cb_generate(qwen38_flash_next_mtp_cb_pipe: ov_genai.ContinuousBatchingPipeline):
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False, max_new_tokens=10, ignore_eos=True, num_assistant_tokens=3
+    )
+
+    results = qwen38_flash_next_mtp_cb_pipe.generate([QWEN38_FLASH_NEXT_PROMPT], [generation_config])
+    assert len(results) == 1
+    assert len(results[0].m_generation_ids) == 1
+    assert_mtp_draft_was_used(results[0].extended_perf_metrics)
+
+
+def test_qwen38_flash_next_mtp_cb_add_request(qwen38_flash_next_mtp_cb_pipe: ov_genai.ContinuousBatchingPipeline):
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False, max_new_tokens=10, ignore_eos=True, num_assistant_tokens=3
+    )
+
+    handle = qwen38_flash_next_mtp_cb_pipe.add_request(0, QWEN38_FLASH_NEXT_PROMPT, generation_config)
+    while qwen38_flash_next_mtp_cb_pipe.has_non_finished_requests():
+        qwen38_flash_next_mtp_cb_pipe.step()
+
+    assert handle.get_status() == ov_genai.GenerationStatus.FINISHED
+    outputs = handle.read_all()
+    assert len(outputs) == 1
+    assert len(outputs[0].generated_ids) == generation_config.max_new_tokens
 
 
 # Eagle3 specific tests

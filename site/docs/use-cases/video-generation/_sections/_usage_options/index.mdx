@@ -139,6 +139,67 @@ The pipeline picks its defaults from the converted model, so no configuration is
 - Enabling Spatio-Temporal Guidance with an empty `spatio_temporal_guidance_blocks` is an error: with no block to perturb, the extra pass would only cost time.
 :::
 
+#### LTX-2 Export Compatibility and Component Inference
+
+LTX-2 transformers support both legacy exports with `video_coords` and
+`audio_coords` inputs and newer exports with eight external rotary cosine/sine
+inputs. Text connectors likewise support internal or external RoPE. The runtime
+detects the exported input contract; incomplete rotary pairs and mixed transformer
+contracts are rejected. Legacy optional shape inputs and `fps` are supplied only
+when present.
+
+When using `LTX2VideoTransformer3DModel` directly in Python or C++, call
+`set_rope_coords(video_coords, audio_coords)` after `compile()` and before
+`infer()`. Supply f32 patch boundaries shaped `[B, 3, video_sequence_length, 2]`
+and `[B, 1, audio_sequence_length, 2]`, respectively. The method computes external
+RoPE on the host or binds the coordinates for a legacy export. Call it again when
+the positions change. `Text2VideoPipeline` does this automatically.
+
+For rank-2 timestep inputs, external-RoPE transformers receive `[B, 1]`, avoiding
+repeated modulation of identical timesteps across tokens. Legacy transformers
+retain `[B, video_sequence_length]`; rank-1 exports retain `[B]`.
+
+The heterogeneous Python sample accepts `--width`, `--height`, `--num-frames`,
+and `--num-inference-steps`. For example, a small CPU smoke run is:
+
+```shell
+python samples/python/video_generation/heterogeneous_ltx2_3_text2video.py \
+  MODEL_DIR "A rainy city street" CPU CPU CPU --inference-precision f32 \
+  --width 32 --height 32 --num-frames 9 --num-inference-steps 2
+```
+
+Add `--reshape` to compile for these static generation shapes. Generation
+configuration is applied before reshaping.
+
+#### LTX-2 GPU Component Lifetimes
+
+For LTX-2 and LTX-2.3, components assigned directly to `GPU` or `GPU.<id>` use
+staged compilation to reduce device memory consumption. The text encoder is
+compiled when encoding starts and released before the connectors are compiled.
+The connectors are released once conditioning has been produced. Only then is the
+GPU transformer compiled, so it does not overlap with the compiled text encoder
+or connectors. It is released after the last denoising step,
+before video VAE compilation or decoding. Cancellation and exceptions also release
+the temporary transformer. The video VAE
+decoder is compiled only when decoding starts and released after decoding,
+including calls to `decode()`. After video decoding, the GPU audio VAE is compiled
+to produce the mel spectrogram and released before the vocoder is compiled.
+The GPU vocoder is released after producing the waveform. The spectrogram and
+waveform own their buffers independently of these temporary compiled models.
+
+The pipeline retains the uncompiled, optionally reshaped host models so repeated
+generation and pipeline copies remain supported. Each call recompiles these
+temporary GPU components; set `CACHE_DIR` to reuse compiled model caches.
+Compilation errors for deferred components are reported by `generate()` or
+`decode()`, rather than the initial `compile()` call. CPU components retain their
+existing compilation behavior.
+This also releases the GPU transformer before CPU decoding in heterogeneous runs.
+Uncompiled host models remain in RAM; releasing compiled models does not guarantee
+that the GPU driver immediately returns all cached allocations.
+Compilation and release of deferred components are included in the generation
+duration. The reported decoder duration includes video VAE, audio VAE and vocoder
+compilation, inference and release when those stages are deferred.
+
 ### Working with LoRA Adapters
 
 For video generation models like LTX-Video, LoRA adapters can modify the generation process to produce videos with specific artistic styles, content types, or quality enhancements.
