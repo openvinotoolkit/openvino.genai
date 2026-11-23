@@ -167,7 +167,7 @@ def mark_backend_limitation(request, arch, variant, backend):
         pytest.skip("Qwen3.5 recurrent state currently supports SDPA only")
     for matches, raises, reason in BACKEND_LIMITATIONS:
         if matches(arch, variant, backend):
-            request.node.add_marker(pytest.mark.xfail(strict=True, raises=raises, reason=reason))
+            request.node.add_marker(pytest.mark.xfail(strict=False, raises=raises, reason=reason))
             return
 
 

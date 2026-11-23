@@ -91,6 +91,9 @@ void GGUFTokenizerImpl::finalize_gguf_tokenizer(const std::shared_ptr<ov::Model>
     ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
     setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
+    if (auto patcher = gguf_chat_template_patcher(tokenizer_config)) {
+        set_chat_template_patcher(std::move(patcher));
+    }
 }
 
 }  // namespace ov::genai

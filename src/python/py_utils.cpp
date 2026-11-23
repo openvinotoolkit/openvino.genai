@@ -149,7 +149,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "DEVICE_PROPERTIES"
     };
 
-    py::object float_32_type = py::module_::import("numpy").attr("float32");
+    py::module_ numpy = py::module_::import("numpy");
     if (py::isinstance<py::str>(py_obj)) {
         if (property_name == "structural_tags_config") {
             std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag>
@@ -163,10 +163,12 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py_obj.cast<std::string>();
     } else if (py::isinstance<py::float_>(py_obj)) {
         return py_obj.cast<float>();
-    } else if (py::isinstance(py_obj, float_32_type)) {
+    } else if (py::isinstance(py_obj, numpy.attr("floating"))) {
         return py_obj.cast<float>();
-    } else if (py::isinstance<py::int_>(py_obj)) {
+    } else if (py::isinstance<py::int_>(py_obj) || py::isinstance(py_obj, numpy.attr("integer"))) {
         return py_obj.cast<int64_t>();
+    } else if (py::isinstance(py_obj, numpy.attr("bool_"))) {
+        return py_obj.cast<bool>();
     } else if (py::isinstance<py::none>(py_obj)) {
         return {};
     } else if (py::isinstance<py::list>(py_obj)) {
@@ -435,6 +437,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::AdapterConfig>(py_obj);
     } else if (py::isinstance<ov::genai::OmniTalkerSpeechConfig>(py_obj)) {
         return py::cast<ov::genai::OmniTalkerSpeechConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::SpeechOutputMode>(py_obj)) {
+        return py::cast<ov::genai::SpeechOutputMode>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagItem>(py_obj)) {
         return py::cast<ov::genai::StructuralTagItem>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {
@@ -758,6 +762,12 @@ py::object any_to_py_object(const ov::Any& any) {
     }
     if (any.is<std::vector<float>>()) {
         return py::cast(any.as<std::vector<float>>());
+    }
+    if (any.is<ov::Tensor>()) {
+        return py::cast(any.as<ov::Tensor>());
+    }
+    if (any.is<std::vector<ov::Tensor>>()) {
+        return py::cast(any.as<std::vector<ov::Tensor>>());
     }
     if (any.is<std::vector<ov::Any>>()) {
         py::list items;

@@ -1,0 +1,215 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Export through optimum-intel for the models genai-cli does not convert natively yet."""
+
+import hashlib
+import importlib.util
+import logging
+import os
+import sys
+from functools import partial
+from importlib import metadata
+
+from openvino_genai._cli.uv_env import (
+    cache_dir,
+    compile_requirements,
+    install_to_target,
+    installed_requirement,
+    installed_version,
+    is_satisfied,
+    pinned_version,
+    reexec_with,
+)
+
+logger = logging.getLogger(__name__)
+
+# Requirement specifier used to provide optimum-intel when it is not installed, e.g.
+# "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git" to export with the main branch.
+_OPTIMUM_INTEL_SPEC_ENV = "GENAI_CLI_OPTIMUM_INTEL_SPEC"
+# Heavy (and ABI-coupled) distributions that always come from the user's environment. uv overlays install the whole
+# dependency closure of what they provide, so optimum-intel itself is not overlaid with `uv run --with`.
+_ENVIRONMENT_PROVIDED = {
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "openvino",
+    "openvino-tokenizers",
+    "openvino-genai",
+    "nncf",
+    "numpy",
+}
+
+
+def _is_optimum_intel_available() -> bool:
+    try:
+        return importlib.util.find_spec("optimum.intel") is not None and installed_version("optimum-intel") is not None
+    except ModuleNotFoundError:
+        return False
+
+
+def _provide_optimum_intel(argv: list[str]) -> int:
+    """Re-runs genai-cli with optimum-intel available, leaving the user's environment untouched.
+
+    optimum-intel and optimum (pure Python) are installed without dependencies into a cached directory added to
+    PYTHONPATH; the light requirements the environment does not satisfy (transformers, huggingface-hub, ...) are
+    overlaid with uv. torch, OpenVINO and NNCF of the environment are used as is.
+    """
+    spec = os.environ.get(_OPTIMUM_INTEL_SPEC_ENV, "optimum-intel")
+    pins = compile_requirements([spec], exclude=_ENVIRONMENT_PROVIDED)
+    packages = [pins["optimum-intel"], pins["optimum"]]
+    target = cache_dir() / hashlib.sha256("\n".join(packages).encode()).hexdigest()[:16]
+    logger.info(f"Providing {', '.join(packages)} from {target}")
+    install_to_target(packages, target)
+
+    overlay = [
+        requirement
+        for name, requirement in pins.items()
+        if name not in ("optimum-intel", "optimum") and not _is_installed(name, requirement)
+    ]
+    return reexec_with(overlay, argv, pythonpath=target)
+
+
+def _is_installed(distribution: str, pinned_requirement: str) -> bool:
+    """Whether the environment has the distribution a pinned ``name==X`` or ``name @ url`` requirement selects."""
+    from packaging.requirements import Requirement
+
+    version = pinned_version(pinned_requirement)
+    if version is not None:
+        return installed_version(distribution) == version
+    # A direct URL requirement is satisfied only by an installation from the same source.
+    installed = installed_requirement(distribution)
+    return installed is not None and Requirement(installed).url == Requirement(pinned_requirement).url
+
+
+def _export_config_for_checkpoint(constructor, model_config: dict):
+    """The optimum-intel export config instance for the checkpoint configuration, None if it cannot be built.
+
+    Export configs can narrow the transformers bounds per checkpoint in ``__init__``, e.g.
+    ``optimum.exporters.openvino.model_configs.LlamaOpenVINOConfig`` for Eagle3 drafts of VLMs.
+    """
+    from transformers import AutoConfig, PretrainedConfig
+
+    try:
+        # The configuration class registered in transformers keeps the nested configs and attribute aliases the
+        # export config reads; config.json is parsed as plain JSON, so no remote code is run.
+        pretrained_config = AutoConfig.for_model(**model_config)
+    except ValueError:
+        pretrained_config = PretrainedConfig.from_dict(model_config)
+    try:
+        return constructor(pretrained_config)
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        logger.debug(f"Cannot build the export config of the checkpoint: {error}")
+        return None
+
+
+def _model_transformers_specifiers(model_config: dict | None, task: str) -> list[str]:
+    """Bounds of the transformers versions optimum-intel's export config declares for the checkpoint, if any."""
+    model_type = model_config.get("model_type") if model_config else None
+    if model_type is None:
+        return []
+    from optimum.exporters.openvino import model_configs  # noqa: F401 (registers the OpenVINO export configs)
+    from optimum.exporters.tasks import TasksManager
+
+    constructors = None
+    for candidate in (model_type, model_type.replace("_", "-")):
+        try:
+            constructors = TasksManager.get_supported_tasks_for_model_type(
+                candidate, exporter="openvino", library_name="transformers"
+            )
+            break
+        except KeyError:
+            continue
+    if not constructors:
+        return []
+    constructor = constructors.get(task) or next(iter(constructors.values()))
+    export_config = _export_config_for_checkpoint(constructor, model_config)
+    if export_config is None:
+        export_config = constructor.func if isinstance(constructor, partial) else constructor
+
+    specifiers = []
+    min_version = getattr(export_config, "MIN_TRANSFORMERS_VERSION", None)
+    max_version = getattr(export_config, "MAX_TRANSFORMERS_VERSION", None)
+    if min_version is not None:
+        specifiers.append(f">={min_version}")
+    if max_version is not None:
+        specifiers.append(f"<={max_version}")
+    return specifiers
+
+
+def _distribution_transformers_requirement() -> str | None:
+    """The transformers requirement of the installed optimum-intel and optimum distributions, None if unconstrained."""
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+
+    specifiers = []
+    for distribution in ("optimum-intel", "optimum"):
+        for requirement in map(Requirement, metadata.requires(distribution) or []):
+            if canonicalize_name(requirement.name) == "transformers" and requirement.marker is None:
+                specifiers += [str(spec) for spec in requirement.specifier]
+    return "transformers" + ",".join(specifiers) if specifiers else None
+
+
+def _transformers_requirement(model_config: dict | None, task: str) -> str | None:
+    """Range of transformers versions to export the checkpoint with, or None if unconstrained.
+
+    It is the transformers requirement of the installed optimum-intel (and optimum) distributions, narrowed by the
+    bounds of the checkpoint's export config when optimum-intel declares them. The export configs are imported from
+    optimum-intel, so this runs with a transformers version satisfying _distribution_transformers_requirement only.
+    """
+    distribution_requirement = _distribution_transformers_requirement()
+    specifiers = [distribution_requirement.removeprefix("transformers")] if distribution_requirement else []
+    specifiers += _model_transformers_specifiers(model_config, task)
+    return "transformers" + ",".join(specifiers) if specifiers else None
+
+
+def _reexec_with_transformers(transformers_range: str, model_type: str | None, argv: list[str]) -> int:
+    logger.info(
+        f"optimum-intel supports `{model_type}` with {transformers_range}, "
+        f"transformers {installed_version('transformers')} is active."
+    )
+    return reexec_with(_overlay_for_transformers(transformers_range), argv, replace_overlay=True)
+
+
+def _overlay_for_transformers(transformers_requirement: str) -> list[str]:
+    """The overlay that switches to ``transformers_requirement``: transformers and its light dependencies resolved
+    together with the installed optimum and optimum-intel, so that no pin of the previous overlay (e.g.
+    huggingface-hub 1.x for transformers 5) is kept for a transformers version it is not compatible with.
+
+    optimum-intel and optimum installed from a Git commit or a local checkout are resolved from the same source, an
+    unpublished development version cannot be found in an index."""
+    requirements = [
+        requirement
+        for requirement in map(installed_requirement, ("optimum-intel", "optimum"))
+        if requirement is not None
+    ]
+    pins = compile_requirements([*requirements, transformers_requirement], exclude=_ENVIRONMENT_PROVIDED)
+    return [requirement for name, requirement in pins.items() if name not in ("optimum-intel", "optimum")]
+
+
+def export_with_optimum_intel(model_config: dict | None, task: str, export_argv: list[str], argv: list[str]) -> int:
+    """Runs ``optimum-cli export openvino <export_argv>`` with the transformers version supported for the checkpoint
+    (``model_config`` is its config.json, None if it has none)."""
+    model_type = model_config.get("model_type") if model_config else None
+    if not _is_optimum_intel_available():
+        logger.info(f"Model type `{model_type}` is not converted natively by genai-cli, falling back to optimum-intel")
+        return _provide_optimum_intel(argv)
+
+    # The checkpoint-specific bounds come from optimum-intel's export configs: import them only with a transformers
+    # version optimum-intel supports, an incompatible one can fail the import before the overlay is created.
+    distribution_range = _distribution_transformers_requirement()
+    if distribution_range is not None and not is_satisfied(distribution_range):
+        return _reexec_with_transformers(distribution_range, model_type, argv)
+    transformers_range = _transformers_requirement(model_config, task)
+    if transformers_range is not None and not is_satisfied(transformers_range):
+        return _reexec_with_transformers(transformers_range, model_type, argv)
+
+    logger.info(
+        f"Exporting `{model_type}` with optimum-intel {installed_version('optimum-intel')} "
+        f"(transformers {installed_version('transformers')})"
+    )
+    from optimum.commands.optimum_cli import main as optimum_cli_main
+
+    sys.argv = ["optimum-cli", "export", "openvino", *export_argv]
+    optimum_cli_main()
+    return 0

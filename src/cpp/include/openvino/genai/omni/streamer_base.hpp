@@ -1,0 +1,132 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+#include "openvino/core/any.hpp"
+#include "openvino/genai/streamer_base.hpp"
+#include "openvino/genai/visibility.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "openvino/runtime/tensor.hpp"
+
+namespace ov::genai {
+
+/**
+ * @brief Write end of the thinker -> talker bridge. The VLM calls write() once per decode step
+ * with that step's tokens and thinker hidden states, so the talker can start speaking before
+ * text generation finishes.
+ *
+ * Inherit and implement write(), end() and abandon(). A typical custom bridge is a queue implementing
+ * both OmniStreamerBase and OmniTextSourceBase. OmniPipeline creates its own bridge and does not
+ * accept a caller-provided one. To drive custom stages yourself, pass your bridge to the
+ * VLMPipeline::generate() overload that takes an omni_streamer, and to TalkerBase::generate() as the
+ * text source.
+ *
+ * Prefer an unbounded queue. Bounding it makes write() block as soon as the talker falls behind,
+ * stalling text generation to save memory the non-streaming path spends anyway on
+ * VLMDecodedResults::intermediate_hidden_states. A reader that stops reading is the case worth
+ * handling instead: drop the steps it will not read, and return STOP from write() if it failed.
+ *
+ * The payload is an ov::AnyMap rather than a fixed signature so producers can add data without
+ * breaking implementations. Keys are the contract; see the `omni_stream` namespace below for the
+ * typed constants that name them. Implementations MUST ignore keys they don't recognize — a newer
+ * VLM may pass more than an older streamer reads.
+ *
+ * Keys written by the Qwen3-Omni VLM stage:
+ *   - `omni_stream::tokens` (std::vector<int64_t>) — token ids released by this step: prompt tokens
+ *     first, then generated ones. Continuous batching may split a long prefill across multiple
+ *     writes when the prompt exceeds its batch capacity. A decode step usually releases one
+ *     generated token, but GenerationConfig::stop_strings holds tokens back until no stop string
+ *     can remove them, so a write may carry none or several.
+ *   - `omni_stream::hidden_states` (std::vector<ov::Tensor>) — f32 thinker hidden states, each of
+ *     shape [1, 1, hidden_size]. This is the same per-token layout as
+ *     VLMDecodedResults::intermediate_hidden_states, so a step payload is literally a slice of what
+ *     the batch path hands the talker. Present only when the backend collects hidden states
+ *     (continuous batching with GenerationConfig::return_omni_outputs); check before reading.
+ *     Tensors are ref-counted handles, so keeping them past the call is fine.
+ *   - `omni_stream::prompt_length` (size_t) — total number of prompt tokens, repeated in each
+ *     write. Continuous batching may split prefill when the prompt exceeds its batch capacity, so an
+ *     early write may not yet contain the assistant header. A reader that locates the assistant
+ *     segment should wait until it has this many tokens.
+ *
+ * The token and hidden-state streams are concatenated independently; align them by absolute position
+ * across the whole stream, not within one payload. They line up position for position, but a single
+ * write() may carry a different number of each, and the token stream ends one entry longer: a hidden
+ * state is what predicted the *next* token, so the last generated token (typically EOS) is sampled
+ * from the previous position's state and never gets one of its own. A hidden state is written in the
+ * same write() as, or before, the token it predicted, so once a write carries the first generated
+ * token, every prompt hidden state the producer will provide has arrived. Continuous batching keeps
+ * hidden states for a bounded number of leading positions only, so the hidden-state stream can end
+ * short of the prompt; readers fall back for the positions it never covers.
+ *
+ * Writes are final: there is no retraction, and a reader may act on a token as soon as it arrives.
+ * The VLM therefore writes a generated token only once it is part of the result, the same way the
+ * text streamer receives it, so the stream never carries text a stop string cuts from the result.
+ *
+ * Thread safety: write() and end() are called sequentially from the thread running the VLM decode
+ * loop; no concurrent calls are made from that side. When the talker consumes the stream on
+ * another thread, the implementation owns the synchronization between write() and read().
+ *
+ * Lifecycle:
+ *   1. write() is called zero or more times.
+ *   2. Exactly one of end() or abandon() is called, exactly once, after the last write(): end() when
+ *      the VLM stage finished, including an early stop, abandon() when it was cancelled or threw.
+ *      Both are always reached, and both must release readers blocked in
+ *      OmniTextSourceBase::read(), otherwise the talker deadlocks on a failed VLM stage.
+ *
+ * Return values from write():
+ *   - RUNNING        -- continue generating.
+ *   - STOP           -- stop generation gracefully; already-generated text is kept. end() is still called.
+ *   - CANCEL         -- cancel generation; generated text is dropped. abandon() is called instead of end().
+ *   - TOOL_CALL_STOP -- stop as STOP does, with the finish reason recorded as a tool call.
+ *
+ * @note This is a preview API and is subject to change.
+ */
+class OPENVINO_GENAI_EXPORTS OmniStreamerBase {
+public:
+    /// @brief Called once per VLM decode step with that step's data.
+    /// @param data Step payload keyed as documented above. Unknown keys must be ignored.
+    /// @return StreamingStatus to continue (RUNNING), stop (STOP or TOOL_CALL_STOP), or cancel (CANCEL) the VLM.
+    virtual StreamingStatus write(const ov::AnyMap& data) = 0;
+
+    /// @brief Called exactly once when the VLM stage ends, including on an early stop.
+    ///        Must release any reader blocked in OmniTextSourceBase::read().
+    virtual void end() = 0;
+
+    /// @brief Called instead of end() when the VLM stage was cancelled or threw: what was written is
+    ///        a prefix of a response that will never be completed. Same obligation to release readers.
+    ///        Implement it as end() to not distinguish the two, at the cost of a reader that
+    ///        cannot tell a finished stream from a dead one.
+    virtual void abandon() = 0;
+
+    virtual ~OmniStreamerBase();
+};
+
+/// @brief Typed names for the keys of the OmniStreamerBase::write() payload. Kept in their own
+/// namespace because `tokens` / `hidden_states` are too generic to sit directly in ov::genai.
+/// Use them on both ends so the two sides can't drift:
+///     write(ov::AnyMap{omni_stream::tokens(ids),
+///                      omni_stream::hidden_states(hs),
+///                      omni_stream::prompt_length(n)});
+///     const auto ids = data.at(omni_stream::tokens.name()).as<std::vector<int64_t>>();
+namespace omni_stream {
+
+/// @brief Token ids released by this step: prompt tokens first, then generated ones.
+static constexpr ov::Property<std::vector<int64_t>> tokens{"tokens"};
+
+/// @brief Thinker hidden states for this step: f32 [1, 1, hidden_size] tensors, co-indexed with
+/// `tokens` by absolute position across the stream rather than within a single payload.
+static constexpr ov::Property<std::vector<ov::Tensor>> hidden_states{"hidden_states"};
+
+/// @brief Total number of prompt tokens, repeated in each payload so readers can wait for the full
+/// prompt before locating the assistant segment when prefill is chunked.
+static constexpr ov::Property<size_t> prompt_length{"prompt_length"};
+
+}  // namespace omni_stream
+
+}  // namespace ov::genai
