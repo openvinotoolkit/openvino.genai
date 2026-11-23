@@ -184,16 +184,32 @@ bool Tokenizer::supports_paired_input() const {
 
 Tokenizer::TokenizerImpl::~TokenizerImpl() {
     if (m_ireq_queue_tokenizer) {
-        try {
-            m_ireq_queue_tokenizer->get(0).get_compiled_model().release_memory();
-        } catch (...) {
+        for (size_t i = 0; i < m_ireq_queue_tokenizer->size(); ++i) {
+            try {
+                m_ireq_queue_tokenizer->get(static_cast<int>(i)).wait();
+            } catch (...) {
+            }
+        }
+        if (m_ireq_queue_tokenizer->size() > 0) {
+            try {
+                m_ireq_queue_tokenizer->get(0).get_compiled_model().release_memory();
+            } catch (...) {
+            }
         }
         m_ireq_queue_tokenizer.reset();
     }
     if (m_ireq_queue_detokenizer) {
-        try {
-            m_ireq_queue_detokenizer->get(0).get_compiled_model().release_memory();
-        } catch (...) {
+        for (size_t i = 0; i < m_ireq_queue_detokenizer->size(); ++i) {
+            try {
+                m_ireq_queue_detokenizer->get(static_cast<int>(i)).wait();
+            } catch (...) {
+            }
+        }
+        if (m_ireq_queue_detokenizer->size() > 0) {
+            try {
+                m_ireq_queue_detokenizer->get(0).get_compiled_model().release_memory();
+            } catch (...) {
+            }
         }
         m_ireq_queue_detokenizer.reset();
     }

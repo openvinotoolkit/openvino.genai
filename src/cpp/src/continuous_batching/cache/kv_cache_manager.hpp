@@ -343,6 +343,8 @@ public:
     void clear() override {
         for (size_t decoder_layer_id = 0; decoder_layer_id < m_key_cache.size(); ++decoder_layer_id) {
             m_key_cache[decoder_layer_id] = ov::Tensor();
+        }
+        for (size_t decoder_layer_id = 0; decoder_layer_id < m_value_cache.size(); ++decoder_layer_id) {
             m_value_cache[decoder_layer_id] = ov::Tensor();
         }
         m_num_allocated_kv_blocks = 0;
