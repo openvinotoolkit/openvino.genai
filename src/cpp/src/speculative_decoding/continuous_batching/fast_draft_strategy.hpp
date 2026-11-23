@@ -63,37 +63,36 @@ std::vector<EncodedGenerationResult> generate_common(
                         "lm_extra_inputs_list size must match input_ids size.");
     }
 
+    std::vector<GenerationConfig> main_cfgs(sampling_params);
+    std::vector<ov::Tensor> main_ins(input_ids.size());
+    for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+        strategy.prepare_request(rid, input_ids[rid], main_cfgs[rid], main_ins[rid]);
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
+        self->validate_request(rid,
+                               main_ins[rid],
+                               main_cfgs[rid],
+                               has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt);
+    }
+
     std::vector<GenerationHandle> main_generations;
-    try {
-        for (size_t rid = 0; rid < input_ids.size(); ++rid) {
-            GenerationConfig main_cfg = sampling_params[rid];
-            ov::Tensor main_in;
-            strategy.prepare_request(rid, input_ids[rid], main_cfg, main_in);
+    for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
 
-            const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
-
-            if (position_ids.has_value() && self->m_inputs_embedder) {
-                const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
-                self->m_inputs_embedder->set_position_ids(position_ids_tensor);
-                // TODO: The rope_delta here has to be recomputed, if rope_delta is not provided then a stale value is used
-                if (rope_delta.has_value()) {
-                    self->m_inputs_embedder->set_rope_delta(*rope_delta);
-                }
+        if (position_ids.has_value() && self->m_inputs_embedder) {
+            const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
+            self->m_inputs_embedder->set_position_ids(position_ids_tensor);
+            // TODO: The rope_delta here has to be recomputed, if rope_delta is not provided then a stale value is used
+            if (rope_delta.has_value()) {
+                self->m_inputs_embedder->set_rope_delta(*rope_delta);
             }
+        }
 
-            main_generations.push_back(self->add_request(
-                rid,
-                main_in,
-                main_cfg,
-                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
-                lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
-        }
-    } catch (...) {
-        std::lock_guard<std::mutex> lock{self->m_draft_generations_mutex};
-        for (size_t rid = 0; rid < main_generations.size(); ++rid) {
-            self->discard_awaiting_request(rid);
-        }
-        throw;
+        main_generations.push_back(self->add_request(
+            rid,
+            main_ins[rid],
+            main_cfgs[rid],
+            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
+            lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
     }
 
     auto all_requests = self->get_awaiting_requests();
@@ -204,8 +203,6 @@ protected:
     // main request's, whose draws accept or reject the drafted tokens. A sampled draft requests no log-probs.
     static GenerationConfig make_draft_sampling_params(const GenerationConfig& sampling_params);
     void drop_requests();
-    // Removes a request that add_request() queued from both pipelines. Callers hold m_draft_generations_mutex.
-    void discard_awaiting_request(uint64_t request_id);
     virtual void align_request_pair_processed_prefix(uint64_t) {}
     virtual void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
                                             const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
@@ -237,6 +234,12 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const ov::genai::GenerationConfig& sampling_params) override;
+
+    // Throws for a request that add_request() would reject, and changes nothing.
+    virtual void validate_request(uint64_t request_id,
+                                  const ov::Tensor& input_ids,
+                                  const ov::genai::GenerationConfig& sampling_params,
+                                  const std::optional<ov::Tensor>& prompt_ids) const;
 
     std::optional<AdapterConfig> get_pipeline_adapters() const override {
         return m_main_pipeline->get_pipeline_adapters();

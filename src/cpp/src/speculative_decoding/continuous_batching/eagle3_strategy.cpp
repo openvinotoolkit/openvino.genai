@@ -325,8 +325,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::genai::GenerationConfig& sampling_params,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
-    validate_single_sequence(sampling_params);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    validate_request(request_id, input_ids, sampling_params, prompt_ids);
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         // No speculative draft for this request: run only the main model.
         extract_draft_embeddings(lm_extra_inputs);
@@ -365,24 +365,18 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
             m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
         }
     };
-    try {
-        // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
-        // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_prompt_ids)});
-        // Restore main position_ids/rope_delta before adding to the main pipeline.
-        restore_main_position_ids();
-        auto main_generation = m_main_pipeline->add_request(request_id,
-                                                            input_ids,
-                                                            sampling_params,
-                                                            prompt_ids,
-                                                            lm_extra_inputs);
-        align_request_pair_processed_prefix(request_id);
-        return main_generation;
-    } catch (...) {
-        restore_main_position_ids();
-        discard_awaiting_request(request_id);
-        throw;
-    }
+    // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
+    // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_prompt_ids)});
+    // Restore main position_ids/rope_delta before adding to the main pipeline.
+    restore_main_position_ids();
+    auto main_generation = m_main_pipeline->add_request(request_id,
+                                                        input_ids,
+                                                        sampling_params,
+                                                        prompt_ids,
+                                                        lm_extra_inputs);
+    align_request_pair_processed_prefix(request_id);
+    return main_generation;
 }
 
 GenerationHandle
@@ -404,16 +398,29 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // remove first token from input_ids to create draft_input_ids
     // add_special_tokens is false for better compression rate
     auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
+    validate_request(request_id, input_ids, sampling_params, std::nullopt);
     ov::Tensor draft_input_ids = create_draft_input(input_ids);
-    try {
-        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
-        auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params);
-        align_request_pair_processed_prefix(request_id);
-        return main_generation;
-    } catch (...) {
-        discard_awaiting_request(request_id);
-        throw;
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
+    auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params);
+    align_request_pair_processed_prefix(request_id);
+    return main_generation;
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    const ov::genai::GenerationConfig& sampling_params,
+    const std::optional<ov::Tensor>&) const {
+    validate_single_sequence(sampling_params);
+    const size_t prompt_len = ContinuousBatchingImpl::get_prompt_len(input_ids);
+    if (!sampling_params.num_assistant_tokens.has_value() || sampling_params.num_assistant_tokens.value() != 0) {
+        // The draft prompt is the prompt without its first token, see create_draft_input().
+        OPENVINO_ASSERT(prompt_len > 1,
+                        "Eagle3 speculative decoding requires a prompt of more than 1 token, got ",
+                        prompt_len);
+        m_draft_pipeline->validate_request(request_id, prompt_len - 1, make_draft_sampling_params(sampling_params));
     }
+    m_main_pipeline->validate_request(request_id, prompt_len, sampling_params);
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingImpl::generate(
