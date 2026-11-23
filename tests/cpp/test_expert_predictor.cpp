@@ -191,6 +191,9 @@ TEST_F(ExpertPredictorTest, StatefulUsesPreviousInferenceState) {
     const ov::genai::ExpertPredictor predictor(path);
     const auto info = ov::genai::les::apply(model, predictor, ov::genai::les::GraphMode::STATEFUL);
     ASSERT_EQ(info.layers, (std::vector<size_t>{1, 2}));
+    // one state for all heads: [batch, num_heads, hidden]
+    ASSERT_EQ(model->get_variables().size(), 1u);
+    EXPECT_EQ(model->get_variables()[0]->get_info().data_shape, (ov::PartialShape{-1, 2, int64_t(HIDDEN)}));
     EXPECT_EQ(info.top_k, ROUTER_K);
 
     auto request = ov::Core().compile_model(model, "CPU").create_infer_request();

@@ -363,32 +363,42 @@ GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& 
     // gives a device plugin one layer of time to prefetch the predicted experts. In prefill, the tokens after the
     // first one get an older token, which only matters little since a prefill uses most experts anyway.
     if (mode == GraphMode::STATEFUL) {
-        // hidden states [batch, seq_len, hidden]; the previous token comes from a state [batch, hidden]
+        // hidden states [batch, seq_len, hidden]; the previous tokens of all heads come from one state
+        // [batch, num_heads, hidden], split among the heads, and the last tokens of all heads update it with one Assign
         auto beam_idx = find_parameter(model, "beam_idx");
-        for (size_t layer : info.layers) {
+        const auto num_heads = static_cast<int64_t>(info.layers.size());
+        std::shared_ptr<ov::op::util::Variable> variable;
+        NodeOutput state;
+        ov::OutputVector last_tokens;
+        if (predictor.get_use_previous_token()) {
+            auto shape = std::make_shared<v3::ShapeOf>(as_f32(router_inputs.at(info.layers[0] - 1)), ov::element::i64);
+            auto batch = std::make_shared<v8::Gather>(shape, i64_vec({0}), i64_scalar(0));
+            auto init_shape = std::make_shared<v0::Concat>(ov::OutputVector{batch, i64_vec({num_heads, hidden})}, 0);
+            auto init = std::make_shared<v3::Broadcast>(v0::Constant::create(ov::element::f32, {}, {0.0f}), init_shape);
+            variable = std::make_shared<ov::op::util::Variable>(
+                ov::op::util::VariableInfo{ov::PartialShape{-1, num_heads, hidden}, ov::element::f32, STATE_NAME});
+            state = std::make_shared<v6::ReadValue>(init, variable);
+            if (beam_idx) {
+                state = std::make_shared<v8::Gather>(state, beam_idx, i64_scalar(0));
+            }
+        }
+        for (size_t i = 0; i < info.layers.size(); ++i) {
+            const size_t layer = info.layers[i];
             const auto& head = impl.heads.at(layer);
             NodeOutput cur = as_f32(router_inputs.at(layer - 1));
-            NodeOutput same_layer = as_f32(router_inputs.at(layer));
             std::optional<NodeOutput> prev;
             if (predictor.get_use_previous_token()) {
-                auto shape = std::make_shared<v3::ShapeOf>(cur, ov::element::i64);
-                auto batch = std::make_shared<v8::Gather>(shape, i64_vec({0}), i64_scalar(0));
-                auto init_shape = std::make_shared<v0::Concat>(ov::OutputVector{batch, i64_vec({hidden})}, 0);
-                auto init = std::make_shared<v3::Broadcast>(v0::Constant::create(ov::element::f32, {}, {0.0f}), init_shape);
-                auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
-                    ov::PartialShape{-1, hidden}, ov::element::f32, STATE_PREFIX + std::to_string(layer)});
-                NodeOutput state = std::make_shared<v6::ReadValue>(init, variable);
-                if (beam_idx) {
-                    state = std::make_shared<v8::Gather>(state, beam_idx, i64_scalar(0));
-                }
                 // [batch, 1, hidden], broadcast over the tokens by the head
-                prev = std::make_shared<v0::Unsqueeze>(state, i64_vec({1}));
-                auto last = std::make_shared<v8::Gather>(same_layer, i64_scalar(-1), i64_scalar(1));
-                auto assign = std::make_shared<v6::Assign>(last, variable);
-                model->add_variables({variable});
-                model->add_sinks({assign});
+                prev = std::make_shared<v8::Gather>(state, i64_vec({static_cast<int64_t>(i)}), i64_scalar(1));
+                NodeOutput same_layer = as_f32(router_inputs.at(layer));
+                last_tokens.push_back(std::make_shared<v8::Gather>(same_layer, i64_vec({-1}), i64_scalar(1)));
             }
             add_output(model, build_head(head, cur, prev, info.top_k), PREDICTED_EXPERTS_PREFIX + std::to_string(layer));
+        }
+        if (predictor.get_use_previous_token()) {
+            auto assign = std::make_shared<v6::Assign>(std::make_shared<v0::Concat>(last_tokens, 1), variable);
+            model->add_variables({variable});
+            model->add_sinks({assign});
         }
     } else {
         // hidden states [total_tokens, 1, hidden] of all scheduled sequences, split by subsequence_begins; GenAI

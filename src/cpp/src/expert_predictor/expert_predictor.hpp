@@ -42,14 +42,14 @@ public:
 namespace les {
 
 // Names of the tensors GenAI adds to the language model
-inline constexpr const char* STATE_PREFIX = "les_prev_hidden.";          // stateful model: one state per head
+inline constexpr const char* STATE_NAME = "les_prev_hidden";             // stateful model: [batch, num_heads, hidden]
 inline constexpr const char* PREV_HIDDEN_INPUT = "les_prev_hidden";      // PA model: [num_heads, num_sequences, hidden]
 inline constexpr const char* LAST_HIDDEN_OUTPUT = "les_last_hidden";     // PA model: [num_heads, num_sequences, hidden]
 inline constexpr const char* PREDICTED_EXPERTS_PREFIX = "les_predicted_experts.";  // + 0-based MoE layer index
 inline constexpr const char* ROUTER_EXPERTS_PREFIX = "les_router_experts.";        // debug outputs, see stats_enabled()
 
 inline bool is_state_name(const std::string& name) {
-    return name.rfind(STATE_PREFIX, 0) == 0;
+    return name == STATE_NAME;
 }
 
 // OPENVINO_GENAI_EXPERT_PREDICTOR_STATS=1 adds the router choices as model outputs and prints the recall of the
