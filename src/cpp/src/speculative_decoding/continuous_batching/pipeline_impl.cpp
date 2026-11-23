@@ -283,14 +283,14 @@ get_prefix_len(
 size_t
 remove_tokens_from_sequence(Sequence::Ptr& sequence,
                             size_t min_generated_tokens,
-                            LogitProcessor& logit_proccessor) {
+                            LogitProcessor& logit_processor) {
     const auto generated_token_ids = sequence->get_generated_ids(); 
     const auto sequence_generated_len = generated_token_ids.size();
     OPENVINO_ASSERT(sequence_generated_len >= min_generated_tokens);
 
     size_t removed_token_cnt = sequence_generated_len - min_generated_tokens;
     for (size_t i = min_generated_tokens; i < sequence_generated_len; ++i) {
-        logit_proccessor.decrease_generated_token_occurance(generated_token_ids[i]);
+        logit_processor.decrease_generated_token_occurrence(generated_token_ids[i]);
     }
     sequence->remove_last_tokens(removed_token_cnt);
     return (sequence_generated_len - min_generated_tokens);
@@ -307,7 +307,7 @@ size_t
 insert_tokens_to_sequence(Sequence::Ptr& sequence,
                           const std::vector<int64_t>& token_ids,
                           const std::vector<float>& token_log_probs,
-                          LogitProcessor& logit_proccessor,
+                          LogitProcessor& logit_processor,
                           bool is_update_sampler,
                           const std::vector<DraftProposalPtr>& draft_proposals) {
     size_t generated_len = sequence->get_generated_len(), candidate_len = token_ids.size();
@@ -318,7 +318,7 @@ insert_tokens_to_sequence(Sequence::Ptr& sequence,
             attach_draft_proposal(sequence, draft_proposals[i]);
         }
         if (is_update_sampler) {
-            logit_proccessor.register_new_generated_token(token_ids[i]);
+            logit_processor.register_new_generated_token(token_ids[i]);
         }
     }
     return (candidate_len - generated_len);

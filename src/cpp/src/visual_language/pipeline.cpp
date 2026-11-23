@@ -3,6 +3,8 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 
+#include <algorithm>
+#include <array>
 #include <optional>
 #include <random>
 
@@ -18,6 +20,7 @@
 #include "visual_language/continuous_batching_adapter.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "visual_language/lfm3_omni/speech_engine.hpp"
 #include "visual_language/pipeline_base.hpp"
 #include "visual_language/embeddings_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
@@ -27,6 +30,21 @@
 using namespace ov::genai;
 
 namespace {
+[[noreturn]] void throw_omni_streaming_not_implemented() {
+    OPENVINO_THROW_NOT_IMPLEMENTED(
+        "This VLM backend does not implement streaming the thinker's output to a talker. "
+        "Implementing this generate() overload is optional: it is needed only to support "
+        "GenerationConfig::stream_text2speech. A backend without it still produces speech "
+        "normally, because OmniPipeline then runs the talker over the finished text instead.");
+}
+
+void abandon_omni_streamer(const std::shared_ptr<OmniStreamerBase>& streamer) noexcept {
+    try {
+        streamer->abandon();
+    } catch (...) {
+    }
+}
+
 void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     switch (vlm_config.model_type) {
@@ -46,6 +64,38 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
     device_properties["AUTO"] = auto_properties;
 }
 
+constexpr std::array<const char*, 3> LFM3_SPEECH_MODELS{"depth_decoder", "audio_out_embeddings", "audio_decoder"};
+
+}
+
+VLMDecodedResults VLMPipelineBase::generate(const std::string& prompt,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const GenerationConfig& generation_config,
+                                          const StreamerVariant& streamer,
+                                          const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
+    if (omni_streamer) {
+        abandon_omni_streamer(omni_streamer);
+        throw_omni_streaming_not_implemented();
+    }
+    return generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipelineBase::generate(const ChatHistory& history,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const GenerationConfig& generation_config,
+                                          const StreamerVariant& streamer,
+                                          const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
+    if (omni_streamer) {
+        abandon_omni_streamer(omni_streamer);
+        throw_omni_streaming_not_implemented();
+    }
+    return generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
 }
 
 class VLMPipeline::VLMPipelineImpl : public VLMBackend{
@@ -100,6 +150,10 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
 
     std::string m_system_message;
     std::shared_ptr<EmbeddingsRegistry> m_embeddings_registry;
+
+    // LFM3-Omni speaks in the language model stream: the engine replaces the text decode loop. It is unset when the
+    // export has no speech models, and a speech request then throws.
+    std::unique_ptr<LFM3OmniSpeechEngine> m_speech_engine;
 private:
     void finalize_initialization(
         const std::shared_ptr<ov::Model>& language_model,
@@ -119,6 +173,7 @@ private:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+        m_sampler.set_suppressed_token_ids(m_inputs_embedder->get_suppressed_token_ids());
 
         m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
 
@@ -209,6 +264,13 @@ private:
         }
 
         finalize_initialization(language_model, kv_pos);
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && !m_is_npu &&
+            std::all_of(LFM3_SPEECH_MODELS.begin(), LFM3_SPEECH_MODELS.end(), [&models_dir](const char* name) {
+                return std::filesystem::exists(models_dir / ("openvino_" + std::string(name) + "_model.xml"));
+            })) {
+            m_speech_engine =
+                std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device, properties_copy);
+        }
     }
 
     void initialize_from_model_and_map(
@@ -262,6 +324,17 @@ private:
             m_adapter_controller->apply(m_language);
         }
         finalize_initialization(language_model, kv_pos);
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI &&
+            std::all_of(LFM3_SPEECH_MODELS.begin(), LFM3_SPEECH_MODELS.end(), [&models_map](const char* name) {
+                return models_map.count(name) > 0;
+            })) {
+            m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(models_map,
+                                                                     config_dir_path,
+                                                                     m_language,
+                                                                     m_embedding,
+                                                                     device,
+                                                                     properties_copy);
+        }
     }
 public:
     VLMPipelineImpl(
@@ -363,8 +436,22 @@ public:
         const std::vector<ov::Tensor>& videos,
         const std::vector<ov::Tensor>& audios,
         const std::vector<VideoMetadata>& videos_metadata,
-        const GenerationConfig& generation_config_in,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
+    ) override {
+        return generate_with_speech(
+            prompt, images, videos, audios, videos_metadata, generation_config, streamer, std::nullopt);
+    }
+
+    VLMDecodedResults generate_with_speech(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<ov::Tensor>& audios,
+        const std::vector<VideoMetadata>& videos_metadata,
+        const GenerationConfig& generation_config_in,
+        const StreamerVariant& streamer,
+        const std::optional<SpeechRequest>& speech_request
     ) override {
         // Local mutable copy: setup_generation_config(...) and downstream callees mutate fields
         // (rng_seed, eos_token_id, ...). The public-base signature is const-ref by contract.
@@ -377,6 +464,9 @@ public:
         if (!m_is_chat_conversation) {
             reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            // A previous generate() that threw after tokenization skipped the cache_state.reset_state() at the end of
+            // generate().
+            m_inputs_embedder->get_cache_state().reset_state();
             if (m_embedder_has_chat_history) {
                 m_inputs_embedder->finish_chat();
                 m_embedder_has_chat_history = false;
@@ -476,6 +566,7 @@ public:
             generation_config,
             perf_metrics,
             streamer,
+            speech_request,
             intermediate_remote_tensor,
             embeddings_start_time
         );
@@ -549,6 +640,16 @@ public:
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
+        if (speech_request) {
+            // Speech and text come from one decode loop, so the speech time is the whole call.
+            auto& speech_metrics = decoded.speech_result.perf_metrics;
+            speech_metrics.generation_time_ms =
+                PerfMetrics::get_microsec(generate_end_time - generate_start_time) / 1000.0f;
+            if (finish_info.speech_waveform) {
+                speech_metrics.num_generated_samples = finish_info.speech_waveform.get_size();
+                decoded.speech_result.waveforms.push_back(std::move(finish_info.speech_waveform));
+            }
+        }
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -623,8 +724,22 @@ public:
         const std::vector<ov::Tensor>& videos,
         const std::vector<ov::Tensor>& audios,
         const std::vector<VideoMetadata>& videos_metadata,
-        const GenerationConfig& generation_config_in,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
+    ) override {
+        return generate_with_speech(
+            history, images, videos, audios, videos_metadata, generation_config, streamer, std::nullopt);
+    }
+
+    VLMDecodedResults generate_with_speech(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<ov::Tensor>& audios,
+        const std::vector<VideoMetadata>& videos_metadata,
+        const GenerationConfig& generation_config_in,
+        const StreamerVariant& streamer,
+        const std::optional<SpeechRequest>& speech_request
     ) override {
         GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
@@ -739,6 +854,7 @@ public:
             generation_config,
             perf_metrics,
             streamer,
+            speech_request,
             intermediate_remote_tensor,
             embeddings_start_time
         );
@@ -769,6 +885,16 @@ public:
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
+        if (speech_request) {
+            // Speech and text come from one decode loop, so the speech time is the whole call.
+            auto& speech_metrics = decoded.speech_result.perf_metrics;
+            speech_metrics.generation_time_ms =
+                PerfMetrics::get_microsec(generate_end_time - generate_start_time) / 1000.0f;
+            if (generation_finish_info.speech_waveform) {
+                speech_metrics.num_generated_samples = generation_finish_info.speech_waveform.get_size();
+                decoded.speech_result.waveforms.push_back(std::move(generation_finish_info.speech_waveform));
+            }
+        }
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -910,6 +1036,9 @@ private:
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
+        // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
+        OPENVINO_ASSERT(!generation_config.is_beam_search() || m_inputs_embedder->get_suppressed_token_ids().empty(),
+                        "Beam search is not supported for this model because it has suppressed token ids");
     }
 
     void validate_inputs_for_npu(
@@ -937,6 +1066,7 @@ private:
         GenerationConfig& generation_config,
         VLMPerfMetrics& perf_metrics,
         const StreamerVariant& streamer,
+        const std::optional<SpeechRequest>& speech_request,
         const bool use_intermediate_remote_tensor,
         const std::chrono::steady_clock::time_point& embeddings_start_time
     ) {
@@ -1013,6 +1143,19 @@ private:
         ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
+        if (speech_request) {
+            // Only a raw prompt can end with a mode marker: a chat template always ends with the assistant header.
+            const bool raw_prompt = !m_is_chat_conversation && !generation_config.apply_chat_template;
+            const int64_t last_prompt_token = raw_prompt && !tokenized_history.empty() ? tokenized_history.back() : -1;
+            return decode_with_speech(inputs_embeds,
+                                      new_atten_mask,
+                                      last_prompt_token,
+                                      generation_config,
+                                      streamer_ptr,
+                                      *speech_request,
+                                      cache_state);
+        }
+
         ov::Tensor position_ids;
         std::optional<int64_t> rope_delta;
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
@@ -1048,13 +1191,54 @@ private:
             std::move(ngram_embeddings_callback)
         );
     }
+
+    void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const override {
+        if (m_vlm_config.model_type != VLMModelType::LFM3_OMNI || m_is_npu) {
+            VLMBackend::check_speech_in_stream(speech_config);
+        }
+        OPENVINO_ASSERT(
+            m_speech_engine,
+            "LFM3-Omni speech output needs openvino_depth_decoder_model, openvino_audio_out_embeddings_model "
+            "and openvino_audio_decoder_model");
+        LFM3SpeechRequest::validate(speech_config);
+    }
+
+    utils::GenerationFinishInfo decode_with_speech(const ov::Tensor& inputs_embeds,
+                                                   const ov::Tensor& attention_mask,
+                                                   int64_t last_prompt_token,
+                                                   const GenerationConfig& generation_config,
+                                                   const std::shared_ptr<StreamerBase>& streamer,
+                                                   const SpeechRequest& speech_request,
+                                                   utils::CacheState& cache_state) {
+        const LFM3SpeechRequest request(speech_request.config, generation_config);
+        const LFM3SpeechResult speech = m_speech_engine->generate(inputs_embeds,
+                                                                  attention_mask,
+                                                                  last_prompt_token,
+                                                                  request,
+                                                                  streamer,
+                                                                  speech_request.streamer);
+        // The language model has consumed every slot but the last sampled one.
+        if (speech.slot_tokens.size() > 1) {
+            ov::Tensor consumed(ov::element::i64, {1, speech.slot_tokens.size() - 1});
+            std::copy_n(speech.slot_tokens.begin(), consumed.get_size(), consumed.data<int64_t>());
+            cache_state.add_inputs(consumed);
+        }
+        utils::GenerationFinishInfo finish_info;
+        finish_info.results.tokens = {speech.text_tokens};
+        finish_info.results.scores = {speech.text_log_prob};
+        finish_info.results.finish_reasons = {speech.finish_reason};
+        finish_info.results.perf_metrics.raw_metrics = speech.raw_perf_metrics;
+        finish_info.streaming_finish_status = speech.status;
+        finish_info.speech_waveform = speech.waveform;
+        return finish_info;
+    }
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported, example:
-    // const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // return vlm_config.model_type == VLMModelType::QWEN4_EXP;
-    return false;
+    // Force models to use SDPA backend by default until PA is supported. An explicit PA request still gets PA.
+    // LFM3-Omni speech output is decoded in the stateful language model loop, which only SDPA provides.
+    const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::LFM3_OMNI;
 }
 
 VLMPipeline::VLMPipeline(
@@ -1202,6 +1386,19 @@ VLMDecodedResults VLMPipeline::generate(
 
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<ov::Tensor>& audios,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer,
+    const std::shared_ptr<OmniStreamerBase>& omni_streamer
+) {
+    return m_pimpl->generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer, omni_streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const std::string& prompt,
     const ov::AnyMap& config_map
 ) {
     return m_pimpl->generate(prompt, config_map);
@@ -1245,6 +1442,19 @@ VLMDecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_pimpl->generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const ChatHistory& history,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<ov::Tensor>& audios,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer,
+    const std::shared_ptr<OmniStreamerBase>& omni_streamer
+) {
+    return m_pimpl->generate(history, images, videos, audios, videos_metadata, generation_config, streamer, omni_streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(
