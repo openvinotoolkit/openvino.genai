@@ -183,9 +183,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                             prompt_ids,
                                             lm_extra_inputs);
     } catch (...) {
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
+        discard_awaiting_request(request_id);
         throw;
     }
 }
@@ -200,9 +198,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
         m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
         return m_main_pipeline->add_request(request_id, prompt, sampling_params);
     } catch (...) {
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
+        discard_awaiting_request(request_id);
         throw;
     }
 }
@@ -406,6 +402,12 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::get_speculative_decoding_me
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::drop_requests() {
     m_draft_pipeline->finish_request();
     m_main_pipeline->finish_request();
+}
+
+void ContinuousBatchingPipeline::SpeculativeDecodingImpl::discard_awaiting_request(uint64_t request_id) {
+    m_main_pipeline->discard_awaiting_request(request_id);
+    m_draft_pipeline->discard_awaiting_request(request_id);
+    m_draft_generations.erase(request_id);
 }
 
 

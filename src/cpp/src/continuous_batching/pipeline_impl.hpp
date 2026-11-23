@@ -172,6 +172,9 @@ public:
 
     bool has_non_finished_requests() override;
 
+    // Removes a request that add_request() queued and no step has pulled yet.
+    void discard_awaiting_request(uint64_t request_id);
+
     virtual void generate_candidates_for_prompt_lookup();
 
     virtual bool supports_embedding_prefix_verification() const {

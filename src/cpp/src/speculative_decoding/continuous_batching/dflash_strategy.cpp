@@ -302,9 +302,7 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
         align_request_pair_processed_prefix(request_id);
         return main_handle;
     } catch (...) {
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
+        discard_awaiting_request(request_id);
         throw;
     }
 }
