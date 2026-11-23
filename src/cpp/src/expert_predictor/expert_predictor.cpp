@@ -18,11 +18,13 @@
 #include "openvino/op/convert.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/greater_eq.hpp"
 #include "openvino/op/parameter.hpp"
+#include "openvino/op/range.hpp"
+#include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/read_value.hpp"
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
-#include "openvino/op/scatter_update.hpp"
 #include "openvino/op/shape_of.hpp"
 #include "openvino/op/sigmoid.hpp"
 #include "openvino/op/slice.hpp"
@@ -305,6 +307,21 @@ bool extract_from_properties(utils::SharedOptional<const ov::AnyMap>& properties
     return true;
 }
 
+void add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties, const std::string& device) {
+    if (properties->count(PLUGIN_PROPERTY)) {
+        return;
+    }
+    std::vector<ov::PropertyName> supported;
+    try {
+        supported = utils::singleton_core().get_property(device, ov::supported_properties);
+    } catch (const ov::Exception&) {
+        return;
+    }
+    if (std::find(supported.begin(), supported.end(), PLUGIN_PROPERTY) != supported.end()) {
+        properties.fork()[PLUGIN_PROPERTY] = std::string(PREDICTED_EXPERTS_PREFIX);
+    }
+}
+
 GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor, GraphMode mode) {
     OPENVINO_ASSERT(predictor, "Expert predictor: the predictor is empty");
     const ExpertPredictorImpl& impl = *predictor.get_impl();
@@ -340,8 +357,13 @@ GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& 
     OPENVINO_ASSERT(info.top_k <= impl.num_experts, "Expert predictor: top_k ", info.top_k, " exceeds the ",
                     impl.num_experts, " experts");
 
+    // The previous token input of a head is the router input of its layer saved at the last token of the previous
+    // inference, for every token of the current one. So in decode (one token) it is exactly the previous token, and
+    // the head of layer L depends only on the router input of layer L-1: it can run before MoE layer L-1, which
+    // gives a device plugin one layer of time to prefetch the predicted experts. In prefill, the tokens after the
+    // first one get an older token, which only matters little since a prefill uses most experts anyway.
     if (mode == GraphMode::STATEFUL) {
-        // hidden states [batch, seq_len, hidden]; the previous token of the first token comes from a state
+        // hidden states [batch, seq_len, hidden]; the previous token comes from a state [batch, hidden]
         auto beam_idx = find_parameter(model, "beam_idx");
         for (size_t layer : info.layers) {
             const auto& head = impl.heads.at(layer);
@@ -349,9 +371,8 @@ GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& 
             NodeOutput same_layer = as_f32(router_inputs.at(layer));
             std::optional<NodeOutput> prev;
             if (predictor.get_use_previous_token()) {
-                auto shape = std::make_shared<v3::ShapeOf>(same_layer, ov::element::i64);
+                auto shape = std::make_shared<v3::ShapeOf>(cur, ov::element::i64);
                 auto batch = std::make_shared<v8::Gather>(shape, i64_vec({0}), i64_scalar(0));
-                auto seq_len = std::make_shared<v8::Gather>(shape, i64_vec({1}), i64_scalar(0));
                 auto init_shape = std::make_shared<v0::Concat>(ov::OutputVector{batch, i64_vec({hidden})}, 0);
                 auto init = std::make_shared<v3::Broadcast>(v0::Constant::create(ov::element::f32, {}, {0.0f}), init_shape);
                 auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
@@ -360,10 +381,8 @@ GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& 
                 if (beam_idx) {
                     state = std::make_shared<v8::Gather>(state, beam_idx, i64_scalar(0));
                 }
-                // [batch, seq_len + 1, hidden] -> first seq_len rows: row t holds token t - 1
-                auto with_state = std::make_shared<v0::Concat>(
-                    ov::OutputVector{std::make_shared<v0::Unsqueeze>(state, i64_vec({1})), same_layer}, 1);
-                prev = std::make_shared<v8::Slice>(with_state, i64_vec({0}), seq_len, i64_vec({1}), i64_vec({1}));
+                // [batch, 1, hidden], broadcast over the tokens by the head
+                prev = std::make_shared<v0::Unsqueeze>(state, i64_vec({1}));
                 auto last = std::make_shared<v8::Gather>(same_layer, i64_scalar(-1), i64_scalar(1));
                 auto assign = std::make_shared<v6::Assign>(last, variable);
                 model->add_variables({variable});
@@ -373,18 +392,35 @@ GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& 
         }
     } else {
         // hidden states [total_tokens, 1, hidden] of all scheduled sequences, split by subsequence_begins; GenAI
-        // passes the previous token of the first token of every sequence and reads the last token back
+        // passes the previous token of every sequence and reads the last token back
         auto subsequence_begins = find_parameter(model, "subsequence_begins");
         OPENVINO_ASSERT(subsequence_begins, "Expert predictor: the PA model has no subsequence_begins input");
         NodeOutput begins_i = subsequence_begins->output(0);
-        auto begins = std::make_shared<v8::Slice>(begins_i, i64_vec({0}), i64_vec({-1}), i64_vec({1}), i64_vec({0}));
+        const auto index_type = begins_i.get_element_type();
         auto ends = std::make_shared<v8::Slice>(begins_i,
                                                 i64_vec({1}),
                                                 i64_vec({std::numeric_limits<int64_t>::max()}),
                                                 i64_vec({1}),
                                                 i64_vec({0}));
-        auto last_rows = std::make_shared<v1::Subtract>(ends, v0::Constant::create(begins_i.get_element_type(), {}, {1}));
-        auto zero_row = v0::Constant::create(ov::element::f32, {1, impl.hidden_size}, std::vector<float>(impl.hidden_size, 0.0f));
+        auto last_rows = std::make_shared<v1::Subtract>(ends, v0::Constant::create(index_type, {}, {1}));
+        // sequence of every token: the number of sequence ends at or before the token, [total_tokens]
+        std::shared_ptr<ov::Node> token_sequence;
+        if (predictor.get_use_previous_token()) {
+            auto num_tokens = std::make_shared<v0::Convert>(
+                std::make_shared<v8::Gather>(std::make_shared<v3::ShapeOf>(router_inputs.at(info.layers[0] - 1), index_type),
+                                             i64_scalar(0),
+                                             i64_scalar(0)),
+                index_type);
+            auto tokens = std::make_shared<v4::Range>(v0::Constant::create(index_type, {}, {0}),
+                                                      num_tokens,
+                                                      v0::Constant::create(index_type, {}, {1}),
+                                                      index_type);
+            auto after_end = std::make_shared<v1::GreaterEqual>(std::make_shared<v0::Unsqueeze>(tokens, i64_vec({1})),
+                                                                std::make_shared<v0::Unsqueeze>(ends, i64_vec({0})));
+            token_sequence = std::make_shared<v1::ReduceSum>(std::make_shared<v0::Convert>(after_end, index_type),
+                                                             i64_vec({1}),
+                                                             false);
+        }
 
         std::shared_ptr<v0::Parameter> prev_input;
         if (predictor.get_use_previous_token()) {
@@ -405,17 +441,9 @@ GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& 
             NodeOutput same_layer = flatten(router_inputs.at(layer));
             std::optional<NodeOutput> prev;
             if (predictor.get_use_previous_token()) {
-                auto num_tokens = std::make_shared<v8::Gather>(std::make_shared<v3::ShapeOf>(same_layer, ov::element::i64),
-                                                               i64_vec({0}),
-                                                               i64_scalar(0));
-                // row t holds token t - 1, then the first row of every sequence takes the cached previous token
-                auto shifted = std::make_shared<v8::Slice>(std::make_shared<v0::Concat>(ov::OutputVector{zero_row, same_layer}, 0),
-                                                           i64_vec({0}),
-                                                           num_tokens,
-                                                           i64_vec({1}),
-                                                           i64_vec({0}));
+                // cached previous token of the sequence of every token, [total_tokens, hidden]
                 auto cached = std::make_shared<v8::Gather>(prev_input, i64_scalar(static_cast<int64_t>(i)), i64_scalar(0));
-                prev = std::make_shared<v3::ScatterUpdate>(shifted, begins, cached, i64_scalar(0));
+                prev = std::make_shared<v8::Gather>(cached, token_sequence, i64_scalar(0));
                 auto last = std::make_shared<v8::Gather>(same_layer, last_rows, i64_scalar(0));
                 last_hidden.push_back(std::make_shared<v0::Unsqueeze>(last, i64_vec({0})));
             }

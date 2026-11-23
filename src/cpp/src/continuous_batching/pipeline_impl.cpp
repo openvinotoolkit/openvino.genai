@@ -197,6 +197,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     if (les::extract_from_properties(filtered_properties, expert_predictor)) {
         expert_predictor_info =
             les::apply(model, *expert_predictor, les::GraphMode::PAGED);
+        les::add_plugin_properties(filtered_properties, device);
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();

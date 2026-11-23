@@ -186,7 +186,7 @@ TEST_F(ExpertPredictorTest, ReadsPredictorFile) {
     EXPECT_TRUE(impl.heads.count(1) && impl.heads.count(2));  // expert_predictors.2 / .3 -> MoE layers 1 / 2
 }
 
-TEST_F(ExpertPredictorTest, StatefulUsesPreviousTokenState) {
+TEST_F(ExpertPredictorTest, StatefulUsesPreviousInferenceState) {
     auto model = make_model(false, gammas, model_rng);
     const ov::genai::ExpertPredictor predictor(path);
     const auto info = ov::genai::les::apply(model, predictor, ov::genai::les::GraphMode::STATEFUL);
@@ -209,7 +209,8 @@ TEST_F(ExpertPredictorTest, StatefulUsesPreviousTokenState) {
             ASSERT_EQ(predicted.get_shape(), (ov::Shape{1, seq_len, ROUTER_K}));
             for (size_t t = 0; t < seq_len; ++t) {
                 auto cur = norm_row(x, t, gammas[layer - 1]);
-                auto prev = t == 0 ? prev_last[layer] : norm_row(x, t - 1, gammas[layer]);
+                // every token of an inference uses the router input saved at the last token of the previous one
+                const auto& prev = prev_last[layer];
                 EXPECT_EQ(row_set(predicted, t, ROUTER_K), reference_experts(heads[layer], cur.data(), prev, ROUTER_K))
                     << "layer " << layer << " token " << t << " seq_len " << seq_len;
             }
@@ -253,10 +254,9 @@ TEST_F(ExpertPredictorTest, PagedKeepsPreviousTokenPerSequence) {
             for (size_t s = 0; s < sequences.size(); ++s) {
                 for (size_t t = begins[s]; t < size_t(begins[s + 1]); ++t) {
                     auto cur = norm_row(x, t, gammas[layer - 1]);
+                    // every token of a sequence uses the router input cached at its last token of the previous step
                     std::vector<float> prev(HIDDEN, 0.0f);
-                    if (t > size_t(begins[s])) {
-                        prev = norm_row(x, t - 1, gammas[layer]);
-                    } else if (last.count(sequences[s].id)) {
+                    if (last.count(sequences[s].id)) {
                         prev = last[sequences[s].id][layer];
                     }
                     EXPECT_EQ(row_set(predicted, t, 3), reference_experts(heads[layer], cur.data(), prev, 3))

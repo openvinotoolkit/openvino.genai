@@ -76,6 +76,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         OPENVINO_ASSERT(!m_is_npu, "The expert predictor is not supported on NPU");
         expert_predictor_info =
             les::apply(model, *expert_predictor, les::GraphMode::STATEFUL);
+        les::add_plugin_properties(filtered_properties, device);
     }
     ov::CompiledModel compiled_model;
     if (m_is_npu) {

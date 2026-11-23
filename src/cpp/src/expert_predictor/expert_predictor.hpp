@@ -74,6 +74,13 @@ struct GraphInfo {
 bool extract_from_properties(utils::SharedOptional<const ov::AnyMap>& properties,
                              std::optional<ExpertPredictor>& predictor);
 
+// GPU plugin property naming the predicted experts outputs (value: their name prefix, PREDICTED_EXPERTS_PREFIX), so
+// that the plugin can prefetch the predicted experts of MoE offloading (OFFLOAD_RATIO).
+inline constexpr const char* PLUGIN_PROPERTY = "MOE_LES_PREDICTED_EXPERTS";
+
+// Adds PLUGIN_PROPERTY to `properties` if `device` supports it.
+void add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties, const std::string& device);
+
 // Builds the predictor heads inside `model` and connects them to the router inputs of the MoE layers.
 GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor, GraphMode mode);
 
