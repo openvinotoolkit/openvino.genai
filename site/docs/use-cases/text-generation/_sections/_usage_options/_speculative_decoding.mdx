@@ -122,7 +122,7 @@ At every step it proposes a tree of candidate tokens, the main model verifies th
 
 `num_assistant_tokens` limits the tree size of every step (at most `max_draft_tokens()`, the default); `0` disables drafting.
 Custom drafters need the main model on NPU, greedy decoding and batch size 1.
-Beam search, repetition / presence / frequency penalties, `min_new_tokens`, `stop_strings`, `logprobs`, `echo`, structured output and LoRA adapters aren't supported.
+Beam search, repetition / presence / frequency penalties, `min_new_tokens`, `stop_strings`, `logprobs`, `echo`, structured output, LoRA adapters, attention masks that exclude prompt tokens and main models with linear attention states aren't supported.
 
 The drafter below proposes the tokens that followed the latest earlier occurrence of the last two tokens (prompt lookup) as a chain:
 

@@ -293,6 +293,26 @@ def test_max_length_limits_generation(drafter_pipe, reference):
     assert list(result.tokens[0]) == reference_tokens[: MAX_NEW_TOKENS // 2]
 
 
+def test_kv_cache_limit_ends_generation(model_path):
+    kv_config = {"MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64}
+    drafter = ScriptedDrafter()
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **get_npu_llm_properties_for_test(), **kv_config, drafter=drafter)
+    inputs = pipe.get_tokenizer().encode(PROMPT)
+    # NPUW stores past tokens outside the generate window (MAX_DRAFT_TOKENS + 1 rows, aligned to 8).
+    kv_cache_size = kv_config["MAX_PROMPT_LEN"] + kv_config["MIN_RESPONSE_LEN"] - 8
+    expected_len = kv_cache_size - inputs.input_ids.get_shape()[1] + 1
+
+    drafter.reset("empty", [])
+    one_token_steps = pipe.generate(inputs, greedy_config(max_new_tokens=1000))
+    drafter.reset("chain", one_token_steps.tokens[0])
+    tree_steps = pipe.generate(inputs, greedy_config(max_new_tokens=1000))
+
+    for result in (one_token_steps, tree_steps):
+        assert len(result.tokens[0]) == expected_len
+        assert result.finish_reasons == [ov_genai.GenerationFinishReason.NONE]
+    assert list(tree_steps.tokens[0]) == list(one_token_steps.tokens[0])
+
+
 def test_invalid_draft_tree_rejected(drafter_pipe, reference):
     pipe, drafter = drafter_pipe
     inputs, reference_tokens = reference

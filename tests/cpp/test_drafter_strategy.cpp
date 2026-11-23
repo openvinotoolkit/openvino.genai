@@ -6,9 +6,12 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "openvino/core/type/float16.hpp"
+#include "openvino/op/parameter.hpp"
 #include "speculative_decoding/stateful/drafter_strategy.hpp"
 
 using ov::genai::DraftTree;
@@ -18,6 +21,18 @@ namespace {
 
 auto never_stop = [](int64_t) {
     return false;
+};
+
+class IdleDrafter : public ov::genai::Drafter {
+public:
+    size_t max_draft_tokens() const override {
+        return 1;
+    }
+    void start(const std::vector<int64_t>&, const ov::genai::GenerationConfig&) override {}
+    DraftTree propose(int64_t, int64_t, size_t) override {
+        return {};
+    }
+    void accept(const std::vector<int64_t>&, const std::vector<int64_t>&, const ov::Tensor&) override {}
 };
 
 }  // namespace
@@ -136,4 +151,18 @@ TEST(DrafterUtils, AttentionMaskMustKeepEveryToken) {
 
 TEST(DrafterUtils, DrafterPropertyRejectsNull) {
     EXPECT_THROW(ov::genai::drafter(nullptr), ov::Exception);
+}
+
+TEST(DrafterPipeline, RejectsMainModelWithLinearAttentionStates) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
+    auto model = std::make_shared<ov::Model>(ov::OutputVector{input}, ov::ParameterVector{input});
+    model->set_rt_info(std::vector<std::string>{"recurrent_state"}, "gguf_recurrent_states");
+    const ov::genai::ModelDesc main_model(model, ov::genai::Tokenizer{}, "NPU");
+    // The check runs before the main model is compiled, so no NPU is needed.
+    try {
+        ov::genai::StatefulDrafterLLMPipeline pipeline(main_model, std::make_shared<IdleDrafter>());
+        FAIL() << "a main model with linear attention states was accepted";
+    } catch (const ov::Exception& error) {
+        EXPECT_NE(std::string(error.what()).find("linear attention states"), std::string::npos) << error.what();
+    }
 }

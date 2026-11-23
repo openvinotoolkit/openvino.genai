@@ -130,8 +130,7 @@ struct StatefulDrafterLLMPipeline::Impl {
     ov::element::Type tree_mask_type = ov::element::f32;
     size_t max_nodes = 0;
     bool has_features = false;
-    // Tokens the KV cache holds before a verification window no longer fits (the generate model keeps room for its
-    // whole window).
+    // Past tokens the main model's KV cache can store: the KV size minus the generate window, which NPUW keeps apart.
     size_t kv_capacity = std::numeric_limits<size_t>::max();
     ov::Tensor accepted_features;
     // Passed to the drafter when the main model has no last_hidden_state output.
@@ -270,6 +269,9 @@ StatefulDrafterLLMPipeline::StatefulDrafterLLMPipeline(const ModelDesc& main_mod
 
     auto model = main_model_desc.model;
     OPENVINO_ASSERT(model, "Drafter: main model is null");
+    // Tree verification drops the rows of rejected tokens from the KV cache; a linear attention state can't drop them.
+    OPENVINO_ASSERT(!utils::get_cache_types(*model).has_linear(),
+                    "Speculative decoding with a drafter doesn't support models with linear attention states");
     utils::eagle3::apply_eagle3_attention_mask_transform(model);
     const size_t window = impl.max_nodes + 1;
     ov::AnyMap properties = main_model_desc.properties;
@@ -285,7 +287,8 @@ StatefulDrafterLLMPipeline::StatefulDrafterLLMPipeline(const ModelDesc& main_mod
     impl.has_features = std::any_of(compiled.outputs().begin(), compiled.outputs().end(), [](const auto& output) {
         return output.get_names().count(FEATURES_OUTPUT) > 0;
     });
-    // NPUW aligns a multi-token generate window to 8 rows; its last KV variant holds the prompt and response sizes.
+    // NPUW stores past tokens in a KV tensor of the KV size minus the generate window (a multi-token window is aligned
+    // to 8 rows) and copies every step's rows into it after the step, so a whole step must fit into kv_capacity.
     const size_t generate_rows = window == 1 ? 1 : align_to(window, 8);
     const size_t kv_size = static_cast<size_t>(kv_desc.max_prompt_len) + kv_desc.min_response_len;
     impl.kv_capacity = kv_size > generate_rows ? kv_size - generate_rows : 0;
@@ -409,7 +412,7 @@ EncodedResults StatefulDrafterLLMPipeline::generate_tokens(const EncodedInputs& 
 
     while (!stop && streaming_status == ov::genai::StreamingStatus::RUNNING) {
         const auto step_start = SteadyClock::now();
-        // The verification window (root + nodes) must fit into the KV cache.
+        // The step's rows (root + nodes) are stored after the context, so they must fit into kv_capacity.
         const size_t room = impl.kv_capacity > context ? impl.kv_capacity - context : 0;
         if (room == 0) {
             break;
