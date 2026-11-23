@@ -316,6 +316,28 @@ TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, non_ple_role_does_not_strip_d
     EXPECT_EQ(result.count("device"), 1u);
 }
 
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, gpu_to_auto_preserves_child_device_properties) {
+    ov::AnyMap main_props = {
+        {ov::device::properties.name(), ov::AnyMap{
+            {"CPU", ov::AnyMap{{"INFERENCE_NUM_THREADS", 4}}},
+            {"AUTO", ov::AnyMap{{ov::intel_auto::enable_startup_fallback.name(), true}}},
+        }},
+    };
+    auto [device, props] = get_per_layer_embeddings_device_and_properties(main_props, "GPU");
+    EXPECT_EQ(device, "AUTO");
+    // DEVICE_PROPERTIES[AUTO] is flattened into top-level props and takes precedence over default false
+    ASSERT_EQ(props.count(ov::intel_auto::enable_startup_fallback.name()), 1u);
+    EXPECT_TRUE(props.at(ov::intel_auto::enable_startup_fallback.name()).as<bool>());
+    // DEVICE_PROPERTIES[CPU] is preserved inside DEVICE_PROPERTIES so AUTO can forward it to CPU
+    ASSERT_EQ(props.count(ov::device::properties.name()), 1u);
+    const auto& forwarded_dp = props.at(ov::device::properties.name()).as<ov::AnyMap>();
+    EXPECT_EQ(forwarded_dp.count("AUTO"), 0u);
+    ASSERT_EQ(forwarded_dp.count("CPU"), 1u);
+    const auto& cpu_dp = forwarded_dp.at("CPU").as<ov::AnyMap>();
+    ASSERT_EQ(cpu_dp.count("INFERENCE_NUM_THREADS"), 1u);
+    EXPECT_EQ(cpu_dp.at("INFERENCE_NUM_THREADS").as<int>(), 4);
+}
+
 // --- validate_vlm_model_properties tests ---
 
 TEST(TestValidateVlmModelProperties, no_op_when_key_absent) {

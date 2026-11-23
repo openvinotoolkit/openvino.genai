@@ -513,6 +513,14 @@ std::pair<std::string, ov::AnyMap> get_per_layer_embeddings_device_and_propertie
     if (substituted_gpu_to_auto) {
         resolved_props.insert(ov::device::priorities("CPU"));
         resolved_props.insert(ov::intel_auto::enable_startup_fallback(false));
+        auto dp_it = properties.find(ov::device::properties.name());
+        if (dp_it != properties.end() && dp_it->second.is<ov::AnyMap>()) {
+            ov::AnyMap child_device_props = dp_it->second.as<ov::AnyMap>();
+            child_device_props.erase("AUTO");
+            if (!child_device_props.empty()) {
+                resolved_props.try_emplace(ov::device::properties.name(), std::move(child_device_props));
+            }
+        }
     }
 
     return {std::move(resolved_device), std::move(resolved_props)};
