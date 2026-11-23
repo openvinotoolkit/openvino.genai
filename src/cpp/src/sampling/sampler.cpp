@@ -289,7 +289,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
     next_beams.reserve(m_parameters.num_beams);
 
     // parent sequence ID -> number of child sequences
-    std::map<uint64_t, uint64_t> parent_2_num_childs_map;
+    std::map<uint64_t, uint64_t> parent_2_num_children_map;
 
     for (Group& group : m_groups) {
         if (!group.done) {
@@ -307,7 +307,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
                 } (parent_seq_id);
 
                 // zero out all parent forks counts
-                parent_2_num_childs_map[parent_seq_id] = 0;
+                parent_2_num_children_map[parent_seq_id] = 0;
             }
         }
     }
@@ -372,7 +372,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
                 }
             }
 
-            // apply n_gramm
+            // apply n-gram
             std::vector<int64_t> full_text{m_sequence_group->get_prompt_ids()};
             full_text.insert(full_text.end(), beam.m_sequence->get_generated_ids().begin(), beam.m_sequence->get_generated_ids().end());
             if (full_text.size() > 1 && full_text.size() >= m_parameters.no_repeat_ngram_size) {
@@ -446,7 +446,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
                 }
             }
 
-            parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
+            parent_2_num_children_map[candidate.m_sequence->get_id()] += 1;
             child_beams_per_group[group_id].push_back(candidate);
 
             // if num children are enough
@@ -482,20 +482,20 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
         if (!group.done) {
             for (Beam& child_beam : child_beams_per_group[group_id]) {
                 uint64_t parent_sequence_id = child_beam.m_sequence->get_id();
-                uint64_t& num_childs = parent_2_num_childs_map[parent_sequence_id];
+                uint64_t& num_children = parent_2_num_children_map[parent_sequence_id];
 
                 // if current beam is forked multiple times
-                if (num_childs > 1) {
+                if (num_children > 1) {
                     child_beam.m_sequence = m_sequence_group->fork_sequence(child_beam.m_sequence);
                     child_beam.m_sequence->append_token(child_beam.m_token_id, child_beam.m_log_prob);
 
                     // reduce forks count, since fork already happened and next loop iteration
-                    // will go by the second branch (num_childs == 1)
-                    --num_childs;
+                    // will go by the second branch (num_children == 1)
+                    --num_children;
 
                     // fill out sampler output
                     sampler_output.m_forked_sequences[parent_sequence_id].push_back(child_beam.m_sequence->get_id());
-                } else if (num_childs == 1) {
+                } else if (num_children == 1) {
                     // keep current sequence going and add a new token
                     child_beam.m_sequence->append_token(child_beam.m_token_id, child_beam.m_log_prob);
                 }
@@ -503,8 +503,8 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
 
             // drop beams which are not forked by current group
             for (const Beam& beam : group.ongoing) {
-                size_t num_childs = parent_2_num_childs_map[beam.m_sequence->get_id()];
-                if (num_childs == 0) {
+                size_t num_children = parent_2_num_children_map[beam.m_sequence->get_id()];
+                if (num_children == 0) {
                     // drop sequence as not forked
                     sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
                     m_sequence_group->remove_sequence(beam.m_sequence->get_id());
@@ -1098,7 +1098,7 @@ align_all_sequence_len(SequenceGroup::Ptr& sequence_group,
         if (generated_len > min_generated_tokens) {
             auto removed_token_cnt = generated_len - min_generated_tokens;
             for (size_t i = min_generated_tokens + 1; i < generated_len; ++i) {
-                logit_processor.decrease_generated_token_occurance(generated_token_ids[i]);
+                logit_processor.decrease_generated_token_occurrence(generated_token_ids[i]);
             }
             sequence->remove_last_tokens(removed_token_cnt);
         }
@@ -1842,7 +1842,10 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             if (m_tokenizer.m_pimpl != nullptr) {
                 structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller(vocab_size);
             }
-            LogitProcessor lp(sampling_params, sequence_group->get_prompt_ids(), structured_output_controller);
+            LogitProcessor lp(sampling_params,
+                              sequence_group->get_prompt_ids(),
+                              structured_output_controller,
+                              m_suppressed_token_ids);
             m_request_contexts.emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(request_id),
@@ -1966,7 +1969,7 @@ void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig
     if (m_tokenizer.m_pimpl != nullptr) {
         structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller();
     }
-    LogitProcessor lp(sampling_params, prompt, structured_output_controller);
+    LogitProcessor lp(sampling_params, prompt, structured_output_controller, m_suppressed_token_ids);
     m_request_contexts.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(request_id),
@@ -1998,7 +2001,7 @@ void Sampler::set_d2t_for_decoding(const std::shared_ptr<ov::op::v0::Constant>& 
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
-    int64_t preeempted_sequence_id = -1;
+    int64_t preempted_sequence_id = -1;
     float generated_len = beam.get_generated_len() + (is_stop_token_id_hit(beam.m_token_id, sampling_params.stop_token_ids) ? 1 : 0); // HF counts EOS token in generation length
     beam.m_score /= std::pow(generated_len, sampling_params.length_penalty);
 
@@ -2009,11 +2012,11 @@ int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::Ge
     size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;
     if (min_heap.size() > group_size) {
         std::pop_heap(min_heap.begin(), min_heap.end(), greater);
-        preeempted_sequence_id = min_heap.back().m_sequence->get_id();
+        preempted_sequence_id = min_heap.back().m_sequence->get_id();
         min_heap.pop_back();
     }
 
-    return preeempted_sequence_id;
+    return preempted_sequence_id;
 }
 
 void Sampler::GroupBeamSearcher::Group::is_done() {

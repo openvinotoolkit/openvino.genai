@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <regex>
 #include <functional>
+#include <set>
 
 #include "utils.hpp"
 #include "lm_encoding.hpp"
@@ -78,6 +79,9 @@ public:
     void set_cached_text_embeds_enabled(bool enabled);
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
+    // Token ids the text decode must never sample, for example media placeholders.
+    const std::set<int64_t>& get_suppressed_token_ids() const;
 
     // returns per-layer embeddings callback, or nullptr if not available
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
@@ -231,6 +235,8 @@ private:
                                              const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
+        virtual const std::set<int64_t>& get_suppressed_token_ids() const;
 
         virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
             return nullptr;
@@ -499,6 +505,7 @@ private:
     friend class InputsEmbedderMiniCPMv4_7;
     friend class InputsEmbedderMistral3;
     friend class InputsEmbedderLFM3VL;
+    friend class InputsEmbedderLFM3Omni;
     friend class InputsEmbedderMolmo2;
 };
 
