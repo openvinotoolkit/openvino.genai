@@ -67,7 +67,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         self.similarity = None
         self.similarity = ImageSimilarity(similarity_model_id)
         self.last_cmp = None
-        self.gt_dir = os.path.dirname(gt_data)
+        self.gt_dir = os.path.dirname(gt_data or "")
         self.generation_fn = gen_image_fn
         self.is_genai = is_genai
         self.resolution = None

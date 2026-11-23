@@ -71,7 +71,7 @@ class RerankingEvaluator(BaseEvaluator):
         self.tokenizer = tokenizer
         self.num_samples = num_samples
         self.generation_fn = gen_rerank_fn
-        self.gt_dir = os.path.dirname(gt_data)
+        self.gt_dir = os.path.dirname(gt_data or "")
 
         if base_model:
             self.gt_data = self._generate_data(
