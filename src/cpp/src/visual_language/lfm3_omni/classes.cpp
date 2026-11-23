@@ -9,7 +9,7 @@
 
 #include "json_utils.hpp"
 #include "utils.hpp"
-#include "visual_language/lfm3_omni/speech_engine.hpp"
+#include "visual_language/lfm3_omni/speech_core.hpp"
 #include "visual_language/vlm_utils.hpp"
 
 namespace ov::genai {
