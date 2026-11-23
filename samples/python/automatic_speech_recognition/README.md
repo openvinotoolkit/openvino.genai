@@ -83,11 +83,8 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav
 ```
 An optional third positional argument selects the device. GPU and NPU runs cache compiled models in `asr_cache`.
-Performance diagnostics are opt-in so the default transcription and timestamp output remains consistent with the other language samples:
+For performance measurements, use the [speech-to-text benchmark](../../../tools/llm_bench/README.md#speech-to-text-models).
 
-```sh
-python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav NPU --perf
-```
 Output:
 
 ```text
