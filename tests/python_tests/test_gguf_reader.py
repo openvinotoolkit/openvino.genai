@@ -6,13 +6,15 @@ import pytest
 import torch
 import gc
 import os
+import stat
 import struct
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
-from gguf import GGUFReader
+import numpy as np
+from gguf import GGUFReader, GGUFWriter, TokenType
 from tokenizers.processors import TemplateProcessing
 
 import openvino as ov
@@ -412,3 +414,66 @@ def test_gguf_default_reader_failure_hint(tmp_path, reader, with_tokenizer):
         assert 'ov::genai::gguf_reader("FRONTEND")' in message
         assert "better model quality" in message
         assert "preview" in message
+
+
+@pytest.fixture
+def tiny_gguf_model(tmp_path):
+    path = tmp_path / "model.gguf"
+    writer = GGUFWriter(path, "qwen3")
+    writer.add_block_count(1)
+    writer.add_embedding_length(8)
+    writer.add_context_length(32)
+    writer.add_head_count(2)
+    writer.add_head_count_kv(1)
+    writer.add_rope_dimension_count(4)
+    writer.add_feed_forward_length(12)
+    writer.add_layer_norm_rms_eps(1e-5)
+    writer.add_file_type(0)
+    writer.add_tokenizer_model("gpt2")
+    writer.add_tokenizer_pre("qwen2")
+    writer.add_token_list(["<|endoftext|>", "a", "b", "aa"] + list("cdefghijklmn"))
+    writer.add_token_types([TokenType.CONTROL] + [TokenType.NORMAL] * 15)
+    writer.add_token_merges(["a a"])
+    writer.add_eos_token_id(0)
+    writer.add_pad_token_id(0)
+    writer.add_unk_token_id(0)
+    writer.add_add_bos_token(False)
+    for name, shape in {
+        "token_embd.weight": (16, 8),
+        "output_norm.weight": (8,),
+        "blk.0.attn_norm.weight": (8,),
+        "blk.0.attn_q.weight": (8, 8),
+        "blk.0.attn_k.weight": (4, 8),
+        "blk.0.attn_v.weight": (4, 8),
+        "blk.0.attn_output.weight": (8, 8),
+        "blk.0.attn_q_norm.weight": (4,),
+        "blk.0.attn_k_norm.weight": (4,),
+        "blk.0.ffn_norm.weight": (8,),
+        "blk.0.ffn_gate.weight": (12, 8),
+        "blk.0.ffn_up.weight": (12, 8),
+        "blk.0.ffn_down.weight": (8, 12),
+    }.items():
+        writer.add_tensor(name, np.full(shape, 1.0 if "norm" in name else 0.01, dtype=np.float32))
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    return path
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="CVS-194249: CPU PagedAttention requires SVE, unavailable on Apple Silicon",
+)
+def test_gguf_frontend_continuous_batching_reuses_tokenizer_metadata(tiny_gguf_model):
+    scheduler = ov_genai.SchedulerConfig()
+    scheduler.num_kv_blocks = 4
+    # A writable reopen of a read-only file fails, so this passes only if the tokenizer reuses frontend metadata.
+    tiny_gguf_model.chmod(stat.S_IREAD)
+    try:
+        pipeline = ov_genai.ContinuousBatchingPipeline(tiny_gguf_model, scheduler, "CPU", {"GGUF_READER": "FRONTEND"})
+        assert pipeline.get_tokenizer().encode("ab").input_ids.data.tolist() == [[1, 2]]
+        config = ov_genai.GenerationConfig(max_new_tokens=1, apply_chat_template=False)
+        assert len(pipeline.generate(["ab"], [config])) == 1
+    finally:
+        tiny_gguf_model.chmod(stat.S_IREAD | stat.S_IWRITE)

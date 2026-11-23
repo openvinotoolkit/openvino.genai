@@ -600,6 +600,12 @@ def load_visual_text_model(
                         model_kwargs["torch_dtype"],
                     )
                 model_kwargs.update({"torch_dtype": torch.float32})
+            elif config.model_type == "molmo2":
+                # The remote code of molmo2 checkpoints registers the model only under AutoModelForImageTextToText.
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+                model_kwargs["trust_remote_code"] = True
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
@@ -1326,7 +1332,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
 def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     language = kwargs.pop("speech_language", "") or ""
-    from .speech_recognition_evaluator import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
+    from .speech_recognition_model_wrappers import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
 
     if use_hf:
         kwargs["torch_dtype"] = _resolve_torch_dtype(kwargs.get("torch_dtype"))
