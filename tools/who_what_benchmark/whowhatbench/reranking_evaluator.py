@@ -166,8 +166,14 @@ class RerankingEvaluator(BaseEvaluator):
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
-        # TODO: add possibility to use custom dataset/csv
-        df = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+        if self.test_data:
+            if not isinstance(self.test_data, dict) or not {"query", "passages"} <= self.test_data.keys():
+                raise RuntimeError("Test data for text-reranking must contain 'query' and 'passages' keys")
+            df = pd.DataFrame(
+                {"query": self.test_data["query"], "passages": self.test_data["passages"]}
+            )
+        else:
+            df = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
 
         scores_path = []
         passages = []
