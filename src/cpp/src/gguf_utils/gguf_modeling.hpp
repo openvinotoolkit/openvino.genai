@@ -11,7 +11,8 @@
 ///
 /// GenAIExtension prepares stateful caches and GenAI IO inside the frontend conversion.
 /// Registration is scoped to this frontend instance.
-std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path);
+std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
+                                                 const ov::AnyMap& frontend_properties = {});
 
 /// \brief Convert a .gguf file into an ov::Model.
 ///
@@ -21,6 +22,8 @@ std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_p
 ///                              frontend (ov::genai::gguf_reader property). Temporary fallback;
 ///                              its output model lacks the frontend's tokenizer rt_info, so
 ///                              callers must build the tokenizer from the .gguf path instead.
+/// \param frontend_properties   properties passed to the GGUF frontend when loading the model.
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
-                                            bool use_legacy_reader = false);
+                                            bool use_legacy_reader = false,
+                                            const ov::AnyMap& frontend_properties = {});

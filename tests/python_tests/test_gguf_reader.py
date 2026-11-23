@@ -465,15 +465,40 @@ def tiny_gguf_model(tmp_path):
     sys.platform == "darwin",
     reason="CVS-194249: CPU PagedAttention requires SVE, unavailable on Apple Silicon",
 )
-def test_gguf_frontend_continuous_batching_reuses_tokenizer_metadata(tiny_gguf_model):
+@pytest.mark.parametrize("native_weights", [False, True])
+def test_gguf_frontend_continuous_batching_reuses_tokenizer_metadata(tiny_gguf_model, native_weights):
     scheduler = ov_genai.SchedulerConfig()
     scheduler.num_kv_blocks = 4
     # A writable reopen of a read-only file fails, so this passes only if the tokenizer reuses frontend metadata.
     tiny_gguf_model.chmod(stat.S_IREAD)
     try:
-        pipeline = ov_genai.ContinuousBatchingPipeline(tiny_gguf_model, scheduler, "CPU", {"GGUF_READER": "FRONTEND"})
+        pipeline = ov_genai.ContinuousBatchingPipeline(
+            tiny_gguf_model, scheduler, "CPU",
+            {"GGUF_READER": "FRONTEND", "GGUF_NATIVE_WEIGHTS": native_weights},
+        )
         assert pipeline.get_tokenizer().encode("ab").input_ids.data.tolist() == [[1, 2]]
         config = ov_genai.GenerationConfig(max_new_tokens=1, apply_chat_template=False)
         assert len(pipeline.generate(["ab"], [config])) == 1
     finally:
         tiny_gguf_model.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+
+@pytest.mark.parametrize("native_weights", [False, True])
+def test_gguf_frontend_native_weights_pipeline(tiny_gguf_model, native_weights):
+    pipeline = ov_genai.LLMPipeline(
+        tiny_gguf_model, "CPU", GGUF_READER="FRONTEND", GGUF_NATIVE_WEIGHTS=native_weights,
+    )
+    results = pipeline.generate(
+        ov.Tensor(np.array([[1, 2]], dtype=np.int64)), max_new_tokens=2, ignore_eos=True,
+    )
+    assert len(results.tokens[0]) == 2
+
+
+@pytest.mark.parametrize("reader", [None, "LEGACY"])
+@pytest.mark.parametrize("native_weights", [False, True])
+def test_gguf_native_weights_rejects_legacy_reader(tiny_gguf_model, reader, native_weights):
+    properties = {"GGUF_NATIVE_WEIGHTS": native_weights}
+    if reader is not None:
+        properties["GGUF_READER"] = reader
+    with pytest.raises(RuntimeError, match="GGUF_NATIVE_WEIGHTS requires GGUF_READER=FRONTEND"):
+        ov_genai.LLMPipeline(tiny_gguf_model, "CPU", **properties)
