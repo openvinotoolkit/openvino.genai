@@ -32,6 +32,7 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
+import io
 import json
 import shutil
 from dataclasses import dataclass
@@ -776,13 +777,15 @@ def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: st
             image_path = pytestconfig.cache.mkdir("images") / file_name
         except AttributeError:
             # Cache is disabled with -p no:cacheprovider
-            return download_image(link)
-        if image_path.exists():
-            image: PIL.Image = PIL.Image.open(image_path)
-        else:
+            image_buffer = io.BytesIO()
+            image_format = PIL.Image.registered_extensions()[Path(file_name).suffix.lower()]
+            download_image(link).save(image_buffer, format=image_format)
+            image_buffer.seek(0)
+            return PIL.Image.open(image_buffer)
+        if not image_path.exists():
             image = download_image(link)
             image.save(image_path)
-        return image
+        return PIL.Image.open(image_path)
     return retry(implementation, PIL.UnidentifiedImageError)
 
 
@@ -2841,6 +2844,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    "optimum-intel-internal-testing/tiny-random-qwen3.8",
     MODEL_QWEN38_FLASH_NEXT,
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
@@ -3400,16 +3404,19 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
-@pytest.fixture(scope="module")
-def qwen35_mtp_model_path() -> Path:
-    model_path = Path(_get_ov_model(MODEL_QWEN35_MTP))
-    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5 export must include the MTP draft model"
+# TODO: Enable test when OV ops are merged
+# @pytest.fixture(scope="module", params=[MODEL_QWEN35_MTP, MODEL_QWEN38_FLASH_NEXT])
+@pytest.fixture(scope="module", params=[MODEL_QWEN35_MTP])
+def mtp_model_path(request) -> Path:
+    model_path = Path(_get_ov_model(request.param))
+    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5/8 export must include the MTP draft model"
     return model_path
 
 
+@pytest.mark.parametrize("mtp_model_path", [MODEL_QWEN35_MTP], indirect=True)
 @pytest.mark.parametrize("main_prefix", [False, True])
-def test_qwen35_mtp_rejects_prefix_mismatch(qwen35_mtp_model_path, main_prefix):
-    model_path = qwen35_mtp_model_path
+def test_qwen35_mtp_rejects_prefix_mismatch(mtp_model_path, main_prefix):
+    model_path = mtp_model_path
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
     scheduler.enable_prefix_caching = main_prefix
@@ -3425,8 +3432,8 @@ def test_qwen35_mtp_rejects_prefix_mismatch(qwen35_mtp_model_path, main_prefix):
         )
 
 
-def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
-    model_path = qwen35_mtp_model_path
+def test_qwen_mtp_text_add_request(mtp_model_path, monkeypatch, capfd):
+    model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
@@ -3465,8 +3472,8 @@ def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
             assert "MTP paired prefix replay:" in captured.out + captured.err
 
 
-def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
-    model_path = qwen35_mtp_model_path
+def test_mtp_image_add_request(mtp_model_path, monkeypatch, capfd):
+    model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
@@ -3509,14 +3516,15 @@ def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd)
             assert "MTP paired prefix replay:" in captured.out + captured.err
 
 
+@pytest.mark.parametrize("mtp_model_path", [MODEL_QWEN35_MTP], indirect=True)
 @pytest.mark.parametrize("media", ["text", "image", "video", "video_metadata"])
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
 @pytest.mark.parametrize("num_assistant_tokens", [1, 4])
 @pytest.mark.parametrize("strategy", ["prompt_lookup", "mtp"])
 def test_qwen35_vlm_verifier_cache_contract(
-    qwen35_mtp_model_path, media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
+    mtp_model_path, media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
 ):
-    model_path = qwen35_mtp_model_path
+    model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.enable_prefix_caching = False

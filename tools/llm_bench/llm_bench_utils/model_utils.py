@@ -153,12 +153,59 @@ def set_default_param_for_ov_config(ov_config):
 
 TASK_ALIASES = {"embed": "text_embed"}
 
+# Role in --dataset_column -> key in the prompt dict used by llm_bench (see parse_vlm_json_data)
+DATASET_COLUMN_ROLES = {"text": "prompt", "image": "media"}
+
+
+def parse_dataset_columns(columns):
+    # Plain names are assigned by position (text, image), 'role=name' items are assigned by role.
+    roles = list(DATASET_COLUMN_ROLES)
+    if len(columns) > len(roles):
+        raise RuntimeError(f"--dataset_column accepts up to {len(roles)} columns ({', '.join(roles)}), got {columns}")
+    parsed = {}
+    for position, item in enumerate(columns):
+        role, sep, name = item.partition("=")
+        if not sep:
+            role, name = roles[position], item
+        if role not in DATASET_COLUMN_ROLES:
+            raise RuntimeError(
+                f"Unknown role '{role}' in --dataset_column '{item}', expected one of: {', '.join(roles)}"
+            )
+        if not name:
+            raise RuntimeError(f"Empty column name in --dataset_column '{item}'")
+        parsed[DATASET_COLUMN_ROLES[role]] = name
+    if "prompt" not in parsed:
+        raise RuntimeError(f"--dataset_column must contain a text column, got {columns}")
+    return parsed
+
+
+MODEL_TYPE_ON_TASK_MAPPING = {
+    "text": "text_gen",
+    "text-chat": "text_gen_chat",
+    "visual-text": "visual_text_gen",
+    "text-to-image": "text-to-image",
+    "text-to-video": "text-to-video",
+    "image-to-video": "image-to-video",
+    "speech-generation": "text_to_speech",
+    "visual-text-chat": "visual_text_gen_chat",
+    "image-inpainting": "inpainting",
+    "embedding": "text_embed",
+    "text-reranking": "text_rerank",
+    "speech-recognition": "speech_to_text",
+}
+
 
 def analyze_args(args):
     args.task = TASK_ALIASES.get(args.task, args.task)
     model_args = {}
     model_args['prompt'] = args.prompt
     model_args['prompt_file'] = args.prompt_file
+    model_args["dataset"] = args.dataset
+    model_args["dataset_subset"] = args.dataset_subset
+    model_args["dataset_split"] = args.dataset_split
+    model_args["dataset_columns"] = parse_dataset_columns(args.dataset_column) if args.dataset is not None else None
+    model_args["dataset_samples"] = args.dataset_samples
+    model_args["dataset_seed"] = args.dataset_seed
     model_args['infer_count'] = args.infer_count
     model_args["num_steps"] = args.num_steps
     model_args["height"] = args.height
@@ -179,7 +226,9 @@ def analyze_args(args):
     model_args["frame_rate"] = args.frame_rate
     model_args["negative_prompt"] = args.negative_prompt
     model_args["mask_image"] = args.mask_image
-    model_args["task"] = args.task
+    model_args["task"] = (
+        MODEL_TYPE_ON_TASK_MAPPING.get(args.model_type, args.model_type) if args.model_type else args.task
+    )
     model_args["speech_language"] = args.speech_language
     model_args["speech_voice"] = args.speech_voice
     model_args["speech_instruct"] = args.speech_instruct
@@ -244,7 +293,7 @@ def analyze_args(args):
     if model_framework in ('ov', 'pt'):
         from llm_bench_utils.get_use_case import get_use_case
 
-        use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
+        use_case, model_type, model_name = get_use_case(Path(args.model), model_args["task"])
         use_case.model_type = model_type
     model_args["use_case"] = use_case
     model_args["model_type"] = model_type
@@ -254,6 +303,20 @@ def analyze_args(args):
     model_args["is_qwen3_tts_model"] = (
         use_case.task == "text_to_speech" and isinstance(model_type, str) and model_type.startswith("qwen3-tts")
     )
+    if args.dataset is not None:
+        if use_case.task not in ["text_gen", "visual_text_gen"]:
+            raise RuntimeError(
+                f"--dataset is supported only for text_gen and visual_text_gen tasks, got {use_case.task}"
+            )
+        if use_case.task == "text_gen" and len(model_args["dataset_columns"]) > 1:
+            raise RuntimeError(
+                f"Image dataset columns are supported only for visual_text_gen task, got {args.dataset_column}"
+            )
+        conflicting_args = [
+            name for name in ["prompt", "prompt_file", "media", "images", "video"] if getattr(args, name) is not None
+        ]
+        if conflicting_args:
+            raise RuntimeError(f"--dataset can not be used together with: {', '.join(conflicting_args)}")
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}
