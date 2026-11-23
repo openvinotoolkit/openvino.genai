@@ -43,6 +43,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"minicpmv4_7", VLMModelType::MINICPMV4_7},
         {"mistral3", VLMModelType::MISTRAL3},
         {"lfm3_vl", VLMModelType::LFM3_VL},
+        {"lfm3_omni", VLMModelType::LFM3_OMNI},
         {"molmo2", VLMModelType::MOLMO2},
     };
 
