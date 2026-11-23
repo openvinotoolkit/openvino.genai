@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <set>
 
 #include "continuous_batching/pipeline_base.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -355,9 +356,13 @@ private:
         GenerationConfig pipeline_config = text_config;
         pipeline_config.do_sample = false;
         pipeline_config.repetition_penalty = 1.0f;
-        // Inside an interleaved answer <|text_end|> starts the speech tail, so only the hook may end the turn on it.
-        pipeline_config.stop_token_ids.erase(speech_config.text_end_token_id);
-        if (pipeline_config.eos_token_id == speech_config.text_end_token_id) {
+        // <|text_end|> starts the speech tail of an interleaved answer and every frame slot forces the audio output
+        // token, so only the hook may end the turn on either.
+        const std::set<int64_t> hook_token_ids{speech_config.text_end_token_id, speech_config.audio_out_token_id};
+        for (const int64_t token_id : hook_token_ids) {
+            pipeline_config.stop_token_ids.erase(token_id);
+        }
+        if (hook_token_ids.count(pipeline_config.eos_token_id)) {
             // validate() needs the EOS among the stop ids. A media placeholder is neither sampled as text nor forced
             // for a frame, so the pipeline never stops on it, and the stop ids stay non-empty for add_request().
             const auto& placeholders = speech_config.placeholder_token_ids;

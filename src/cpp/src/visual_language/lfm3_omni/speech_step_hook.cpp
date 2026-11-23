@@ -234,6 +234,9 @@ void LFM3SpeechStepHook::finish_if_ended(const SequenceGroup::Ptr& group, Sample
     const LFM3SpeechResult& result = *m_result;
     if (result.status == GenerationStatus::CANCEL) {
         group->get_generation_stream()->cancel();
+        // Results read the sequence reason, which is NONE or the sampler's LENGTH here, while SDPA reports the
+        // speech reason.
+        set_finish_reason(group->get_sequences(), result.finish_reason);
     } else if (result.status == GenerationStatus::STOP) {
         const GenerationFinishReason reason = stop_reason(result.finish_reason);
         group->get_generation_stream()->stop(reason);

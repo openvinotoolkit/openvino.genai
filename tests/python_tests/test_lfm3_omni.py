@@ -783,6 +783,7 @@ def test_tool_call_stop_ends_the_turn(speech_pipe: ov_genai.OmniPipeline) -> Non
     [
         (ov_genai.StreamingStatus.STOP, ov_genai.GenerationFinishReason.STOP),
         (ov_genai.StreamingStatus.TOOL_CALL_STOP, ov_genai.GenerationFinishReason.TOOL_CALL),
+        (ov_genai.StreamingStatus.CANCEL, ov_genai.GenerationFinishReason.STOP),
     ],
 )
 def test_streamer_stop_on_last_allowed_token_keeps_its_reason(
@@ -793,6 +794,17 @@ def test_streamer_stop_on_last_allowed_token_keeps_its_reason(
         PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=TokenCollector(status)
     )
     assert result.finish_reasons == [reason]
+
+
+def test_text_streamer_cancel_reports_speech_reason(speech_pipe: ov_genai.OmniPipeline) -> None:
+    # The request is cancelled long before max_new_tokens, so the sampler has not set a reason.
+    result = speech_pipe.generate(
+        PROMPT,
+        text_config=_text_config(1000),
+        talker_speech_config=_speech_config(8),
+        streamer=TokenCollector(ov_genai.StreamingStatus.CANCEL, after=2),
+    )
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.STOP]
 
 
 def test_default_stop_token_ids_end_speech_generation(speech_pipe: ov_genai.OmniPipeline) -> None:
@@ -935,6 +947,30 @@ def test_paged_attention_text_end_as_eos_matches_sdpa(
             text_config=text_config,
             talker_speech_config=_speech_config(14, output_mode=output_mode, rng_seed=2),
         )
+
+    sdpa, pa = run(omni_sdpa_pipe), run(omni_pa_pipe)
+    assert (pa.texts, pa.finish_reasons) == (sdpa.texts, sdpa.finish_reasons)
+    np.testing.assert_array_equal(_waveform(pa), _waveform(sdpa))
+
+
+@SKIP_PA_ON_MACOS_ARM64
+@pytest.mark.parametrize("as_eos", [True, False], ids=["eos", "stop_token_ids"])
+def test_paged_attention_audio_out_as_stop_token_matches_sdpa(
+    omni_sdpa_pipe: ov_genai.OmniPipeline,
+    omni_pa_pipe: ov_genai.OmniPipeline,
+    lfm3_omni_model_path: Path,
+    as_eos: bool,
+) -> None:
+    # Every frame slot is the audio output token, which the speech decode never checks against the stop ids.
+    audio_out = json.loads((lfm3_omni_model_path / "config.json").read_text())["audio_out_token_id"]
+
+    def run(pipe: ov_genai.OmniPipeline) -> ov_genai.VLMDecodedResults:
+        text_config = _text_config(1000)
+        if as_eos:
+            text_config.set_eos_token_id(audio_out)
+        else:
+            text_config.stop_token_ids = {audio_out}
+        return pipe.generate(PROMPT, text_config=text_config, talker_speech_config=_speech_config(14, rng_seed=2))
 
     sdpa, pa = run(omni_sdpa_pipe), run(omni_pa_pipe)
     assert (pa.texts, pa.finish_reasons) == (sdpa.texts, sdpa.finish_reasons)
