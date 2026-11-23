@@ -92,7 +92,7 @@ protected:
     void _fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits);
 
     /**
-     * Performs KV cache eviction is enabled / requireed
+     * Performs KV cache eviction is enabled / required
      */
     void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const ContinuousBatchingScheduler::Output& scheduler_output);
 
@@ -205,6 +205,15 @@ public:
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
+
+    std::vector<EncodedGenerationResult> generate_with_omni_streamer(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
 
     /**
      * Updates LoRA adapters for current generation call

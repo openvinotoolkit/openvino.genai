@@ -1756,6 +1756,11 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlder
     const auto latest_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
     block_manager.free_sequence(producer_seq_id);
 
+    // Ensure pressure evicts the older checkpoint even when the clock gives both blocks the same timestamp.
+    const auto timestamp = std::chrono::steady_clock::now();
+    older_checkpoint->set_timestamp(timestamp - std::chrono::seconds(1));
+    latest_checkpoint->set_timestamp(timestamp);
+
     std::vector<int64_t> pressure_tokens = {10, 11, 12, 13};
     auto pressure_group = create_sequence_group(pressure_tokens, 29);
     pressure_group->schedule_tokens(pressure_tokens.size());

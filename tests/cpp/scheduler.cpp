@@ -266,7 +266,7 @@ TEST(TestScheduler, general_test) {
 
         auto out4 = scheduler.schedule(requests);
 
-        // check that sequence_group3 is fully scehuled
+        // check that sequence_group3 is fully scheduled
         EXPECT_EQ(out4.get_kv_block_tables(idx2)[0].size(), 2);
         EXPECT_FALSE(out4.get_kv_block_tables(idx2)[0][0]->is_free());
         EXPECT_EQ(out4.get_kv_block_tables(idx2)[0][0]->get_index(), 0);
@@ -2874,7 +2874,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1);
 
         if (scheduler_config.dynamic_split_fuse) {
-            // for dynamic_split_fuse sequence_group2 is preemted partially, part of prompt is left
+            // for dynamic_split_fuse sequence_group2 is preempted partially, part of prompt is left
             EXPECT_TRUE(scheduler.has_block_table(idx1));
             auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
             EXPECT_EQ(block_table2.size(), 2); // full prompt requires 3 blocks, 2 are left in scheduler
@@ -2941,14 +2941,14 @@ TEST(TestScheduler, prefix_caching_test) {
     configs.at(1).enable_prefix_caching = true;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
-        std::vector<uint64_t> histrory_tokens = {};
+        std::vector<uint64_t> history_tokens = {};
         // schedule prompt
         ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
         for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
-            std::vector<uint64_t> tokens = histrory_tokens;
+            std::vector<uint64_t> tokens = history_tokens;
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                                     utils::get_greedy_config());
@@ -2985,8 +2985,8 @@ TEST(TestScheduler, prefix_caching_test) {
             scheduler.free_sequence(idx0);
             auto generated_ids = sequence->get_generated_ids();
 
-            histrory_tokens.insert(histrory_tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
-            histrory_tokens.insert(histrory_tokens.end(), generated_ids.begin(), generated_ids.end());
+            history_tokens.insert(history_tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
+            history_tokens.insert(history_tokens.end(), generated_ids.begin(), generated_ids.end());
 
             for (auto& seq : sequence_group->get_sequences()) {
                 if (seq->get_id() == idx0) {
@@ -3009,14 +3009,14 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
     configs.at(1).enable_prefix_caching = true;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
-        std::vector<uint64_t> histrory_tokens = {};
+        std::vector<uint64_t> history_tokens = {};
         // schedule prompt
         ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
         for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
-            std::vector<uint64_t> tokens = histrory_tokens;
+            std::vector<uint64_t> tokens = history_tokens;
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                                     utils::get_greedy_config());
@@ -3062,8 +3062,8 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
             }
             auto generated_ids = requests[0]->get_sequences()[0]->get_generated_ids();
 
-            histrory_tokens.insert(histrory_tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
-            histrory_tokens.insert(histrory_tokens.end(), generated_ids.begin(), generated_ids.end());
+            history_tokens.insert(history_tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
+            history_tokens.insert(history_tokens.end(), generated_ids.begin(), generated_ids.end());
         }
     }
 
@@ -3432,14 +3432,14 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
                 prompt_embeddings[i].push_back(i * hidden_size + j + (float)j * 0.05);
             }
         }
-        std::vector<std::vector<float>> histrory_embeddings = {};
+        std::vector<std::vector<float>> history_embeddings = {};
         // schedule prompt
         ContinuousBatchingScheduler scheduler = ContinuousBatchingScheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
         for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
-            std::vector<std::vector<float>> embeddings = histrory_embeddings;
+            std::vector<std::vector<float>> embeddings = history_embeddings;
             embeddings.insert(embeddings.end(), prompt_embeddings.begin(), prompt_embeddings.end());
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, embeds_matrix_to_tensor(embeddings), utils::get_greedy_config());
             scheduler.restore_cached_blocks(sequence_group);
@@ -3488,8 +3488,8 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
             scheduler.free_sequence(idx0);
             auto generated_embeddings = sequence->get_generated_ids_embeds();
 
-            histrory_embeddings.insert(histrory_embeddings.end(), prompt_embeddings.begin(), prompt_embeddings.end());
-            histrory_embeddings.insert(histrory_embeddings.end(), generated_embeddings.begin(), generated_embeddings.end());
+            history_embeddings.insert(history_embeddings.end(), prompt_embeddings.begin(), prompt_embeddings.end());
+            history_embeddings.insert(history_embeddings.end(), generated_embeddings.begin(), generated_embeddings.end());
 
             for (auto& seq : sequence_group->get_sequences()) {
                 if (seq->get_id() == idx0) {
