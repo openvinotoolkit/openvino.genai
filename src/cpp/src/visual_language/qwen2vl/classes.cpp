@@ -28,11 +28,11 @@ namespace ov::genai {
 
 namespace {
 
-constexpr char LORA_VISION_TENSOR_SUBPATH[] = "model.visual.";
+constexpr char LORA_VISION_TENSOR_PREFIX[] = "base_model.model.model.visual.";
 
 AdapterConfig to_vision_config(AdapterConfig config) {
     if (config.get_tensor_name_prefix()) {
-        config.set_tensor_name_prefix(std::string("base_model.model.") + LORA_VISION_TENSOR_SUBPATH);
+        config.set_tensor_name_prefix(LORA_VISION_TENSOR_PREFIX);
     }
     set_foreign_tensor_name_prefix(config, std::nullopt);
     return config;
@@ -959,10 +959,11 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     if (std::filesystem::exists(merger_path)) {
         auto model = utils::singleton_core().read_model(merger_path);
         utils::request_vl_sdpa_transformations(model);
-        init_vision_lora(model, device, device_config);
+        init_vision_lora(model, device);
 
+        auto filtered_properties = extract_adapters_from_properties(device_config);
         auto compiled_model = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
+            model, device, utils::get_model_properties(*filtered_properties, "vision_embeddings_merger", device));
 
         m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
         ov::genai::utils::print_compiled_model_properties(compiled_model,
@@ -994,10 +995,11 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
         utils::request_vl_sdpa_transformations(model);
-        init_vision_lora(model, device, device_config);
+        init_vision_lora(model, device);
 
+        auto filtered_properties = extract_adapters_from_properties(device_config);
         auto compiled_model = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
+            model, device, utils::get_model_properties(*filtered_properties, "vision_embeddings_merger", device));
 
         m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
         ov::genai::utils::print_compiled_model_properties(compiled_model,
@@ -1323,17 +1325,18 @@ std::string InputsEmbedderQwen2VL::get_last_pruned_prompt(const std::string& ori
     return pruned_prompt;
 }
 
+bool InputsEmbedderQwen2VL::has_visual_lora(const AdapterConfig& adapters) {
+    return has_lora_tensors(adapters, [](const std::string& name) {
+        return name.find(LORA_VISION_TENSOR_PREFIX) == 0;
+    });
+}
+
 void InputsEmbedderQwen2VL::init_vision_lora(const std::shared_ptr<ov::Model>& merger,
-                                          const std::string& device,
-                                          const ov::AnyMap& properties) {
-    auto forwarded = properties.find(utils::FORWARDED_ADAPTERS_PROPERTY);
-    if (forwarded == properties.end()) {
+                                          const std::string& device) {
+    if (!m_adapters || !*m_adapters) {
         return;
     }
-    auto adapters = forwarded->second.as<AdapterConfig>();
-    if (!adapters) {
-        return;
-    }
+    auto adapters = *m_adapters;
     adapters.set_tensor_name_prefix("base_model.model.");
     const auto vision_config = to_vision_config(adapters);
     m_lora_tensor_prefix = vision_config.get_tensor_name_prefix();
@@ -1345,6 +1348,9 @@ std::optional<std::string> InputsEmbedderQwen2VL::get_lora_tensor_prefix() const
 }
 
 void InputsEmbedderQwen2VL::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    OPENVINO_ASSERT(m_vision_adapter_controller || !adapters || !has_visual_lora(*adapters),
+                    "Visual LoRA was not enabled when this pipeline was created. "
+                    "Pass visual LoRA adapters to the pipeline constructor before using them in generate().");
     m_vision_adapters = adapters ? std::optional(to_vision_config(*adapters)) : std::nullopt;
 }
 

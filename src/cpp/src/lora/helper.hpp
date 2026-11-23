@@ -20,11 +20,6 @@ utils::SharedOptional<const AnyMap> extract_adapters_from_properties (const AnyM
 // If `adapters` property is not found, do nothing and return false.
 bool update_adapters_from_properties (const AnyMap& properties, std::optional<AdapterConfig>& adapter_config);
 
-// Move the `adapters` property to utils::FORWARDED_ADAPTERS_PROPERTY so that sub-model constructors
-// can read the adapters while get_model_properties() keeps them away from the plugins.
-AnyMap forward_adapters_to_submodels (const AnyMap& properties,
-                                     const std::optional<AdapterConfig>& default_adapters = std::nullopt);
-
 using AdapterConfigAction = std::function<std::optional<AdapterConfig>(const AdapterConfig&)>;
 using AdapterAction = std::function<Adapter(const Adapter&)>;
 
@@ -42,6 +37,11 @@ std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, con
 // Sets the GenAI-internal part of AdapterConfig: the prefix of the tensors that are nested under tensor_name_prefix
 // but are applied by another AdapterController of the same pipeline.
 void set_foreign_tensor_name_prefix(AdapterConfig& config, const std::optional<std::string>& prefix);
+
+// Returns true if any LoRA or replacement-constant tensor name matches the configured prefix and predicate.
+// The predicate receives the full tensor name, including the prefix.
+bool has_lora_tensors(const AdapterConfig& adapters,
+					 const std::function<bool(const std::string&)>& predicate);
 
 }
 }

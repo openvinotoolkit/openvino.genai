@@ -1302,6 +1302,24 @@ std::string detect_lora_prefix(const AdapterConfig& adapters) {
     return "transformer";
 }
 
+bool has_lora_tensors(const AdapterConfig& adapters,
+                     const std::function<bool(const std::string&)>& predicate) {
+    const std::string prefix = adapters.get_tensor_name_prefix().value_or("");
+    const auto matches = [&](const auto& tensor) {
+        return tensor.first.find(prefix) == 0 && predicate(tensor.first);
+    };
+    for (const auto& adapter : adapters.get_adapters()) {
+        OPENVINO_ASSERT(adapter, "Expected a non-empty LoRA adapter");
+        const auto& tensors = adapter.m_pimpl->get_tensors();
+        const auto& constants = adapter.m_pimpl->get_constant_tensors();
+        if (std::any_of(tensors.begin(), tensors.end(), matches) ||
+            std::any_of(constants.begin(), constants.end(), matches)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 Adapter flux_adapter_normalization(const Adapter& adapter) {
     auto origin = adapter.m_pimpl;
     using FluxDerivedAdapter = DerivedAdapterImpl<decltype(&flux_normalization)>;

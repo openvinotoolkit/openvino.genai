@@ -8,6 +8,7 @@
 #include <string>
 #include <optional>
 #include <filesystem>
+#include <functional>
 
 #include "openvino/op/constant.hpp"
 #include "openvino/runtime/compiled_model.hpp"
@@ -35,6 +36,8 @@ class OPENVINO_GENAI_EXPORTS Adapter {
     friend Adapter flux_adapter_normalization(const Adapter& adapter);
     friend Adapter diffusers_adapter_normalization(const Adapter& adapter);
     friend std::string detect_lora_prefix(const AdapterConfig& adapters);
+    friend bool has_lora_tensors(const AdapterConfig& adapters,
+                                 const std::function<bool(const std::string&)>& predicate);
 
     Adapter(const std::shared_ptr<AdapterImpl>& pimpl);
 public:

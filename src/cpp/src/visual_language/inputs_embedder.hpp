@@ -183,6 +183,7 @@ private:
     protected:
         // VLM config
         VLMConfig m_vlm_config;
+        std::optional<AdapterConfig> m_adapters;
         // An encoder to infer embeddings of an image.
         VisionEncoder::Ptr m_vision_encoder;
         // A model to compute token embeddings.
@@ -217,7 +218,7 @@ private:
 
     public:
         // Architectures that support LoRA for the vision part override this to pick up the per-generation config.
-        virtual void set_adapters(const std::optional<AdapterConfig>& adapters) {}
+        virtual void set_adapters(const std::optional<AdapterConfig>& adapters);
         virtual std::optional<std::string> get_lora_tensor_prefix() const { return std::nullopt; }
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 
@@ -391,7 +392,7 @@ private:
             const std::filesystem::path& model_dir,
             const Tokenizer& tokenizer,
             const std::string& device,
-            const ov::AnyMap device_config);
+            ov::AnyMap device_config);
 
         IInputsEmbedder(
             const VLMConfig& vlm_config,
@@ -399,7 +400,9 @@ private:
             const Tokenizer& tokenizer,
             const std::filesystem::path& config_dir_path,
             const std::string& device,
-            const ov::AnyMap device_config);
+            ov::AnyMap device_config);
+
+        const ov::AnyMap& handle_lora(ov::AnyMap& device_config);
 
         virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 
