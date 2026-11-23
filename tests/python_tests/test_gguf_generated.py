@@ -264,8 +264,9 @@ CB_SCHEDULERS = {
 }
 
 
-def run_continuous_batching(pipeline, references, model_name, rtol):
+def run_continuous_batching(pipeline, references, model_name, rtol, allow_log_prob_mismatch=False):
     handles = []
+    log_prob_mismatch = False
     for i, reference in enumerate(references):
         config = generation_config(len(reference["generated_ids"]))
         config.logprobs = 1
@@ -280,8 +281,13 @@ def run_continuous_batching(pipeline, references, model_name, rtol):
         outputs = handle.read_all()
         assert len(outputs) == 1
         assert outputs[0].generated_ids == reference["generated_ids"], f"{model_name}: {reference['input_ids']}"
-        np.testing.assert_allclose(outputs[0].generated_log_probs, reference["log_probs"], atol=1e-4, rtol=rtol)
-    return handles
+        try:
+            np.testing.assert_allclose(outputs[0].generated_log_probs, reference["log_probs"], atol=1e-4, rtol=rtol)
+        except AssertionError:
+            if not allow_log_prob_mismatch:
+                raise
+            log_prob_mismatch = True
+    return handles, log_prob_mismatch
 
 
 def kv_blocks_required(reference):
@@ -292,13 +298,15 @@ def kv_blocks_required(reference):
 def test_generated_gguf_continuous_batching(request, generated_model, numeric_tokenizer, scenario):
     arch, variant, model, references = generated_model
     mark_backend_limitation(request, arch, variant, "PA")
+    expected_prefix_cache_log_prob_mismatch = None
     if scenario == "prefix_caching" and arch in {"lfm3", "qwen35", "qwen35moe"}:
-        reason = "CVS-196941: cached recurrent-state restoration changes log probabilities; generated token IDs match"
+        expected_prefix_cache_log_prob_mismatch = (
+            "CVS-196941: cached recurrent-state restoration changes log probabilities; generated token IDs match"
+        )
         if arch == "lfm3":
-            reason += " (up to 0.047 on the synthetic fixture)"
+            expected_prefix_cache_log_prob_mismatch += " (up to 0.047 on the synthetic fixture)"
         else:
-            reason += " (about 3e-3 on the synthetic fixture)"
-        request.node.add_marker(pytest.mark.xfail(strict=False, raises=AssertionError, reason=reason))
+            expected_prefix_cache_log_prob_mismatch += " (about 3e-3 on the synthetic fixture)"
     scheduler = genai.SchedulerConfig()
     for name, value in CB_SCHEDULERS[scenario].items():
         setattr(scheduler, name, value)
@@ -319,9 +327,17 @@ def test_generated_gguf_continuous_batching(request, generated_model, numeric_to
         assert sum(map(kv_blocks_required, references)) > scheduler.num_kv_blocks
     run_continuous_batching(pipeline, scenario_references, model.name, rtol)
     if scenario == "prefix_caching":
-        handles = run_continuous_batching(pipeline, references, model.name, rtol)
+        handles, log_prob_mismatch = run_continuous_batching(
+            pipeline,
+            references,
+            model.name,
+            rtol,
+            allow_log_prob_mismatch=expected_prefix_cache_log_prob_mismatch is not None,
+        )
         hits = handles[-1].get_perf_metrics().get_num_prefix_cache_hit_tokens()
         assert hits >= CPU_KV_BLOCK_SIZE, f"{model.name}: prefix cache reused {hits} tokens"
+        if log_prob_mismatch:
+            pytest.xfail(expected_prefix_cache_log_prob_mismatch)
     if scenario == "preemption":
         assert pipeline.get_metrics().max_cache_usage >= 99.0, f"{model.name}: KV cache was not under pressure"
 
