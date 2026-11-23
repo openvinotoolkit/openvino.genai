@@ -716,7 +716,7 @@ private:
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             // Note, that can_generate_tokens will mix preempted sequence groups
             // and real generate ones
-            // Question: do we need to schedule preeempted first as it's done in vLLM?
+            // Question: do we need to schedule preempted first as it's done in vLLM?
             // Answer: preempted sequences have low priority, so they should be after "running" ones. So, here we
             //         keep latencies for sequence groups of high priority
             if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
@@ -783,7 +783,7 @@ private:
 
                 _apply_preemption(sequence_group_id, sequence_groups);
 
-                // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
+                // if we can't preempt any more sequences, clear scheduled tokens and move to next sequence
                 if (!m_cache_orchestrator->can_append_slots(sequence_group)) {
                     sequence_group->clear_scheduled_tokens();
                     if (linear_attention_group_reservation) {
@@ -866,7 +866,7 @@ private:
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
 
                 // TODO: better handling
-                // e.g. return status that sequence is ignored and cannot be processed by current scheduling algorigthm
+                // e.g. return status that sequence is ignored and cannot be processed by current scheduling algorithm
                 OPENVINO_ASSERT(m_config.max_num_batched_tokens >= sequence_len, "Sequence length (", sequence_len, ") is longer than max number of tokens in batch (", m_config.max_num_batched_tokens, ")");
 
                 // if we limited by max_num_seqs condition

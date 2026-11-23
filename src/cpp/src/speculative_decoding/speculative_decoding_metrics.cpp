@@ -63,8 +63,8 @@ float SpeculativeDecodingMetrics::get_draft_accepted_tokens_percentage(int64_t r
     float avg_acceptance_rate = 0.f;
     if (request_id == -1) {
         size_t total_iteration_cnt = 0;
-        for (const auto& accepten_token_cnt : m_draft_accepted_tokens) {
-            avg_acceptance_rate += accepten_token_cnt.second;
+        for (const auto& accepted_token_cnt : m_draft_accepted_tokens) {
+            avg_acceptance_rate += accepted_token_cnt.second;
             total_iteration_cnt += m_draft_generated_len[request_id];
         }
         OPENVINO_ASSERT(total_iteration_cnt > 0);
@@ -85,8 +85,8 @@ size_t SpeculativeDecodingMetrics::get_draft_accepted_tokens_counter(int64_t req
     size_t avg_acceptance_rate = 0;
     if (request_id == -1) {
         size_t total_iteration_cnt = 0;
-        for (const auto& accepten_token_cnt : m_draft_accepted_tokens) {
-            avg_acceptance_rate += accepten_token_cnt.second;
+        for (const auto& accepted_token_cnt : m_draft_accepted_tokens) {
+            avg_acceptance_rate += accepted_token_cnt.second;
         }
     } else {
         OPENVINO_ASSERT(m_draft_accepted_tokens.count(request_id));
