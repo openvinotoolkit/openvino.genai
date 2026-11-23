@@ -8,6 +8,7 @@
 #include <variant>
 
 #include <gtest/gtest.h>
+#include <openvino/runtime/auto/properties.hpp>
 #include <openvino/runtime/properties.hpp>
 #include "openvino/genai/omni/pipeline.hpp"
 #include "utils.hpp"
@@ -224,6 +225,117 @@ TEST(TestGetModelProperties, input_map_not_modified) {
     EXPECT_EQ(main_props.size(), original_size);
     EXPECT_EQ(main_props.count(PER_MODEL_PROPERTIES), 1u);
     EXPECT_EQ(main_props.count(ov::device::properties.name()), 1u);
+}
+
+// --- get_per_layer_embeddings_device_and_properties tests ---
+
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, gpu_defaults_to_auto_with_cpu_priority) {
+    ov::AnyMap main_props = {
+        {"CACHE_DIR", std::string("/tmp")},
+    };
+    auto [device, props] = get_per_layer_embeddings_device_and_properties(main_props, "GPU");
+    EXPECT_EQ(device, "AUTO");
+    ASSERT_EQ(props.count("CACHE_DIR"), 1u);
+    EXPECT_EQ(props.at("CACHE_DIR").as<std::string>(), "/tmp");
+    ASSERT_EQ(props.count(ov::device::priorities.name()), 1u);
+    EXPECT_EQ(props.at(ov::device::priorities.name()).as<std::string>(), "CPU");
+    ASSERT_EQ(props.count(ov::intel_auto::enable_startup_fallback.name()), 1u);
+    EXPECT_FALSE(props.at(ov::intel_auto::enable_startup_fallback.name()).as<bool>());
+}
+
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, gpu_indexed_defaults_to_auto_with_cpu_priority) {
+    ov::AnyMap main_props = {};
+    auto [device, props] = get_per_layer_embeddings_device_and_properties(main_props, "GPU.0");
+    EXPECT_EQ(device, "AUTO");
+    ASSERT_EQ(props.count(ov::device::priorities.name()), 1u);
+    EXPECT_EQ(props.at(ov::device::priorities.name()).as<std::string>(), "CPU");
+}
+
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, explicit_role_device_overrides_gpu_default) {
+    ov::AnyMap main_props = {
+        {ov::device::properties.name(), ov::AnyMap{
+            {"GPU", ov::AnyMap{{"NUM_STREAMS", std::string("2")}}},
+        }},
+        {PER_MODEL_PROPERTIES, ov::AnyMap{
+            {"text_embeddings_per_layer", ov::AnyMap{
+                {"device", std::string("GPU")},
+            }},
+        }},
+    };
+    auto [device, props] = get_per_layer_embeddings_device_and_properties(main_props, "GPU");
+    EXPECT_EQ(device, "GPU");
+    EXPECT_EQ(props.count("device"), 0u);
+    EXPECT_EQ(props.count(ov::device::priorities.name()), 0u);
+    ASSERT_EQ(props.count("NUM_STREAMS"), 1u);
+    EXPECT_EQ(props.at("NUM_STREAMS").as<std::string>(), "2");
+}
+
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, explicit_auto_priorities_preserved) {
+    ov::AnyMap main_props = {
+        {PER_MODEL_PROPERTIES, ov::AnyMap{
+            {"text_embeddings_per_layer", ov::AnyMap{
+                {ov::device::priorities.name(), std::string("GPU,CPU")},
+            }},
+        }},
+    };
+    auto [device, props] = get_per_layer_embeddings_device_and_properties(main_props, "GPU");
+    EXPECT_EQ(device, "AUTO");
+    ASSERT_EQ(props.count(ov::device::priorities.name()), 1u);
+    EXPECT_EQ(props.at(ov::device::priorities.name()).as<std::string>(), "GPU,CPU");
+}
+
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, cpu_and_meta_devices_preserve_default_device) {
+    ov::AnyMap main_props = {};
+    auto [cpu_dev, cpu_props] = get_per_layer_embeddings_device_and_properties(main_props, "CPU");
+    EXPECT_EQ(cpu_dev, "CPU");
+    EXPECT_EQ(cpu_props.count(ov::device::priorities.name()), 0u);
+
+    auto [auto_dev, auto_props] = get_per_layer_embeddings_device_and_properties(main_props, "AUTO");
+    EXPECT_EQ(auto_dev, "AUTO");
+    EXPECT_EQ(auto_props.count(ov::device::priorities.name()), 0u);
+    EXPECT_EQ(auto_props.count(ov::intel_auto::enable_startup_fallback.name()), 0u);
+
+    auto [auto_gpu_dev, auto_gpu_props] = get_per_layer_embeddings_device_and_properties(main_props, "AUTO:GPU");
+    EXPECT_EQ(auto_gpu_dev, "AUTO:GPU");
+    EXPECT_EQ(auto_gpu_props.count(ov::device::priorities.name()), 0u);
+
+    auto [multi_dev, multi_props] = get_per_layer_embeddings_device_and_properties(main_props, "MULTI:GPU,CPU");
+    EXPECT_EQ(multi_dev, "MULTI:GPU,CPU");
+    EXPECT_EQ(multi_props.count(ov::device::priorities.name()), 0u);
+}
+
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, non_ple_role_does_not_strip_device_key) {
+    ov::AnyMap main_props = {
+        {PER_MODEL_PROPERTIES, ov::AnyMap{
+            {"vision_embeddings", ov::AnyMap{
+                {"device", std::string("CPU")},
+            }},
+        }},
+    };
+    auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
+    EXPECT_EQ(result.count("device"), 1u);
+}
+
+TEST(TestGetPerLayerEmbeddingsDeviceAndProperties, gpu_to_auto_preserves_child_device_properties) {
+    ov::AnyMap main_props = {
+        {ov::device::properties.name(), ov::AnyMap{
+            {"CPU", ov::AnyMap{{"INFERENCE_NUM_THREADS", 4}}},
+            {"AUTO", ov::AnyMap{{ov::intel_auto::enable_startup_fallback.name(), true}}},
+        }},
+    };
+    auto [device, props] = get_per_layer_embeddings_device_and_properties(main_props, "GPU");
+    EXPECT_EQ(device, "AUTO");
+    // DEVICE_PROPERTIES[AUTO] is flattened into top-level props and takes precedence over default false
+    ASSERT_EQ(props.count(ov::intel_auto::enable_startup_fallback.name()), 1u);
+    EXPECT_TRUE(props.at(ov::intel_auto::enable_startup_fallback.name()).as<bool>());
+    // DEVICE_PROPERTIES[CPU] is preserved inside DEVICE_PROPERTIES so AUTO can forward it to CPU
+    ASSERT_EQ(props.count(ov::device::properties.name()), 1u);
+    const auto& forwarded_dp = props.at(ov::device::properties.name()).as<ov::AnyMap>();
+    EXPECT_EQ(forwarded_dp.count("AUTO"), 0u);
+    ASSERT_EQ(forwarded_dp.count("CPU"), 1u);
+    const auto& cpu_dp = forwarded_dp.at("CPU").as<ov::AnyMap>();
+    ASSERT_EQ(cpu_dp.count("INFERENCE_NUM_THREADS"), 1u);
+    EXPECT_EQ(cpu_dp.at("INFERENCE_NUM_THREADS").as<int>(), 4);
 }
 
 // --- validate_vlm_model_properties tests ---

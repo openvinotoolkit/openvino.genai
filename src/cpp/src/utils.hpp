@@ -166,6 +166,18 @@ extern const std::string FORWARDED_ADAPTERS_PROPERTY;
 ///        which are not bound to a specific device).
 /// @return A new ov::AnyMap with the merged result. The input map is left
 ///         untouched so callers may continue using the meta keys.
+/// @brief Resolve target device and compile properties for `text_embeddings_per_layer`
+///        (Per-Layer Embeddings in Gemma 4 / Gemma 3n).
+///        When `default_device` is a GPU device, defaults to `"AUTO"` with
+///        `ov::device::priorities("CPU")` and `ov::intel_auto::enable_startup_fallback(false)`
+///        (matching the NPU sub-model pattern) so the embedding lookup table is memory-mapped
+///        (`mmap`) in OS file cache rather than occupying GPU memory.
+///        Can be overridden via `MODEL_PROPERTIES["text_embeddings_per_layer"]["device"]`
+///        or `MODEL_PROPERTIES["text_embeddings_per_layer"]["MULTI_DEVICE_PRIORITIES"]`.
+std::pair<std::string, ov::AnyMap> get_per_layer_embeddings_device_and_properties(
+    const ov::AnyMap& properties,
+    const std::string& default_device);
+
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
