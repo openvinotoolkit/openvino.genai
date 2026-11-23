@@ -149,7 +149,8 @@ protected:
     std::optional<std::string> m_lora_tensor_prefix;
 
     void init_vision_lora(const std::shared_ptr<ov::Model>& merger,
-                          const std::string& device);
+                          const std::string& device,
+                          const ov::AnyMap& properties);
 
     // Uploads the LoRA state into a merger infer request taken from the pool. Does nothing in the static modes,
     // where the adapter weights are already baked into the compiled model.

@@ -110,7 +110,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const std::string& device,
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
-    m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, handle_lora(device_config))),
+    m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, *extract_adapters_from_properties(device_config))),
     m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, *extract_adapters_from_properties(device_config))),
     m_tokenizer{tokenizer},
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
@@ -128,7 +128,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         config_dir_path,
         m_vlm_config.model_type,
         device,
-        handle_lora(device_config)
+        *extract_adapters_from_properties(device_config)
     )),
     m_embedding(EmbeddingsModel::create(
         utils::get_model_weights_pair(models_map, "text_embeddings").first,
@@ -139,11 +139,6 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     )),
     m_tokenizer(tokenizer),
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
-
-ov::AnyMap InputsEmbedder::IInputsEmbedder::handle_lora(const ov::AnyMap& device_config) {
-    update_adapters_from_properties(device_config, m_adapters);
-    return *extract_adapters_from_properties(device_config);
-}
 
 void InputsEmbedder::IInputsEmbedder::set_adapters(const std::optional<AdapterConfig>& adapters) {
     OPENVINO_ASSERT(!adapters || !InputsEmbedderQwen2VL::has_visual_lora(*adapters),

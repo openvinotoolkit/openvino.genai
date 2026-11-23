@@ -187,7 +187,6 @@ private:
     protected:
         // VLM config
         VLMConfig m_vlm_config;
-        std::optional<AdapterConfig> m_adapters;
         // An encoder to infer embeddings of an image.
         VisionEncoder::Ptr m_vision_encoder;
         // A model to compute token embeddings.
@@ -407,8 +406,6 @@ private:
             const std::filesystem::path& config_dir_path,
             const std::string& device,
             const ov::AnyMap device_config);
-
-        ov::AnyMap handle_lora(const ov::AnyMap& device_config);
 
         virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 

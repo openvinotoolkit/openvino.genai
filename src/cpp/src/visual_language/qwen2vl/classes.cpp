@@ -959,7 +959,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     if (std::filesystem::exists(merger_path)) {
         auto model = utils::singleton_core().read_model(merger_path);
         utils::request_vl_sdpa_transformations(model);
-        init_vision_lora(model, device);
+        init_vision_lora(model, device, device_config);
 
         auto filtered_properties = extract_adapters_from_properties(device_config);
         auto compiled_model = utils::singleton_core().compile_model(
@@ -995,7 +995,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
             utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
         utils::request_vl_sdpa_transformations(model);
-        init_vision_lora(model, device);
+        init_vision_lora(model, device, device_config);
 
         auto filtered_properties = extract_adapters_from_properties(device_config);
         auto compiled_model = utils::singleton_core().compile_model(
@@ -1332,13 +1332,15 @@ bool InputsEmbedderQwen2VL::has_visual_lora(const AdapterConfig& adapters) {
 }
 
 void InputsEmbedderQwen2VL::init_vision_lora(const std::shared_ptr<ov::Model>& merger,
-                                          const std::string& device) {
-    if (!m_adapters || !*m_adapters) {
+                                          const std::string& device,
+                                          const ov::AnyMap& properties) {
+    std::optional<AdapterConfig> adapters;
+    update_adapters_from_properties(properties, adapters);
+    if (!adapters || !*adapters) {
         return;
     }
-    auto adapters = *m_adapters;
-    adapters.set_tensor_name_prefix("base_model.model.");
-    const auto vision_config = to_vision_config(adapters);
+    adapters->set_tensor_name_prefix("base_model.model.");
+    const auto vision_config = to_vision_config(*adapters);
     m_lora_tensor_prefix = vision_config.get_tensor_name_prefix();
     m_vision_adapter_controller = AdapterController(merger, vision_config, device);
 }
