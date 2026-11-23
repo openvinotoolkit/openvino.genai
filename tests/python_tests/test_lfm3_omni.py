@@ -561,6 +561,29 @@ def test_empty_audio_keeps_its_index(vlm_pipe: ov_genai.VLMPipeline, media: Medi
     assert first == tokens("<ov_genai_audio_1><ov_genai_audio_0> What is it?", [audio, empty])
 
 
+@SKIP_PA_ON_MACOS_ARM64
+def test_default_backend_sets_chat_template(lfm3_omni_model_path: Path) -> None:
+    # PA is the default backend, so it must take a custom template as SDPA does. Fresh pipelines keep fixtures intact.
+    plain_template = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
+
+    def tokens(pipe: ov_genai.VLMPipeline) -> list[int]:
+        pipe.set_chat_template(plain_template)
+        collector = TokenCollector()
+        pipe.generate(PROMPT, generation_config=_text_config(TEXT_TOKENS), streamer=collector)
+        return collector.tokens
+
+    default_pipe = ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", **F32)
+    sdpa_pipe = ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND="SDPA", **F32)
+    assert tokens(default_pipe) == tokens(sdpa_pipe)
+    assert default_pipe.get_tokenizer().chat_template == plain_template
+
+    default_pipe.start_chat()
+    with pytest.raises(RuntimeError, match="Chat template cannot be changed"):
+        default_pipe.set_chat_template(plain_template)
+    default_pipe.finish_chat()
+    default_pipe.set_chat_template(plain_template)
+
+
 def test_speech_only_first_frame_follows_the_prompt(speech_pipe: ov_genai.OmniPipeline) -> None:
     # The first frame comes from the prefill hidden state, which must be the one of the last prompt position.
     def first_frame(prompt: str) -> np.ndarray:

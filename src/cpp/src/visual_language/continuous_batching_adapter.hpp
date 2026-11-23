@@ -251,10 +251,12 @@ public:
 
     void start_chat(const std::string& system_message) override {
         m_impl.start_chat(system_message);
+        m_is_chat_conversation = true;
     }
 
     void finish_chat() override {
         m_impl.finish_chat();
+        m_is_chat_conversation = false;
     }
 
     Tokenizer get_tokenizer() const override {
@@ -262,7 +264,11 @@ public:
     }
 
     void set_chat_template(const std::string& new_template) override {
-        OPENVINO_THROW("Chat mode is not supported.");
+        OPENVINO_ASSERT(!m_is_chat_conversation,
+                        "Chat template cannot be changed once start_chat() is called. Please, finish current chat via "
+                        "finish_chat()");
+        // The tokenizer handle is shared with the inputs embedder, so both apply the new template.
+        m_impl.get_tokenizer().set_chat_template(new_template);
     }
 
     GenerationConfig get_generation_config() const override {
@@ -291,6 +297,8 @@ public:
     }
 
 private:
+    bool m_is_chat_conversation = false;
+
     /// VLM config loaded once at construction so model-type/audio-output queries are cheap.
     /// Empty/default when no config.json is present (e.g., test scaffolding paths).
     VLMConfig m_vlm_config;
