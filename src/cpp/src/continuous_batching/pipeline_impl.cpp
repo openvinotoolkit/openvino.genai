@@ -436,6 +436,20 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::discard_awaiting_request(uint64_t request_id) {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+        if ((*request)->get_request_id() != request_id) {
+            continue;
+        }
+        for (const auto& sequence : (*request)->get_sequences()) {
+            m_scheduler->free_sequence(sequence->get_id());
+        }
+        m_awaiting_requests.erase(request);
+        return;
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {
     if (!m_scheduler->has_linear_attention_cache()) {
         return;
@@ -999,26 +1013,33 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
     std::vector<GenerationHandle> generations;
-    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        if (position_ids_list.has_value()) {
-            const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
-            m_inputs_embedder->set_position_ids(position_ids);
-            if (rope_delta.has_value()) {
-                m_inputs_embedder->set_rope_delta(*rope_delta);
+    try {
+        for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+            OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+            if (position_ids_list.has_value()) {
+                const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
+                m_inputs_embedder->set_position_ids(position_ids);
+                if (rope_delta.has_value()) {
+                    m_inputs_embedder->set_rope_delta(*rope_delta);
+                }
             }
+
+            const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+            const bool has_valid_lm_extra_inputs =
+                lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+
+            generations.push_back(add_request(
+                request_id,
+                input_ids[request_id],
+                sampling_params[request_id],
+                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
         }
-
-        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
-        const bool has_valid_lm_extra_inputs =
-            lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
-
-        generations.push_back(add_request(
-            request_id,
-            input_ids[request_id],
-            sampling_params[request_id],
-            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
+    } catch (...) {
+        for (size_t request_id = 0; request_id < generations.size(); ++request_id) {
+            discard_awaiting_request(request_id);
+        }
+        throw;
     }
 
     auto all_requests =

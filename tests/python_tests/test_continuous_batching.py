@@ -1949,6 +1949,56 @@ def test_cb_generate_allows_unsupported_add_request_lora_mode(
     assert len(results[0].m_generation_ids[0]) > 0
 
 
+@pytest.mark.parametrize(
+    "backend, rejection",
+    [
+        ("continuous_batching", "max_length"),
+        ("prompt_lookup", "max_length"),
+        ("prompt_lookup", "validation_window"),
+        ("speculative_decoding", "max_length"),
+        ("speculative_decoding", "validation_window"),
+    ],
+)
+def test_cb_generate_discards_its_requests_when_one_is_rejected(
+    model_facebook_opt_125m: OVConvertedModelSchema, backend: str, rejection: str
+):
+    """A request that add_request() rejects must not leave the requests generate() added before it queued."""
+    models_path = model_facebook_opt_125m.models_path
+    properties = {}
+    if backend == "prompt_lookup":
+        properties["prompt_lookup"] = True
+    elif backend == "speculative_decoding":
+        properties["draft_model"] = draft_model(models_path)
+
+    def make_config(num_assistant_tokens: int = 3) -> GenerationConfig:
+        config = GenerationConfig()
+        config.max_new_tokens = 5
+        if backend != "continuous_batching":
+            config.num_assistant_tokens = num_assistant_tokens
+        if backend == "prompt_lookup":
+            config.max_ngram_size = 3
+        return config
+
+    scheduler_config = SchedulerConfig()
+    if rejection == "max_length":
+        rejected = make_config()
+        rejected.max_length = 1
+        error = "'max_length' must be greater than the number of prompt tokens"
+    else:
+        # windows of 1 + 3 tokens fit the budget, windows of 1 + 4 tokens do not
+        scheduler_config.max_num_batched_tokens = 4
+        rejected = make_config(num_assistant_tokens=4)
+        error = "is too small to ever schedule the speculative validation windows"
+    pipe = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties=properties)
+
+    with pytest.raises(RuntimeError, match=error):
+        pipe.generate(["test prompt", "test prompt"], [make_config(), rejected])
+
+    results = pipe.generate(["test prompt"], [make_config()])
+
+    assert len(results[0].m_generation_ids[0]) > 0
+
+
 def test_cb_perf_metrics_available_after_concurrent_read(model_facebook_opt_125m: OVConvertedModelSchema):
     """Metrics must be committed before the final token push so the reader never hits the assertion."""
     models_path = model_facebook_opt_125m.models_path

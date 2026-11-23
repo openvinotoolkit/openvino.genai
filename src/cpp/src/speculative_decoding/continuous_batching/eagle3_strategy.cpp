@@ -380,9 +380,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         return main_generation;
     } catch (...) {
         restore_main_position_ids();
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
+        discard_awaiting_request(request_id);
         throw;
     }
 }
@@ -413,9 +411,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         align_request_pair_processed_prefix(request_id);
         return main_generation;
     } catch (...) {
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
+        discard_awaiting_request(request_id);
         throw;
     }
 }
