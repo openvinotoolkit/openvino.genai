@@ -61,8 +61,8 @@ struct BlockOffloadTierTraits;
  * forward pass that completed them has finished). Contents are copied out synchronously at that
  * moment and reach the store on a background thread, so the allocation path never waits for it. A
  * queued block is served straight from its staging copy, which makes the hand-off invisible to
- * callers. Entries are keyed by the prefix-cache block hash; once the store is full the oldest
- * entry is replaced, unless the store evicts by its own policy (IKVCacheStore::evicts_itself).
+ * callers. Entries are keyed by the prefix-cache block hash; once the store is full the least recently
+ * used entry is replaced, unless the store evicts by its own policy (IKVCacheStore::evicts_itself).
  *
  * Offload is best effort: a failed store is reported through the statistics and never propagates to
  * the caller, since losing a cache entry only costs recomputation.
@@ -307,6 +307,7 @@ public:
         }
 
         ++m_statistics.num_loaded;
+        touch_locked(hash);
         // TEMPORARY diagnostics, to be removed once the GPU cost breakdown is settled.
         GENAI_INFO("[KV_TRACE] %s index=%zu", Traits::kLoadBlockTrace, block_index);
         return true;
@@ -445,7 +446,7 @@ private:
         std::size_t hash = 0;
         // The 128-bit digest behind hash, when known; a plugin store addresses the block by it.
         std::optional<ContentHash> digest;
-        // The writer thread drops the oldest entry to make room for this block.
+        // The writer thread drops the least recently used entry to make room for this block.
         bool needs_reclaim = false;
         // The prefix chain from block 0 up to this block, probed right before the write. Empty when not tracked.
         std::vector<PrefixKey> chain;
@@ -493,6 +494,7 @@ private:
         if (m_entries.find(hash) != m_entries.end() || find_queued(hash) != nullptr) {
             // Contents are content-addressed by `hash`, so the stored copy already holds the same data.
             ++m_statistics.num_already_present;
+            touch_locked(hash);
             return;
         }
 
@@ -507,7 +509,7 @@ private:
         // reclaim gives one back. A self-evicting store makes room itself. The store is not asked here: the free
         // count is tracked locally, so no plugin call is made while this lock is held.
         if (!m_self_evicting && m_known_free_blocks + m_pending_reclaims <= m_queued_stores.size()) {
-            if (m_reclamation_paused || m_insertion_order.size() <= m_pending_reclaims) {
+            if (m_reclamation_paused || m_recency_order.size() <= m_pending_reclaims) {
                 ++m_statistics.num_failed;
                 return;
             }
@@ -705,18 +707,26 @@ private:
         m_store_hits.insert(hash);
     }
 
-    /// Removes the oldest entry from the index. The store still has to drop it, which must happen without a lock.
+    /// Marks the entry of @p hash as the most recently used; a hash without an entry is ignored.
+    void touch_locked(std::size_t hash) {
+        if (const auto position = m_recency_position.find(hash); position != m_recency_position.end()) {
+            m_recency_order.splice(m_recency_order.end(), m_recency_order, position->second);
+        }
+    }
+
+    /// Removes the least recently used entry from the index. The store still has to drop it, which must happen without a lock.
     /// @return The key of the removed entry, or nothing if no entry exists.
     std::optional<PrefixKey> pop_oldest_entry_locked() {
-        if (m_insertion_order.empty()) {
+        if (m_recency_order.empty()) {
             return std::nullopt;
         }
-        const std::size_t oldest_hash = m_insertion_order.front();
+        const std::size_t oldest_hash = m_recency_order.front();
         const auto entry = m_entries.find(oldest_hash);
         OPENVINO_ASSERT(entry != m_entries.end(),
-                        Traits::kKind, " index and insertion order are out of sync");
+                        Traits::kKind, " index and recency order are out of sync");
         const PrefixKey key{oldest_hash, entry->second};
-        m_insertion_order.pop_front();
+        m_recency_order.pop_front();
+        m_recency_position.erase(oldest_hash);
         m_entries.erase(entry);
         ++m_reclaim_epoch;
         m_store_hits.erase(oldest_hash);
@@ -738,7 +748,8 @@ private:
             ++m_statistics.num_stored;
             return;
         }
-        m_insertion_order.push_back(hash);
+        m_recency_order.push_back(hash);
+        m_recency_position[hash] = std::prev(m_recency_order.end());
         m_entries[hash] = digest;
         ++m_statistics.num_stored;
         if (reclaimed) {
@@ -768,8 +779,9 @@ private:
     // The store drops blocks by its own policy, so no index of its content is kept here and nothing is reclaimed.
     bool m_self_evicting = false;
     bool m_store_completed_blocks = false;
-    // Front is the oldest entry and the first to be replaced when the file is full.
-    std::list<std::size_t> m_insertion_order;
+    // Front is the least recently used entry and the first to be replaced when the file is full.
+    std::list<std::size_t> m_recency_order;
+    std::unordered_map<std::size_t, std::list<std::size_t>::iterator> m_recency_position;
     // A store stays queued until it is published, so readers never lose sight of it.
     std::deque<QueuedStore> m_queued_stores;
     std::size_t m_max_queued_stores;

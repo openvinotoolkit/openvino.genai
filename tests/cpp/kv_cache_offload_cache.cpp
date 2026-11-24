@@ -168,6 +168,47 @@ TEST(TestKVCacheOffloadCache, ReplacesOldestEntryWhenFileIsFull) {
     EXPECT_EQ(restored, newer);
 }
 
+TEST(TestKVCacheOffloadCache, ReplacesLeastRecentlyStoredAgainEntryWhenFileIsFull) {
+    CacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    fixture.fill_block(0, /*seed=*/1);
+    fixture.fill_block(1, /*seed=*/2);
+    store_block(*offload_cache, /*hash=*/1, /*block_index=*/0);
+    store_block(*offload_cache, /*hash=*/2, /*block_index=*/1);
+
+    // The device offers hash 1 again, which shows it is still in use.
+    store_block(*offload_cache, /*hash=*/1, /*block_index=*/0);
+    EXPECT_EQ(offload_cache->get_statistics().num_already_present, 1);
+
+    fixture.fill_block(2, /*seed=*/3);
+    store_block(*offload_cache, /*hash=*/3, /*block_index=*/2);
+
+    EXPECT_TRUE(offload_cache->contains(1));
+    EXPECT_FALSE(offload_cache->contains(2));
+    EXPECT_TRUE(offload_cache->contains(3));
+}
+
+TEST(TestKVCacheOffloadCache, ReplacesLeastRecentlyLoadedEntryWhenFileIsFull) {
+    CacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    fixture.fill_block(0, /*seed=*/1);
+    fixture.fill_block(1, /*seed=*/2);
+    store_block(*offload_cache, /*hash=*/1, /*block_index=*/0);
+    store_block(*offload_cache, /*hash=*/2, /*block_index=*/1);
+
+    ASSERT_EQ(offload_cache->probe({1}), std::vector<bool>({true}));
+    offload_cache->prefetch({1});
+    ASSERT_TRUE(offload_cache->load_into(/*hash=*/1, /*block_index=*/3));
+    offload_cache->release_prefetched();
+
+    fixture.fill_block(2, /*seed=*/3);
+    store_block(*offload_cache, /*hash=*/3, /*block_index=*/2);
+
+    EXPECT_TRUE(offload_cache->contains(1));
+    EXPECT_FALSE(offload_cache->contains(2));
+    EXPECT_TRUE(offload_cache->contains(3));
+}
+
 TEST(TestKVCacheOffloadCache, ReadReportsMissForUnknownHash) {
     CacheFixture fixture;
     auto offload_cache = make_offload_cache(fixture, 1);
