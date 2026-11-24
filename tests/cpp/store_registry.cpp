@@ -130,6 +130,43 @@ TEST(TestStoreRegistry, LoadsAndUsesTheStandaloneSampleThirdPartyPlugin) {
     expect_store_is_usable(*store);
 }
 
+// The sample plugin implements `on_restore_finish` and prints what the host tells it; a provider without it takes none.
+TEST(TestStoreRegistry, SampleThirdPartyPluginTakesRestoreReportsAndTheFileProviderDoesNot) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    CacheOffloadConfig config = make_config();
+    config.store_library_path = *library_path;
+    config.store_provider_name = "sample-in-memory";
+    config.allow_untrusted_store_plugin = true;
+
+    auto store = open_kv_cache_store(make_layout(), config, "CPU", "restore_stats_test");
+    ASSERT_NE(store, nullptr);
+    ASSERT_TRUE(store->is_plugin_backed());
+
+    testing::internal::CaptureStderr();
+    const bool taken = store->report_restore_stats(RestoreStats{16384, 1024, 4096, 5000});
+    const std::string output = testing::internal::GetCapturedStderr();
+    EXPECT_TRUE(taken);
+    EXPECT_NE(output.find("sample: restore prompt=16384 device_hit=1024 store_hit=4096 reused=5000"), std::string::npos)
+        << output;
+
+    const std::optional<std::string> self_path = find_self_as_plugin_library();
+    if (!self_path.has_value()) {
+        return;
+    }
+    CacheOffloadConfig file_config = make_config();
+    file_config.store_library_path = *self_path;
+    file_config.store_provider_name = "file";
+    file_config.allow_untrusted_store_plugin = true;
+    auto file_store = open_kv_cache_store(make_layout(), file_config, "CPU", "kv");
+    ASSERT_NE(file_store, nullptr);
+    ASSERT_TRUE(file_store->is_plugin_backed());
+    EXPECT_FALSE(file_store->report_restore_stats(RestoreStats{1, 0, 0, 0}));
+}
+
 // The ABI opens one store per namespace, so blocks of different groups must not be counted together.
 TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
     const std::optional<std::string> library_path = find_sample_plugin_library();

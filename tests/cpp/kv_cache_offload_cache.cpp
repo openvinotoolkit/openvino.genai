@@ -24,6 +24,7 @@
 #include "continuous_batching/cache/kv_cache_offload_manager.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "helper.hpp"
+#include "logger.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/runtime/core.hpp"
 #include "sequence_group.hpp"
@@ -648,9 +649,13 @@ namespace {
 /// Records every question and write the host puts to the store, in order.
 class RecordingStore : public IKVCacheStore {
 public:
-    RecordingStore(std::shared_ptr<IKVCacheStore> inner, bool plugin_backed, std::vector<std::string>& events)
+    RecordingStore(std::shared_ptr<IKVCacheStore> inner,
+                   bool plugin_backed,
+                   std::vector<std::string>& events,
+                   bool takes_restore_stats = false)
         : m_inner(std::move(inner)),
           m_plugin_backed(plugin_backed),
+          m_takes_restore_stats(takes_restore_stats),
           m_events(events) {}
 
     bool has_block(size_t hash) const override {
@@ -696,20 +701,31 @@ public:
     bool is_plugin_backed() const override {
         return m_plugin_backed;
     }
+    bool report_restore_stats(const RestoreStats& stats) override {
+        m_events.push_back("restore_stats " + std::to_string(stats.prompt_tokens) + " " +
+                           std::to_string(stats.device_hit_tokens) + " " + std::to_string(stats.store_hit_tokens) + " " +
+                           std::to_string(stats.reused_tokens));
+        return m_takes_restore_stats;
+    }
 
 private:
     std::shared_ptr<IKVCacheStore> m_inner;
     bool m_plugin_backed;
+    bool m_takes_restore_stats;
     std::vector<std::string>& m_events;
 };
 
 std::unique_ptr<KVCacheOffloadCache> make_recording_cache(CacheFixture& fixture,
                                                           bool plugin_backed,
                                                           std::vector<std::string>& events,
-                                                          size_t num_slots = 4) {
+                                                          size_t num_slots = 4,
+                                                          bool takes_restore_stats = false) {
     return std::make_unique<KVCacheOffloadCache>(
         *fixture.cache_manager,
-        std::make_unique<RecordingStore>(make_shared_file_store(fixture, num_slots), plugin_backed, events),
+        std::make_unique<RecordingStore>(make_shared_file_store(fixture, num_slots),
+                                         plugin_backed,
+                                         events,
+                                         takes_restore_stats),
         /*max_queued_stores=*/8);
 }
 
@@ -879,6 +895,115 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheWalksAChainLongerThanOnePrefetchInR
 
     block_manager.set_overwritten_block_observer(nullptr);
     block_manager.free_sequence(consumer_seq_id);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheCountsTheTokensFoundOnTheDeviceAndReadFromTheStore) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/2);
+    auto offload_cache = make_offload_cache(fixture, 2);
+
+    BlockManager block_manager(/*num_blocks=*/2, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    block_manager.set_overwritten_block_observer(offload_cache.get());
+
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto producer = make_group(tokens, /*request_id=*/80);
+    producer->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer);
+    producer->finish_iteration();
+    block_manager.free_sequence(producer->get_running_sequences().at(0)->get_id());
+
+    // Evict the cached prefix from memory, which pushes its contents to the store.
+    const std::vector<int64_t> pressure_tokens = {30, 31, 32, 33, 34, 35, 36, 37};
+    auto pressure = make_group(pressure_tokens, /*request_id=*/81);
+    pressure->schedule_tokens(pressure_tokens.size());
+    block_manager.append_slots(pressure);
+    const auto pressure_seq_id = pressure->get_running_sequences().at(0)->get_id();
+    offload_cache->flush();
+    ASSERT_EQ(offload_cache->get_num_entries(), 2);
+    block_manager.free_sequence(pressure_seq_id);
+
+    // The first warm-up reads both blocks from the store.
+    WarmupStats from_store;
+    auto first = make_group(tokens, /*request_id=*/82);
+    size_t num_warmed = 0;
+    {
+        KVCacheOffloadCache::ScopedReclamationPause keep_entries(*offload_cache);
+        num_warmed = block_manager.warm_prefix_cache(first, *offload_cache, std::numeric_limits<size_t>::max(), {}, &from_store);
+    }
+    ASSERT_EQ(num_warmed, 2u);
+    EXPECT_EQ(from_store.device_hit_tokens, 0u);
+    EXPECT_EQ(from_store.store_hit_tokens, tokens.size());
+
+    // They are now in the device cache, so the next request finds them there and reads nothing.
+    WarmupStats from_device;
+    auto second = make_group(tokens, /*request_id=*/83);
+    {
+        KVCacheOffloadCache::ScopedReclamationPause keep_entries(*offload_cache);
+        EXPECT_EQ(block_manager.warm_prefix_cache(second, *offload_cache, std::numeric_limits<size_t>::max(), {}, &from_device), 0u);
+    }
+    EXPECT_EQ(from_device.device_hit_tokens, tokens.size());
+    EXPECT_EQ(from_device.store_hit_tokens, 0u);
+
+    block_manager.set_overwritten_block_observer(nullptr);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheCountsTheStoreTokensOfAllRoundsTogether) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/2);
+    std::vector<std::string> events;
+    auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/false, events, /*num_slots=*/4);
+    // One block per prefetch, so the two-block chain below takes two rounds.
+    offload_cache->set_max_prefetch_bytes(fixture.cache_manager->get_block_layout().get_slot_size());
+
+    BlockManager block_manager(/*num_blocks=*/2, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    block_manager.set_overwritten_block_observer(offload_cache.get());
+
+    const std::vector<int64_t> wanted_tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto producer = make_group(wanted_tokens, /*request_id=*/84);
+    producer->schedule_tokens(wanted_tokens.size());
+    block_manager.append_slots(producer);
+    producer->finish_iteration();
+    block_manager.free_sequence(producer->get_running_sequences().at(0)->get_id());
+
+    const std::vector<int64_t> other_tokens = {40, 41, 42, 43, 44, 45, 46, 47};
+    auto other = make_group(other_tokens, /*request_id=*/85);
+    other->schedule_tokens(other_tokens.size());
+    block_manager.append_slots(other);
+    other->finish_iteration();
+    block_manager.free_sequence(other->get_running_sequences().at(0)->get_id());
+    offload_cache->flush();
+    ASSERT_EQ(offload_cache->get_num_entries(), 2);
+
+    auto consumer = make_group(wanted_tokens, /*request_id=*/86);
+    events.clear();
+    WarmupStats stats;
+    {
+        KVCacheOffloadCache::ScopedReclamationPause keep_entries(*offload_cache);
+        EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache, std::numeric_limits<size_t>::max(), {}, &stats), 2u);
+    }
+    EXPECT_EQ(std::count(events.begin(), events.end(), "read_blocks 1"), 2) << "the two rounds each read one block";
+    EXPECT_EQ(stats.store_hit_tokens, wanted_tokens.size()) << "the rounds add up to the whole prefix";
+    EXPECT_EQ(stats.device_hit_tokens, 0u);
+
+    block_manager.set_overwritten_block_observer(nullptr);
+}
+
+TEST(TestKVCacheOffloadCache, ReportsRestoreStatsToItsStoreAndSaysWhetherTheStoreTookThem) {
+    CacheFixture fixture;
+    std::vector<std::string> taken_events;
+    auto taking = make_recording_cache(fixture, /*plugin_backed=*/true, taken_events, /*num_slots=*/4,
+                                       /*takes_restore_stats=*/true);
+    EXPECT_TRUE(taking->report_restore_stats(RestoreStats{16384, 1024, 4096, 5000}));
+    EXPECT_EQ(taken_events, (std::vector<std::string>{"restore_stats 16384 1024 4096 5000"}));
+
+    std::vector<std::string> ignored_events;
+    auto ignoring = make_recording_cache(fixture, /*plugin_backed=*/true, ignored_events);
+    EXPECT_FALSE(ignoring->report_restore_stats(RestoreStats{1, 0, 0, 0})) << "the host reports for such a store";
+    EXPECT_EQ(ignored_events, (std::vector<std::string>{"restore_stats 1 0 0 0"}));
+
+    // A store that has no hook at all, like the file store, does not take the report either.
+    auto file_store_cache = make_offload_cache(fixture, 1);
+    EXPECT_FALSE(file_store_cache->report_restore_stats(RestoreStats{1, 0, 0, 0}));
 }
 
 TEST(TestKVCacheOffloadCache, FileStoreIsNotProbedBeforeWrites) {
@@ -1324,6 +1449,37 @@ TEST(TestKVCacheOffloadCache, PrefixWarmUpWaitsForTheExecutionMutexBeforeItAlloc
     ASSERT_EQ(restoring.wait_for(std::chrono::seconds(30)), std::future_status::ready);
     restoring.get();
     EXPECT_GT(num_allocated(), 0u);
+}
+
+TEST(TestKVCacheOffloadCache, ARestoreThatNoStoreTakesIsReportedOnceByTheHost) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, NUM_DECODER_LAYERS)).create_infer_request();
+    SchedulerConfig config;
+    config.num_kv_blocks = 4;
+    config.enable_prefix_caching = true;
+    config.use_cache_offload = true;
+    config.cache_offload_config.capacity_bytes = 1 << 20;
+    auto orchestrator = CacheOrchestrator::create(request, config, [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    });
+
+    std::vector<int64_t> tokens(40);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = static_cast<int64_t>(i);
+    }
+    auto group = make_group(tokens, /*request_id=*/36);
+
+    Logger::get_instance().set_log_level(ov::log::Level::INFO);
+    testing::internal::CaptureStdout();
+    orchestrator->restore_cached_blocks(group);
+    const std::string output = testing::internal::GetCapturedStdout();
+    Logger::get_instance().set_log_level(get_cur_log_level());
+
+    // The file store takes no report, and nothing is stored yet, so the host reports a restore that found nothing.
+    const std::string expected = "KV cache prefix restore: request=36 prompt=40 device_hit=0 store_hit=0 reused=0";
+    const size_t first = output.find(expected);
+    ASSERT_NE(first, std::string::npos) << output;
+    EXPECT_EQ(output.find(expected, first + 1), std::string::npos) << "one report per restore";
 }
 
 TEST(TestKVCacheOffloadCache, DynamicCacheSizingOfARestoreWaitsForTheExecutionMutex) {

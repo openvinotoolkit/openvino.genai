@@ -424,6 +424,12 @@ public:
         return m_self_evicting;
     }
 
+    /// Hands what a prefix restore found to the store, with no lock held, as a plugin store may be slow.
+    /// @return Whether the store reports the reuse metrics itself.
+    bool report_restore_stats(const RestoreStats& stats) {
+        return m_store->report_restore_stats(stats);
+    }
+
     std::size_t get_num_free_slots() const {
         return m_store->get_num_free_blocks();
     }

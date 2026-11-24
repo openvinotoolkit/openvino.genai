@@ -32,6 +32,19 @@ struct PrefixKey {
 };
 
 /**
+ * @brief What one prefix restore of one request found for one cache group, in tokens.
+ *
+ * For a group of state checkpoints (linear attention) a count is the position of the checkpoint, not the length of a
+ * contiguous run of blocks.
+ */
+struct RestoreStats {
+    size_t prompt_tokens = 0;      ///< length of the request's prompt
+    size_t device_hit_tokens = 0;  ///< already in the device cache when the restore began
+    size_t store_hit_tokens = 0;   ///< read from the store and written to the device cache, all rounds together
+    size_t reused_tokens = 0;      ///< prefix length the request finally uses
+};
+
+/**
  * @brief Host-internal, key-addressed interface to a KV/linear-attention cache block store.
  *
  * A block is identified purely by its content hash; implementations own whatever indexing,
@@ -151,6 +164,15 @@ public:
     /// Whether the store decides by itself which blocks to evict when it is full. The caller then never drops blocks
     /// to make room, and any block it stored earlier may be gone by the time it asks for it again.
     virtual bool evicts_itself() const {
+        return false;
+    }
+
+    /**
+     * @brief Tells the store what a prefix restore found, once per request after the restore is decided.
+     * @return Whether the store took the report and so reports the reuse metrics itself; when false the caller
+     * reports them.
+     */
+    virtual bool report_restore_stats(const RestoreStats& /*stats*/) {
         return false;
     }
 

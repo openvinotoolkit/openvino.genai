@@ -126,6 +126,21 @@ static OvKVCacheStatus sample_cancel(void* self, OvKVCacheAsyncToken token) {
     return OV_KVCACHE_OK;
 }
 
+/* ABI 1.2: the host reports what one prefix restore found, once per request. A real plugin prints or exports its
+ * reuse metrics here, since its own read_blocks calls only see the rounds of the restore, not the request. */
+static void sample_on_restore_finish(void* self, const OvKVCacheRestoreStats* stats) {
+    (void)self;
+    if (stats == NULL || stats->struct_bytes < sizeof(OvKVCacheRestoreStats)) {
+        return;
+    }
+    fprintf(stderr,
+            "sample: restore prompt=%llu device_hit=%llu store_hit=%llu reused=%llu\n",
+            (unsigned long long)stats->prompt_tokens,
+            (unsigned long long)stats->device_hit_tokens,
+            (unsigned long long)stats->store_hit_tokens,
+            (unsigned long long)stats->reused_tokens);
+}
+
 /* --------------------------------------------------------------------------
  * A single stored block: payload + the witness the host asked us to keep verbatim, plus a copy of
  * the key's group so unrelated callers sharing one store instance (e.g. KV cache offload vs.
@@ -430,6 +445,7 @@ static const OvKVCacheStoreVTable g_store_vtable = {
     &store_write_blocks_async,
     &sample_wait,
     &sample_cancel,
+    &sample_on_restore_finish,
 };
 
 /* --------------------------------------------------------------------------
@@ -622,7 +638,8 @@ static const OvKVCacheStoreProviderVTable g_provider_vtable = {
 static const OvKVCacheStoreProviderDescriptor g_provider_descriptor = {
     &g_provider_vtable,
     NULL,
-    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO,
+    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO |
+        OV_KVCACHE_CAP_RESTORE_STATS,
     "sample-in-memory",
 };
 
@@ -662,7 +679,7 @@ static const OvKVCacheStoreProviderDescriptor g_self_evict_provider_descriptor =
     &g_self_evict_provider_vtable,
     NULL,
     OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO |
-        OV_KVCACHE_CAP_SELF_EVICT,
+        OV_KVCACHE_CAP_SELF_EVICT | OV_KVCACHE_CAP_RESTORE_STATS,
     "sample-self-evict-memory",
 };
 
@@ -1117,6 +1134,7 @@ static const OvKVCacheStoreVTable g_persistent_store_vtable = {
     &persistent_write_blocks_async,
     &sample_wait,
     &sample_cancel,
+    &sample_on_restore_finish,
 };
 
 static const char* persistent_provider_name(void* self) {
@@ -1230,7 +1248,8 @@ static const OvKVCacheStoreProviderVTable g_persistent_provider_vtable = {
 static const OvKVCacheStoreProviderDescriptor g_persistent_provider_descriptor = {
     &g_persistent_provider_vtable,
     NULL,
-    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO,
+    OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO |
+        OV_KVCACHE_CAP_RESTORE_STATS,
     "sample-persistent-file",
 };
 

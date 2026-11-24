@@ -211,6 +211,17 @@ same reason.
   blocks and evicts the oldest one when a write finds it full.
 - The host writes the blocks queued by the writer thread in one `write_blocks` call (at most `buffer_slots` per
   call), after probing each block's chain from block 0.
+- A prefix is restored in one or more `read_blocks` rounds: the host holds at most 256 MiB of read-ahead blocks on
+  the host at a time, copies them to the device cache and reads the next round. A long prefix is therefore read in
+  several calls, and a plugin cannot tell from its own calls how much of a request was reused.
+- A provider that advertises `OV_KVCACHE_CAP_RESTORE_STATS` (ABI 1.2) gets one `on_restore_finish` call per request
+  once its prefix restore is decided, also when nothing was found, with `OvKVCacheRestoreStats`: the prompt length,
+  the tokens that were already in the device cache, the tokens read from this store (all rounds together) and the
+  prefix the request finally reuses. The host calls it with no host lock held for each store of the request (one per
+  group, so a hybrid model's `kv` and `la` stores each get a call; for `la` the counts are checkpoint positions),
+  and logs no reuse metrics of its own for a store that takes it. A store without it gets one summary line in the
+  host log instead. A plugin that prints its own reuse metrics should do it here and not in `read_blocks`. The
+  sample plugin prints one line per call to stderr.
 
 Checked on Qwen3.5-9B / GPU with `sample-self-evict-memory` (and `"store_properties": {"tier": "ssd-test",
 "policy": "lru"}`, both of which the plugin logged on open) and `"store_completed_blocks": true`: with room for

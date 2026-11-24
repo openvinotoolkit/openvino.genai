@@ -781,6 +781,87 @@ TEST(TestAbiFileStoreProvider, FileStoreDoesNotEvictByItself) {
     EXPECT_FALSE(open_store(/*num_blocks=*/2)->evicts_itself());
 }
 
+namespace {
+
+/// Records the restore reports a plugin gets, in place of the file provider's missing entry.
+struct RestoreSpy {
+    static inline size_t calls = 0;
+    static inline OvKVCacheRestoreStats last{};
+
+    static void on_restore_finish(void* /*self*/, const OvKVCacheRestoreStats* stats) {
+        ++calls;
+        last = *stats;
+    }
+};
+
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, FileStoreTakesNoRestoreReports) {
+    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
+    EXPECT_EQ(provider->capabilities & OV_KVCACHE_CAP_RESTORE_STATS, 0u);
+    auto store = open_store(/*num_blocks=*/2);
+    EXPECT_FALSE(store->takes_restore_stats());
+    EXPECT_FALSE(store->report_restore_stats(RestoreStats{100, 10, 20, 30}));
+}
+
+TEST(TestAbiFileStoreProvider, RestoreStatsReachThePluginWhenItAdvertisesTheCapability) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    RestoreSpy::calls = 0;
+    OvKVCacheStoreVTable reporting = *file_store.opened.vtable;
+    reporting.on_restore_finish = &RestoreSpy::on_restore_finish;
+
+    AbiKVCacheStore store(&reporting, file_store.opened.store, "kv", BLOCK_SIZE, 4,
+                          {file_store.provider->capabilities | OV_KVCACHE_CAP_RESTORE_STATS, std::nullopt});
+    ASSERT_TRUE(store.takes_restore_stats());
+
+    EXPECT_TRUE(store.report_restore_stats(RestoreStats{16384, 1024, 4096, 5000}));
+    EXPECT_EQ(RestoreSpy::calls, 1u);
+    EXPECT_EQ(RestoreSpy::last.struct_bytes, sizeof(OvKVCacheRestoreStats));
+    EXPECT_EQ(RestoreSpy::last.prompt_tokens, 16384u);
+    EXPECT_EQ(RestoreSpy::last.device_hit_tokens, 1024u);
+    EXPECT_EQ(RestoreSpy::last.store_hit_tokens, 4096u);
+    EXPECT_EQ(RestoreSpy::last.reused_tokens, 5000u);
+}
+
+TEST(TestAbiFileStoreProvider, RestoreStatsAreNotSentWithoutTheCapabilityOrTheEntry) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    RestoreSpy::calls = 0;
+    OvKVCacheStoreVTable reporting = *file_store.opened.vtable;
+    reporting.on_restore_finish = &RestoreSpy::on_restore_finish;
+
+    // The entry is there but the capability was not passed: the host does not use an entry it was not told about.
+    AbiKVCacheStore without_capability(&reporting, file_store.opened.store, "kv", BLOCK_SIZE, 4,
+                                       {file_store.provider->capabilities, std::nullopt});
+    EXPECT_FALSE(without_capability.report_restore_stats(RestoreStats{1, 2, 3, 4}));
+    EXPECT_EQ(RestoreSpy::calls, 0u);
+
+    // The capability is advertised but the entry is not set. A store instance is destroyed once, so this is a new one.
+    auto other_file_store = open_file_store(/*num_blocks=*/4);
+    OvKVCacheStoreVTable without_entry = *other_file_store.opened.vtable;
+    without_entry.on_restore_finish = nullptr;
+    AbiKVCacheStore without_function(&without_entry, other_file_store.opened.store, "kv", BLOCK_SIZE, 4,
+                                     {other_file_store.provider->capabilities | OV_KVCACHE_CAP_RESTORE_STATS,
+                                      std::nullopt});
+    EXPECT_FALSE(without_function.takes_restore_stats());
+    EXPECT_FALSE(without_function.report_restore_stats(RestoreStats{1, 2, 3, 4}));
+    EXPECT_EQ(RestoreSpy::calls, 0u);
+}
+
+TEST(TestAbiFileStoreProvider, RestoreStatsAreNotSentThroughAVtableTooShortToHoldTheEntry) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    RestoreSpy::calls = 0;
+    OvKVCacheStoreVTable short_vtable = *file_store.opened.vtable;
+    short_vtable.on_restore_finish = &RestoreSpy::on_restore_finish;
+    // An ABI 1.1 plugin builds a vtable that ends at `cancel`.
+    short_vtable.struct_bytes = static_cast<uint32_t>(offsetof(OvKVCacheStoreVTable, on_restore_finish));
+
+    AbiKVCacheStore store(&short_vtable, file_store.opened.store, "kv", BLOCK_SIZE, 4,
+                          {file_store.provider->capabilities | OV_KVCACHE_CAP_RESTORE_STATS, std::nullopt});
+    EXPECT_FALSE(store.takes_restore_stats());
+    EXPECT_FALSE(store.report_restore_stats(RestoreStats{1, 2, 3, 4}));
+    EXPECT_EQ(RestoreSpy::calls, 0u);
+}
+
 TEST(TestAbiFileStoreProvider, ConcurrentWritesReadsAndDropsNeverExposeAHalfPublishedBlock) {
     constexpr size_t num_keys = 8;
     constexpr size_t rounds = 300;

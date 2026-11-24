@@ -129,6 +129,12 @@ public:
         return base + ':' + hex;
     }
 
+    /// What a warm-up found in the KV and in the linear-attention cache; a cache without a tier reports zeros.
+    struct WarmupReport {
+        WarmupStats kv;
+        WarmupStats la;
+    };
+
     /**
      * @brief Refills the in-memory prefix cache of the registered block managers from the offload tiers, so that the
      * prefix restore that follows sees those blocks as cached. A manager without a tier is skipped.
@@ -136,17 +142,20 @@ public:
      * @param kv_block_manager Block manager of the KV cache, or null when the model has none.
      * @param la_block_manager Block manager of the linear attention cache, or null when the model has none.
      * @param begin_device_phase Called before a warm-up writes into the device cache; see DevicePhaseGuard.
+     * @return How many tokens of each cache were already in memory and how many the warm-up brought back.
      */
-    void warm(BlockManager* kv_block_manager,
-              BlockManager* la_block_manager,
-              const SequenceGroup::Ptr& sequence_group,
-              size_t max_processed_tokens,
-              const DevicePhaseGuard& begin_device_phase) {
+    WarmupReport warm(BlockManager* kv_block_manager,
+                      BlockManager* la_block_manager,
+                      const SequenceGroup::Ptr& sequence_group,
+                      size_t max_processed_tokens,
+                      const DevicePhaseGuard& begin_device_phase) {
+        WarmupReport report;
         // The reclamation pause and the prefetched blocks of a tier belong to one warm-up at a time.
         const std::lock_guard<std::mutex> warm_lock(m_warm_mutex);
         if (m_kv != nullptr && kv_block_manager != nullptr) {
             KVCacheOffloadCache::ScopedReclamationPause keep_entries(*m_kv);
-            kv_block_manager->warm_prefix_cache(sequence_group, *m_kv, max_processed_tokens, begin_device_phase);
+            kv_block_manager->warm_prefix_cache(sequence_group, *m_kv, max_processed_tokens, begin_device_phase,
+                                                &report.kv);
         }
         if (m_la != nullptr && la_block_manager != nullptr) {
             // A hybrid restore never goes past the last prompt token or the KV prefix that is in memory, so a
@@ -159,9 +168,38 @@ public:
             }
             if (la_warm_ceiling > 0) {
                 LinearAttentionOffloadCache::ScopedReclamationPause keep_entries(*m_la);
-                la_block_manager->warm_prefix_cache(sequence_group, *m_la, la_warm_ceiling, begin_device_phase);
+                la_block_manager->warm_prefix_cache(sequence_group, *m_la, la_warm_ceiling, begin_device_phase,
+                                                    &report.la);
             }
         }
+        return report;
+    }
+
+    /**
+     * @brief Tells each tier's store what the restore of one request found, once the restore is decided. A store that
+     * takes the report reports the reuse metrics itself; for any other the host logs one summary line.
+     *
+     * @param reused_tokens Prefix length the request finally uses, the same for both caches of a hybrid model.
+     */
+    void report_restore(const SequenceGroup::Ptr& sequence_group, const WarmupReport& found, size_t reused_tokens) {
+        const size_t prompt_tokens = sequence_group->get_prompt_len();
+        const auto report_tier = [&](auto& tier, const WarmupStats& stats, const char* cache_name) {
+            if (tier == nullptr) {
+                return;
+            }
+            const RestoreStats restore_stats{prompt_tokens, stats.device_hit_tokens, stats.store_hit_tokens, reused_tokens};
+            if (!tier->report_restore_stats(restore_stats)) {
+                GENAI_INFO("%s prefix restore: request=%llu prompt=%zu device_hit=%zu store_hit=%zu reused=%zu",
+                           cache_name,
+                           static_cast<unsigned long long>(sequence_group->get_request_id()),
+                           restore_stats.prompt_tokens,
+                           restore_stats.device_hit_tokens,
+                           restore_stats.store_hit_tokens,
+                           restore_stats.reused_tokens);
+            }
+        };
+        report_tier(m_kv, found.kv, "KV cache");
+        report_tier(m_la, found.la, "Linear attention cache");
     }
 
 private:

@@ -76,6 +76,14 @@ public:
         return (m_info.capabilities & OV_KVCACHE_CAP_SELF_EVICT) != 0;
     }
 
+    /// Calls the plugin's `on_restore_finish`. @return false when the plugin has no such entry.
+    bool report_restore_stats(const RestoreStats& stats) override;
+
+    /// Whether the plugin takes restore reports.
+    bool takes_restore_stats() const {
+        return m_takes_restore_stats;
+    }
+
     /// Whether reads and writes go through the plugin's async entry points.
     bool uses_async_io() const {
         return m_use_async;
@@ -114,6 +122,7 @@ private:
     StoreInfo m_info;
     std::uint32_t m_io_timeout_ms;
     bool m_use_async = false;
+    bool m_takes_restore_stats = false;
     mutable std::atomic<bool> m_abandoned{false};
 };
 

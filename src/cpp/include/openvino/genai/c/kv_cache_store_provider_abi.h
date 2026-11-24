@@ -108,7 +108,7 @@
 /// a renamed entry symbol); the host rejects a major mismatch loudly instead of
 /// loading a stale plugin and failing later on symbol lookup.
 #define OV_KVCACHE_STORE_ABI_MAJOR 1
-#define OV_KVCACHE_STORE_ABI_MINOR 1
+#define OV_KVCACHE_STORE_ABI_MINOR 2
 
 /// The plugin module's single C discovery entry symbol.
 #define OV_KVCACHE_STORE_ENTRY_SYMBOL "ov_pipeline_query_kvcache_store_providers"
@@ -172,6 +172,8 @@ typedef uint64_t OvKVCacheCapabilities;
 /// `capacity_bytes` and treats `has_blocks` / `read_blocks` as the only truth about what is stored. Any block may
 /// disappear between two calls; the host then recomputes it. `stats` is informational. `drop_blocks` is still required.
 #define OV_KVCACHE_CAP_SELF_EVICT (1ull << 5)
+/// `on_restore_finish` implemented (ABI 1.2): the host reports the reuse metrics of every prefix restore, and prints none itself.
+#define OV_KVCACHE_CAP_RESTORE_STATS (1ull << 6)
 
 // -----------------------------------------------------------------------------
 // Async completion (optional; OV_KVCACHE_CAP_ASYNC_IO)
@@ -294,6 +296,28 @@ typedef struct OvKVCacheStoreWriteResult {
     OvKVCacheStatus status;
     uint64_t bytes_written;
 } OvKVCacheStoreWriteResult;
+
+// -----------------------------------------------------------------------------
+// Restore stats (ABI 1.2; OV_KVCACHE_CAP_RESTORE_STATS)
+// -----------------------------------------------------------------------------
+
+/// What one prefix restore of one request found, as seen by one store instance (one cache group).
+///
+/// A restore reads the blocks the store holds in one or more `read_blocks` rounds, so the plugin cannot tell from its
+/// own calls how much of the request was reused; this is the one place where the host says so. All counts are tokens.
+/// For a group whose blocks are state checkpoints (linear attention) a count is the position of the checkpoint, not
+/// the length of a contiguous run of blocks.
+///
+/// Fields are appended only; `struct_bytes` is the size of the structure the host built, so a plugin built against
+/// an older header reads only the fields it knows.
+typedef struct OvKVCacheRestoreStats {
+    uint32_t struct_bytes;
+    uint32_t reserved0;
+    uint64_t prompt_tokens;       ///< length of the request's prompt
+    uint64_t device_hit_tokens;   ///< already in the device cache when the restore began
+    uint64_t store_hit_tokens;    ///< read from this store, verified and written to the device cache, all rounds together
+    uint64_t reused_tokens;       ///< prefix length the request finally uses (what its prefill skips)
+} OvKVCacheRestoreStats;
 
 // -----------------------------------------------------------------------------
 // Stats / open options / namespace listing
@@ -454,6 +478,14 @@ typedef struct OvKVCacheStoreVTable {
     /// is not terminal after `store_timeout_ms` and waits that long once more: the
     /// token MUST be terminal by then, or the host stops using the store.
     OvKVCacheStatus (*cancel)(void* self, OvKVCacheAsyncToken token);
+
+    // ---- restore stats (ABI 1.2; present only with OV_KVCACHE_CAP_RESTORE_STATS) ----------
+
+    /// Called once per request after its prefix restore is decided, also when nothing was found. The host calls it
+    /// with no host lock held and reports no reuse metrics of its own for this store; without this entry the host
+    /// prints one summary line itself. `stats` is borrowed for the call. A restore that is attempted again for the
+    /// same request (e.g. after preemption) is reported again.
+    void (*on_restore_finish)(void* self, const OvKVCacheRestoreStats* stats);
 } OvKVCacheStoreVTable;
 
 // -----------------------------------------------------------------------------
@@ -552,6 +584,8 @@ static_assert(std::is_standard_layout<OvKVCacheStoreReadResult>::value, "ABI str
 static_assert(std::is_standard_layout<OvKVCacheStoreWriteRequest>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreWriteResult>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreStats>::value, "ABI struct must be standard layout");
+static_assert(std::is_standard_layout<OvKVCacheRestoreStats>::value, "ABI struct must be standard layout");
+static_assert(offsetof(OvKVCacheRestoreStats, struct_bytes) == 0, "restore stats must start with struct_bytes");
 static_assert(std::is_standard_layout<OvKVCacheProperty>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheGroupInfo>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreOpenOptions>::value, "ABI struct must be standard layout");

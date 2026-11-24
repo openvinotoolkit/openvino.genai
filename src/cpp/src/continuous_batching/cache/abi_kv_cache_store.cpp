@@ -91,6 +91,30 @@ AbiKVCacheStore::AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
                        "using synchronous I/O");
         }
     }
+
+    if ((m_info.capabilities & OV_KVCACHE_CAP_RESTORE_STATS) != 0) {
+        constexpr size_t restore_end =
+            offsetof(OvKVCacheStoreVTable, on_restore_finish) + sizeof(OvKVCacheStoreVTable::on_restore_finish);
+        m_takes_restore_stats = m_vtable->struct_bytes >= restore_end && m_vtable->on_restore_finish != nullptr;
+        if (!m_takes_restore_stats) {
+            GENAI_WARN("KV cache store plugin advertises restore stats but its vtable lacks on_restore_finish; "
+                       "the host reports the reuse metrics itself");
+        }
+    }
+}
+
+bool AbiKVCacheStore::report_restore_stats(const RestoreStats& stats) {
+    if (!m_takes_restore_stats || m_abandoned) {
+        return false;
+    }
+    OvKVCacheRestoreStats abi_stats{};
+    abi_stats.struct_bytes = sizeof(abi_stats);
+    abi_stats.prompt_tokens = stats.prompt_tokens;
+    abi_stats.device_hit_tokens = stats.device_hit_tokens;
+    abi_stats.store_hit_tokens = stats.store_hit_tokens;
+    abi_stats.reused_tokens = stats.reused_tokens;
+    m_vtable->on_restore_finish(m_store, &abi_stats);
+    return true;
 }
 
 AbiKVCacheStore::~AbiKVCacheStore() {

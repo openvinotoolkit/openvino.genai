@@ -491,6 +491,22 @@ public:
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group,
                                size_t max_processed_tokens = std::numeric_limits<size_t>::max()) {
+        CacheOffloadCoordinator::WarmupReport found;
+        size_t reused_tokens = 0;
+        restore_cached_blocks_impl(sequence_group, max_processed_tokens, found, reused_tokens);
+        // Once per restore, after it is decided, also when nothing was found, so a store sees every request.
+        if (m_offload->enabled()) {
+            m_offload->report_restore(sequence_group, found, reused_tokens);
+        }
+    }
+
+private:
+    /// Restores the cached prefix of @p sequence_group. @p found and @p reused_tokens tell what the warm-up found and
+    /// the prefix length that was finally restored; the latter stays 0 when the restore did not happen.
+    void restore_cached_blocks_impl(const SequenceGroup::Ptr& sequence_group,
+                                    size_t max_processed_tokens,
+                                    CacheOffloadCoordinator::WarmupReport& found,
+                                    size_t& reused_tokens) {
         if (m_block_managers.empty()) {
             return;
         }
@@ -510,11 +526,11 @@ public:
                 allocate_cache_if_needed();
                 return execution_lock;
             };
-            m_offload->warm(kv_it != m_block_managers.end() ? kv_it->second.get() : nullptr,
-                            la_it != m_block_managers.end() ? la_it->second.get() : nullptr,
-                            sequence_group,
-                            max_processed_tokens,
-                            begin_device_phase);
+            found = m_offload->warm(kv_it != m_block_managers.end() ? kv_it->second.get() : nullptr,
+                                    la_it != m_block_managers.end() ? la_it->second.get() : nullptr,
+                                    sequence_group,
+                                    max_processed_tokens,
+                                    begin_device_phase);
         }
 
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
@@ -553,7 +569,8 @@ public:
             }
             prepared_kv->apply();
             prepared_la->apply();
-            sequence_group->update_processed_tokens_num(std::min(kv_plan.processed_tokens, la_plan.processed_tokens));
+            reused_tokens = std::min(kv_plan.processed_tokens, la_plan.processed_tokens);
+            sequence_group->update_processed_tokens_num(reused_tokens);
             GENAI_DEBUG("Hybrid prefix restore: request=%llu endpoint=%zu",
                         static_cast<unsigned long long>(sequence_group->get_request_id()), la_plan.cache_token_position);
             return;
@@ -565,12 +582,14 @@ public:
             auto prepared = manager.prepare_prefix_restore(sequence_group, plan);
             if (prepared) {
                 prepared->apply();
-                sequence_group->update_processed_tokens_num(plan.processed_tokens);
+                reused_tokens = plan.processed_tokens;
+                sequence_group->update_processed_tokens_num(reused_tokens);
             }
             return;
         }
     }
 
+public:
     void free_blocks_from_sequence(size_t seq_id,
                                    const std::vector<std::set<size_t>>& per_layer_logical_block_indices,
                                    CacheType cache_type) {

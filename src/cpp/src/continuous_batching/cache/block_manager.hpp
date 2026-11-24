@@ -227,6 +227,17 @@ public:
 using DevicePhaseGuard = std::function<std::unique_lock<std::recursive_mutex>()>;
 
 /**
+ * @brief What one warm-up found along a prompt's prefix chain, in tokens.
+ *
+ * A manager that restores only the latest prefix block (linear attention) counts the position of that block, since
+ * it holds the state of every token before it.
+ */
+struct WarmupStats {
+    size_t device_hit_tokens = 0;  ///< blocks that were already in the device cache
+    size_t store_hit_tokens = 0;   ///< blocks read from the source and written to the device cache, all rounds together
+};
+
+/**
  * @brief Allows to store and retrieve KV-cache blocks based on their content- and position-based hash.
  * Blocks with the same prefix in the generated sequence will have the same hash. Blocks within this store
  * are not owned by any sequence (but had been once) and may be either selected for overwriting, if the allocator
@@ -2948,12 +2959,18 @@ public:
      *
      * @param max_content_len Longest prefix, in tokens, the caller can still use; blocks beyond it are not brought back.
      * @param begin_device_phase Called after the store I/O and before the first block is written into the device cache.
+     * @param stats When given, receives how many tokens of the chain were already in the device cache and how many
+     * were brought back from the source.
      * @return The number of blocks brought back into memory.
      */
     size_t warm_prefix_cache(SequenceGroup::Ptr group,
                              IExternalPrefixSource& source,
                              size_t max_content_len = std::numeric_limits<size_t>::max(),
-                             const DevicePhaseGuard& begin_device_phase = {}) {
+                             const DevicePhaseGuard& begin_device_phase = {},
+                             WarmupStats* stats = nullptr) {
+        if (stats != nullptr) {
+            *stats = WarmupStats{};
+        }
         if (!m_enable_prefix_caching) {
             return 0;
         }
@@ -3014,9 +3031,13 @@ public:
 
         // @return false when the chain cannot be extended with the block ending at `content_len`.
         const auto extend_chain = [&](size_t content_len) {
+            const size_t block_tokens = m_restore_latest_prefix_block_only ? content_len : m_block_size;
             const auto hash = sequence->get_hash(content_len, m_block_size);
             if (m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks)) {
                 chain.push_back(m_allocator.get_cached_block(hash, m_prefix_hash_to_cached_blocks));
+                if (stats != nullptr) {
+                    stats->device_hit_tokens += block_tokens;
+                }
                 return true;
             }
             // A block evicted from the device while this walk allocates reaches the source after the probe above.
@@ -3036,6 +3057,9 @@ public:
 
             chain.push_back(std::move(blocks));
             ++num_restored;
+            if (stats != nullptr) {
+                stats->store_hit_tokens += block_tokens;
+            }
             return true;
         };
 
