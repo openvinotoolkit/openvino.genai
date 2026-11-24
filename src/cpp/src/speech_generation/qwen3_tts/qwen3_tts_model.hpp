@@ -55,8 +55,19 @@ public:
     // (another generate(), a second run) while a run is unfinished.
     class TalkerRun {
     public:
+        enum class Status {
+            FRAME,      // a frame was generated
+            NEED_TEXT,  // the next frame needs a text row that has not been appended yet (incremental text only)
+            DONE,       // the utterance is complete
+        };
+
         // Prefills the talker with `talker_prefill`. `stream_audio` decodes the frames to audio while they arrive
         // (see qwen3_tts::UtteranceFrames); otherwise finish() returns the waveform of the whole utterance.
+        //
+        // `incremental_text` ignores `trailing_text_hidden` and starts from an empty incremental text that the
+        // caller feeds through text() while the run waits (NEED_TEXT). Codec EOS is then not allowed until the
+        // text is finished and its last row has been consumed, so the talker cannot end the utterance while text is
+        // still to come. With fixed text (the default) EOS is allowed at every step, as before.
         TalkerRun(Qwen3TTSImpl& impl,
                   const ov::Tensor& talker_prefill,
                   const ov::Tensor& tts_pad,
@@ -64,13 +75,19 @@ public:
                   const SpeechGenerationConfig& generation_config,
                   const std::vector<bool>& suppress_tokens,
                   const ov::Tensor& ref_codec_ids,
-                  bool stream_audio);
+                  bool stream_audio,
+                  bool incremental_text = false);
 
-        // Generates the next codec frame. Returns false when the utterance is complete (codec EOS, or the step
-        // limit), and true after a frame; then `chunk` holds the audio of a chunk that became ready (empty if none).
-        // The talker is advanced to the following frame lazily, at the start of the next call, so a caller that
-        // stops after a frame does not pay for it.
-        bool step(std::vector<float>& chunk);
+        // Generates the next codec frame. After FRAME, `chunk` holds the audio of a chunk that became ready (empty
+        // if none). The talker is advanced to the following frame lazily, at the start of the next call, so a caller
+        // that stops after a frame does not pay for it; that advance is where the frame's text row is needed, and
+        // NEED_TEXT leaves the run untouched so it can be retried after append()ing text.
+        Status step(std::vector<float>& chunk);
+
+        // The text source, to append rows to when the run was made with `incremental_text`.
+        qwen3_tts::TrailingText& text() {
+            return m_text;
+        }
 
         // End of the utterance: streaming, the audio not yet handed over; otherwise, the whole waveform.
         std::vector<float> finish() {
@@ -89,6 +106,8 @@ public:
         Qwen3TTSCodecEngine& m_engine;
         SpeechGenerationConfig m_config;
         std::vector<bool> m_suppress_tokens;
+        std::vector<bool> m_suppress_tokens_and_eos;  // same plus codec EOS; only set when EOS is gated
+        bool m_gate_eos = false;
         qwen3_tts::TrailingText m_text;
         qwen3_tts::UtteranceFrames m_frames;
         std::mt19937 m_talker_rng;

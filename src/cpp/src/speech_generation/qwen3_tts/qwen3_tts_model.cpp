@@ -88,7 +88,8 @@ Qwen3TTSImpl::TalkerRun::TalkerRun(Qwen3TTSImpl& impl,
                                    const SpeechGenerationConfig& generation_config,
                                    const std::vector<bool>& suppress_tokens,
                                    const ov::Tensor& ref_codec_ids,
-                                   bool stream_audio)
+                                   bool stream_audio,
+                                   bool incremental_text)
     : m_impl(impl),
       m_engine(impl.m_engine),
       m_config(generation_config),
@@ -110,6 +111,15 @@ Qwen3TTSImpl::TalkerRun::TalkerRun(Qwen3TTSImpl& impl,
     OPENVINO_ASSERT(tts_pad.get_shape().size() == 3 && tts_pad.get_shape()[2] == m_hidden,
                     "tts_pad hidden size (", tts_pad.get_shape()[2], ") must match talker hidden size (", m_hidden, ")");
 
+    if (incremental_text) {
+        OPENVINO_ASSERT(!generation_config.non_streaming_mode,
+                        "Incremental text needs the streaming prompt layout (non_streaming_mode = false)");
+        m_text = qwen3_tts::TrailingText::incremental(tts_pad);
+        m_gate_eos = true;
+        m_suppress_tokens_and_eos = m_suppress_tokens;
+        m_suppress_tokens_and_eos.at(static_cast<size_t>(m_engine.ids().codec_eos_token_id)) = true;
+    }
+
     m_max_steps = generation_config.get_max_new_tokens();
     if (m_max_steps == SIZE_MAX) {
         m_max_steps = 2048;
@@ -126,19 +136,27 @@ Qwen3TTSImpl::TalkerRun::TalkerRun(Qwen3TTSImpl& impl,
     m_frames.reserve(std::min(m_max_steps, size_t(8192)));
 }
 
-bool Qwen3TTSImpl::TalkerRun::step(std::vector<float>& chunk) {
+Qwen3TTSImpl::TalkerRun::Status Qwen3TTSImpl::TalkerRun::step(std::vector<float>& chunk) {
     if (m_done || m_step >= m_max_steps) {
         m_done = true;
-        return false;
+        return Status::DONE;
     }
     if (m_pending) {
+        if (!m_text.available(m_step - 1)) {
+            return Status::NEED_TEXT;
+        }
         advance();
     }
 
-    int64_t token = m_engine.sample_token_from_logits(m_logits, m_config, m_generated_main, m_suppress_tokens, m_talker_rng);
+    // The logits come from a talker input that contained text rows 0 .. m_step - 1, so the row that ends the text
+    // (the last one) has been seen once m_step >= rows. Before that the talker must not end the utterance.
+    const bool eos_allowed = !m_gate_eos || (m_text.finished() && m_step >= m_text.rows());
+    int64_t token = m_engine.sample_token_from_logits(m_logits, m_config, m_generated_main,
+                                                      eos_allowed ? m_suppress_tokens : m_suppress_tokens_and_eos,
+                                                      m_talker_rng);
     if (token == m_engine.ids().codec_eos_token_id) {
         m_done = true;
-        return false;
+        return Status::DONE;
     }
     m_generated_main.push_back(token);
 
@@ -149,7 +167,7 @@ bool Qwen3TTSImpl::TalkerRun::step(std::vector<float>& chunk) {
     chunk = m_frames.push_frame(m_groups);
     m_pending = true;
     ++m_step;
-    return true;
+    return Status::FRAME;
 }
 
 void Qwen3TTSImpl::TalkerRun::advance() {
@@ -190,7 +208,8 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     };
 
     std::vector<float> chunk;
-    while (run.step(chunk)) {
+    for (auto status = run.step(chunk); status != TalkerRun::Status::DONE; status = run.step(chunk)) {
+        OPENVINO_ASSERT(status == TalkerRun::Status::FRAME, "fixed text never waits for more");
         if (emit_chunk(chunk) != StreamingStatus::RUNNING) {
             stopped_by_streamer = true;
             break;
