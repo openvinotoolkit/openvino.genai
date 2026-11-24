@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -211,6 +212,68 @@ private:
     size_t m_discard_frames = 0;  // leading reference frames of the pending block, their audio is dropped
     bool m_first_chunk_taken = false;
     std::vector<float> m_samples;
+};
+
+// The codec frames of ONE utterance as a driver generates them, and the audio they turn into. A streaming utterance
+// decodes the frames while they arrive (AudioChunker) and hands the audio over chunk by chunk; any other utterance
+// keeps the codes and decodes them all at the end. Shared by the SDPA and the continuous-batching drivers, so both
+// turn frames into audio the same way.
+class UtteranceFrames {
+public:
+    // `ref_codec_ids` (optional, [T, G] or [1, T, G]) are the voice-clone reference frames that precede the
+    // generated ones; their audio is never returned.
+    UtteranceFrames(Qwen3TTSCodecEngine& engine,
+                    bool stream_audio,
+                    const SpeechGenerationConfig& config,
+                    const ov::Tensor& ref_codec_ids = {})
+        : m_engine(engine),
+          m_ref_codec_ids(ref_codec_ids) {
+        if (stream_audio) {
+            m_chunker.emplace(engine,
+                              config.audio_first_chunk_frames,
+                              config.audio_chunk_frames,
+                              config.audio_chunk_left_context_frames,
+                              ref_codec_ids);
+        }
+    }
+
+    bool streaming() const {
+        return m_chunker.has_value();
+    }
+
+    // Room for `frames` generated frames (only a non-streaming utterance keeps them).
+    void reserve(size_t frames) {
+        if (!m_chunker) {
+            m_codes.reserve(frames * m_engine.ids().num_code_groups);
+        }
+    }
+
+    // Adds one generated frame ([num_code_groups] codes). A streaming utterance returns the audio of the chunk that
+    // became ready, or nothing.
+    std::vector<float> push_frame(const std::vector<int64_t>& groups) {
+        if (!m_chunker) {
+            m_codes.insert(m_codes.end(), groups.begin(), groups.end());
+            return {};
+        }
+        m_chunker->push_frame(groups);
+        return m_chunker->chunk_ready() ? m_chunker->take_pending() : std::vector<float>{};
+    }
+
+    // End of the utterance. Streaming: the audio that has not been handed over yet. Otherwise: the waveform of all
+    // the frames.
+    std::vector<float> finish() {
+        if (m_chunker) {
+            return m_chunker->flush();
+        }
+        return m_ref_codec_ids ? m_engine.decode_speech_tokenizer_with_reference(m_ref_codec_ids, m_codes)
+                               : m_engine.decode_speech_tokenizer(m_codes);
+    }
+
+private:
+    Qwen3TTSCodecEngine& m_engine;
+    ov::Tensor m_ref_codec_ids;
+    std::optional<AudioChunker> m_chunker;  // set for a streaming utterance
+    std::vector<int64_t> m_codes;           // frame-major; only kept when not streaming
 };
 
 inline ov::Tensor make_chunk_tensor(const std::vector<float>& samples) {

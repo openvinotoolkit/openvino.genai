@@ -308,13 +308,7 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
                                                   prefill.trailing_text_hidden);
     state.ref_codec_ids = effective_ref_codec_ids;
     state.stream = SpeechGenerationStream::create();
-    if (stream_audio) {
-        state.chunker.emplace(m_engine,
-                              generation_config.audio_first_chunk_frames,
-                              generation_config.audio_chunk_frames,
-                              generation_config.audio_chunk_left_context_frames,
-                              effective_ref_codec_ids);
-    }
+    state.frames.emplace(m_engine, stream_audio, generation_config, effective_ref_codec_ids);
     SpeechGenerationStream::Ptr stream = state.stream;
 
     m_request_state.emplace(request_id, std::move(state));
@@ -542,13 +536,7 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_fra
     }
 
     const std::vector<int64_t>& groups = *generated_groups;
-    state.all_codes.insert(state.all_codes.end(), groups.begin(), groups.end());
-    if (state.chunker) {
-        state.chunker->push_frame(groups);
-        if (state.chunker->chunk_ready()) {
-            push_audio_chunk(state, state.chunker->take_pending());
-        }
-    }
+    push_audio_chunk(state, state.frames->push_frame(groups));
 
     const size_t step_index = position_id - sequence_group->get_prompt_len();
     auto token_embed = m_engine.build_talker_step_input(groups, state.trailing_text, step_index);
@@ -575,14 +563,9 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
     RequestState& state) {
     // Streaming requests have already delivered everything but the tail; the final output carries
     // only that tail, so the concatenation of all reads equals the full waveform.
-    std::vector<float> waveform;
-    if (state.chunker) {
-        waveform = state.chunker->flush();
+    std::vector<float> waveform = state.frames->finish();
+    if (state.frames->streaming()) {
         state.streamed_samples += waveform.size();
-    } else {
-        waveform = state.ref_codec_ids
-            ? m_engine.decode_speech_tokenizer_with_reference(state.ref_codec_ids, state.all_codes)
-            : m_engine.decode_speech_tokenizer(state.all_codes);
     }
 
     ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
@@ -598,7 +581,7 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::finalize_reques
     output.ref_codec_ids = state.ref_codec_ids;
 
     SpeechGenerationPerfMetrics perf_metrics;
-    perf_metrics.num_generated_samples = state.chunker ? state.streamed_samples : wav_tensor.get_size();
+    perf_metrics.num_generated_samples = state.frames->streaming() ? state.streamed_samples : wav_tensor.get_size();
     perf_metrics.num_prefix_cache_hit_tokens = sequence_group->get_num_prefix_cache_hit_tokens();
     perf_metrics.raw_metrics.generate_durations.emplace_back(
         PerfMetrics::get_microsec(std::chrono::steady_clock::now() - state.start_time));

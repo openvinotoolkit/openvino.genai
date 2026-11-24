@@ -69,10 +69,9 @@ private:
         ov::Tensor speaker_embedding;
         qwen3_tts::TrailingText trailing_text;
         ov::Tensor ref_codec_ids;
-        std::vector<int64_t> all_codes;
-        // Set only for audio-streaming requests: decodes finished chunks as frames arrive and pushes
-        // them to `stream` (consumed incrementally via SpeechGenerationHandle::read()).
-        std::optional<qwen3_tts::AudioChunker> chunker;
+        // The request's codec frames. For audio-streaming requests it decodes finished chunks as frames arrive,
+        // and they are pushed to `stream` (consumed incrementally via SpeechGenerationHandle::read()).
+        std::optional<qwen3_tts::UtteranceFrames> frames;
         size_t streamed_samples = 0;
         SpeechGenerationStream::Ptr stream;
     };

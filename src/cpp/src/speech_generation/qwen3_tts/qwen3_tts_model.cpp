@@ -105,7 +105,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
                     "tts_pad hidden size (", tts_pad.get_shape()[2], ") must match talker hidden size (", hidden, ")");
 
     std::vector<int64_t> generated_main;
-    std::vector<int64_t> all_codes;
     size_t max_steps = generation_config.get_max_new_tokens();
     if (max_steps == SIZE_MAX) {
         max_steps = 2048;
@@ -119,7 +118,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         --max_steps;
     }
     generated_main.reserve(std::min(max_steps, size_t(8192)));
-    all_codes.reserve(std::min(max_steps, size_t(8192)) * m_engine.ids().num_code_groups);
 
     const qwen3_tts::TrailingText text(generation_config.non_streaming_mode, tts_pad, trailing_text_hidden);
     std::mt19937 talker_rng(generation_config.rng_seed);
@@ -129,16 +127,10 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
 
     // Audio output streaming: decode codec frames in small chunks while the talker keeps running.
     const bool streaming = is_speech_streamer_active(streamer);
-    std::optional<AudioChunker> chunker;
+    qwen3_tts::UtteranceFrames frames(m_engine, streaming, generation_config, ref_codec_ids);
+    frames.reserve(std::min(max_steps, size_t(8192)));
     std::vector<float> streamed_waveform;
     bool stopped_by_streamer = false;
-    if (streaming) {
-        chunker.emplace(m_engine,
-                        generation_config.audio_first_chunk_frames,
-                        generation_config.audio_chunk_frames,
-                        generation_config.audio_chunk_left_context_frames,
-                        ref_codec_ids);
-    }
     auto emit_chunk = [&](const std::vector<float>& samples) {
         if (samples.empty()) {
             return StreamingStatus::RUNNING;
@@ -158,16 +150,9 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         ov::Tensor past_hidden(hidden_states, ov::Coordinate{0, hs_len - 1, 0}, ov::Coordinate{1, hs_len, hidden});
 
         auto groups = m_engine.generate_codec_groups(past_hidden, token, generation_config, subtalker_rng);
-        all_codes.insert(all_codes.end(), groups.begin(), groups.end());
-        if (chunker) {
-            chunker->push_frame(groups);
-            if (chunker->chunk_ready()) {
-                const auto status = emit_chunk(chunker->take_pending());
-                if (status != StreamingStatus::RUNNING) {
-                    stopped_by_streamer = true;
-                    break;
-                }
-            }
+        if (emit_chunk(frames.push_frame(groups)) != StreamingStatus::RUNNING) {
+            stopped_by_streamer = true;
+            break;
         }
 
         auto token_embed = m_engine.build_talker_step_input(groups, text, step);
@@ -179,14 +164,11 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         ++absolute_pos;
     }
 
-    if (chunker && !stopped_by_streamer) {
-        emit_chunk(chunker->flush());  // flush the tail
+    if (streaming && !stopped_by_streamer) {
+        emit_chunk(frames.finish());  // flush the tail
     }
 
-    auto waveform = streaming
-        ? std::move(streamed_waveform)
-        : (ref_codec_ids ? m_engine.decode_speech_tokenizer_with_reference(ref_codec_ids, all_codes)
-                         : m_engine.decode_speech_tokenizer(all_codes));
+    auto waveform = streaming ? std::move(streamed_waveform) : frames.finish();
 
     ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
     if (!waveform.empty()) {
