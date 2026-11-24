@@ -5,6 +5,7 @@
 #include "generation_stream.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "visual_language/chat_history_state.hpp"
 #include "visual_language/vlm_chat_context.hpp"
@@ -22,6 +23,17 @@ std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
         dst.emplace(name, std::move(tensor_copy));
     }
     return dst;
+}
+
+ov::genai::GenerationStatus status_from_vlm_finish_reasons(
+    const std::vector<ov::genai::GenerationFinishReason>& reasons) {
+    if (!reasons.empty() &&
+        std::all_of(reasons.begin(), reasons.end(), [](ov::genai::GenerationFinishReason reason) {
+            return reason != ov::genai::GenerationFinishReason::NONE;
+        })) {
+        return ov::genai::GenerationStatus::FINISHED;
+    }
+    return ov::genai::GenerationStatus::RUNNING;
 }
 
 }  // namespace
@@ -92,8 +104,15 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
         std::vector<std::vector<VideoMetadata>> videos_metadata(prompts.size());
         std::vector<EncodedGenerationResult> encoded;
-        auto results_vlm =
-            generate(prompts, images, images, videos_metadata, images, sampling_params, streamer, &encoded);
+        auto results_vlm = generate_with_encoded_results(prompts,
+                                                         images,
+                                                         images,
+                                                         videos_metadata,
+                                                         images,
+                                                         sampling_params,
+                                                         streamer,
+                                                         nullptr,
+                                                         &encoded);
         std::vector<GenerationResult> results;
         for (size_t i = 0; i < results_vlm.size(); ++i) {
             auto& vlm_result = results_vlm[i];
@@ -103,6 +122,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
+            result.m_status = status_from_vlm_finish_reasons(result.m_finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
             result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
             results.push_back(result);
@@ -223,8 +243,15 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         std::vector<std::vector<ov::Tensor>> images(histories.size());
         std::vector<std::vector<VideoMetadata>> videos_metadata(histories.size());
         std::vector<EncodedGenerationResult> encoded;
-        auto results_vlm =
-            generate(histories, images, images, videos_metadata, images, sampling_params, streamer, &encoded);
+        auto results_vlm = generate_with_encoded_results(histories,
+                                                         images,
+                                                         images,
+                                                         videos_metadata,
+                                                         images,
+                                                         sampling_params,
+                                                         streamer,
+                                                         nullptr,
+                                                         &encoded);
         std::vector<GenerationResult> results;
         for (size_t i = 0; i < results_vlm.size(); ++i) {
             auto& vlm_result = results_vlm[i];
@@ -234,6 +261,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
+            result.m_status = status_from_vlm_finish_reasons(result.m_finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
             result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
             results.push_back(result);
@@ -298,7 +326,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
         PerfMetrics::emplace_duration(perf_metrics.raw_metrics.generate_durations, start_time);
-        // Reevaluate taking into accound tokenization/detokenization times.
+        // Reevaluate taking into account tokenization/detokenization times.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
@@ -325,6 +353,26 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     return generate(prompts, images_vector, empty_videos_vector, sampling_params, streamer);
 }
 
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    std::shared_ptr<OmniStreamerBase> omni_streamer) {
+    return generate_with_encoded_results(prompts,
+                                         images_vector,
+                                         videos_vector,
+                                         videos_metadata_vector,
+                                         audios_vector,
+                                         sampling_params,
+                                         streamer,
+                                         std::move(omni_streamer),
+                                         nullptr);
+}
+
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
@@ -337,7 +385,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return generate(prompts, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
 }
 
-std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_encoded_results(
     const std::vector<std::string>& prompts,
     const std::vector<std::vector<ov::Tensor>>& images_vector,
     const std::vector<std::vector<ov::Tensor>>& videos_vector,
@@ -345,7 +393,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     const std::vector<std::vector<ov::Tensor>>& audios_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
+    std::shared_ptr<OmniStreamerBase> omni_streamer,
     std::vector<EncodedGenerationResult>* encoded_results_out) {
+    PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
@@ -377,6 +427,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     // Set visual token pruning configuration
     m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                        generation_config.relevance_weight);
+    m_inputs_embedder->set_adapters(generation_config.adapters);
 
     // Shared helpers for prompt-ID extraction used in both chat-conversation and multi-prompt branches.
     // Cache-state size is captured pre-embedding so the new prompt-ids slice can be sent
@@ -520,12 +571,23 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
         }
     }
     std::vector<VLMDecodedResults> results;
-    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
-                                                                    sampling_params,
-                                                                    streamer,
-                                                                    position_ids_list,
-                                                                    original_prompt_ids_list,
-                                                                    lm_extra_inputs_list);
+    std::vector<EncodedGenerationResult> encoded_results;
+    if (omni_streamer) {
+        encoded_results = generate_with_omni_streamer(input_embeds_list,
+                                                      sampling_params,
+                                                      streamer,
+                                                      std::exchange(omni_streamer, nullptr),
+                                                      position_ids_list,
+                                                      original_prompt_ids_list,
+                                                      lm_extra_inputs_list);
+    } else {
+        encoded_results = generate(input_embeds_list,
+                                   sampling_params,
+                                   streamer,
+                                   position_ids_list,
+                                   original_prompt_ids_list,
+                                   lm_extra_inputs_list);
+    }
     for (size_t i = 0; i < prompts.size(); i++) {
         utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
         auto result = encoded_results[i];
@@ -585,6 +647,26 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     if (encoded_results_out)
         *encoded_results_out = std::move(encoded_results);
     return results;
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    std::shared_ptr<OmniStreamerBase> omni_streamer) {
+    return generate_with_encoded_results(histories,
+                                         images_vector,
+                                         videos_vector,
+                                         videos_metadata_vector,
+                                         audios_vector,
+                                         sampling_params,
+                                         streamer,
+                                         std::move(omni_streamer),
+                                         nullptr);
 }
 
 std::vector<VLMDecodedResults>
@@ -648,7 +730,30 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                     streamer);
 }
 
-std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+namespace {
+
+constexpr char OMNI_STREAMER_UNSUPPORTED_BACKEND[] =
+    "Streaming the thinker's output to a talker is supported only by the plain continuous batching "
+    "backend; disable speculative decoding, prompt lookup, Eagle3, DFlash and MTP";
+
+}  // namespace
+
+std::vector<EncodedGenerationResult>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_omni_streamer(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    std::shared_ptr<OmniStreamerBase> omni_streamer,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
+    const std::optional<std::vector<ov::Tensor>>& prompt_ids,
+    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list
+) {
+    PendingOmniStreamerGuard bridge_guard{omni_streamer};
+    OPENVINO_ASSERT(!omni_streamer, OMNI_STREAMER_UNSUPPORTED_BACKEND);
+    return generate(input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_encoded_results(
     const std::vector<ChatHistory>& histories,
     const std::vector<std::vector<ov::Tensor>>& images_vector,
     const std::vector<std::vector<ov::Tensor>>& videos_vector,
@@ -656,7 +761,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     const std::vector<std::vector<ov::Tensor>>& audios_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
+    std::shared_ptr<OmniStreamerBase> omni_streamer,
     std::vector<EncodedGenerationResult>* encoded_results_out) {
+    PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
     OPENVINO_ASSERT(histories.size() == sampling_params.size(),
@@ -678,10 +785,12 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
     // Omni speech needs the exact prompt-token slice the Thinker consumed, but collecting it must
     // not force ChatHistory through the string path (which would misplace multimodal tokens).
-    const bool capture_prompt_ids = std::any_of(sampling_params.begin(), sampling_params.end(),
-                                                 [](const GenerationConfig& params) {
-                                                     return params.return_omni_outputs || params.is_assisting_generation();
-                                                 });
+    const bool capture_prompt_ids =
+        omni_streamer ||
+        std::any_of(sampling_params.begin(), sampling_params.end(), [this](const GenerationConfig& params) {
+            return params.return_omni_outputs || params.is_assisting_generation() ||
+                   requires_prompt_ids_for_generation();
+        });
 
     std::vector<VLMChatContext> chat_contexts;
     chat_contexts.reserve(histories.size());
@@ -696,6 +805,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
         // Set visual token pruning configuration
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
+        m_inputs_embedder->set_adapters(generation_config.adapters);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
@@ -763,12 +873,23 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
         PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     }
 
-    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
-                                                                    sampling_params,
-                                                                    streamer,
-                                                                    position_ids_list,
-                                                                    original_prompt_ids_list,
-                                                                    lm_extra_inputs_list);
+    std::vector<EncodedGenerationResult> encoded_results;
+    if (omni_streamer) {
+        encoded_results = generate_with_omni_streamer(input_embeds_list,
+                                                      sampling_params,
+                                                      streamer,
+                                                      std::exchange(omni_streamer, nullptr),
+                                                      position_ids_list,
+                                                      original_prompt_ids_list,
+                                                      lm_extra_inputs_list);
+    } else {
+        encoded_results = generate(input_embeds_list,
+                                   sampling_params,
+                                   streamer,
+                                   position_ids_list,
+                                   original_prompt_ids_list,
+                                   lm_extra_inputs_list);
+    }
     std::vector<VLMDecodedResults> results;
     results.reserve(encoded_results.size());
 
@@ -884,7 +1005,9 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
 
         const auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
-        const bool capture_prompt_ids = sampling_params.is_prompt_lookup() || sampling_params.is_assisting_generation();
+        const bool capture_prompt_ids = sampling_params.is_prompt_lookup() ||
+                                        sampling_params.is_assisting_generation() ||
+                                        requires_prompt_ids_for_generation();
         const size_t cache_size_before =
             capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 

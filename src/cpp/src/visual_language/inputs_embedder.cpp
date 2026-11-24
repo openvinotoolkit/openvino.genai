@@ -32,6 +32,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/lfm3_omni/classes.hpp"
 #include "visual_language/mistral3/classes.hpp"
 #include "visual_language/lfm3_vl/classes.hpp"
 
@@ -293,6 +294,8 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_text_embedding(
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
+    OPENVINO_ASSERT(images.empty() || m_vision_encoder,
+                    "Image input is not supported because this model has no vision encoder.");
     std::vector<EncodedImage> encoded_images;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     for (const ov::Tensor& image : single_images) {
@@ -340,6 +343,11 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedd
     return empty_map;
 }
 
+const std::set<int64_t>& InputsEmbedder::IInputsEmbedder::get_suppressed_token_ids() const {
+    static const std::set<int64_t> empty_set;
+    return empty_set;
+}
+
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
                                const ov::AnyMap device_config) :
@@ -358,6 +366,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
         m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderLFM3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -460,6 +470,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
         m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderLFM3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -539,11 +551,15 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_
     return m_impl->get_lm_extra_inputs();
 }
 
+const std::set<int64_t>& InputsEmbedder::get_suppressed_token_ids() const {
+    return m_impl->get_suppressed_token_ids();
+}
+
 std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_per_layer_embeddings_callback() {
     return m_impl->get_per_layer_embeddings_callback();
 }
 
-std::function<ov::Tensor(const ov::Tensor& new_input_ids, const std::vector<int32_t>& beam_indices)>
+std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)>
 InputsEmbedder::get_ngram_embeddings_callback() {
     return m_impl->get_ngram_embeddings_callback();
 }
@@ -616,6 +632,14 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_generation_pha
 
 EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
+}
+
+void InputsEmbedder::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_impl->set_adapters(adapters);
+}
+
+std::optional<std::string> InputsEmbedder::get_lora_tensor_prefix() const {
+    return m_impl->get_lora_tensor_prefix();
 }
 
 ov::genai::utils::CacheState& InputsEmbedder::get_cache_state() {

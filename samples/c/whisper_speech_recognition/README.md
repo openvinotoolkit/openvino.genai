@@ -98,6 +98,11 @@ This example showcases inference of speech recognition Whisper Models using the 
 
 ```text
  How are you doing today?
+```
+
+With `return_timestamps` enabled, the sample also prints:
+
+```text
 timestamps: [0.00, 2.00] text:  How are you doing today?
 ```
 
@@ -107,7 +112,7 @@ The sample will:
 2. Automatically resample to 16kHz if needed
 3. Perform speech-to-text transcription
 4. Output the full transcription
-5. Display word-level timestamps for each text chunk
+5. Display segment timestamps for each text chunk when `return_timestamps` is enabled (disabled by default)
 
 ## Troubleshooting
 

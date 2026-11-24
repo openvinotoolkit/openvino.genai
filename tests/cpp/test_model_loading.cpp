@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "gguf_utils/gguf_utils.hpp"
+#include "model_desc.hpp"
 #include "openvino/op/parameter.hpp"
 #include "utils.hpp"
 
@@ -28,6 +29,27 @@ TEST(GGUFProperties, FilterConversionPropertiesAndPreservePluginProperties) {
 TEST(GGUFProperties, RejectInvalidReader) {
     EXPECT_THROW(ov::genai::gguf_utils::extract_gguf_properties({ov::genai::gguf_reader("invalid")}),
                  ov::Exception);
+}
+
+TEST(GGUFProperties, IrMtpDraftIsAllowedForLlmPipeline) {
+    ov::genai::ModelDesc draft;
+    draft.properties["mtp_mode"] = true;
+    const ov::AnyMap properties{{ov::genai::utils::DRAFT_MODEL_ARG_NAME, ov::Any::make<ov::genai::ModelDesc>(draft)}};
+
+    EXPECT_NO_THROW(ov::genai::resolve_draft_model_request("converted-model", "CPU", properties));
+    EXPECT_NO_THROW(ov::genai::resolve_draft_model_request("converted-model", "CPU", properties, true));
+    EXPECT_THROW(ov::genai::resolve_draft_model_request("target.gguf", "CPU", properties, true), ov::Exception);
+}
+
+TEST(GGUFProperties, GgufMtpDraftIsContinuousBatchingOnly) {
+    ov::genai::ModelDesc draft;
+    draft.properties["mtp_mode"] = true;
+    draft.is_gguf_mtp = true;
+    const ov::AnyMap properties{{ov::genai::utils::DRAFT_MODEL_ARG_NAME, ov::Any::make<ov::genai::ModelDesc>(draft)}};
+
+    EXPECT_THROW(ov::genai::resolve_draft_model_request("converted-model", "CPU", properties), ov::Exception);
+    EXPECT_NO_THROW(ov::genai::resolve_draft_model_request("converted-model", "CPU", properties, true));
+    EXPECT_THROW(ov::genai::resolve_draft_model_request("target.gguf", "CPU", properties, true), ov::Exception);
 }
 
 TEST(CacheTypes, GGUFRecurrentMetadataRequiresLinearCache) {

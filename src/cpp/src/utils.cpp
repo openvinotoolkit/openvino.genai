@@ -21,6 +21,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 
 
@@ -261,12 +262,11 @@ void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any valu
     }
 }
 
-bool is_npuw_enabled(const ov::AnyMap& config) {
-    constexpr const char* npu_use_npuw = "NPU_USE_NPUW";
+bool is_property_enabled(const ov::AnyMap& config, const std::string& name) {
     constexpr const char* yes = "YES";
     constexpr const char* no = "NO";
 
-    auto it = config.find(npu_use_npuw);
+    auto it = config.find(name);
     if (it == config.end()) {
         return false;
     }
@@ -285,10 +285,14 @@ bool is_npuw_enabled(const ov::AnyMap& config) {
             return false;
         }
 
-        OPENVINO_THROW("'", npu_use_npuw, "' must be '", yes, "' or '", no, "', got '", str_value, "'");
+        OPENVINO_THROW("'", name, "' must be '", yes, "' or '", no, "', got '", str_value, "'");
     }
 
-    OPENVINO_THROW("'", npu_use_npuw, "' must be bool or string, got type: ", value.type_info().name());
+    OPENVINO_THROW("'", name, "' must be bool or string, got type: ", value.type_info().name());
+}
+
+bool is_npuw_enabled(const ov::AnyMap& config) {
+    return is_property_enabled(config, "NPU_USE_NPUW");
 }
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
@@ -335,7 +339,9 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     std::shared_ptr<ov::Node> matmul = ov::as_type_ptr<ov::op::v0::MatMul>(last_node);
 
     // in case of PA all tokens are moved to batch dimension and we have to slice / gather accordingly
-    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension");
+    const bool pa_based_model = has_op_with_type(model, "PagedAttentionExtension")
+        || has_op_with_type(model, "PagedSparseAttention");
+
     int64_t slice_gather_dim = pa_based_model ? 0 : 1;
 
     // There are several patterns for matmul we are looking for:
@@ -394,13 +400,29 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     std::tie(matmul, slice_gather_dim) = find_llm_matmul(model);
 
     if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
-        auto indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
-        indices->set_friendly_name("sampled_tokens_indices");
-        indices->output(0).get_tensor().set_names({"sampled_tokens_indices"});
+        std::shared_ptr<ov::op::v0::Parameter> indices;
+        for (const auto& parameter : model->get_parameters()) {
+            if (parameter->get_friendly_name() == "sampled_tokens_indices" ||
+                parameter->output(0).get_names().count("sampled_tokens_indices")) {
+                indices = parameter;
+                break;
+            }
+        }
+        const bool add_indices = !indices;
+        if (add_indices) {
+            indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+            indices->set_friendly_name("sampled_tokens_indices");
+            indices->output(0).get_tensor().set_names({"sampled_tokens_indices"});
+        } else {
+            OPENVINO_ASSERT(
+                indices->get_element_type() == ov::element::i64 && indices->get_partial_shape() == ov::PartialShape{-1},
+                "Existing sampled_tokens_indices input must be i64 with shape [-1]");
+        }
         auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{slice_gather_dim});
         auto gather = std::make_shared<ov::op::v8::Gather>(matmul->input_value(0), indices, axis);
         matmul->input(0).replace_source_output(gather);
-        model->add_parameters({indices});
+        if (add_indices)
+            model->add_parameters({indices});
     }
 }
 
@@ -418,13 +440,15 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 } // namespace
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+const std::string FORWARDED_ADAPTERS_PROPERTY = "FORWARDED_ADAPTERS";
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
         // Ignore MODEL_PROPERTIES as they are used only within this function
         // to construct final properties map for a given model.
-        if (property.first == PER_MODEL_PROPERTIES) {
+        // FORWARDED_ADAPTERS_PROPERTY is read by sub-model constructors and is meaningless for a plugin.
+        if (property.first == PER_MODEL_PROPERTIES || property.first == FORWARDED_ADAPTERS_PROPERTY) {
             continue;
         }
         // When a concrete device is known, DEVICE_PROPERTIES[device] is
@@ -985,6 +1009,9 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "audio_encoder",
         "language_model",
         "ngram_embeddings",
+        "depth_decoder",
+        "audio_out_embeddings",
+        "audio_decoder",
     };
     const auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {

@@ -32,6 +32,7 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
+import io
 import json
 import shutil
 from dataclasses import dataclass
@@ -157,6 +158,7 @@ if is_transformers_version("<", "5.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
     # qwen3_vl fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     VIDEO_MODEL_IDS = [
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         VIDEOCHAT_FLASH_QWEN_MODEL_ID,
@@ -191,7 +193,6 @@ if is_transformers_version("<", "5.0"):
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
-        "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5",
         "optimum-intel-internal-testing/tiny-random-internvl2",
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
@@ -254,6 +255,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 
 VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
+    "optimum-intel-internal-testing/tiny-random-minicpm-v-4_5": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
@@ -591,9 +593,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if "qwen3-vl" in ov_model and ov_backend == "SDPA":
         pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
 
-    if ov_model == MODEL_QWEN38_FLASH_NEXT and ov_backend == "PA":
-        pytest.xfail("Qwen3.8-Flash-Next model does not support PA backend")
-
     models_path = _get_ov_model(ov_model)
 
     pipeline_properties: dict = {"ATTENTION_BACKEND": ov_backend, "prompt_lookup": ov_prompt_lookup}
@@ -778,13 +777,15 @@ def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: st
             image_path = pytestconfig.cache.mkdir("images") / file_name
         except AttributeError:
             # Cache is disabled with -p no:cacheprovider
-            return download_image(link)
-        if image_path.exists():
-            image: PIL.Image = PIL.Image.open(image_path)
-        else:
+            image_buffer = io.BytesIO()
+            image_format = PIL.Image.registered_extensions()[Path(file_name).suffix.lower()]
+            download_image(link).save(image_buffer, format=image_format)
+            image_buffer.seek(0)
+            return PIL.Image.open(image_buffer)
+        if not image_path.exists():
             image = download_image(link)
             image.save(image_path)
-        return image
+        return PIL.Image.open(image_path)
     return retry(implementation, PIL.UnidentifiedImageError)
 
 
@@ -1324,6 +1325,41 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
         )
 
 
+@pytest.mark.skipif(
+    is_transformers_version(">=", "5.0"),
+    reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059",
+)
+@pytest.mark.transformers_dependent(reason="MiniCPM-V-4.5 requires Transformers 4.x; CVS-186059")
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", backend) for backend in ATTENTION_BACKEND],
+    ids=lambda item: f"{item[0]}/{item[1]}",
+    indirect=["ov_pipe_model"],
+)
+@pytest.mark.parametrize(
+    "query_num,error",
+    [
+        (0, "MiniCPM query_num must be positive, got 0"),
+        (128, "Unexpected MiniCPM video group feature size: expected 16384, got 8192"),
+    ],
+)
+def test_minicpm_invalid_query_num(ov_pipe_model: VlmModelInfo, query_num: int, error: str, tmp_path: Path):
+    model_path = tmp_path / "minicpm_invalid_query_num"
+    shutil.copytree(_get_ov_model(ov_pipe_model.model_id), model_path)
+    config_path = model_path / "config.json"
+    model_config = json.loads(config_path.read_text(encoding="utf-8"))
+    model_config["query_num"] = query_num
+    config_path.write_text(json.dumps(model_config), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match=error):
+        pipeline = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
+        pipeline.generate(
+            "Describe",
+            videos=[openvino.Tensor(np.zeros((1, 32, 32, 3), dtype=np.uint8))],
+            generation_config=GenerationConfig(max_new_tokens=1),
+        )
+
+
 @pytest.mark.parametrize(
     "ov_pipe_model",
     [
@@ -1389,6 +1425,24 @@ def test_vlm_pipeline_chat_history_multipart_content(
             f"answers_chat_history: {answer_1}\n"
             f"answers_chat_history_multipart_content: {answer_2}"
         )
+
+
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", backend) for backend in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+def test_vlm_pipeline_string_generate_after_chat_history(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+
+    expected = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    history = ChatHistory([{"role": "user", "content": PROMPTS[1]}])
+    ov_pipe.generate(history, images=[cat_tensor], generation_config=generation_config)
+    actual = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    assert actual.texts == expected.texts
 
 
 def finish_chat(ov_pipe_model: VlmModelInfo):
@@ -2058,7 +2112,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
-        (MODEL_QWEN38_FLASH_NEXT, "SDPA"),
+        (MODEL_QWEN38_FLASH_NEXT, "PA"),
         ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ]
 
@@ -2080,6 +2134,7 @@ if is_transformers_version("<", "5.0"):
     # minicpmv architectures are deprecating support for transformers >= v5 by optimum-intel
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-minicpm-v-4_5", "PA"),
     ]
 else:
     MODELS_TO_TAG += [
@@ -2789,6 +2844,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    "optimum-intel-internal-testing/tiny-random-qwen3.8",
     MODEL_QWEN38_FLASH_NEXT,
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
@@ -3348,16 +3404,19 @@ def test_cdpruner_continuous_batching_chat_history(
     )
 
 
-@pytest.fixture(scope="module")
-def qwen35_mtp_model_path() -> Path:
-    model_path = Path(_get_ov_model(MODEL_QWEN35_MTP))
-    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5 export must include the MTP draft model"
+# TODO: Enable test when OV ops are merged
+# @pytest.fixture(scope="module", params=[MODEL_QWEN35_MTP, MODEL_QWEN38_FLASH_NEXT])
+@pytest.fixture(scope="module", params=[MODEL_QWEN35_MTP])
+def mtp_model_path(request) -> Path:
+    model_path = Path(_get_ov_model(request.param))
+    assert (model_path / "openvino_mtp_model.xml").is_file(), "Qwen3.5/8 export must include the MTP draft model"
     return model_path
 
 
+@pytest.mark.parametrize("mtp_model_path", [MODEL_QWEN35_MTP], indirect=True)
 @pytest.mark.parametrize("main_prefix", [False, True])
-def test_qwen35_mtp_rejects_prefix_mismatch(qwen35_mtp_model_path, main_prefix):
-    model_path = qwen35_mtp_model_path
+def test_qwen35_mtp_rejects_prefix_mismatch(mtp_model_path, main_prefix):
+    model_path = mtp_model_path
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
     scheduler.enable_prefix_caching = main_prefix
@@ -3373,8 +3432,8 @@ def test_qwen35_mtp_rejects_prefix_mismatch(qwen35_mtp_model_path, main_prefix):
         )
 
 
-def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
-    model_path = qwen35_mtp_model_path
+def test_qwen_mtp_text_add_request(mtp_model_path, monkeypatch, capfd):
+    model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
@@ -3413,8 +3472,8 @@ def test_qwen35_mtp_text_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
             assert "MTP paired prefix replay:" in captured.out + captured.err
 
 
-def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd):
-    model_path = qwen35_mtp_model_path
+def test_mtp_image_add_request(mtp_model_path, monkeypatch, capfd):
+    model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.cache_size = 1
@@ -3457,14 +3516,15 @@ def test_qwen35_mtp_image_add_request(qwen35_mtp_model_path, monkeypatch, capfd)
             assert "MTP paired prefix replay:" in captured.out + captured.err
 
 
+@pytest.mark.parametrize("mtp_model_path", [MODEL_QWEN35_MTP], indirect=True)
 @pytest.mark.parametrize("media", ["text", "image", "video", "video_metadata"])
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
 @pytest.mark.parametrize("num_assistant_tokens", [1, 4])
 @pytest.mark.parametrize("strategy", ["prompt_lookup", "mtp"])
 def test_qwen35_vlm_verifier_cache_contract(
-    qwen35_mtp_model_path, media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
+    mtp_model_path, media, enable_prefix_caching, num_assistant_tokens, strategy, monkeypatch, capfd
 ):
-    model_path = qwen35_mtp_model_path
+    model_path = mtp_model_path
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
     scheduler = SchedulerConfig()
     scheduler.enable_prefix_caching = False

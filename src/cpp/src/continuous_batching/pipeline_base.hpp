@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <memory>
+#include <utility>
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embeddings_registry.hpp"
@@ -17,6 +20,20 @@ namespace ov::genai {
 enum class ModelInputType {
     TOKENS,
     EMBEDDINGS
+};
+
+/// @brief Abandon a thinker -> talker bridge still owned by the current generate() scope. Once
+/// ownership is transferred to a decode loop, that loop becomes responsible for ending the bridge.
+struct PendingOmniStreamerGuard {
+    std::shared_ptr<OmniStreamerBase>& slot;
+    ~PendingOmniStreamerGuard() noexcept {
+        if (auto unconsumed = std::exchange(slot, nullptr)) {
+            try {
+                unconsumed->abandon();
+            } catch (...) {
+            }
+        }
+    }
 };
 
 
@@ -76,6 +93,9 @@ protected:
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 
 protected:
+    virtual bool requires_prompt_ids_for_generation() const {
+        return false;
+    }
     virtual void prepare_inputs_embedder(const GenerationConfig& sampling_params) const;
     virtual std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
         std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const;
@@ -165,7 +185,7 @@ public:
     virtual void step() = 0;
 
     /**
-     * Performs monolitic generation based on encoded prompts
+     * Performs monolithic generation based on encoded prompts
      */
     virtual std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
@@ -175,8 +195,19 @@ public:
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) = 0;
 
+    /// @brief Low-level generation with a thinker -> talker bridge. Backends that do not support
+    ///        bridge streaming reject it; the plain continuous batching implementation overrides it.
+    virtual std::vector<EncodedGenerationResult> generate_with_omni_streamer(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt);
+
     /**
-     * Performs monolitic generation based on text prompts
+     * Performs monolithic generation based on text prompts
      */
     std::vector<GenerationResult> generate(
         const std::vector<std::string>& prompts,
@@ -216,10 +247,22 @@ public:
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer,
-        std::vector<EncodedGenerationResult>* encoded_results_out = nullptr);
+        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
+    );
+
+    std::vector<VLMDecodedResults> generate_with_encoded_results(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer,
+        std::vector<EncodedGenerationResult>* encoded_results_out);
 
     /**
-     * Performs monolitic generation based on ChatHistory objects
+     * Performs monolithic generation based on ChatHistory objects
      */
     std::vector<GenerationResult> generate(
         const std::vector<ChatHistory>& histories,
@@ -259,7 +302,19 @@ public:
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer,
-        std::vector<EncodedGenerationResult>* encoded_results_out = nullptr);
+        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
+    );
+
+    std::vector<VLMDecodedResults> generate_with_encoded_results(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer,
+        std::vector<EncodedGenerationResult>* encoded_results_out);
 
     /**
      * Starts chat with a given system prompt

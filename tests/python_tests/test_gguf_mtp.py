@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Exercise embedded Qwen3.5 GGUF MTP without downloading model weights."""
+"""Exercise GGUF MTP conversion and pipeline constraints without downloading weights."""
 
 import numpy as np
 import pytest
@@ -92,20 +92,6 @@ def plain_gguf(tmp_path_factory):
     return write_qwen35_gguf(tmp_path_factory.mktemp("gguf_plain") / "model.gguf", mtp=False)
 
 
-class TokenCollector(genai.StreamerBase):
-    def __init__(self, status=genai.StreamingStatus.RUNNING):
-        super().__init__()
-        self.tokens = []
-        self.status = status
-
-    def write(self, tokens):
-        self.tokens.extend([tokens] if isinstance(tokens, int) else tokens)
-        return self.status
-
-    def end(self):
-        pass
-
-
 DEVICE_PROPERTIES = dict(INFERENCE_PRECISION_HINT="f32", DYNAMIC_QUANTIZATION_GROUP_SIZE=0, INFERENCE_NUM_THREADS=2)
 
 
@@ -118,184 +104,27 @@ def make_scheduler():
     return scheduler
 
 
-@pytest.fixture(scope="module")
-def pipelines(mtp_gguf):
-    scheduler = make_scheduler()
-    properties = dict(GGUF_READER="FRONTEND", **DEVICE_PROPERTIES)
-    plain = genai.LLMPipeline(mtp_gguf, "CPU", scheduler_config=scheduler, **properties)
-    draft = genai.draft_model(mtp_gguf, "CPU", **properties)
-    mtp = genai.LLMPipeline(mtp_gguf, "CPU", scheduler_config=scheduler, draft_model=draft, **properties)
-    return plain, mtp
-
-
-@pytest.mark.parametrize("candidates", [1, 2])
-def test_gguf_mtp_matches_greedy_target_and_resets(pipelines, candidates):
-    plain, mtp = pipelines
-    for prompt in ("a b c", "c b a " * 12, "a b c"):
-        expected, actual = TokenCollector(), TokenCollector()
-        config = dict(max_new_tokens=12, ignore_eos=True, apply_chat_template=False)
-        plain.generate(prompt, streamer=expected, **config)
-        mtp.generate(prompt, streamer=actual, num_assistant_tokens=candidates, **config)
-        assert len(actual.tokens) == 12
-        assert actual.tokens == expected.tokens
-
-
-def test_gguf_mtp_token_input_matches_target(pipelines):
-    plain, mtp = pipelines
-    input_ids = plain.get_tokenizer().encode("c b a " * 12, add_special_tokens=False).input_ids
-    config = dict(max_new_tokens=12, ignore_eos=True, apply_chat_template=False)
-    expected = plain.generate(input_ids, **config)
-    actual = mtp.generate(input_ids, num_assistant_tokens=2, **config)
-    assert len(actual.tokens[0]) == 12
-    assert actual.tokens == expected.tokens
-
-
-@pytest.mark.parametrize("status", [genai.StreamingStatus.STOP, genai.StreamingStatus.CANCEL])
-def test_gguf_mtp_streaming_terminal_status(pipelines, status):
-    _, mtp = pipelines
-    stream = TokenCollector(status)
-    mtp.generate(
-        "a b c", max_new_tokens=12, ignore_eos=True, apply_chat_template=False, num_assistant_tokens=2, streamer=stream
-    )
-    assert stream.tokens
-    resumed = TokenCollector()
-    mtp.generate(
-        "a b c", max_new_tokens=3, ignore_eos=True, apply_chat_template=False, num_assistant_tokens=2, streamer=resumed
-    )
-    assert len(resumed.tokens) == 3
-
-
 def test_gguf_mtp_rejects_legacy_reader(mtp_gguf):
     with pytest.raises(RuntimeError, match='requires? GGUF_READER="FRONTEND"'):
         genai.draft_model(mtp_gguf, "CPU", GGUF_READER="LEGACY")
 
 
-def test_gguf_mtp_chat_matches_target(pipelines):
-    plain, mtp = pipelines
-    for pipeline in (plain, mtp):
-        pipeline.start_chat()
-    try:
-        for prompt in ("a b c", "c b a"):
-            expected, actual = TokenCollector(), TokenCollector()
-            config = dict(max_new_tokens=8, ignore_eos=True)
-            plain.generate(prompt, streamer=expected, **config)
-            mtp.generate(prompt, streamer=actual, num_assistant_tokens=2, **config)
-            assert actual.tokens == expected.tokens
-    finally:
-        for pipeline in (plain, mtp):
-            pipeline.finish_chat()
+def test_gguf_mtp_draft_loads(mtp_gguf):
+    assert genai.draft_model(mtp_gguf, "CPU", GGUF_READER="FRONTEND", **DEVICE_PROPERTIES) is not None
 
 
-@pytest.mark.parametrize(
-    "status",
-    [
-        genai.StreamingStatus.RUNNING,
-        genai.StreamingStatus.STOP,
-        genai.StreamingStatus.CANCEL,
-    ],
-)
-def test_gguf_mtp_continuous_batching_preserves_status(mtp_gguf, status):
-    properties = dict(
-        GGUF_READER="FRONTEND",
-        INFERENCE_PRECISION_HINT="f32",
-        DYNAMIC_QUANTIZATION_GROUP_SIZE=0,
-        INFERENCE_NUM_THREADS=2,
-    )
-    draft = genai.draft_model(mtp_gguf, "CPU", **properties)
-    scheduler = genai.SchedulerConfig()
-    scheduler.num_kv_blocks = 32
-    scheduler.enable_prefix_caching = False
-    pipeline = genai.ContinuousBatchingPipeline(mtp_gguf, scheduler, "CPU", {"draft_model": draft, **properties})
-    config = genai.GenerationConfig(
-        max_new_tokens=8, ignore_eos=True, num_assistant_tokens=2, apply_chat_template=False
-    )
-    results = pipeline.generate(["a b c"], [config], TokenCollector(status))
-    expected = {
-        genai.StreamingStatus.RUNNING: genai.GenerationStatus.FINISHED,
-        genai.StreamingStatus.STOP: genai.GenerationStatus.STOP,
-        genai.StreamingStatus.CANCEL: genai.GenerationStatus.CANCEL,
-    }
-    assert results[0].m_request_id == 0
-    assert results[0].m_status == expected[status]
-
-
-def test_gguf_mtp_chat_history_matches_target(pipelines):
-    plain, mtp = pipelines
-    histories = [genai.ChatHistory(), genai.ChatHistory()]
-    for prompt in ("a b c", "c b a"):
-        for history in histories:
-            history.append({"role": "user", "content": prompt})
-        expected, actual = TokenCollector(), TokenCollector()
-        config = dict(max_new_tokens=8, ignore_eos=True)
-        reference = plain.generate(histories[0], streamer=expected, **config)
-        result = mtp.generate(histories[1], streamer=actual, num_assistant_tokens=2, **config)
-        assert actual.tokens == expected.tokens
-        histories[0].append({"role": "assistant", "content": reference.texts[0]})
-        histories[1].append({"role": "assistant", "content": result.texts[0]})
-
-
-def generate_tokens(pipeline, prompt, **config):
-    collector = TokenCollector()
-    result = pipeline.generate(
-        [prompt], streamer=collector, max_new_tokens=12, ignore_eos=True, apply_chat_template=False, **config
-    )
-    return collector.tokens, result
-
-
-@pytest.mark.parametrize("with_scheduler", [True, False])
-def test_gguf_speculative_type_mtp_uses_embedded_draft(pipelines, mtp_gguf, with_scheduler):
-    plain, _ = pipelines
-    scheduler = dict(scheduler_config=make_scheduler()) if with_scheduler else {}
-    mtp = genai.LLMPipeline(mtp_gguf, "CPU", speculative_type="mtp", **scheduler, **DEVICE_PROPERTIES)
-    for prompt in ("a b c", "c b a " * 12):
-        expected, _ = generate_tokens(plain, prompt)
-        actual, result = generate_tokens(mtp, prompt)
-        assert actual == expected
-        assert type(result.extended_perf_metrics).__name__ == "SDPerModelsPerfMetrics"
-
-
-def test_gguf_draft_model_path_detects_mtp(pipelines, mtp_gguf):
-    plain, _ = pipelines
-    mtp = genai.LLMPipeline(
-        mtp_gguf, "CPU", scheduler_config=make_scheduler(), draft_model_path=mtp_gguf, **DEVICE_PROPERTIES
-    )
-    expected, _ = generate_tokens(plain, "a b c")
-    actual, _ = generate_tokens(mtp, "a b c", num_assistant_tokens=2)
-    assert actual == expected
-
-
-def test_gguf_mtp_accepts_separate_draft_for_plain_target(plain_gguf, mtp_gguf):
-    properties = dict(GGUF_READER="FRONTEND", **DEVICE_PROPERTIES)
-    plain = genai.LLMPipeline(plain_gguf, "CPU", scheduler_config=make_scheduler(), **properties)
-    mtp = genai.LLMPipeline(
-        plain_gguf, "CPU", scheduler_config=make_scheduler(), draft_model_path=mtp_gguf, **properties
-    )
-    expected, _ = generate_tokens(plain, "a b c")
-    actual, _ = generate_tokens(mtp, "a b c", num_assistant_tokens=2)
-    assert actual == expected
-
-
-def test_gguf_speculative_type_mtp_continuous_batching(pipelines, mtp_gguf):
-    plain, _ = pipelines
-    pipeline = genai.ContinuousBatchingPipeline(
-        mtp_gguf, make_scheduler(), "CPU", {"speculative_type": "mtp", **DEVICE_PROPERTIES}
-    )
-    config = genai.GenerationConfig(max_new_tokens=12, ignore_eos=True, apply_chat_template=False)
-    _, expected = generate_tokens(plain, "a b c")
-    assert pipeline.generate(["a b c"], [config])[0].m_generation_ids[0] == expected.texts[0]
+def test_gguf_mtp_checkpoint_loads_as_regular_target(mtp_gguf):
+    assert genai.LLMPipeline(mtp_gguf, "CPU", GGUF_READER="FRONTEND", **DEVICE_PROPERTIES) is not None
 
 
 @pytest.mark.parametrize(
     "properties, message",
     [
         (dict(speculative_type="eagle3"), "Unsupported speculative_type"),
-        (dict(speculative_type="mtp", GGUF_READER="LEGACY"), "GGUF_READER"),
-        (dict(draft_model_path="{model}", GGUF_READER="LEGACY"), "GGUF_READER"),
         (dict(speculative_type="mtp", prompt_lookup=True), "mutually exclusive"),
     ],
 )
 def test_gguf_speculative_type_rejects_invalid_requests(mtp_gguf, properties, message):
-    properties = {key: str(mtp_gguf) if value == "{model}" else value for key, value in properties.items()}
     with pytest.raises(RuntimeError, match=message):
         genai.LLMPipeline(mtp_gguf, "CPU", **properties)
 
@@ -306,10 +135,29 @@ def test_gguf_speculative_type_rejects_explicit_draft(mtp_gguf):
         genai.LLMPipeline(mtp_gguf, "CPU", speculative_type="mtp", draft_model=draft)
 
 
-def test_gguf_mtp_requires_nextn_layers(plain_gguf, mtp_gguf):
-    with pytest.raises(RuntimeError, match="requires MTP layers"):
-        genai.LLMPipeline(plain_gguf, "CPU", speculative_type="mtp")
-    with pytest.raises(RuntimeError, match="requires MTP layers"):
-        genai.LLMPipeline(mtp_gguf, "CPU", speculative_type="mtp", draft_model_path=plain_gguf)
+def test_gguf_mtp_requires_nextn_layers(plain_gguf):
     with pytest.raises(RuntimeError, match="must contain MTP layers"):
-        genai.LLMPipeline(mtp_gguf, "CPU", draft_model_path=plain_gguf)
+        genai.draft_model(plain_gguf, "CPU")
+
+
+@pytest.mark.parametrize("property_name", ["speculative_type", "draft_model_path"])
+def test_gguf_mtp_rejects_llm_pipeline(mtp_gguf, property_name):
+    with pytest.raises(RuntimeError, match="only by ContinuousBatchingPipeline"):
+        value = "mtp" if property_name == "speculative_type" else str(mtp_gguf)
+        genai.LLMPipeline(mtp_gguf, "CPU", **{property_name: value})
+
+
+def test_gguf_mtp_rejects_explicit_draft_in_llm_pipeline(mtp_gguf):
+    draft = genai.draft_model(mtp_gguf, "CPU", GGUF_READER="FRONTEND")
+    with pytest.raises(RuntimeError, match="only by ContinuousBatchingPipeline"):
+        genai.LLMPipeline(mtp_gguf, "CPU", draft_model=draft, GGUF_READER="FRONTEND")
+
+
+def test_gguf_mtp_rejects_raw_gguf_continuous_batching_target(mtp_gguf):
+    with pytest.raises(RuntimeError, match="converted VLM model directory"):
+        genai.ContinuousBatchingPipeline(
+            mtp_gguf,
+            make_scheduler(),
+            "CPU",
+            {"draft_model_path": str(mtp_gguf), "GGUF_READER": "FRONTEND", **DEVICE_PROPERTIES},
+        )

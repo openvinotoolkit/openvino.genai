@@ -12,6 +12,7 @@ import {
   VLMDecodedResults,
   OmniDecodedResults,
   ChatHistory,
+  SpeechOutputMode,
   StreamingStatus,
 } from "../dist/index.js";
 
@@ -87,6 +88,25 @@ describe("OmniPipeline", { skip: os.platform() === "darwin" }, () => {
     );
   });
 
+  it("should generate the same text and speech while text is still being generated", async () => {
+    const generate = (streamText2Speech) =>
+      pipeline.generate("Say hello.", {
+        textConfig: { max_new_tokens: 20, stream_text2speech: streamText2Speech },
+        talkerSpeechConfig: deterministicSpeechConfig,
+      });
+    const batch = await generate(false);
+    const streamed = await generate(true);
+
+    assert.ok(streamed instanceof OmniDecodedResults);
+    assert.deepStrictEqual(streamed.texts, batch.texts);
+    assert.strictEqual(streamed.speechResult.waveforms.length, 1);
+    assert.deepStrictEqual(
+      streamed.speechResult.waveforms[0].data,
+      batch.speechResult.waveforms[0].data,
+      "The talker must produce the same waveform from the thinker's output arriving step by step",
+    );
+  });
+
   it("should stream text and speech chunks", async () => {
     let textChunks = 0;
     let audioChunks = 0;
@@ -149,6 +169,31 @@ describe("OmniPipeline", { skip: os.platform() === "darwin" }, () => {
       /Another generation is already in progress/,
     );
     await activeGeneration;
+  });
+
+  for (const [field, value, message] of [
+    ["output_mode", SpeechOutputMode.SPEECH_ONLY, /output_mode applies to models/],
+    ["cp_repetition_penalty", 1.1, /cp_repetition_penalty applies to LFM3-Omni only/],
+  ]) {
+    it(`should reject ${field} for a model with a separate talker`, async () => {
+      await assert.rejects(
+        pipeline.generate("Hi", {
+          textConfig: { max_new_tokens: 4 },
+          talkerSpeechConfig: { ...deterministicSpeechConfig, [field]: value },
+        }),
+        message,
+      );
+    });
+  }
+
+  it("should reject a non-integer output_mode", async () => {
+    await assert.rejects(
+      pipeline.generate("Hi", {
+        textConfig: { max_new_tokens: 4 },
+        talkerSpeechConfig: { ...deterministicSpeechConfig, output_mode: 0.5 },
+      }),
+      /Invalid talkerSpeechConfig.output_mode: 0.5/,
+    );
   });
 
   it("should generate with ChatHistory", async () => {
