@@ -131,6 +131,18 @@ std::shared_ptr<ov::Model> make_eagle3_pattern_hidden_state_model() {
     return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input});
 }
 
+std::shared_ptr<ov::Model> make_dflash_draft_hidden_states_model(const ov::PartialShape& hidden_states_shape) {
+    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, hidden_states_shape);
+    hidden_states->set_friendly_name("hidden_states");
+    hidden_states->output(0).set_names({"hidden_states"});
+    const auto hidden_size = static_cast<size_t>(hidden_states_shape[2].get_length());
+    auto bias = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1, 1, hidden_size}, {1.0f});
+    auto consumer = std::make_shared<ov::op::v1::Add>(hidden_states, bias);
+    consumer->set_friendly_name("draft_hidden_states_consumer");
+    auto result = std::make_shared<ov::op::v0::Result>(consumer);
+    return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{hidden_states});
+}
+
 size_t count_outputs_with_name(const std::shared_ptr<ov::Model>& model, const std::string& name) {
     size_t count = 0;
     for (const auto& output : model->outputs()) {
@@ -142,6 +154,27 @@ size_t count_outputs_with_name(const std::shared_ptr<ov::Model>& model, const st
 }
 
 }  // namespace
+
+TEST(DFlashModelTransforms, RejectsMarkedNonMatMulHeadWithoutChangingDraft) {
+    auto activation = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1, 2, 4});
+    auto weights = ov::op::v0::Constant::create(ov::element::f32, {}, {2.f});
+    auto head = std::make_shared<ov::op::v1::Multiply>(activation, weights);
+    head->get_rt_info()["gguf_lm_head"] = true;
+    auto target = std::make_shared<ov::Model>(ov::OutputVector{head}, ov::ParameterVector{activation});
+    auto draft = make_dflash_draft_hidden_states_model(ov::Shape{1, 2, 4});
+    auto result = draft->get_results().at(0);
+    result->output(0).set_names({"last_hidden_state"});
+    try {
+        ov::genai::utils::dflash::attach_target_lm_head_to_draft(target, draft);
+        FAIL() << "Non-MatMul LM head grafting must be rejected";
+    } catch (const ov::Exception& error) {
+        EXPECT_NE(std::string(error.what()).find("not supported for grafting"), std::string::npos);
+    }
+    EXPECT_EQ(draft->get_results().at(0), result);
+    EXPECT_EQ(draft->get_parameters().size(), 1u);
+    EXPECT_EQ(result->output(0).get_names().count("last_hidden_state"), 1u);
+    EXPECT_NO_THROW(draft->validate_nodes_and_infer_types());
+}
 
 TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
     auto model = make_annotated_stateful_sdpa_model();

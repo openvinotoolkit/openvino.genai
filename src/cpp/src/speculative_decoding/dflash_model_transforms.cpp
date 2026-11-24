@@ -590,7 +590,9 @@ void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model
     auto target_head = std::get<0>(ov::genai::utils::find_llm_matmul(main_model));
     auto target_matmul = ov::as_type_ptr<ov::op::v0::MatMul>(target_head);
     OPENVINO_ASSERT(target_matmul,
-                    "DFlash: could not locate the target lm_head MatMul to graft onto the draft.");
+                    "DFlash: grafting the target LM head requires a MatMul. "
+                    "Native GGUF/compressed LM heads are not supported for grafting; "
+                    "use a draft model that already exposes logits.");
 
     // Clone ONLY the weight side (input(1)); input(0) is the target activation and is not reused.
     // Cloning recursively carries any INT4 decompression subgraph intact.

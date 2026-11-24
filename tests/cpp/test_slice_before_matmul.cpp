@@ -127,6 +127,60 @@ std::shared_ptr<ov::Model> make_matmul_model_with_weights(const ov::PartialShape
 
 } // namespace
 
+TEST(LmHeadLocator, FrontendMarkerDoesNotDependOnOperationType) {
+    const ov::PartialShape shape{1, -1, 64};
+    for (const auto& [pattern, model] : {
+             std::pair{"direct", make_matmul_model(shape, 64, 64)},
+             std::pair{"add", make_matmul_add_model(shape, 64, 64)},
+             std::pair{"transpose", make_matmul_transpose_model(shape, 64, 64)},
+             std::pair{"softcap", make_matmul_div_tanh_mul_model(shape, 64, 64)},
+             std::pair{"scaled_softcap", make_matmul_mul_div_tanh_mul_model(shape, 64, 64)}}) {
+        SCOPED_TRACE(pattern);
+        auto original_head = std::get<0>(ov::genai::utils::find_llm_matmul(model));
+        ASSERT_TRUE(original_head);
+        auto scale = ov::op::v0::Constant::create(ov::element::f32, {}, {2.f});
+        auto head = std::make_shared<ov::op::v1::Multiply>(original_head->input_value(0), scale);
+        original_head->output(0).replace(head->output(0));
+        ASSERT_EQ(count_ops<ov::op::v0::MatMul>(model), 0u);
+        EXPECT_EQ(std::get<0>(ov::genai::utils::find_llm_matmul(model)), nullptr);
+        auto unmarked = model->clone();
+        ov::genai::utils::apply_slice_before_matmul_transformation(unmarked);
+        ov::genai::utils::apply_gather_before_matmul_transformation(unmarked);
+        EXPECT_EQ(count_ops<ov::op::v8::Slice>(unmarked), 0u);
+        EXPECT_EQ(count_ops<ov::op::v8::Gather>(unmarked), 0u);
+        EXPECT_EQ(unmarked->get_parameters().size(), 1u);
+
+        head->get_rt_info()["gguf_lm_head"] = true;
+        const int64_t expected_axis = std::string(pattern) == "transpose" ? 2 : 1;
+        EXPECT_EQ(std::get<0>(ov::genai::utils::find_llm_matmul(model)), head);
+        EXPECT_EQ(std::get<1>(ov::genai::utils::find_llm_matmul(model)), expected_axis);
+        auto sliced = model->clone();
+        auto sliced_head = std::get<0>(ov::genai::utils::find_llm_matmul(sliced));
+        ASSERT_TRUE(sliced_head);
+        const auto activation = sliced_head->input_value(0);
+        ov::genai::utils::apply_slice_before_matmul_transformation(sliced);
+        ASSERT_EQ(count_ops<ov::op::v8::Slice>(sliced), 1u);
+        auto slice = ov::as_type_ptr<ov::op::v8::Slice>(sliced_head->get_input_node_shared_ptr(0));
+        ASSERT_TRUE(slice);
+        EXPECT_EQ(slice->input_value(0), activation);
+        auto slice_axis = ov::as_type_ptr<ov::op::v0::Constant>(slice->get_input_node_shared_ptr(4));
+        ASSERT_TRUE(slice_axis);
+        EXPECT_EQ(slice_axis->cast_vector<int64_t>(), (std::vector<int64_t>{expected_axis}));
+
+        ov::genai::utils::apply_gather_before_matmul_transformation(model);
+        ASSERT_EQ(count_ops<ov::op::v8::Gather>(model), 1u);
+        auto gather = ov::as_type_ptr<ov::op::v8::Gather>(head->get_input_node_shared_ptr(0));
+        ASSERT_TRUE(gather);
+        EXPECT_EQ(gather->input_value(0), original_head->input_value(0));
+        auto gather_axis = ov::as_type_ptr<ov::op::v0::Constant>(gather->get_input_node_shared_ptr(2));
+        ASSERT_TRUE(gather_axis);
+        EXPECT_EQ(gather_axis->cast_vector<int64_t>(), (std::vector<int64_t>{expected_axis}));
+        ASSERT_EQ(model->get_parameters().size(), 2u);
+        EXPECT_EQ(gather->get_input_node_shared_ptr(1), model->get_parameters().back());
+        EXPECT_EQ(model->get_parameters().back()->get_friendly_name(), "sampled_tokens_indices");
+    }
+}
+
 // ===================== apply_slice_before_matmul_transformation =====================
 
 // Graph-level: all 4 supported patterns
