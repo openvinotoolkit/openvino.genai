@@ -145,7 +145,12 @@ std::shared_ptr<ov::Model> create_language_model(
 ov::frontend::gguf::ModelMap convert_gguf_with_frontend(ov::frontend::gguf::FrontEnd& frontend,
                                                         const std::string& model_path,
                                                         const ov::frontend::gguf::GenAIAdaptOptions& options) {
-    return ov::frontend::gguf::adapt_to_genai(frontend.convert(frontend.load(model_path)), options);
+    auto converted_model = frontend.convert(frontend.load(model_path));
+    OPENVINO_ASSERT(!converted_model->has_rt_info("gguf_mmproj"),
+                    "GGUF file '",
+                    model_path,
+                    "' is an mmproj and cannot be loaded as a language model.");
+    return ov::frontend::gguf::adapt_to_genai(converted_model, options);
 }
 
 std::shared_ptr<ov::Model> get_gguf_language_model(const ov::frontend::gguf::ModelMap& models,

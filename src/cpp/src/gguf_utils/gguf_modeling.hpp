@@ -14,8 +14,7 @@ class FrontEnd;
 
 /// \brief Load a .gguf file with the given GGUF frontend and adapt it to GenAI.
 ///
-/// Returns the named models from ov::frontend::gguf::adapt_to_genai, e.g. "language" for a
-/// decoder or the encoders of an mmproj file.
+/// Returns the named models from ov::frontend::gguf::adapt_to_genai for a decoder GGUF.
 ov::frontend::gguf::ModelMap convert_gguf_with_frontend(ov::frontend::gguf::FrontEnd& frontend,
                                                         const std::string& model_path,
                                                         const ov::frontend::gguf::GenAIAdaptOptions& options = {});
