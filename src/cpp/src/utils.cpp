@@ -13,6 +13,7 @@
 
 #include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/concat.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/multiply.hpp"
@@ -336,6 +337,9 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
         }
     }
     auto last_node = logits_output.get_node()->input_value(0).get_node_shared_ptr();
+    if (ov::as_type_ptr<ov::op::v0::Concat>(last_node) &&
+        last_node->get_rt_info().count(gguf_utils::LOGITS_VOCAB_EXTENSION))
+        last_node = last_node->input_value(0).get_node_shared_ptr();
     std::shared_ptr<ov::Node> matmul = ov::as_type_ptr<ov::op::v0::MatMul>(last_node);
 
     // in case of PA all tokens are moved to batch dimension and we have to slice / gather accordingly

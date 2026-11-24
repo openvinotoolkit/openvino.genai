@@ -103,6 +103,7 @@ void extend_gguf_language_logits_for_token(const std::shared_ptr<ov::Model>& mod
         {-std::numeric_limits<float>::infinity()});
     const auto fill = std::make_shared<ov::op::v3::Broadcast>(fill_value, fill_shape);
     const auto extended_logits = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{logits, fill}, 2);
+    extended_logits->get_rt_info()[gguf_utils::LOGITS_VOCAB_EXTENSION] = true;
     result->input(0).replace_source_output(extended_logits);
     model->validate_nodes_and_infer_types();
 }

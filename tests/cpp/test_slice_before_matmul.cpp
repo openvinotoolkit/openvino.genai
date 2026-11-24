@@ -5,6 +5,7 @@
 
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/concat.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/slice.hpp"
@@ -260,6 +261,18 @@ TEST(GatherBeforeMatmul, AllPatterns) {
 TEST(GatherBeforeMatmul, NonConstantTransposeOrderThrows) {
     auto model = make_matmul_dynamic_transpose_model(ov::PartialShape{1, -1, 64}, 64, 128);
     ASSERT_THROW(ov::genai::utils::apply_gather_before_matmul_transformation(model), ov::Exception);
+}
+
+TEST(GatherBeforeMatmul, DoesNotTraverseUnmarkedLogitsConcat) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 2});
+    auto weights = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{2, 4}, 1.f);
+    auto head = std::make_shared<ov::op::v0::MatMul>(input, weights);
+    auto concat = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{head, head}, 2);
+    auto model = std::make_shared<ov::Model>(ov::OutputVector{concat}, ov::ParameterVector{input});
+    ov::genai::utils::apply_slice_before_matmul_transformation(model);
+    ov::genai::utils::apply_gather_before_matmul_transformation(model);
+    EXPECT_EQ(head->input_value(0).get_node_shared_ptr(), input);
+    EXPECT_EQ(model->get_parameters().size(), 1);
 }
 
 // Inference: gathered output for specific indices matches corresponding tokens in full output

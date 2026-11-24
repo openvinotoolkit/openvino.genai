@@ -15,6 +15,7 @@
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "sampling/sampler.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
+#include "utils.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/llava/classes.hpp"
 
@@ -550,6 +551,71 @@ TEST(GGUFMultimodal, SyntheticImageTokenGetsUnselectableLanguageLogit) {
 
     EXPECT_NO_THROW(extend_gguf_language_logits_for_token(model, 32));
     EXPECT_THROW(extend_gguf_language_logits_for_token(model, 34), ov::Exception);
+}
+
+TEST(GGUFMultimodal, SyntheticImageLogitsPreserveHeadRowSelection) {
+    using namespace ov::genai;
+    using namespace ov::opset15;
+
+    for (bool softcap : {false, true}) {
+        for (bool gather : {false, true}) {
+            SCOPED_TRACE(::testing::Message() << "softcap=" << softcap << ", gather=" << gather);
+            auto input = std::make_shared<Parameter>(ov::element::f32, ov::PartialShape{1, -1, 2});
+            input->output(0).set_names({"input"});
+            auto weights = Constant::create(ov::element::f32, {2, 4}, {1.f, 2.f, 3.f, 4.f, 2.f, 3.f, 4.f, 5.f});
+            auto head = std::make_shared<MatMul>(input, weights);
+            std::shared_ptr<ov::Node> logits = head;
+            if (softcap) {
+                auto scale = Constant::create(ov::element::f32, {}, {2.f});
+                logits = std::make_shared<Multiply>(std::make_shared<Tanh>(std::make_shared<Divide>(head, scale)), scale);
+            }
+            auto model = std::make_shared<ov::Model>(ov::OutputVector{logits}, ov::ParameterVector{input});
+            extend_gguf_language_logits_for_token(model, 4);
+            auto transformed = model->clone();
+
+            ov::Core core;
+            auto reference = core.compile_model(model, "CPU").create_infer_request();
+            ov::Tensor input_data(ov::element::f32, {1, 3, 2});
+            const std::vector<float> values{1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
+            std::copy(values.begin(), values.end(), input_data.data<float>());
+            reference.set_tensor("input", input_data);
+            reference.infer();
+            const auto reference_logits = reference.get_output_tensor();
+            ASSERT_EQ(reference_logits.get_shape(), (ov::Shape{1, 3, 5}));
+
+            if (gather)
+                utils::apply_gather_before_matmul_transformation(transformed);
+            else
+                utils::apply_slice_before_matmul_transformation(transformed);
+            const auto selected_head = std::get<0>(utils::find_llm_matmul(transformed));
+            ASSERT_TRUE(selected_head);
+            const auto head_input = selected_head->input_value(0).get_node_shared_ptr();
+            if (gather)
+                ASSERT_TRUE(ov::as_type_ptr<Gather>(head_input));
+            else
+                ASSERT_TRUE(ov::as_type_ptr<Slice>(head_input));
+
+            auto request = core.compile_model(transformed, "CPU").create_infer_request();
+            request.set_tensor("input", input_data);
+            const std::vector<int64_t> rows = gather ? std::vector<int64_t>{0, 2} : std::vector<int64_t>{2};
+            if (gather) {
+                ov::Tensor indices(ov::element::i64, {rows.size()});
+                std::copy(rows.begin(), rows.end(), indices.data<int64_t>());
+                request.set_tensor("sampled_tokens_indices", indices);
+            }
+            request.infer();
+            const auto selected_logits = request.get_output_tensor();
+            ASSERT_EQ(selected_logits.get_shape(), (ov::Shape{1, rows.size(), 5}));
+            for (size_t row = 0; row < rows.size(); ++row) {
+                for (size_t token = 0; token < 4; ++token)
+                    EXPECT_NEAR(selected_logits.data<const float>()[row * 5 + token],
+                                reference_logits.data<const float>()[rows[row] * 5 + token],
+                                1e-5f);
+                const float image_logit = selected_logits.data<const float>()[row * 5 + 4];
+                EXPECT_TRUE(std::isinf(image_logit) && image_logit < 0.f);
+            }
+        }
+    }
 }
 
 TEST(GGUFMultimodal, ClipRequiresCompatibleLanguageInputs) {

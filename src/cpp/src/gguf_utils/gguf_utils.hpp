@@ -18,6 +18,8 @@ extern const std::string LEGACY_GGUF_READER;
 
 namespace gguf_utils {
 
+inline constexpr char LOGITS_VOCAB_EXTENSION[] = "genai_logits_vocab_extension";
+
 struct GGUFProperties {
     ov::AnyMap rest;
     bool enable_save_ov_model = false;
