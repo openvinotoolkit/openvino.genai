@@ -557,6 +557,11 @@ For such models, audio longer than a single chunk is split into chunks, and all 
 Batching reduces the total transcription time, but peak memory consumption grows with the audio duration.
 On memory-constrained devices, split long audio into shorter parts and call `generate()` for each part.
 
+Voxtral Realtime models exported as separate `audio_encoder`, `text_embeddings` and `text_decoder` directories run the text decoder with the `PA` attention backend, the only backend supported for this export.
+Decoding steps of streaming sessions and `generate()` calls that run concurrently on one pipeline are batched, and KV-cache blocks that leave the sliding window of the text decoder are reused.
+The audio encoder runs separately for every stream.
+`SchedulerConfig::cache_size` or `num_kv_blocks` limit the KV cache shared by the streams; by default it grows on demand.
+
 The forced aligner is also available as a standalone `ASRForcedAligner` class, usable independently of `ASRPipeline`.
 
 <LanguageTabs>

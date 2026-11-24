@@ -8,6 +8,8 @@
 #include <chrono>
 #include <cstdint>
 #include <fstream>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <set>
@@ -16,6 +18,7 @@
 #include <vector>
 
 #include "automatic_speech_recognition/models/voxtral-realtime/cache_utils.hpp"
+#include "automatic_speech_recognition/models/voxtral-realtime/paged_text_decoder.hpp"
 #include "utils.hpp"
 #include "whisper/feature_extractor.hpp"
 
@@ -256,13 +259,18 @@ struct VoxtralRealtimeRuntime {
     WhisperFeatureExtractor feature_extractor;
     std::vector<std::string> tekken_pieces;
     ov::CompiledModel audio_encoder;
+    // Encoder-decoder export.
     ov::CompiledModel text_decoder;
+    // Split export.
+    ov::CompiledModel text_embeddings;
+    std::shared_ptr<voxtral_realtime::PagedTextDecoder> paged_text_decoder;
     bool profiling_enabled = false;
     std::map<std::string, std::string> broadcast_shapes;
 
     VoxtralRealtimeRuntime(const std::filesystem::path& models_path,
                            const std::string& device,
-                           const ov::AnyMap& properties)
+                           const ov::AnyMap& properties,
+                           const VoxtralExport model_export)
         : config{load_config(models_path)},
           feature_extractor{config.feature_size,
                             config.sampling_rate,
@@ -275,10 +283,31 @@ struct VoxtralRealtimeRuntime {
         const auto profiling = device_properties.find(ov::enable_profiling.name());
         profiling_enabled = profiling != device_properties.end() && profiling->second.as<bool>();
         ov::Core core = utils::singleton_core();
-        audio_encoder = core.compile_model(models_path / "openvino_audio_encoder.xml", device, device_properties);
-        text_decoder = core.compile_model(models_path / "openvino_text_decoder.xml", device, device_properties);
+        if (model_export == VoxtralExport::SPLIT) {
+            const auto [plugin_properties, scheduler_config] =
+                utils::extract_scheduler_config(device_properties, utils::get_latency_oriented_scheduler_config());
+            audio_encoder =
+                core.compile_model(models_path / "audio_encoder" / "openvino_model.xml", device, plugin_properties);
+            text_embeddings =
+                core.compile_model(models_path / "text_embeddings" / "openvino_model.xml", device, plugin_properties);
+            paged_text_decoder =
+                std::make_shared<voxtral_realtime::PagedTextDecoder>(core.read_model(models_path / "text_decoder" /
+                                                                                     "openvino_model.xml"),
+                                                                     device,
+                                                                     plugin_properties,
+                                                                     scheduler_config,
+                                                                     config.text_num_layers,
+                                                                     config.text_sliding_window,
+                                                                     config.num_delay_tokens);
+        } else {
+            audio_encoder = core.compile_model(models_path / "openvino_audio_encoder.xml", device, device_properties);
+            text_decoder = core.compile_model(models_path / "openvino_text_decoder.xml", device, device_properties);
+        }
         if (profiling_enabled) {
             for (const std::string component : {"audio", "text"}) {
+                // Paged text decoder infer request is shared by the streams, so it isn't profiled per stream.
+                if (component == "text" && paged_text_decoder)
+                    continue;
                 const auto model = (component == "audio" ? audio_encoder : text_decoder).get_runtime_model();
                 for (const auto& node : model->get_ops()) {
                     const auto& rt_info = node->get_rt_info();
@@ -327,8 +356,7 @@ public:
         : ASRStreamImplBase{MAX_QUEUED_AUDIO_FRAMES, load_time_ms},
           m_runtime{runtime},
           m_generation_config{resolve_generation_config(runtime->config, default_config, generation_config)},
-          m_audio_request{runtime->audio_encoder.create_infer_request()},
-          m_text_request{runtime->text_decoder.create_infer_request()} {
+          m_audio_request{runtime->audio_encoder.create_infer_request()} {
         const auto& config = m_runtime->config;
         m_stop_token_ids = m_generation_config.stop_token_ids;
         m_conv1_cache = make_float_tensor({1, config.feature_size, 2});
@@ -339,6 +367,13 @@ public:
                 make_float_tensor({1, config.audio_num_heads, 0, config.audio_head_dim}),
                 make_float_tensor({1, config.audio_num_heads, 0, config.audio_head_dim}));
         }
+        if (m_runtime->paged_text_decoder) {
+            m_text_embeddings_request = m_runtime->text_embeddings.create_infer_request();
+            m_paged_text_stream = m_runtime->paged_text_decoder->create_stream();
+            m_inputs_embeds = ov::Tensor{ov::element::f32, ov::Shape{0, 0}};
+            return;
+        }
+        m_text_request = m_runtime->text_decoder.create_infer_request();
         m_text_key_values.reserve(config.text_num_layers);
         for (size_t layer = 0; layer < config.text_num_layers; ++layer) {
             m_text_key_values.emplace_back(
@@ -397,6 +432,7 @@ private:
     std::string process_audio(const std::vector<float>& audio_frame) override {
         if (m_generation_done)
             return {};
+        const auto active_scope = activate_paged_text_stream();
         m_audio_buffer.insert(m_audio_buffer.end(), audio_frame.begin(), audio_frame.end());
         std::string emitted;
         size_t consumed_samples = 0;
@@ -433,6 +469,7 @@ private:
         if (m_generation_done) {
             return flush_pending_utf8();
         }
+        const auto active_scope = activate_paged_text_stream();
         if (!m_prefill_done && !m_audio_buffer.empty()) {
             const size_t first_chunk_overlap = m_runtime->config.n_fft - m_runtime->config.hop_length;
             OPENVINO_ASSERT(m_runtime->config.first_chunk_samples >= first_chunk_overlap,
@@ -522,7 +559,6 @@ private:
     std::string process_chunk(const std::vector<float>& samples, const bool is_first_chunk) {
         ov::Tensor audio_embeddings = run_audio_encoder(samples, is_first_chunk);
         const size_t sequence_length = audio_embeddings.get_shape()[1];
-        const size_t past_length = is_first_chunk ? 0 : m_text_key_values.front().first.get_shape()[2];
         const std::vector<int64_t> input_ids = is_first_chunk ? build_initial_prompt() : std::vector<int64_t>{m_last_token};
         OPENVINO_ASSERT(input_ids.size() == sequence_length,
                         "Voxtral audio/text alignment mismatch: ",
@@ -530,7 +566,41 @@ private:
                         " audio embeddings for ",
                         input_ids.size(),
                         " text positions.");
+        const TimePoint token_time = m_paged_text_stream ? run_paged_text_decoder(input_ids, audio_embeddings)
+                                                         : run_text_decoder(input_ids, audio_embeddings, is_first_chunk);
+        ++m_generated_tokens;
+        m_perf_metrics.raw_metrics.m_new_token_times.emplace_back(token_time);
+        m_perf_metrics.raw_metrics.m_batch_sizes.emplace_back(1);
+        if (is_first_chunk)
+            m_prefill_done = true;
+        const bool is_stop_token = m_stop_token_ids.count(m_last_token) > 0;
+        if (is_stop_token || m_generated_tokens >= m_generation_config.max_new_tokens) {
+            m_generation_done = true;
+            stop_generation();
+        }
+        const TimePoint detokenization_start_time = std::chrono::steady_clock::now();
+        if (is_stop_token) {
+            PerfMetrics::emplace_duration(m_perf_metrics.raw_metrics.detokenization_durations,
+                                          detokenization_start_time);
+            return {};
+        }
+        std::string emitted = append_token_bytes(m_runtime->decode_token(m_last_token));
+        PerfMetrics::emplace_duration(m_perf_metrics.raw_metrics.detokenization_durations,
+                                      detokenization_start_time);
+        return emitted;
+    }
 
+    /// Split export: decode every chunk of this call in one batch with the chunks of concurrent streams.
+    voxtral_realtime::PagedTextDecoder::Stream::ActiveScope activate_paged_text_stream() {
+        return m_paged_text_stream ? m_paged_text_stream->activate() : nullptr;
+    }
+
+    /// Encoder-decoder export: decode input_ids aligned with audio_embeddings. Returns the time m_last_token was got.
+    TimePoint run_text_decoder(const std::vector<int64_t>& input_ids,
+                               const ov::Tensor& audio_embeddings,
+                               const bool is_first_chunk) {
+        const size_t sequence_length = audio_embeddings.get_shape()[1];
+        const size_t past_length = is_first_chunk ? 0 : m_text_key_values.front().first.get_shape()[2];
         ov::Tensor input_ids_tensor = make_i64_tensor(input_ids);
         ov::Tensor attention_mask(ov::element::i64, {1, past_length + sequence_length});
         std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), int64_t{1});
@@ -588,26 +658,48 @@ private:
         m_kv_cache_size_bytes.store(voxtral_realtime::get_kv_cache_size(m_audio_key_values) +
                                         voxtral_realtime::get_kv_cache_size(m_text_key_values),
                                     std::memory_order_relaxed);
-        ++m_generated_tokens;
-        m_perf_metrics.raw_metrics.m_new_token_times.emplace_back(token_time);
-        m_perf_metrics.raw_metrics.m_batch_sizes.emplace_back(1);
-        if (is_first_chunk)
-            m_prefill_done = true;
-        const bool is_stop_token = m_stop_token_ids.count(m_last_token) > 0;
-        if (is_stop_token || m_generated_tokens >= m_generation_config.max_new_tokens) {
-            m_generation_done = true;
-            stop_generation();
+        return token_time;
+    }
+
+    /// Split export: embed input_ids, add the aligned audio_embeddings and decode the sums on PagedAttention backend,
+    /// in one batch with the positions other streams submit meanwhile. Returns the time m_last_token was got.
+    TimePoint run_paged_text_decoder(const std::vector<int64_t>& input_ids, const ov::Tensor& audio_embeddings) {
+        const TimePoint embeddings_start_time = std::chrono::steady_clock::now();
+        m_text_embeddings_request.set_input_tensor(make_i64_tensor(input_ids));
+        m_text_embeddings_request.infer();
+        const ov::Tensor text_embeddings = m_text_embeddings_request.get_output_tensor();
+        // [1, positions, hidden_size]
+        const ov::Shape& shape = audio_embeddings.get_shape();
+        OPENVINO_ASSERT(text_embeddings.get_shape() == shape &&
+                            text_embeddings.get_element_type() == ov::element::f32 &&
+                            audio_embeddings.get_element_type() == ov::element::f32,
+                        "Voxtral text and audio embeddings must be f32 tensors of the same shape.");
+        m_inputs_embeds.set_shape({shape[1], shape[2]});
+        std::transform(text_embeddings.data<const float>(),
+                       text_embeddings.data<const float>() + text_embeddings.get_size(),
+                       audio_embeddings.data<const float>(),
+                       m_inputs_embeds.data<float>(),
+                       std::plus<float>{});
+        const MicroSeconds embeddings_duration{
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - embeddings_start_time)};
+
+        const voxtral_realtime::TextDecoderStepResult step = m_paged_text_stream->decode(m_inputs_embeds);
+        m_last_token = step.token_id;
+        const MicroSeconds infer_duration = embeddings_duration + step.inference_duration;
+        m_perf_metrics.asr_raw_metrics.decode_inference_durations.emplace_back(infer_duration);
+        m_perf_metrics.raw_metrics.m_inference_durations[0] += infer_duration;
+        m_perf_metrics.raw_metrics.m_sampling_durations.emplace_back(step.sampling_duration);
+        m_perf_metrics.raw_metrics.m_token_infer_durations.emplace_back(infer_duration);
+        {
+            const std::lock_guard<std::mutex> lock{m_stage_durations_mutex};
+            m_stage_durations.at("text_inference") += std::chrono::duration<double, std::milli>(infer_duration).count();
+            m_audio_window_size = m_audio_key_values.front().first.get_shape()[2];
+            m_text_window_size = m_paged_text_stream->get_window_size();
         }
-        const TimePoint detokenization_start_time = std::chrono::steady_clock::now();
-        if (is_stop_token) {
-            PerfMetrics::emplace_duration(m_perf_metrics.raw_metrics.detokenization_durations,
-                                          detokenization_start_time);
-            return {};
-        }
-        std::string emitted = append_token_bytes(m_runtime->decode_token(m_last_token));
-        PerfMetrics::emplace_duration(m_perf_metrics.raw_metrics.detokenization_durations,
-                                      detokenization_start_time);
-        return emitted;
+        m_kv_cache_size_bytes.store(voxtral_realtime::get_kv_cache_size(m_audio_key_values) +
+                                        m_paged_text_stream->get_kv_cache_size(),
+                                    std::memory_order_relaxed);
+        return step.token_time;
     }
 
     std::string append_token_bytes(const std::string& token_bytes) {
@@ -630,7 +722,12 @@ private:
     ASRGenerationConfig m_generation_config;
     std::set<int64_t> m_stop_token_ids;
     ov::InferRequest m_audio_request;
+    // Encoder-decoder export.
     ov::InferRequest m_text_request;
+    // Split export.
+    ov::InferRequest m_text_embeddings_request;
+    std::unique_ptr<voxtral_realtime::PagedTextDecoder::Stream> m_paged_text_stream;
+    ov::Tensor m_inputs_embeds;
     ov::Tensor m_conv1_cache;
     ov::Tensor m_conv2_cache;
     std::vector<std::pair<ov::Tensor, ov::Tensor>> m_audio_key_values;
@@ -655,9 +752,10 @@ private:
 
 VoxtralASR::VoxtralASR(const std::filesystem::path& models_path,
                        const std::string& device,
-                       const ov::AnyMap& properties)
+                       const ov::AnyMap& properties,
+                       const VoxtralExport model_export)
     : ASRPipelineImplBase(models_path),
-      m_runtime{std::make_shared<VoxtralRealtimeRuntime>(models_path, device, properties)} {}
+      m_runtime{std::make_shared<VoxtralRealtimeRuntime>(models_path, device, properties, model_export)} {}
 
 ASRDecodedResults VoxtralASR::generate(const AudiosView& audios,
                                        const std::optional<ASRGenerationConfig>& generation_config,
@@ -681,6 +779,19 @@ std::unique_ptr<ASRStreamingSessionImpl> VoxtralASR::create_streaming_session_im
     return std::make_unique<ASRStreamingIncrementalSessionImpl>(
         create_stream(generation_config),
         static_cast<size_t>(streaming_config.chunk_size_sec * m_runtime->config.sampling_rate));
+}
+
+std::unique_ptr<ASRPipelineImplBase> create_voxtral_split_pipeline(const std::filesystem::path& models_path,
+                                                                   const std::string& device,
+                                                                   const ov::AnyMap& properties) {
+    const auto [properties_without_backend, attention_backend] = utils::extract_attention_backend(properties);
+    OPENVINO_ASSERT(attention_backend == PA_BACKEND,
+                    "Voxtral split export supports only '",
+                    PA_BACKEND,
+                    "' attention backend, got '",
+                    attention_backend,
+                    "'");
+    return std::make_unique<VoxtralASR>(models_path, device, properties_without_backend, VoxtralExport::SPLIT);
 }
 
 }  // namespace ov::genai

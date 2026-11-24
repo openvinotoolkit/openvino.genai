@@ -49,7 +49,12 @@ bool is_qwen3_asr_split_export(const std::filesystem::path& models_path) {
     return std::filesystem::exists(models_path / "openvino_audio_encoder_model.xml");
 }
 
-// Only Qwen3-ASR split export implements PagedAttention backend. Other models run SDPA-like stateful decoders.
+bool is_voxtral_split_export(const std::filesystem::path& models_path) {
+    return std::filesystem::exists(models_path / "text_decoder" / "openvino_model.xml");
+}
+
+// Only Qwen3-ASR and Voxtral Realtime split exports implement PagedAttention backend. Other models run SDPA-like
+// stateful decoders.
 ov::AnyMap remove_sdpa_attention_backend(const ov::AnyMap& properties) {
     const auto attention_backend_it = properties.find("ATTENTION_BACKEND");
     if (attention_backend_it == properties.end()) {
@@ -59,7 +64,7 @@ ov::AnyMap remove_sdpa_attention_backend(const ov::AnyMap& properties) {
     OPENVINO_ASSERT(attention_backend_it->second.as<std::string>() != ov::genai::PA_BACKEND,
                     "'",
                     ov::genai::PA_BACKEND,
-                    "' attention backend is supported only for Qwen3-ASR split export");
+                    "' attention backend is supported only for Qwen3-ASR and Voxtral Realtime split exports");
     return ov::genai::utils::extract_attention_backend(properties).first;
 }
 
@@ -86,6 +91,9 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
     // Split export: audio encoder, text embeddings and language model.
     if (model_type == ASRModelType::qwen3_asr && is_qwen3_asr_split_export(models_path)) {
         m_impl = create_qwen3_asr_split_pipeline(models_path, device, properties);
+    } else if (model_type == ASRModelType::voxtral_realtime && is_voxtral_split_export(models_path)) {
+        // Split export: audio encoder, text embeddings and stateful text decoder.
+        m_impl = create_voxtral_split_pipeline(models_path, device, properties);
     } else {
         const ov::AnyMap impl_properties = remove_sdpa_attention_backend(properties);
         switch (model_type) {
