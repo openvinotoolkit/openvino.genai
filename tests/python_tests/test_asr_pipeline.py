@@ -646,6 +646,7 @@ def test_max_new_tokens(pipelines_fixture, sample_from_dataset, request):
             MAX_PROMPT_LEN=64,
             MIN_RESPONSE_LEN=16,
         )
+        small_expected = small_pipe.generate(audio, language="English", max_new_tokens=8)
         with open(model_path / "preprocessor_config.json", encoding="utf-8") as file:
             preprocessor = json.load(file)
         with open(model_path / "config.json", encoding="utf-8") as file:
@@ -666,7 +667,7 @@ def test_max_new_tokens(pipelines_fixture, sample_from_dataset, request):
         with pytest.raises(RuntimeError, match=rf"requested {available + 1} new tokens.*accommodate only {available}"):
             small_pipe.generate(audio, language="English", max_new_tokens=available + 1, ignore_eos=True)
         recovered = small_pipe.generate(audio, language="English", max_new_tokens=8)
-        assert recovered.texts == expected.texts
+        assert recovered.texts == small_expected.texts
         return
 
     expected = hf_pipe(sample_from_dataset, max_new_tokens=10)
@@ -681,54 +682,65 @@ def test_max_new_tokens(pipelines_fixture, sample_from_dataset, request):
     compare_results(expected, genai_result)
 
 
+@pytest.mark.parametrize("audio_seconds", [0.2, 0.5], ids=["short-padded", "minimum-length"])
 @pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
-def test_qwen3_asr_direct_vlm_npu_generation_and_capacity(pipelines_fixture, capfd):
-    _, asr_pipe, model_id, _ = pipelines_fixture
+def test_qwen3_asr_direct_vlm_npu_generation_and_capacity(pipelines_fixture, capfd, audio_seconds):
+    _, _, model_id, _ = pipelines_fixture
     model_path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
     _, model_path, _, _ = read_asr_model(
         (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
     )
-    vlm_pipe = ov_genai.VLMPipeline(
-        model_path,
-        "NPU",
-        DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES},
-        MODEL_PROPERTIES={"text_embeddings": {"CPU_DENORMALS_OPTIMIZATION": True}},
-        ATTENTION_BACKEND="SDPA",
-        MAX_PROMPT_LEN=64,
-        MIN_RESPONSE_LEN=16,
-    )
-    audio = np.zeros(3200, dtype=np.float32)
+    properties = {
+        "DEVICE_PROPERTIES": {"NPU": NPUW_CPU_PROPERTIES},
+        "MODEL_PROPERTIES": {"text_embeddings": {"CPU_DENORMALS_OPTIMIZATION": True}},
+        "ATTENTION_BACKEND": "SDPA",
+        "MAX_PROMPT_LEN": 64,
+        "MIN_RESPONSE_LEN": 16,
+    }
+    asr_pipe = ov_genai.ASRPipeline(model_path, "NPU", **properties)
+    vlm_pipe = ov_genai.VLMPipeline(model_path, "NPU", **properties)
+    with open(model_path / "preprocessor_config.json", encoding="utf-8") as file:
+        sample_rate = json.load(file)["sampling_rate"]
+    audio = np.zeros(int(audio_seconds * sample_rate), dtype=np.float32)
+    # ASRPipeline pads short chunks to 0.5 seconds; direct VLMPipeline does not.
+    vlm_audio = np.pad(audio, (0, max(0, (sample_rate + 1) // 2 - audio.size)))
     prompt = (
         "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n<|audio_start|><|audio_pad|>"
         "<|audio_end|><|im_end|>\n<|im_start|>assistant\nlanguage English<asr_text>"
     )
     config = ov_genai.GenerationConfig(max_new_tokens=8, do_sample=False, apply_chat_template=False)
+    asr_config = asr_pipe.get_generation_config()
+    config.stop_token_ids = asr_config.stop_token_ids
+    config.set_eos_token_id(asr_config.eos_token_id)
     expected = asr_pipe.generate(audio, language="English", max_new_tokens=8, do_sample=False)
-    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(vlm_audio)], generation_config=config)
     assert result.texts == expected.texts
+    if audio.size < vlm_audio.size:
+        unpadded = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+        assert unpadded.perf_metrics.get_num_input_tokens() < result.perf_metrics.get_num_input_tokens()
 
     available = 64 + 16 - result.perf_metrics.get_num_input_tokens()
     assert available >= 8
     config.max_new_tokens = available
     config.ignore_eos = True
-    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(vlm_audio)], generation_config=config)
     assert result.perf_metrics.get_num_generated_tokens() == available
 
     config.max_new_tokens = available + 1
     with pytest.raises(RuntimeError, match=rf"requested {available + 1} new tokens.*accommodate only {available}"):
-        vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+        vlm_pipe.generate(prompt, audios=[openvino.Tensor(vlm_audio)], generation_config=config)
 
     config.max_new_tokens = (1 << 64) - 1
     config.max_length = (1 << 64) - 1
     config.ignore_eos = False
     config.min_new_tokens = available
-    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(vlm_audio)], generation_config=config)
     assert result.perf_metrics.get_num_generated_tokens() == available
     assert "Qwen3-ASR NPU KV-cache capacity was reached" in capfd.readouterr().err
 
     config.max_new_tokens = 8
     config.min_new_tokens = 0
-    recovered = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+    recovered = vlm_pipe.generate(prompt, audios=[openvino.Tensor(vlm_audio)], generation_config=config)
     assert recovered.texts == expected.texts
 
 
