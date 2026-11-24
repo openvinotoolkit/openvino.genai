@@ -213,6 +213,32 @@ public:
         MicroSeconds tokenization_duration{0};
     };
 
+    // The streaming-layout prefill of the non-ICL path is built in two parts so that a caller who receives the target
+    // text over time can start as soon as it has the first text token: the head holds everything that does not
+    // depend on the text, build_streaming_prefill() adds the first text token to it. The text tokens after the first
+    // one, and the final tts_eos, then go to the talker one per generated frame (see TrailingText).
+    struct PrefillHead {
+        ov::Tensor role_embed;      // [1, 3, H]
+        ov::Tensor left_codec_sum;  // [1, codec_len - 1, H]
+        ov::Tensor codec_last;      // [1, 1, H]: the codec side of the position the first text token is added to
+        ov::Tensor tts_pad;         // [1, 1, H]
+        ov::Tensor tts_eos;         // [1, 1, H]
+    };
+
+    // `role_tokens` are the three tokens of "<|im_start|>assistant\n"; `language` / `speaker` are already normalized.
+    PrefillHead build_prefill_head(const std::vector<int64_t>& role_tokens,
+                                   const ov::Tensor& effective_speaker_embedding,
+                                   const std::string& language,
+                                   const std::string& speaker,
+                                   bool base_model);
+
+    // Talker text embedding of target text tokens: [1, N, H].
+    ov::Tensor embed_text_tokens(const std::vector<int64_t>& token_ids);
+
+    // role + codec side + the first target text token ([1, 1, H]). The instruct prefix is not included
+    // (prepend_instruct_embed()).
+    ov::Tensor build_streaming_prefill(const PrefillHead& head, const ov::Tensor& first_text_row);
+
     // Builds the talker prefill embedding for the non-ICL path (CustomVoice / VoiceDesign / Base
     // x-vector). Shared by the SDPA driver (Qwen3TTSImpl) and the continuous-batching driver.
     // `input_ids_tensor` is the already-tokenized "<|im_start|>assistant\n...<|im_start|>assistant\n"
@@ -224,6 +250,45 @@ public:
                                const std::string& language,
                                const std::string& speaker,
                                bool base_model);
+
+    // The streaming-layout ICL prefill, split like the non-ICL one: the context holds everything that depends only on
+    // the voice and the reference (speaker, reference codes, reference transcript), assemble_icl_prefill() adds
+    // the target text. The prefill lays the text rows (reference transcript, target text, then tts_eos) over the
+    // reference codec side (codec bos + reference codes), one row per position, so it needs
+    // target_rows_needed() target tokens before it can be built, unless the text has ended.
+    struct IclContext {
+        ov::Tensor role_embed;          // [1, 3, H]
+        ov::Tensor codec_input_part;    // [1, codec_input_len, H]
+        ov::Tensor codec_bos_plus_ref;  // [1, 1 + ref frames, H]: the codec side the text rows are laid over
+        ov::Tensor ref_content_embed;   // [1, reference transcript tokens, H]
+        ov::Tensor tts_pad;             // [1, 1, H]
+        ov::Tensor tts_eos;             // [1, 1, H]
+        ov::Tensor ref_codec_ids;
+
+        size_t target_rows_needed() const {
+            const size_t side = codec_bos_plus_ref.get_shape()[1];
+            const size_t ref = ref_content_embed.get_shape()[1];
+            return side > ref ? side - ref : 0;
+        }
+    };
+
+    // `role_ids`: the three tokens of "<|im_start|>assistant\n"; `ref_content_embed`: [1, R, H] talker text embedding
+    // of the reference transcript tokens (without the chat template).
+    IclContext prepare_voice_clone(const std::vector<int64_t>& role_ids,
+                                   const ov::Tensor& ref_content_embed,
+                                   const ov::Tensor& speaker_embedding,
+                                   const ov::Tensor& ref_codec_ids,
+                                   const SpeechGenerationConfig& generation_config);
+
+    // Streaming-layout prefill. `target_rows`: [1, N, H] embeddings of the target text tokens so far (may be empty).
+    // `text_ended` adds tts_eos after them. Without it the text rows must already cover the codec side
+    // (target_rows_needed()); the prefill is then the same whatever follows, and the rows past the codec side
+    // (`trailing_text_hidden`, possibly zero rows) are the rest of the text. Once ended, the result equals the
+    // prefill of the complete text.
+    PrefillResult assemble_icl_prefill(const IclContext& context,
+                                       const ov::Tensor& target_rows,
+                                       bool text_ended,
+                                       const std::string& instruct);
 
     VoiceClonePrefillResult build_voice_clone_prefill(const std::string& text,
                                                       const std::string& ref_text,
