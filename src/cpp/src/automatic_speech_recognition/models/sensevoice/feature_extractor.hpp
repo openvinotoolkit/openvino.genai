@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <vector>
 
+#include "automatic_speech_recognition/funasr_frontend/cmvn.hpp"
 #include "automatic_speech_recognition/models/fun-asr/feature_extractor.hpp"
 #include "openvino/runtime/tensor.hpp"
 
@@ -32,8 +33,7 @@ public:
 
 private:
     FunASRFeatureExtractor m_fbank_lfr;
-    std::vector<float> m_shifts;
-    std::vector<float> m_scales;
+    funasr_frontend::CMVN m_cmvn;
 };
 
 }  // namespace ov::genai
