@@ -1957,6 +1957,9 @@ def test_cb_generate_allows_unsupported_add_request_lora_mode(
         ("prompt_lookup", "validation_window"),
         ("speculative_decoding", "max_length"),
         ("speculative_decoding", "validation_window"),
+        ("continuous_batching", "empty_prompt"),
+        ("prompt_lookup", "empty_prompt"),
+        ("speculative_decoding", "empty_prompt"),
     ],
 )
 def test_cb_generate_discards_its_requests_when_one_is_rejected(
@@ -1979,20 +1982,27 @@ def test_cb_generate_discards_its_requests_when_one_is_rejected(
             config.max_ngram_size = 3
         return config
 
+    inputs = ["test prompt", "test prompt"]
     scheduler_config = SchedulerConfig()
     if rejection == "max_length":
         rejected = make_config()
         rejected.max_length = 1
         error = "'max_length' must be greater than the number of prompt tokens"
-    else:
+    elif rejection == "validation_window":
         # windows of 1 + 3 tokens fit the budget, windows of 1 + 4 tokens do not
         scheduler_config.max_num_batched_tokens = 4
         rejected = make_config(num_assistant_tokens=4)
         error = "is too small to ever schedule the speculative validation windows"
+    else:
+        rejected = make_config()
+        error = "Prompt length cannot be 0"
     pipe = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties=properties)
+    if rejection == "empty_prompt":
+        # a tokenizer can add special tokens to an empty string, so the empty prompt goes in as token IDs
+        inputs = [pipe.get_tokenizer().encode("test prompt").input_ids, ov.Tensor(np.zeros((1, 0), dtype=np.int64))]
 
     with pytest.raises(RuntimeError, match=error):
-        pipe.generate(["test prompt", "test prompt"], [make_config(), rejected])
+        pipe.generate(inputs, [make_config(), rejected])
 
     results = pipe.generate(["test prompt"], [make_config()])
 

@@ -346,6 +346,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::validate_request(
     uint64_t request_id,
     size_t prompt_len,
     const ov::genai::GenerationConfig& sampling_params) const {
+    OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
     const auto config = _with_default_stop_tokens(sampling_params);
     config.validate();
     OPENVINO_ASSERT(config.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
