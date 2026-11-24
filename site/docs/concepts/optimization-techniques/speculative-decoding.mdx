@@ -541,5 +541,7 @@ The target verifies every drafted token either way, so the mode changes neither 
 
 ### Candidate Selection
 
-- With the Top-K candidate scorer, the draft picks every token among the `K` candidates of its position, scored after the token drafted before it: a greedy request takes the best-scoring candidate, and a sampled request draws one at its temperature. The request's penalties and `min_new_tokens` apply to these scores; if they rule out every candidate, the block ends at a token outside them.
+- With the Top-K candidate scorer, the draft picks every token among the `K` candidates of its position, scored after the token drafted before it: a greedy request takes the best-scoring candidate, and a sampled request draws one at its temperature. The request's penalties and `min_new_tokens` apply to these scores; if they rule out every candidate, the draft draws a token outside them from the backbone logits, and the block ends at that token.
 - With the dense Markov walk, the draft takes every token from the backbone logits corrected by the Markov head, after the request's logit processors.
+
+A draft with a pruned vocabulary has no token outside it to draw, so in either mode the request's logit processors can rule out every token the draft can propose at a position, for example when `min_new_tokens` masks all of them. The block then ends before that position, and the target generates the next token on its own.
