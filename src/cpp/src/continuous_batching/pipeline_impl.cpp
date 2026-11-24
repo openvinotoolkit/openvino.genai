@@ -372,6 +372,19 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::validate_request(
     }
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::validate_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    const ov::genai::GenerationConfig& sampling_params) const {
+    // SequenceGroup reads the hidden size of input embeddings from their third dimension
+    const auto element_type = input_ids.get_element_type();
+    OPENVINO_ASSERT(element_type == ov::element::i64 ||
+                        (element_type == ov::element::f32 && input_ids.get_shape().size() == 3),
+                    "input_ids must hold i64 token IDs or f32 input embeddings [1, seq_len, hidden_size], got ",
+                    element_type, " of shape ", input_ids.get_shape());
+    validate_request(request_id, get_prompt_len(input_ids), sampling_params);
+}
+
 GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
@@ -384,7 +397,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     }
 
     const auto sampling_params_copy = _with_default_stop_tokens(sampling_params);
-    validate_request(request_id, get_prompt_len(input_ids), sampling_params_copy);
+    validate_request(request_id, input_ids, sampling_params_copy);
 
     std::shared_ptr<SequenceGroup> sequence_group;
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
@@ -1164,7 +1177,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                     "(num_return_sequences == 1, no beam search)");
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        validate_request(request_id, get_prompt_len(input_ids[request_id]), sampling_params[request_id]);
+        validate_request(request_id, input_ids[request_id], sampling_params[request_id]);
     }
 
     std::vector<GenerationHandle> generations;

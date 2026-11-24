@@ -198,7 +198,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::validate_request(
     const std::optional<ov::Tensor>&) const {
     const size_t prompt_len = ContinuousBatchingImpl::get_prompt_len(input_ids);
     m_draft_pipeline->validate_request(request_id, prompt_len, make_draft_sampling_params(sampling_params));
-    m_main_pipeline->validate_request(request_id, prompt_len, sampling_params);
+    m_main_pipeline->validate_request(request_id, input_ids, sampling_params);
 }
 
 bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_requests() {

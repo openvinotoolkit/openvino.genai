@@ -217,7 +217,7 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::validate_request(
                     "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
     // The draft prompt is the prompt without its first row, see create_draft_input_embeds().
     m_draft_pipeline->validate_request(request_id, shape[1] - 1, make_draft_generation_config(sampling_params));
-    m_main_pipeline->validate_request(request_id, shape[1], sampling_params);
+    m_main_pipeline->validate_request(request_id, input_ids, sampling_params);
 }
 
 void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {

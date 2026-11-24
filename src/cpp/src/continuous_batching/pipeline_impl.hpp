@@ -183,6 +183,11 @@ public:
                           size_t prompt_len,
                           const ov::genai::GenerationConfig& sampling_params) const;
 
+    // Throws for a request of input_ids that add_request() would reject, and changes nothing.
+    void validate_request(uint64_t request_id,
+                          const ov::Tensor& input_ids,
+                          const ov::genai::GenerationConfig& sampling_params) const;
+
     virtual void generate_candidates_for_prompt_lookup();
 
     virtual bool supports_embedding_prefix_verification() const {

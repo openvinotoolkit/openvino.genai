@@ -130,9 +130,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
         OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
-        m_pipeline->validate_request(request_id,
-                                     ContinuousBatchingImpl::get_prompt_len(input_ids[request_id]),
-                                     sampling_params[request_id]);
+        m_pipeline->validate_request(request_id, input_ids[request_id], sampling_params[request_id]);
     }
 
     std::vector<GenerationHandle> generations;

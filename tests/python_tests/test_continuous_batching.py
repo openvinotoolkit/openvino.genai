@@ -1960,6 +1960,9 @@ def test_cb_generate_allows_unsupported_add_request_lora_mode(
         ("continuous_batching", "empty_prompt"),
         ("prompt_lookup", "empty_prompt"),
         ("speculative_decoding", "empty_prompt"),
+        ("continuous_batching", "i32_prompt"),
+        ("prompt_lookup", "i32_prompt"),
+        ("speculative_decoding", "i32_prompt"),
     ],
 )
 def test_cb_generate_discards_its_requests_when_one_is_rejected(
@@ -1993,13 +1996,19 @@ def test_cb_generate_discards_its_requests_when_one_is_rejected(
         scheduler_config.max_num_batched_tokens = 4
         rejected = make_config(num_assistant_tokens=4)
         error = "is too small to ever schedule the speculative validation windows"
-    else:
+    elif rejection == "empty_prompt":
         rejected = make_config()
         error = "Prompt length cannot be 0"
+    else:
+        rejected = make_config()
+        error = "input_ids must hold i64 token IDs or f32 input embeddings"
     pipe = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties=properties)
     if rejection == "empty_prompt":
         # a tokenizer can add special tokens to an empty string, so the empty prompt goes in as token IDs
         inputs = [pipe.get_tokenizer().encode("test prompt").input_ids, ov.Tensor(np.zeros((1, 0), dtype=np.int64))]
+    elif rejection == "i32_prompt":
+        token_ids = pipe.get_tokenizer().encode("test prompt").input_ids
+        inputs = [token_ids, ov.Tensor(token_ids.data.astype(np.int32))]
 
     with pytest.raises(RuntimeError, match=error):
         pipe.generate(inputs, [make_config(), rejected])

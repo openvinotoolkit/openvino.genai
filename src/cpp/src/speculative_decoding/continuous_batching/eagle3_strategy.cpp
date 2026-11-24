@@ -420,7 +420,7 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_request(
                         prompt_len);
         m_draft_pipeline->validate_request(request_id, prompt_len - 1, make_draft_sampling_params(sampling_params));
     }
-    m_main_pipeline->validate_request(request_id, prompt_len, sampling_params);
+    m_main_pipeline->validate_request(request_id, input_ids, sampling_params);
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingImpl::generate(
