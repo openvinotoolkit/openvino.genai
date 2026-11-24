@@ -2,16 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
+import sys
 
 import numpy as np
 import openvino as ov
 import pytest
 from openvino_genai import ClassificationActivation, ClassificationPipeline
+from huggingface_hub import snapshot_download
 
 from utils.atomic_download import AtomicDownloadManager
 from utils.classification import OptimumClassifier, apply_activation, default_activation
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.hugging_face import export_with_optimum_cli, sanitize_model_id
+from utils.network import retry_request
 
 CLASSIFICATION_MODELS = [
     "optimum-intel-internal-testing/tiny-random-minicpm-ocr-jev",
@@ -33,7 +36,12 @@ def model_path(request: pytest.FixtureRequest) -> Path:
     model_id = request.param
     path = get_ov_cache_converted_models_dir() / f"{sanitize_model_id(model_id)}_text-classification"
     AtomicDownloadManager(path).execute(
-        lambda temp_path: export_with_optimum_cli(model_id, "text-classification", temp_path, trust_remote_code=False)
+        lambda temp_path: export_with_optimum_cli(
+            retry_request(lambda: snapshot_download(model_id)),
+            "text-classification",
+            temp_path,
+            trust_remote_code=False,
+        )
     )
     return path
 
@@ -61,10 +69,23 @@ def test_classify_matches_optimum(
     result = pipeline.classify(text, [ov.Tensor(image) for image in images])
 
     logits = result.logits.data
-    np.testing.assert_allclose(logits, reference_logits, atol=1e-5)
+    # macOS ARM CPU inference can use reduced precision for image processing.
+    atol = 5e-4 if sys.platform == "darwin" and num_images else 1e-5
+    np.testing.assert_allclose(logits, reference_logits, atol=atol)
     np.testing.assert_allclose(
         result.scores, apply_activation(logits, default_activation(optimum_classifier.config)), rtol=1e-5
     )
+
+
+def test_result_is_unchanged_after_repeated_classification(pipeline: ClassificationPipeline):
+    first_result = pipeline.classify(PROMPTS[0])
+    first_logits = first_result.logits.data.copy()
+    first_scores = np.asarray(first_result.scores).copy()
+
+    pipeline.classify(PROMPTS[1], [ov.Tensor(random_image(seed=0))])
+
+    np.testing.assert_array_equal(first_result.logits.data, first_logits)
+    np.testing.assert_array_equal(first_result.scores, first_scores)
 
 
 @pytest.mark.parametrize(

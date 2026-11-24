@@ -8,7 +8,8 @@ find_package(OpenVINOGenAI REQUIRED
     NO_CMAKE_FIND_ROOT_PATH
 )
 
-# stb_image.h / stb_image_resize2.h are fetched by the visual_language_chat samples into CMAKE_BINARY_DIR
+include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_stb.cmake)
+
 add_executable(classification classification.cpp ../visual_language_chat/load_image.cpp)
 target_include_directories(classification PRIVATE "${CMAKE_BINARY_DIR}")
 target_link_libraries(classification PRIVATE openvino::genai)

@@ -49,6 +49,7 @@ VLMClassifierBackend::VLMClassifierBackend(const std::filesystem::path& models_p
                     "The classifier language model must output logits [batch, seq_len, num_labels], got ",
                     logits_shape);
     m_num_labels = logits_shape[2].get_length();
+    OPENVINO_ASSERT(m_num_labels > 0, "The classifier language model must output at least one label");
 
     ov::preprocess::PrePostProcessor processor(model);
     processor.output("logits").postprocess().custom([&model](const ov::Output<ov::Node>& logits) {

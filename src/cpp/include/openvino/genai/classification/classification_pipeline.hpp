@@ -113,7 +113,7 @@ public:
      *
      * @param text Complete model prompt, including any suffix required by the model. No chat template or extra
      * special tokens are added. Images may use native tags or zero-based <ov_genai_image_N> tags.
-     * @param images Optional RGB uint8 tensors of shape [H, W, 3] or [N, H, W, 3].
+     * @param images Optional RGB uint8 tensors of shape [H, W, 3] or [1, H, W, 3], one image per tensor.
      * The number, order and content of the images must match the model's input requirements.
      * @return Owned logits [1, num_labels] and activated scores [1][num_labels], both in label ID order.
      */

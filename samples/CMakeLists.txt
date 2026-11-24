@@ -24,7 +24,7 @@ install(FILES
     DESTINATION samples
     COMPONENT cpp_samples_genai)
 
-install(FILES cpp/fetch_opencv.cmake
+install(FILES cpp/fetch_opencv.cmake cpp/fetch_stb.cmake
     DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
