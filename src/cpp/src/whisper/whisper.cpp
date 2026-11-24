@@ -346,7 +346,7 @@ struct AudioState {
     std::vector<ov::genai::Segment> segments;
     std::optional<std::vector<ov::genai::WhisperWordTiming>> words;
 
-    [[nodiscard]] bool finished() const noexcept {
+    bool finished() const noexcept {
         return chunk_offset >= features.n_frames;
     }
 };
