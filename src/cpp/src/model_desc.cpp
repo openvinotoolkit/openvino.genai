@@ -4,7 +4,6 @@
 #include "model_desc.hpp"
 
 #include "gguf_utils/gguf_tokenizer.hpp"
-#include "gguf_utils/gguf_utils.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 
@@ -16,12 +15,6 @@ std::filesystem::path get_draft_model_path(const ov::Any& value) {
     if (value.is<std::filesystem::path>())
         return value.as<std::filesystem::path>();
     return value.as<std::string>();
-}
-
-bool has_mtp_layers(const std::filesystem::path& models_path) {
-    if (is_gguf_model(models_path))
-        return gguf_utils::has_gguf_mtp_layers(models_path);
-    return std::filesystem::exists(models_path / "openvino_mtp_model.xml");
 }
 
 bool has_mtp_mode(const ov::genai::ModelDesc& draft) {
@@ -99,13 +92,11 @@ ov::AnyMap resolve_draft_model_request(const std::filesystem::path& models_path,
         OPENVINO_ASSERT(std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml"),
                         "GGUF MTP requires the converted VLM directory to contain "
                         "openvino_text_embeddings_model.xml.");
-    }
-    if (speculative_type) {
-        OPENVINO_ASSERT(has_mtp_layers(source),
+    } else if (speculative_type) {
+        OPENVINO_ASSERT(std::filesystem::exists(source / "openvino_mtp_model.xml"),
                         "speculative_type='mtp' requires MTP layers, but none were found in '",
                         source.string(),
-                        "'. A GGUF file must set <arch>.nextn_predict_layers; an IR directory must contain "
-                        "openvino_mtp_model.xml.");
+                        "'. An IR directory must contain openvino_mtp_model.xml.");
     }
 
     // The draft is read here, so extensions must be registered first.

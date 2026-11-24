@@ -4,8 +4,10 @@
 """Exercise GGUF MTP conversion and pipeline constraints without downloading weights."""
 
 import numpy as np
+import openvino as ov
 import pytest
 from gguf import GGUFWriter
+from openvino import opset13 as ops
 
 import openvino_genai as genai
 
@@ -41,6 +43,7 @@ def write_qwen35_gguf(path, mtp=True):
     writer.add_eos_token_id(2)
     writer.add_add_bos_token(False)
     writer.add_add_eos_token(False)
+    writer.add_add_space_prefix(False)
     writer.add_chat_template(
         "{% for message in messages %}{{ message['role'] }} {{ message['content'] }} {% endfor %}"
         "{% if add_generation_prompt %}assistant {% endif %}"
@@ -136,7 +139,7 @@ def test_gguf_speculative_type_rejects_explicit_draft(mtp_gguf):
 
 
 def test_gguf_mtp_requires_nextn_layers(plain_gguf):
-    with pytest.raises(RuntimeError, match="must contain MTP layers"):
+    with pytest.raises(RuntimeError, match="must contain supported MTP layers"):
         genai.draft_model(plain_gguf, "CPU")
 
 
@@ -161,3 +164,82 @@ def test_gguf_mtp_rejects_raw_gguf_continuous_batching_target(mtp_gguf):
             "CPU",
             {"draft_model_path": str(mtp_gguf), "GGUF_READER": "FRONTEND", **DEVICE_PROPERTIES},
         )
+
+
+@pytest.fixture(scope="module")
+def paired_pipelines(mtp_gguf, tmp_path_factory):
+    reader = dict(GGUF_READER="FRONTEND", **DEVICE_PROPERTIES)
+    source = genai.LLMPipeline(mtp_gguf, "CPU", enable_save_ov_model=True, **reader)
+    tokenizer = source.get_tokenizer()
+    target_dir = tmp_path_factory.mktemp("gguf_mtp_target")
+    model = ov.Core().read_model(mtp_gguf.parent / "openvino_model.xml")
+    ids = model.input("input_ids")
+    # Split the synthetic model's token embedding lookup to form a matching VLM target.
+    lookup = next(
+        node
+        for node in model.get_ops()
+        if node.get_type_name() == "Gather" and node.input_value(0).partial_shape == ov.PartialShape([512, 16])
+    )
+    embeds = ops.parameter([-1, -1, 16], ov.Type.f32, name="inputs_embeds")
+    embeds.output(0).set_names({"inputs_embeds"})
+    lookup.output(0).replace(embeds.output(0))
+    for consumer in ids.get_target_inputs():
+        if consumer.get_node().get_type_name() == "ShapeOf":
+            shape = ops.gather(ops.shape_of(embeds), [0, 1], 0)
+            consumer.get_node().output(0).replace(shape.output(0))
+    # Qwen VLM supplies four position lanes; text uses the same positions in each lane.
+    positions = model.input("position_ids")
+    mrope = ops.parameter([4, -1, -1], positions.element_type, name="position_ids")
+    mrope.output(0).set_names({"position_ids"})
+    positions.replace(ops.reshape(ops.gather(mrope, 0, 0), [1, -1], False).output(0))
+    model.remove_parameter(ids.get_node())
+    model.remove_parameter(positions.get_node())
+    model.add_parameters([embeds, mrope])
+    model.validate_nodes_and_infer_types()
+    ov.serialize(model, target_dir / "openvino_model.xml")
+    lookup_model = ov.Model([ops.gather(lookup.input_value(0), ids, 0)], [ids.get_node()])
+    ov.serialize(lookup_model, target_dir / "openvino_text_embeddings_model.xml")
+    pixels = ops.parameter([-1, 16], ov.Type.f32)
+    ov.serialize(ov.Model([pixels], [pixels]), target_dir / "openvino_vision_embeddings_model.xml")
+    positions = ops.parameter([4, -1, 16], ov.Type.f32)
+    ov.serialize(ov.Model([positions], [positions]), target_dir / "openvino_vision_embeddings_pos_model.xml")
+    (target_dir / "config.json").write_text('{"model_type":"qwen3_5","hidden_size":16}', encoding="utf-8")
+
+    scheduler = make_scheduler()
+    scheduler.enable_prefix_caching = True
+    target = genai.ContinuousBatchingPipeline(target_dir, tokenizer, scheduler, "CPU", **DEVICE_PROPERTIES)
+    mtp = genai.ContinuousBatchingPipeline(
+        target_dir, tokenizer, scheduler, "CPU", draft_model_path=str(mtp_gguf), **reader
+    )
+    return target, mtp
+
+
+@pytest.mark.parametrize(("prompt", "drafts"), [("a b c", True), ("a", False)])
+def test_gguf_mtp_greedy_parity(paired_pipelines, prompt, drafts):
+    target, mtp = paired_pipelines
+    config = genai.GenerationConfig(max_new_tokens=8, ignore_eos=True, apply_chat_template=False)
+    token_count = target.get_tokenizer().encode(prompt, add_special_tokens=False).input_ids.get_size()
+    assert (token_count > 1) == drafts
+
+    def generate_ids(pipe):
+        handle = pipe.add_request(0, prompt, images=[], generation_config=config)
+        while pipe.has_non_finished_requests():
+            pipe.step()
+        return handle.read_all()[0].generated_ids
+
+    reference = generate_ids(target)
+    assert len(reference) == config.max_new_tokens
+    assert generate_ids(mtp) == reference
+    result = mtp.generate([prompt], [config])[0]
+    assert (result.extended_perf_metrics.get_num_draft_tokens() > 0) == drafts
+
+
+def test_gguf_mtp_chat_history_with_prefix_caching(paired_pipelines):
+    target, mtp = paired_pipelines
+    config = genai.GenerationConfig(max_new_tokens=8, ignore_eos=True)
+    history = genai.ChatHistory()
+    history.append({"role": "user", "content": "a b c"})
+    reference = target.generate([history], images=[[]], generation_config=[config])[0]
+    result = mtp.generate([history], images=[[]], generation_config=[config])[0]
+    assert result.texts == reference.texts
+    assert result.extended_perf_metrics.get_num_draft_tokens() > 0

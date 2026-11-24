@@ -54,5 +54,7 @@ protected:
     void enable_mtp_hidden_state_pairing();
     ov::Tensor embed_prompt_ids(const ov::Tensor& input_ids);
     void align_request_pair_processed_prefix(uint64_t request_id) override;
+    void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+                                    const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const override;
 };
 }  // namespace ov::genai

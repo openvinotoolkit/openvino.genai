@@ -52,6 +52,8 @@ Replace `model.gguf` with the path to your downloaded model. For a base model wi
 
 The pipeline constructs its tokenizer from the frontend's model metadata. You can also construct `genai.GGUFTokenizer("model.gguf")` independently, without exporting tokenizer IR files. In C++, include `<openvino/genai/gguf.hpp>` and use `ov::genai::GGUFTokenizer`. The existing `Tokenizer("model.gguf")` path also remains supported.
 
+For GGUF BPE tokenizers, `skip_special_tokens=True` removes control tokens but preserves user-defined tokens, such as Qwen reasoning and tool-call delimiters, based on the token type stored in the GGUF file. Unlike llama.cpp, GenAI does not additionally treat known end-of-generation tokens stored as user-defined, such as Gemma 4 `<|tool_response>`, as control tokens. GGUF files do not store the original Hugging Face `special` flags, so the result can differ from a tokenizer exported with Optimum Intel. For identical behavior, pass a tokenizer exported for the same model to the pipeline: `genai.LLMPipeline("model.gguf", genai.Tokenizer("tokenizer_dir"), "CPU", GGUF_READER="FRONTEND")`.
+
 ```python
 import openvino_genai as genai
 
@@ -78,24 +80,43 @@ Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tok
 
 Some GGUF checkpoints store NextN draft blocks after the target layers
 (`<arch>.nextn_predict_layers`). GGUF MTP drafts are supported by the
-`ContinuousBatchingPipeline` with a converted VLM target that provides a text embeddings model
+`ContinuousBatchingPipeline` with the matching converted VLM target that provides a text embeddings model
 (`openvino_text_embeddings_model.xml`). Pass the VLM directory as the main model and the GGUF
 checkpoint as `draft_model_path`. The regular `LLMPipeline` and a raw GGUF main model are not
 supported for GGUF MTP.
 
-```python
-import openvino_genai as genai
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as genai
 
-scheduler = genai.SchedulerConfig()
-pipe = genai.ContinuousBatchingPipeline(
-    "path/to/converted-vlm", scheduler, "CPU",
-    {"draft_model_path": "model-with-mtp.gguf"},
-)
-print(pipe.generate(["Explain speculative decoding."], max_new_tokens=64))
-```
+        pipe = genai.ContinuousBatchingPipeline(
+            "path/to/converted-vlm", genai.SchedulerConfig(), "CPU",
+            {"draft_model_path": "model-with-mtp.gguf", "GGUF_READER": "FRONTEND"},
+        )
+        config = genai.GenerationConfig(max_new_tokens=64)
+        print(pipe.generate(["Explain speculative decoding."], [config])[0].m_generation_ids[0])
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include <iostream>
 
-MTP requires a converted OpenVINO target directory; raw GGUF targets are not supported,
-regardless of whether the draft is GGUF or IR.
+        #include <openvino/genai/continuous_batching_pipeline.hpp>
+        #include <openvino/genai/gguf.hpp>
+
+        int main() {
+            ov::genai::ContinuousBatchingPipeline pipe(
+                "path/to/converted-vlm", ov::genai::SchedulerConfig{}, "CPU",
+                {ov::genai::draft_model_path("model-with-mtp.gguf"), ov::genai::gguf_reader("FRONTEND")});
+            ov::genai::GenerationConfig config;
+            config.max_new_tokens = 64;
+            const auto results = pipe.generate(std::vector<std::string>{"Explain speculative decoding."}, {config});
+            std::cout << results[0].m_generation_ids[0];
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
 
 `draft_model_path` may point to a GGUF file with MTP layers or an OpenVINO IR directory.
 The GGUF draft is compiled with the target device and properties.
@@ -114,5 +135,5 @@ is empty.
 Recurrent-state capacity must cover both live requests and MTP verification scratch. With a custom
 `scheduler_config`, set `num_linear_attention_blocks` to at least the number of live requests plus
 `num_assistant_tokens + 1`, and add one more block when prefix caching is enabled. The legacy reader and
-`ENABLE_SAVE_OV_MODEL` are not supported for GGUF MTP drafts and raise an error. MTP acceptance
+`enable_save_ov_model` are not supported for GGUF MTP drafts and raise an error. MTP acceptance
 and speed depend on the checkpoint, prompt and hardware; enabling it does not guarantee a speedup.

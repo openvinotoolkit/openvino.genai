@@ -3,15 +3,12 @@
 
 #include "gguf_utils.hpp"
 
-#include <utility>
 #include <vector>
 
-#include "model_desc.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 
 #ifdef ENABLE_GGUF
-#include "gguf.hpp"
 #include "gguf_modeling.hpp"
 #endif
 
@@ -49,10 +46,7 @@ std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_pa
                                          const GGUFProperties& properties) {
 #ifdef ENABLE_GGUF
     try {
-        return create_from_gguf(model_path.string(),
-                                properties.enable_save_ov_model,
-                                properties.use_legacy_reader(),
-                                false);
+        return create_from_gguf(model_path.string(), properties.enable_save_ov_model, properties.use_legacy_reader());
     } catch (const std::exception& error) {
         if (!properties.legacy_reader.has_value()) {
             OPENVINO_THROW(error.what(),
@@ -73,50 +67,12 @@ GGUFMtpModels read_gguf_mtp_models(const std::filesystem::path& model_path, cons
 #ifdef ENABLE_GGUF
     OPENVINO_ASSERT(!properties.legacy_reader.value_or(false), "GGUF MTP drafts require GGUF_READER=\"FRONTEND\".");
     OPENVINO_ASSERT(!properties.enable_save_ov_model, "Saving a GGUF MTP draft is not supported.");
-    GGUFMtpModels models;
-    models.target = convert_gguf_with_frontend(model_path.string(), true, true, &models.draft);
-    return models;
-#else
-    OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
-#endif
-}
-
-bool has_gguf_mtp_layers(const std::filesystem::path& model_path) {
-#ifdef ENABLE_GGUF
-    const auto metadata = get_gguf_metadata(model_path.string());
-    const auto arch_it = metadata.find("general.architecture");
-    if (arch_it == metadata.end() || !std::holds_alternative<std::string>(arch_it->second))
-        return false;
-    const auto layers_it = metadata.find(std::get<std::string>(arch_it->second) + ".nextn_predict_layers");
-    if (layers_it == metadata.end())
-        return false;
-    if (std::holds_alternative<int>(layers_it->second))
-        return std::get<int>(layers_it->second) > 0;
-    if (!std::holds_alternative<ov::Tensor>(layers_it->second))
-        return false;
-    const auto& tensor = std::get<ov::Tensor>(layers_it->second);
-    if (tensor.get_size() != 1)
-        return false;
-    switch (tensor.get_element_type()) {
-    case ov::element::u8:
-        return *tensor.data<const uint8_t>() > 0;
-    case ov::element::i8:
-        return *tensor.data<const int8_t>() > 0;
-    case ov::element::u16:
-        return *tensor.data<const uint16_t>() > 0;
-    case ov::element::i16:
-        return *tensor.data<const int16_t>() > 0;
-    case ov::element::u32:
-        return *tensor.data<const uint32_t>() > 0;
-    case ov::element::i32:
-        return *tensor.data<const int32_t>() > 0;
-    case ov::element::u64:
-        return *tensor.data<const uint64_t>() > 0;
-    case ov::element::i64:
-        return *tensor.data<const int64_t>() > 0;
-    default:
-        return false;
-    }
+    const auto models = convert_gguf_with_frontend(model_path.string(), true);
+    const auto draft = models.find("mtp_draft");
+    OPENVINO_ASSERT(draft != models.end(),
+                    "A GGUF draft model must contain supported MTP layers (<arch>.nextn_predict_layers > 0): ",
+                    model_path.string());
+    return {models.at("language"), draft->second};
 #else
     OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif

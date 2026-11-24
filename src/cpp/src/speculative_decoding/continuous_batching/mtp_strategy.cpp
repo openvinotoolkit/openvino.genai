@@ -202,23 +202,22 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     }
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    GenerationConfig draft_sampling_params = make_draft_generation_config(sampling_params);
     const auto input_shape = input_ids.get_shape();
-    if (input_shape.size() == 3 && input_shape[0] == 1 && input_shape[1] == 1 && prompt_ids.has_value() &&
-        prompt_ids->get_element_type() == ov::element::i64 && prompt_ids->get_size() == 1) {
+    OPENVINO_ASSERT(input_shape.size() == 3 && input_shape[0] == 1 && input_shape[1] > 0,
+                    "MTP draft input embeds expect shape [1, sequence length, hidden size].");
+    OPENVINO_ASSERT((prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
+                     prompt_ids->get_size() == input_shape[1]) || !m_main_pipeline->is_prefix_caching_enabled(),
+                    "MTP prefix caching requires built-in prompt preparation with one token ID per embedding");
+    if (input_shape[1] == 1) {
         m_draft_generations.erase(request_id);
         return m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
     }
-    // Draft gets shifted embeds only; VLM extras belong to the main model.
-    ov::Tensor draft_input_embeds = create_draft_input_embeds(input_ids);
-    OPENVINO_ASSERT(!m_main_pipeline->is_prefix_caching_enabled() ||
-                        (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
-                         prompt_ids->get_size() == input_ids.get_shape()[1]),
-                    "MTP prefix caching requires built-in prompt preparation with one token ID per embedding");
     OPENVINO_ASSERT(sampling_params.is_greedy_decoding() || !m_main_pipeline->is_prefix_caching_enabled() ||
                         !m_main_pipeline->has_linear_attention_cache(),
                     "MTP speculative decoding of models with linear-attention state supports greedy decoding only "
                     "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
+    const auto draft_sampling_params = make_draft_generation_config(sampling_params);
+    const auto draft_input_embeds = create_draft_input_embeds(input_ids);
     // Use insert_or_assign, not insert: a finished prior request may leave a stale (stopped) handle
     // under the same request_id. insert() would be a no-op there, dropping the new handle as a
     // temporary whose destructor stops the freshly added draft request before it can draft.
@@ -243,11 +242,20 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
         if (main_position_ids) {
             m_inputs_embedder->set_position_ids(main_position_ids);
         }
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
+        discard_awaiting_request(request_id);
         throw;
     }
+}
+
+void ContinuousBatchingPipeline::MtpDecodingImpl::validate_awaiting_requests(
+    const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+    const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
+    const size_t expected_draft_requests =
+        std::count_if(main_awaiting_requests.begin(), main_awaiting_requests.end(), [](const SequenceGroup::Ptr& request) {
+            return request->get_prompt_len() > 1;
+        });
+    OPENVINO_ASSERT(draft_awaiting_requests.size() == expected_draft_requests,
+                    "MTP draft queue must contain one request per main prompt longer than one token.");
 }
 
 void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {

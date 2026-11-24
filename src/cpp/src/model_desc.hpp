@@ -64,11 +64,6 @@ ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
 
 ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
 
-/// Converts a GGUF file with MTP layers and returns its draft model.
-ov::genai::ModelDesc gguf_mtp_draft_model(const std::filesystem::path& models_path,
-                                          const std::string& device,
-                                          const ov::AnyMap& properties);
-
 /// Replaces speculative_type and draft_model_path with a draft_model descriptor created
 /// with the main model device and properties. GGUF MTP drafts require continuous batching,
 /// a converted target, and an explicit draft_model_path.

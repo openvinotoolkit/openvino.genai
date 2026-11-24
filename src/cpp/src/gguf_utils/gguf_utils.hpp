@@ -38,7 +38,6 @@ struct GGUFMtpModels {
 };
 /// Converts the target and its MTP draft once, with shared weight buffers.
 GGUFMtpModels read_gguf_mtp_models(const std::filesystem::path& model_path, const GGUFProperties& properties);
-bool has_gguf_mtp_layers(const std::filesystem::path& model_path);
 
 }  // namespace gguf_utils
 }  // namespace ov::genai

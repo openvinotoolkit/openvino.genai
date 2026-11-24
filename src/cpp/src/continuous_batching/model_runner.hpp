@@ -3,19 +3,20 @@
 
 #pragma once
 
-#include <cstdlib>
-#include <limits>
-#include <openvino/runtime/infer_request.hpp>
-#include <set>
 #include <vector>
+#include <cstdlib>
+#include <set>
+
+#include <openvino/runtime/infer_request.hpp>
+
+#include "visual_language/embedding_model.hpp"
+#include "visual_language/inputs_embedder.hpp"
+#include "sequence_group.hpp"
+#include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
 #include "continuous_batching/cache/cache_eviction.hpp"
-#include "continuous_batching/scheduler.hpp"
-#include "continuous_batching/timer.hpp"
-#include "sequence_group.hpp"
-#include "visual_language/embedding_model.hpp"
-#include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
 
@@ -408,6 +409,8 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
+    // Speculative decoding reads the hidden state of a sequence after a forward that did not run it.
+    bool m_preserve_unscheduled_hidden_states = false;
     bool m_mtp_draft_positions = false;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
@@ -524,6 +527,7 @@ public:
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
+    void enable_unscheduled_hidden_state_preservation(bool on) { m_preserve_unscheduled_hidden_states = on; }
 
     // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
     void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on && !m_has_mrope_position_ids; }
@@ -588,6 +592,7 @@ public:
      * @return An ov::Tensor with next-token logit scores for each sequence processed during this `forward` call.
      */
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const ContinuousBatchingScheduler::Output& scheduler_output) {
+        _preserve_hidden_states_of_unscheduled_sequences(sequence_groups, scheduler_output);
         m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
@@ -762,25 +767,12 @@ public:
         block_indices_begins_data[0] = 0;
 
         bool matmul_gathering_is_available = false;
-        bool shared_kv_pruning_is_available = false;
         size_t gathering_current_index = 0;
         std::vector<int64_t> gather_indices_values;
-        std::vector<int64_t> shared_kv_tokens_indices_values;
-        std::vector<int32_t> shared_kv_past_lens_values;
-        std::vector<int32_t> shared_kv_subsequence_begins_values{0};
         try {
             std::ignore = m_request.get_tensor("sampled_tokens_indices");
             matmul_gathering_is_available = true;
         } catch (const ov::Exception&) {}
-        try {
-            std::ignore = m_request.get_tensor("shared_kv_tokens_indices");
-            std::ignore = m_request.get_tensor("shared_kv_past_lens");
-            std::ignore = m_request.get_tensor("shared_kv_subsequence_begins");
-            shared_kv_pruning_is_available = true;
-        } catch (const ov::Exception&) {
-        }
-        OPENVINO_ASSERT(!shared_kv_pruning_is_available || matmul_gathering_is_available,
-                        "Shared-KV pruning requires the sampled_tokens_indices input");
 
         size_t current_token_idx = 0;
         std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
@@ -816,7 +808,6 @@ public:
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
                 output_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_idx];
-                const size_t shared_kv_sequence_begin = shared_kv_tokens_indices_values.size();
 
                 if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     // compute token_type_ids for current sequence
@@ -978,33 +969,17 @@ public:
                     // Check if token gathering is required for the entire sequence group
                     if (matmul_gathering_is_available && (sampling_is_required || echo_output)) {
                         // Determine if the current token should be gathered
-                        const bool should_gather =
-                            echo_output ||
+                        if (echo_output ||
                             // Skip gathering for prompt tokens
-                            (group_position_id + token_id >= prompt_len - 1 &&
-                             // Gather only the last scheduled token or 1 + num_tokens_to_validate tokens for SD
-                             // In SD, tokens_to_sample_per_sequence may exceed num_scheduled_tokens
-                             token_id + tokens_to_sample_per_sequence >= num_scheduled_tokens);
-                        if (should_gather) {
-                            if (shared_kv_pruning_is_available) {
-                                gather_indices_values.push_back(
-                                    static_cast<int64_t>(shared_kv_tokens_indices_values.size()));
-                                shared_kv_tokens_indices_values.push_back(
-                                    static_cast<int64_t>(gathering_current_index));
-                            } else {
-                                gather_indices_values.push_back(static_cast<int64_t>(gathering_current_index));
-                            }
+                            group_position_id + token_id >= prompt_len - 1 &&
+                            // Gather only the last scheduled token or 1 + num_tokens_to_validate tokens for SD
+                            // In SD, tokens_to_sample_per_sequence may exceed num_scheduled_tokens
+                            token_id + tokens_to_sample_per_sequence >= num_scheduled_tokens) {
+                            gather_indices_values.push_back(gathering_current_index);
                             output_seq_len++;
                         }
                     }
                     position_ids_idx++;
-                }
-                if (shared_kv_pruning_is_available &&
-                    shared_kv_tokens_indices_values.size() == shared_kv_sequence_begin) {
-                    OPENVINO_ASSERT(num_scheduled_tokens > 0,
-                                    "Shared-KV pruning cannot select a fallback row for an empty sequence");
-                    shared_kv_tokens_indices_values.push_back(
-                        static_cast<int64_t>(current_token_idx + num_scheduled_tokens - 1));
                 }
 
                 const auto& kv_blocks = scheduler_output.get_kv_block_tables(sequence->get_id());
@@ -1026,21 +1001,6 @@ public:
                 past_lens_data[0] = expected_kv_cache_size - num_past_blocks_to_ignore * m_block_size;
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
-                if (shared_kv_pruning_is_available) {
-                    const size_t kept_rows = shared_kv_tokens_indices_values.size() - shared_kv_sequence_begin;
-                    const int64_t shared_past_len = static_cast<int64_t>(past_lens_data[0]) +
-                                                    static_cast<int64_t>(num_scheduled_tokens) -
-                                                    static_cast<int64_t>(kept_rows);
-                    OPENVINO_ASSERT(shared_past_len >= 0 && shared_past_len <= std::numeric_limits<int32_t>::max(),
-                                    "Shared-KV past length is outside the i32 range");
-                    shared_kv_past_lens_values.push_back(static_cast<int32_t>(shared_past_len));
-                    const int64_t shared_subsequence_end =
-                        static_cast<int64_t>(shared_kv_subsequence_begins_values.back()) +
-                        static_cast<int64_t>(kept_rows);
-                    OPENVINO_ASSERT(shared_subsequence_end <= std::numeric_limits<int32_t>::max(),
-                                    "Shared-KV subsequence length is outside the i32 range");
-                    shared_kv_subsequence_begins_values.push_back(static_cast<int32_t>(shared_subsequence_end));
-                }
 
                 block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks_utilized;
 
@@ -1169,25 +1129,6 @@ public:
             gather_indices.set_shape({gather_indices_values.size()});
             std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
         }
-        if (shared_kv_pruning_is_available) {
-            auto shared_kv_tokens_indices = m_request.get_tensor("shared_kv_tokens_indices");
-            shared_kv_tokens_indices.set_shape({shared_kv_tokens_indices_values.size()});
-            std::memcpy(shared_kv_tokens_indices.data(),
-                        shared_kv_tokens_indices_values.data(),
-                        shared_kv_tokens_indices_values.size() * sizeof(int64_t));
-
-            auto shared_kv_past_lens = m_request.get_tensor("shared_kv_past_lens");
-            shared_kv_past_lens.set_shape({shared_kv_past_lens_values.size()});
-            std::memcpy(shared_kv_past_lens.data(),
-                        shared_kv_past_lens_values.data(),
-                        shared_kv_past_lens_values.size() * sizeof(int32_t));
-
-            auto shared_kv_subsequence_begins = m_request.get_tensor("shared_kv_subsequence_begins");
-            shared_kv_subsequence_begins.set_shape({shared_kv_subsequence_begins_values.size()});
-            std::memcpy(shared_kv_subsequence_begins.data(),
-                        shared_kv_subsequence_begins_values.data(),
-                        shared_kv_subsequence_begins_values.size() * sizeof(int32_t));
-        }
 
         if (m_is_aggregate_attention_scores && !m_cached_score_aggregation_window) {
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
@@ -1232,7 +1173,8 @@ public:
                 for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                     Sequence::Ptr sequence = running_sequences[seq_idx];
                     sequence->update_hidden_state(
-                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()),
+                        sequence_group->get_num_processed_tokens());
                     if (m_has_intermediate_hidden_states_output) {
                         auto ihs = _get_intermediate_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id());
                         if (ihs.get_size() == 0) {
@@ -1513,6 +1455,36 @@ private:
 
     ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
         return _get_hidden_state_slice(m_hidden_states, request_id, seq_grouped_id);
+    }
+
+    /// @brief A sequence's hidden state is a view of the output of the forward that ran it, and the next inference
+    /// writes that output again. A sequence that this forward does not schedule keeps a copy of its rows instead.
+    void _preserve_hidden_states_of_unscheduled_sequences(
+        const std::vector<SequenceGroup::Ptr>& sequence_groups,
+        const ContinuousBatchingScheduler::Output& scheduler_output) const {
+        if (!m_preserve_unscheduled_hidden_states || m_sequence_hidden_state_mapping.empty()) {
+            return;
+        }
+        std::vector<bool> is_scheduled(sequence_groups.size(), false);
+        for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+            is_scheduled[seq_group_id] = true;
+        }
+        for (size_t seq_group_id = 0; seq_group_id < sequence_groups.size(); ++seq_group_id) {
+            if (is_scheduled[seq_group_id]) {
+                continue;
+            }
+            const SequenceGroup::Ptr& sequence_group = sequence_groups[seq_group_id];
+            for (const auto& sequence : sequence_group->get_running_sequences()) {
+                const SequenceKey key{sequence_group->get_request_id(), sequence->get_grouped_id()};
+                const ov::Tensor view = sequence->get_hidden_state();
+                if (!m_sequence_hidden_state_mapping.count(key) || !view) {
+                    continue;
+                }
+                ov::Tensor rows(view.get_element_type(), view.get_shape());
+                view.copy_to(rows);
+                sequence->update_hidden_state(rows, sequence->get_hidden_state_first_position());
+            }
+        }
     }
 
     ov::Tensor _get_intermediate_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {

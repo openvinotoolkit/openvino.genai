@@ -12,7 +12,7 @@
 #include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
-#include "openvino/frontend/gguf/extension/genai.hpp"
+#include "openvino/frontend/gguf/adapt_to_genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
 
 #include "gguf_utils/building_blocks.hpp"
@@ -142,34 +142,26 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path,
-                                                      bool embeddings,
-                                                      bool include_mtp_draft,
-                                                      std::shared_ptr<ov::Model>* mtp_draft) {
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path, bool include_mtp_draft) {
     ov::frontend::gguf::FrontEnd frontend;
-    auto converted = frontend.convert(frontend.load(model_path, ov::frontend::gguf::LoadOptions{include_mtp_draft}));
+    const auto input_model = include_mtp_draft
+                                 ? frontend.load(model_path, ov::frontend::gguf::LoadOptions{true})
+                                 : frontend.load(model_path);
+    auto converted_model = frontend.convert(input_model);
+    OPENVINO_ASSERT(!converted_model->has_rt_info("gguf_mmproj"),
+                    "GGUF file '",
+                    model_path,
+                    "' is an mmproj and cannot be loaded as a language model.");
     ov::frontend::gguf::GenAIAdaptOptions options;
-    options.input = embeddings ? ov::frontend::gguf::pass::AdaptToGenAI::InputMode::EMBEDS_TO_LOGITS
-                               : ov::frontend::gguf::pass::AdaptToGenAI::InputMode::IDS_TO_LOGITS;
-    auto models = ov::frontend::gguf::adapt_to_genai(converted, options);
-    const auto language = models.find("language");
-    OPENVINO_ASSERT(language != models.end() && language->second,
-                    "The GGUF frontend did not produce a language model for ",
-                    model_path);
-    if (mtp_draft) {
-        const auto draft = models.find("mtp_draft");
-        OPENVINO_ASSERT(draft != models.end() && draft->second,
-                        "The GGUF frontend did not produce an MTP draft for ",
-                        model_path);
-        *mtp_draft = draft->second;
+    if (include_mtp_draft) {
+        options.input = ov::frontend::gguf::pass::AdaptToGenAI::InputMode::EMBEDS_TO_LOGITS;
     }
-    return language->second;
+    return ov::frontend::gguf::adapt_to_genai(converted_model, options);
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
-                                            bool use_legacy_reader,
-                                            bool embeddings) {
+                                            bool use_legacy_reader) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     std::shared_ptr<ov::Model> model;
@@ -195,7 +187,13 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        model = convert_gguf_with_frontend(model_path, embeddings, false);
+        auto models = convert_gguf_with_frontend(model_path);
+        auto language = models.find("language");
+        OPENVINO_ASSERT(language != models.end(),
+                        "[GGUF] adaptation of decoder file '",
+                        model_path,
+                        "' did not produce the required language model.");
+        model = language->second;
     }
 
     if (enable_save_ov_model) {

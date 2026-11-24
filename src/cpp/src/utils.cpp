@@ -400,29 +400,13 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     std::tie(matmul, slice_gather_dim) = find_llm_matmul(model);
 
     if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
-        std::shared_ptr<ov::op::v0::Parameter> indices;
-        for (const auto& parameter : model->get_parameters()) {
-            if (parameter->get_friendly_name() == "sampled_tokens_indices" ||
-                parameter->output(0).get_names().count("sampled_tokens_indices")) {
-                indices = parameter;
-                break;
-            }
-        }
-        const bool add_indices = !indices;
-        if (add_indices) {
-            indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
-            indices->set_friendly_name("sampled_tokens_indices");
-            indices->output(0).get_tensor().set_names({"sampled_tokens_indices"});
-        } else {
-            OPENVINO_ASSERT(
-                indices->get_element_type() == ov::element::i64 && indices->get_partial_shape() == ov::PartialShape{-1},
-                "Existing sampled_tokens_indices input must be i64 with shape [-1]");
-        }
+        auto indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+        indices->set_friendly_name("sampled_tokens_indices");
+        indices->output(0).get_tensor().set_names({"sampled_tokens_indices"});
         auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{slice_gather_dim});
         auto gather = std::make_shared<ov::op::v8::Gather>(matmul->input_value(0), indices, axis);
         matmul->input(0).replace_source_output(gather);
-        if (add_indices)
-            model->add_parameters({indices});
+        model->add_parameters({indices});
     }
 }
 

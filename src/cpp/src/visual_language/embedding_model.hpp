@@ -45,7 +45,6 @@ public:
                     const ov::AnyMap& properties);
 
     EmbeddingsModel() = default;
-    EmbeddingsModel(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& properties);
 
     static Ptr create(const std::filesystem::path& model_dir,
                       const float scale_emb,
