@@ -13,6 +13,7 @@
 namespace ov {
 namespace genai {
 class Text2SpeechPipelineImpl;
+class Text2SpeechStreamingSession;
 
 /**
  * Structure that stores the result from the generate method, including a list of waveform tensors
@@ -170,6 +171,8 @@ public:
     ov::Shape get_speaker_embedding_shape() const;
 
 private:
+    friend class Text2SpeechStreamingSession;
+
     std::shared_ptr<Text2SpeechPipelineImpl> m_impl;
     SpeechGenerationConfig m_speech_gen_config;
 };

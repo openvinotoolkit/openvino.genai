@@ -156,6 +156,7 @@ Qwen3TTSImpl::TalkerRun::Status Qwen3TTSImpl::TalkerRun::step(std::vector<float>
                                                       m_talker_rng);
     if (token == m_engine.ids().codec_eos_token_id) {
         m_done = true;
+        m_eos = true;
         return Status::DONE;
     }
     m_generated_main.push_back(token);
@@ -237,24 +238,14 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     return result;
 }
 
-Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>& texts,
-                                                 const ov::Tensor& speaker_embedding,
-                                                 const SpeechGenerationConfig& generation_config,
-                                                 const OmniSpeechStreamerVariant& streamer) {
-    // Constructed first so end() is called exactly once on every exit path, including validation errors.
-    SpeechStreamerEndGuard streamer_guard(streamer);
-    OPENVINO_ASSERT(!is_speech_streamer_active(streamer) || texts.size() == 1,
-                    "Audio output streaming supports exactly one input text per generate() call.");
-    Text2SpeechDecodedResults result;
-    result.output_sample_rate = m_engine.output_sample_rate();
-
-    auto generation_start = std::chrono::steady_clock::now();
-
-    std::vector<bool> suppress_tokens = m_engine.compute_suppress_tokens();
-
-    const std::string language = m_engine.normalize_text_language(generation_config.language);
-    const std::string speaker = m_engine.normalize_speaker(generation_config.speaker);
-    const bool base_model = m_engine.is_base_model();
+Qwen3TTSImpl::VoiceSetup Qwen3TTSImpl::resolve_voice(const ov::Tensor& speaker_embedding,
+                                                     const SpeechGenerationConfig& generation_config) {
+    VoiceSetup voice;
+    voice.language = m_engine.normalize_text_language(generation_config.language);
+    voice.speaker = m_engine.normalize_speaker(generation_config.speaker);
+    voice.base_model = m_engine.is_base_model();
+    const std::string& speaker = voice.speaker;
+    const bool base_model = voice.base_model;
 
     if (m_engine.tts_model_type() == "voice_design") {
         OPENVINO_ASSERT(generation_config.speaker.empty(),
@@ -284,29 +275,23 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         generation_config.ref_text.empty() &&
         !static_cast<bool>(generation_config.ref_codec_ids);
 
-    ov::Tensor effective_speaker_embedding = speaker_embedding;
-    if (base_model && !effective_speaker_embedding && generation_config.ref_audio) {
-        effective_speaker_embedding = m_engine.extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
+    voice.speaker_embedding = speaker_embedding;
+    if (base_model && !voice.speaker_embedding && generation_config.ref_audio) {
+        voice.speaker_embedding = m_engine.extract_qwen3_speaker_embedding_from_audio(generation_config.ref_audio);
     }
 
-    // Surface the resolved speaker embedding so callers can persist and reuse it (x-vector mode).
-    if (base_model && effective_speaker_embedding) {
-        result.speaker_embedding = effective_speaker_embedding;
-    }
-
-    // ICL voice-clone path: triggered when ref_text or ref_codec_ids is provided.
-    const bool has_qwen_voice_clone_props =
+    voice.icl =
         base_model &&
         !x_vector_only_mode &&
         (!generation_config.ref_text.empty() ||
          static_cast<bool>(generation_config.ref_audio) ||
          static_cast<bool>(generation_config.ref_codec_ids));
 
-    if (has_qwen_voice_clone_props) {
+    if (voice.icl) {
         OPENVINO_ASSERT(!generation_config.ref_text.empty(),
                         "Qwen3 Base ICL voice cloning requires non-empty 'ref_text'.");
 
-        OPENVINO_ASSERT(effective_speaker_embedding,
+        OPENVINO_ASSERT(voice.speaker_embedding,
                         "Qwen3 Base ICL voice cloning requires a speaker source: pass 'speaker_embedding' "
                         "or provide 'ref_audio'.");
 
@@ -319,14 +304,51 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
                         "Qwen3 Base ICL voice cloning requires reference codec ids: pass 'ref_codec_ids' "
                         "or provide 'ref_audio' so ref codes can be extracted.");
 
+        voice.ref_text = generation_config.ref_text;
+        voice.ref_codec_ids = resolved_ref_code;
+    }
+    return voice;
+}
+
+Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>& texts,
+                                                 const ov::Tensor& speaker_embedding,
+                                                 const SpeechGenerationConfig& generation_config,
+                                                 const OmniSpeechStreamerVariant& streamer) {
+    // Constructed first so end() is called exactly once on every exit path, including validation errors.
+    SpeechStreamerEndGuard streamer_guard(streamer);
+    OPENVINO_ASSERT(m_live_streaming_sessions.load() == 0,
+                    "generate() cannot run while a Text2SpeechStreamingSession is alive: they share the talker. "
+                    "Destroy the session first.");
+    OPENVINO_ASSERT(!is_speech_streamer_active(streamer) || texts.size() == 1,
+                    "Audio output streaming supports exactly one input text per generate() call.");
+    Text2SpeechDecodedResults result;
+    result.output_sample_rate = m_engine.output_sample_rate();
+
+    auto generation_start = std::chrono::steady_clock::now();
+
+    std::vector<bool> suppress_tokens = m_engine.compute_suppress_tokens();
+
+    const VoiceSetup voice = resolve_voice(speaker_embedding, generation_config);
+    const std::string& language = voice.language;
+    const std::string& speaker = voice.speaker;
+    const bool base_model = voice.base_model;
+    const ov::Tensor& effective_speaker_embedding = voice.speaker_embedding;
+
+    // Surface the resolved speaker embedding so callers can persist and reuse it (x-vector mode).
+    if (base_model && effective_speaker_embedding) {
+        result.speaker_embedding = effective_speaker_embedding;
+    }
+
+    // ICL voice-clone path: triggered when ref_text or ref_codec_ids is provided.
+    if (voice.icl) {
         Qwen3VoiceClonePrompt prompt;
         prompt.ref_spk_embedding = effective_speaker_embedding;
-        prompt.ref_text = generation_config.ref_text;
-        prompt.ref_code = resolved_ref_code;
+        prompt.ref_text = voice.ref_text;
+        prompt.ref_code = voice.ref_codec_ids;
 
         // Surface the resolved clone artifacts so callers can persist and reuse them (ICL mode).
         result.speaker_embedding = effective_speaker_embedding;
-        result.ref_codec_ids = resolved_ref_code;
+        result.ref_codec_ids = voice.ref_codec_ids;
 
         for (const auto& text : texts) {
             auto decoded = generate_voice_clone(text, prompt, generation_config, streamer);

@@ -48,6 +48,32 @@ public:
 
     ov::Shape get_speaker_embedding_shape() const override;
 
+    // Input streaming (Text2SpeechStreamingSession): one session at a time, because the talker's KV cache lives in
+    // this object's single talker request; generate() is refused while a session is alive.
+    size_t max_streaming_sessions() const override {
+        return 1;
+    }
+
+    std::unique_ptr<Text2SpeechStreamingSessionImpl> create_streaming_session_impl(
+        std::shared_ptr<Text2SpeechPipelineImpl> owner,
+        const ov::Tensor& speaker_embedding,
+        const SpeechGenerationConfig& generation_config,
+        const Text2SpeechStreamingConfig& streaming_config) override;
+
+    // What generate() and a session need to know about the voice, checked and resolved from the request.
+    struct VoiceSetup {
+        std::string language;  // normalized
+        std::string speaker;   // normalized
+        bool base_model = false;
+        ov::Tensor speaker_embedding;  // the effective one: the x-vector is extracted from ref_audio when needed
+        bool icl = false;              // Base voice cloning with a reference transcript and reference codes
+        std::string ref_text;          // ICL only
+        ov::Tensor ref_codec_ids;      // ICL only, [T, G]
+    };
+
+    // Validates the voice-related part of a request and resolves what is derived from it. Throws on a bad request.
+    VoiceSetup resolve_voice(const ov::Tensor& speaker_embedding, const SpeechGenerationConfig& generation_config);
+
     // The generation of ONE utterance on the talker, advanced one codec frame per step(). All the state that lives
     // between two frames (the talker's last logits and hidden states, the sampling RNGs and history, the text term
     // source, the frames and their audio) is held here, so a run can be paused after any frame and continued later.
@@ -89,6 +115,16 @@ public:
             return m_text;
         }
 
+        // The audio that is decoded but not handed over yet (see UtteranceFrames::take_decoded()).
+        std::vector<float> take_decoded() {
+            return m_frames.take_decoded();
+        }
+
+        // After DONE: whether the model ended the utterance (codec EOS) rather than the step limit being reached.
+        bool ended_by_eos() const {
+            return m_eos;
+        }
+
         // End of the utterance: streaming, the audio not yet handed over; otherwise, the whole waveform.
         std::vector<float> finish() {
             return m_frames.finish();
@@ -122,9 +158,12 @@ public:
         std::vector<int64_t> m_groups;  // codes of the frame generated last
         bool m_pending = false;         // that frame has not been fed to the talker yet
         bool m_done = false;
+        bool m_eos = false;
     };
 
 private:
+    friend class Qwen3TTSStreamingSessionImpl;
+
     ov::Tensor infer_talker(const ov::Tensor& inputs_embeds,
                             const ov::Tensor& attention_mask,
                             const ov::Tensor& position_ids,

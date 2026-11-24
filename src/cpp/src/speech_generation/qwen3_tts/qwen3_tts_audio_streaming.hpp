@@ -259,6 +259,13 @@ public:
         return m_chunker->chunk_ready() ? m_chunker->take_pending() : std::vector<float>{};
     }
 
+    // Streaming: the audio that is decoded but not handed over yet, whatever the chunk size. With the stateful decoder
+    // that is the complete decoder blocks (frames of an unfinished block cannot be decoded without padding, which
+    // would corrupt the state if more frames follow). Nothing for a non-streaming utterance.
+    std::vector<float> take_decoded() {
+        return m_chunker ? m_chunker->take_pending() : std::vector<float>{};
+    }
+
     // End of the utterance. Streaming: the audio that has not been handed over yet. Otherwise: the waveform of all
     // the frames.
     std::vector<float> finish() {
