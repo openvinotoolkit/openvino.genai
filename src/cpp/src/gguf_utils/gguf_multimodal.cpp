@@ -16,9 +16,58 @@
 #include "openvino/frontend/gguf/frontend.hpp"
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/gguf.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/equal.hpp"
+#include "openvino/op/select.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
+size_t add_gguf_image_token(ov::AnyMap& metadata, const std::string& token) {
+    auto& tokens = metadata.at("tokens").as<std::vector<std::string>>();
+    auto types = metadata.at("token_type").as<ov::Tensor>();
+    OPENVINO_ASSERT(types.get_element_type() == ov::element::i32 && types.get_size() == tokens.size(),
+                    "GGUF tokenizer token_type must contain one int32 per token");
+    const auto existing = std::find(tokens.begin(), tokens.end(), token);
+    if (existing != tokens.end()) {
+        const size_t id = existing - tokens.begin();
+        const int32_t type = types.data<const int32_t>()[id];
+        OPENVINO_ASSERT(type == 3 || type == 4, "GGUF image token must be a control or user-defined token: ", token);
+        return id;
+    }
+
+    const size_t id = tokens.size();
+    ov::Tensor new_types(ov::element::i32, {id + 1});
+    std::copy_n(types.data<const int32_t>(), id, new_types.data<int32_t>());
+    new_types.data<int32_t>()[id] = 3;
+    metadata["token_type"] = new_types;
+    if (const auto it = metadata.find("scores"); it != metadata.end()) {
+        const auto scores = it->second.as<ov::Tensor>();
+        OPENVINO_ASSERT(scores.get_element_type() == ov::element::f32 && scores.get_size() == id,
+                        "GGUF tokenizer scores must contain one float per token");
+        ov::Tensor new_scores(ov::element::f32, {id + 1});
+        std::copy_n(scores.data<const float>(), id, new_scores.data<float>());
+        new_scores.data<float>()[id] = 0.f;
+        metadata["scores"] = new_scores;
+    }
+    tokens.push_back(token);
+    return id;
+}
+
+void map_gguf_image_token_for_embeddings(const std::shared_ptr<ov::Model>& model, size_t token_id) {
+    const auto input = model->input(0);
+    const auto type = input.get_element_type();
+    OPENVINO_ASSERT(type == ov::element::i64 || type == ov::element::i32,
+                    "GGUF text embeddings require int32 or int64 token IDs");
+    const auto consumers = input.get_target_inputs();
+    const auto marker = ov::op::v0::Constant::create(type, {}, {token_id});
+    const auto replacement = ov::op::v0::Constant::create(type, {}, {0});
+    const auto selected = std::make_shared<ov::op::v1::Select>(
+        std::make_shared<ov::op::v1::Equal>(input, marker), replacement, input);
+    for (auto consumer : consumers)
+        consumer.replace_source_output(selected);
+    model->validate_nodes_and_infer_types();
+}
+
 namespace {
 using nlohmann::json;
 
@@ -121,8 +170,6 @@ Configs gguf_configs(const std::string& architecture,
     if (architecture == "gemma3") {
         const auto size = meta.integer("clip.vision.image_size");
         c.config["model_type"] = "gemma3";
-        c.config["image_separator"] = "";
-        c.image["pad_to_target"] = true;
         c.image["size"] = {{"height", size}, {"width", size}};
         c.video = c.image;
         return c;
@@ -139,11 +186,6 @@ Configs gguf_configs(const std::string& architecture,
             }))
             c.config["text_config"]["use_bidirectional_attention"] = "vision";
         c.image["pooling_kernel_size"] = meta.integer("clip.vision.projector.scale_factor", 3);
-        const auto merged_patch = patch * c.image["pooling_kernel_size"].get<size_t>();
-        c.image["preserve_native_resolution"] = true;
-        c.image["pad_to_target"] = true;
-        c.image["min_pixels"] = 70 * merged_patch * merged_patch;
-        c.image["max_pixels"] = 1120 * merged_patch * merged_patch;
         c.image["max_soft_tokens"] = 1120;
         c.unsampled_video_from_image();
         return c;
@@ -166,7 +208,6 @@ Configs gguf_configs(const std::string& architecture,
     }
     if (architecture == "muse-glimmer") {
         c.config["model_type"] = "muse_glimmer";
-        c.image["preserve_native_resolution"] = true;
         // GGUF collapses HF's two-frame patch kernel.
         c.image["temporal_patch_size"] = 1;
         c.image["max_image_tokens"] = 4096;
@@ -177,12 +218,20 @@ Configs gguf_configs(const std::string& architecture,
     c.config["model_type"] = architecture == "qwen3vl" || architecture == "qwen3vlmoe" ? "qwen3_vl"
                             : architecture == "qwen35moe"                              ? "qwen3_5_moe"
                                                                                        : "qwen3_5";
+    if (architecture == "qwen3vl" || architecture == "qwen3vlmoe") {
+        const auto shape = models.vlm.at("vision_embeddings_merger")
+                               ->output("deepstack_feature_lists")
+                               .get_partial_shape();
+        OPENVINO_ASSERT(shape.rank().is_static() && shape.rank().get_length() == 3 && shape[0].is_static() &&
+                            shape[0].get_length() > 0,
+                        "Qwen3-VL requires a static positive DeepStack layer count");
+        c.config["vision_config"]["deepstack_visual_indexes"] =
+            std::vector<size_t>(static_cast<size_t>(shape[0].get_length()), 0);
+    }
     const auto side = meta.integer("clip.vision.image_size") / patch;
     c.config["vision_config"]["num_position_embeddings"] = side * side;
     c.image["temporal_patch_size"] = 2;
     const auto merged_patch = patch * merge;
-    c.image["preserve_native_resolution"] = true;
-    c.image["pad_to_target"] = true;
     c.image["min_pixels"] = 8 * merged_patch * merged_patch;
     c.image["max_pixels"] = 4096 * merged_patch * merged_patch;
     c.unsampled_video_from_image();
@@ -301,14 +350,12 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     combined.reset();
     const auto architecture = result.language->get_rt_info<std::string>("gguf_architecture");
     const auto projector = meta.text("vision.projector");
-    int64_t image_padding_id = -1;
-    bool add_eos_token = false;
+    std::optional<size_t> image_token_id;
     if (projector == "mlp") {
         if (const auto it = tokenizer_metadata.find("add_eos_token"); it != tokenizer_metadata.end()) {
             const auto flag = it->second.as<ov::Tensor>();
             OPENVINO_ASSERT(flag.get_element_type() == ov::element::boolean && flag.get_size() == 1,
                             "GGUF LLaVA add_eos_token must be a single boolean value");
-            add_eos_token = flag.data<const bool>()[0];
         }
         const auto aspect_ratio =
             meta.has("clip.vision.image_aspect_ratio") ? meta.text("clip.vision.image_aspect_ratio") : "square";
@@ -324,7 +371,7 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
             const auto unknown = it->second.as<ov::Tensor>();
             OPENVINO_ASSERT(unknown.get_element_type() == ov::element::u32 && unknown.get_size() == 1,
                             "GGUF LLaVA unknown_token_id must be a single uint32 value");
-            image_padding_id = unknown.data<const uint32_t>()[0];
+            const auto image_padding_id = unknown.data<const uint32_t>()[0];
             OPENVINO_ASSERT(image_padding_id < tokenizer_metadata.at("tokens").as<std::vector<std::string>>().size(),
                             "GGUF LLaVA unknown_token_id is outside the vocabulary");
         } else {
@@ -332,9 +379,11 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
             const auto end = token_types.data<const int32_t>() + token_types.get_size();
             const auto unknown = std::find(token_types.data<const int32_t>(), end, 2);
             OPENVINO_ASSERT(unknown != end, "GGUF LLaVA requires an unknown token for image padding");
-            image_padding_id = unknown - token_types.data<const int32_t>();
         }
+        image_token_id = add_gguf_image_token(tokenizer_metadata, "<image>");
     }
+    if (architecture == "gemma3" && projector == "gemma3")
+        image_token_id = add_gguf_image_token(tokenizer_metadata, "<image_soft_token>");
     if (projector == "internvl" && !tokenizer_metadata.count("eos_token_id")) {
         OPENVINO_ASSERT(!result.stop_token_ids.empty(), "GGUF InternVL requires an EOS or end-of-generation token");
         ov::Tensor eos(ov::element::u32, {});
@@ -369,6 +418,8 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
         vlm.models["audio_embeddings"] = encoders.at("audio_embeddings");
     }
     vlm.models["text_embeddings"] = language_models.at("text_embeddings");
+    if (image_token_id)
+        map_gguf_image_token_for_embeddings(vlm.models["text_embeddings"], *image_token_id);
     if (const auto it = language_models.find("text_embeddings_per_layer"); it != language_models.end())
         vlm.models["text_embeddings_per_layer"] = it->second;
 
@@ -383,12 +434,6 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
         vlm.config.image_token_id = image.data<const int64_t>()[0];
         vlm.config.video_token_id = video.data<const int64_t>()[0];
     }
-    if (projector == "mlp") {
-        OPENVINO_ASSERT(image_padding_id >= 0, "GGUF LLaVA requires a vocabulary padding token");
-        vlm.config.image_token_id = image_padding_id;
-        vlm.config.add_eos_token = add_eos_token;
-        vlm.config.image_token_is_placeholder = true;
-    }
     if (vlm.find("audio_embeddings")) {
         const auto token = result.tokenizer.encode(vlm.config.audio_token, add_special_tokens(false)).input_ids;
         OPENVINO_ASSERT(token.get_size() == 1, "GGUF Gemma4 requires a single audio placeholder token");
@@ -396,13 +441,6 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     }
     vlm.processor_config = ProcessorConfig(configs.image);
     vlm.video_processor_config = VideoProcessorConfig(configs.video);
-    if (architecture == "gemma3") {
-        // GGUF Gemma3 vocabularies lack <image_soft_token>; <pad> only marks image positions.
-        vlm.config.image_soft_token = "<pad>";
-        const auto placeholder = result.tokenizer.encode(vlm.config.image_soft_token, add_special_tokens(false));
-        OPENVINO_ASSERT(placeholder.input_ids.get_size() == 1,
-                        "GGUF Gemma3 requires a single-token padding placeholder for image assembly");
-    }
     if (enable_save_ov_model) {
         utils::save_openvino_model(result.language, language.string() + ".language.xml", false);
         for (const auto& [name, model] : vlm.models)

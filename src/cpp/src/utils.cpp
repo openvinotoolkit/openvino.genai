@@ -1166,14 +1166,14 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
         }
         size_t n_tokens = std::min(image_embed_it->get_shape().at(1), size_t(token_offset - changed_token_offset));
         size_t n_floats = n_tokens * hidden_size;
-        auto text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
+        auto text_embeds_idx = text_embeds_data + (static_cast<size_t>(token_offset) + 1 - n_tokens) * hidden_size;
         OPENVINO_ASSERT(text_embeds_idx + n_floats <= text_embeds_end);
         std::copy_n(
             image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,
             n_floats,
             text_embeds_idx
         );
-        token_offset -= n_tokens + 1;
+        token_offset -= static_cast<int>(n_tokens);
     }
     // text_embeds is bound to infer request that can be used by another thread after leaving embeddings calculation scope
     // so we need to return a copy to make sure data does not get corrupted

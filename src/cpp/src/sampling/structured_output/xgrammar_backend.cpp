@@ -17,7 +17,11 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const ov::genai::Tokenizer::T
         "Structured output requires the tokenizer to expose its full vocabulary, but the current tokenizer "
         "has no vocabulary entries. This typically occurs when the tokenizer is a SentencePiece wrapper "
         "without a decomposed VocabDecoder node.");
-    if (!vocab_size.has_value()) {
+    if (vocab_size.has_value()) {
+        OPENVINO_ASSERT(*vocab_size > 0, "Structured output model vocabulary size must be positive");
+        if (vocab_vector.size() > static_cast<size_t>(*vocab_size))
+            vocab_vector.resize(static_cast<size_t>(*vocab_size));
+    } else {
         vocab_size = vocab_vector.size();
     }
     

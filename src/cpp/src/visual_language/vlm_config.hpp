@@ -112,7 +112,6 @@ public:
 
     /// @brief A string token denoting start of vision embeddings for gemma3-4b-it model.
     std::string start_of_image = "<start_of_image>";
-    std::string image_separator = "\n\n";
     /// @brief A placeholder for image embeddings in text for gemma3-4b-it model.
     std::string image_soft_token = "<image_soft_token>";
     /// @brief A string token denoting end of vision embeddings for gemma3-4b-it model.
@@ -197,8 +196,6 @@ public:
     int64_t audio_token_id = -1;
     int64_t image_token_id = -1;
     int64_t video_token_id = -1;
-    bool add_eos_token = false;
-    bool image_token_is_placeholder = false;
     // Speaker name-to-codec-token mapping
     std::map<std::string, int64_t> speaker_ids;
 

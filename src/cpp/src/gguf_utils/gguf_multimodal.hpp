@@ -31,6 +31,9 @@ struct GGUFMultimodalModels {
 
 void validate_gguf_clip_language(const std::shared_ptr<ov::Model>& model);
 
+size_t add_gguf_image_token(ov::AnyMap& metadata, const std::string& token);
+void map_gguf_image_token_for_embeddings(const std::shared_ptr<ov::Model>& model, size_t token_id);
+
 void validate_gguf_multimodal_dimensions(const std::shared_ptr<ov::Model>& language, const VLMModels& models);
 
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,

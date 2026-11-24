@@ -5,7 +5,7 @@
 #include "model_desc.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/openvino.hpp"
-#include "visual_language/llava/classes.hpp"
+#include "utils.hpp"
 
 TEST(GGUFClipAdapter, RejectsDraftModelBeforeLoading) {
     for (const std::string backend : {"SDPA", "PA"}) {
@@ -23,7 +23,7 @@ TEST(GGUFClipAdapter, RejectsDraftModelBeforeLoading) {
 }
 
 TEST(GGUFClipAdapter, ImageSlotsPreserveTextAndTruncatedImageRows) {
-    const std::vector<bool> slots{false, true, true, true, true, false};
+    const std::vector<int64_t> slots{0, 1, 1, 1, 1, 0};
     ov::Tensor first(ov::element::f32, {1, 2, 2}), second(ov::element::f32, {1, 2, 2});
     for (size_t i = 0; i < 4; ++i) {
         first.data<float>()[i] = float(i + 1);
@@ -33,10 +33,11 @@ TEST(GGUFClipAdapter, ImageSlotsPreserveTextAndTruncatedImageRows) {
     for (size_t length : {size_t(6), size_t(4), size_t(2), size_t(1)}) {
         ov::Tensor text(ov::element::f32, {1, length, 2});
         std::fill_n(text.data<float>(), text.get_size(), .25f);
-        auto merged = ov::genai::merge_image_embeddings_with_slots(slots, text, {first, second});
+        ov::Tensor ids(ov::element::i64, {1, length});
+        std::copy(slots.end() - length, slots.end(), ids.data<int64_t>());
+        auto merged = ov::genai::utils::merge_text_and_image_embeddings_llava(ids, text, {first, second}, 1);
         for (size_t i = 0; i < text.get_size(); ++i) {
             EXPECT_FLOAT_EQ(merged.data<float>()[i], expected[expected.size() - text.get_size() + i]);
-            EXPECT_FLOAT_EQ(text.data<float>()[i], .25f);
         }
     }
 }

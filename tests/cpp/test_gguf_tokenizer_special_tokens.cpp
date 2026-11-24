@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -12,6 +13,7 @@
 #include "gguf_utils/gguf_multimodal.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "sampling/sampler.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/llava/classes.hpp"
 
@@ -340,11 +342,12 @@ TEST(GGUFMultimodal, PreformattedChatDoesNotDuplicateSpecialTokens) {
 
 TEST(GGUFMultimodal, LlavaUnknownTextTokensRemainTextEmbeddings) {
     using namespace ov::genai;
-    auto tokenizer = GGUFTokenizer(combining_marks_config("gpt2"));
+    auto parameters = combining_marks_config("gpt2");
+    const auto image_token = add_gguf_image_token(parameters.config, "<image>");
+    auto tokenizer = GGUFTokenizer(parameters);
     auto models = gemma4_models();
     models.config.model_type = VLMModelType::LLAVA;
-    models.config.image_token_id = 6;
-    models.config.image_token_is_placeholder = true;
+    map_gguf_image_token_for_embeddings(models.at("text_embeddings"), image_token);
     InputsEmbedderLLaVA embedder(models, tokenizer, "CPU", {});
     embedder.set_prompt_formatting(PromptFormatting::Raw);
     ov::Tensor pixels(ov::element::f32, {1, 2, 4});
@@ -368,10 +371,12 @@ TEST(GGUFMultimodal, LlavaUnknownTextTokensRemainTextEmbeddings) {
 
 TEST(GGUFMultimodal, Gemma3LiteralPadsRemainTextAfterCacheClipping) {
     using namespace ov::genai;
-    GGUFTokenizer tokenizer(sentencepiece_config());
+    auto parameters = sentencepiece_config();
+    const auto image_token = add_gguf_image_token(parameters.config, "<image_soft_token>");
+    GGUFTokenizer tokenizer(parameters);
     auto models = gemma4_models();
     models.config.model_type = VLMModelType::GEMMA3;
-    models.config.image_soft_token = "<pad>";
+    map_gguf_image_token_for_embeddings(models.at("text_embeddings"), image_token);
     ov::Tensor pixels(ov::element::f32, {1, 2, 4});
     for (size_t i = 0; i < pixels.get_size(); ++i)
         pixels.data<float>()[i] = float(10 + i);
@@ -382,8 +387,8 @@ TEST(GGUFMultimodal, Gemma3LiteralPadsRemainTextAfterCacheClipping) {
     const auto* data = ids.data<const int64_t>();
     const auto begin = std::find(data, data + ids.get_size(), 6) - data + 1;
     ASSERT_LT(begin + 2, ids.get_size());
-    ASSERT_EQ(data[begin], 3);
-    ASSERT_EQ(data[begin + 1], 3);
+    ASSERT_EQ(data[begin], image_token);
+    ASSERT_EQ(data[begin + 1], image_token);
     ASSERT_EQ(data[begin + 2], 7);
     for (size_t skip : {size_t(0), size_t(begin), size_t(begin + 1), size_t(begin + 2)}) {
         SCOPED_TRACE(skip);
@@ -430,18 +435,18 @@ TEST(GGUFMultimodal, LlavaLongSpansAreNotTruncated) {
     };
     auto parameters = sentencepiece_config();
     parameters.config.at("add_bos_token").as<ov::Tensor>().data<bool>()[0] = false;
+    const auto image_token = add_gguf_image_token(parameters.config, "<image>");
     GGUFTokenizer tokenizer(parameters);
     auto models = gemma4_models();
     models.config.model_type = VLMModelType::LLAVA;
-    models.config.image_token_id = 3;
-    models.config.image_token_is_placeholder = true;
+    map_gguf_image_token_for_embeddings(models.at("text_embeddings"), image_token);
     TestEmbedder embedder(models, tokenizer, "CPU", {});
     embedder.set_prompt_formatting(PromptFormatting::Raw);
     VLMPerfMetrics metrics;
     const auto ids =
         embedder.apply_chat_template_tokenize(std::string(9000, 'a') + "<image>" + std::string(9000, 'a'), metrics);
     ASSERT_EQ(ids.get_size(), 18001);
-    EXPECT_EQ(ids.data<const int64_t>()[9000], 3);
+    EXPECT_EQ(ids.data<const int64_t>()[9000], image_token);
 }
 
 TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
@@ -453,6 +458,7 @@ TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
     for (bool add_eos : {false, true}) {
         for (bool alias_bos_eos : {false, true}) {
             auto parameters = sentencepiece_config();
+            const auto image_token = add_gguf_image_token(parameters.config, "<image>");
             ov::Tensor flag(ov::element::boolean, {});
             flag.data<bool>()[0] = add_eos;
             parameters.config["add_eos_token"] = flag;
@@ -465,9 +471,7 @@ TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
                                  << add_eos << ',' << alias_bos_eos << ',' << prefix << ',' << mode);
                     auto models = gemma4_models();
                     models.config.model_type = VLMModelType::LLAVA;
-                    models.config.image_token_id = 3;
-                    models.config.add_eos_token = add_eos;
-                    models.config.image_token_is_placeholder = true;
+                    map_gguf_image_token_for_embeddings(models.at("text_embeddings"), image_token);
                     TestEmbedder embedder(models, tokenizer, "CPU", {});
                     embedder.set_prompt_formatting(mode == 2 ? PromptFormatting::AlreadyTemplated
                                                              : PromptFormatting::Raw);
@@ -481,7 +485,7 @@ TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
                     expected.push_back(9);
                     if (prefix == "a<eos>")
                         expected.push_back(2);
-                    expected.insert(expected.end(), {3, 9});
+                    expected.insert(expected.end(), {static_cast<int64_t>(image_token), 9});
                     if (mode == 0 && add_eos)
                         expected.push_back(alias_bos_eos ? 1 : 2);
                     EXPECT_EQ(std::vector<int64_t>(actual.data<const int64_t>(),
@@ -493,46 +497,29 @@ TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
     }
 }
 
-TEST(GGUFMultimodal, ExtremeAspectRatiosRespectPixelBudget) {
-    EXPECT_THROW(bounded_image_size(48, 96000, 48, 0, 1120 * 48 * 48), ov::Exception);
-    EXPECT_THROW(bounded_image_size(42, 188160, 42, 0, 1120 * 42 * 42), ov::Exception);
-    EXPECT_THROW(bounded_image_size(48, 60000, 48, 0, 1120 * 48 * 48), ov::Exception);
-    const auto [height, width] = bounded_image_size(512, 768, 48, 0, 1120 * 48 * 48);
-    EXPECT_LE(height, (1120 * 48 * 48) / width);
-}
-
-TEST(GGUFMultimodal, Gemma4HonorsImagePadding) {
+TEST(GGUFMultimodal, StructuredOutputIgnoresSyntheticImageToken) {
     using namespace ov::genai;
-    auto models = gemma4_models();
-    auto pixels = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, 8, 48});
-    pixels->output(0).set_names({"pixel_values"});
-    auto positions = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, 8, 2});
-    positions->output(0).set_names({"image_position_ids"});
-    auto position_sum = std::make_shared<ov::op::v1::ReduceSum>(
-        std::make_shared<ov::op::v0::Convert>(positions, ov::element::f32),
-        ov::op::v0::Constant::create(ov::element::i64, {3}, {0, 1, 2}), false);
-    auto features = std::make_shared<ov::op::v1::Add>(pixels, position_sum);
-    models.models["vision_embeddings"] =
-        std::make_shared<ov::Model>(ov::OutputVector{features}, ov::ParameterVector{pixels, positions});
-    auto& config = models.processor_config;
-    config.patch_size = 4;
-    config.pooling_kernel_size = 1;
-    config.max_soft_tokens = 8;
-    config.min_pixels = 0;
-    config.max_pixels = 128;
-    config.preserve_native_resolution = true;
-    config.pad_to_target = true;
-    config.image_mean = {0, 0, 0};
-    config.image_std = {1, 1, 1};
-    VisionEncoderGemma4 encoder(models, "CPU", {});
-    ov::Tensor image(ov::element::u8, {1, 5, 10, 3});
-    std::fill_n(image.data<uint8_t>(), image.get_size(), 255);
-    const auto padded = encoder.encode(image, {}).resized_source;
-    config.pad_to_target = false;
-    VisionEncoderGemma4 stretched_encoder(models, "CPU", {});
-    const auto stretched = stretched_encoder.encode(image, {}).resized_source;
-    EXPECT_EQ(padded.get_shape(), stretched.get_shape());
-    EXPECT_FALSE(std::equal(padded.data<float>(), padded.data<float>() + padded.get_size(), stretched.data<float>()));
+    if (!StructuredOutputController::get_backend_registry().count("xgrammar"))
+        GTEST_SKIP() << "CVS-195111: xgrammar is not enabled in this build";
+    Tokenizer::TokenizerImpl tokenizer;
+    tokenizer.m_eos_token_id = 0;
+    tokenizer.m_vocab = {"<eos>", "a"};
+    for (size_t i = 2; i < 32; ++i)
+        tokenizer.m_vocab.push_back("token" + std::to_string(i));
+    tokenizer.m_vocab.push_back("<image>");
+
+    StructuredOutputController controller(tokenizer, 32);
+    GenerationConfig config;
+    StructuredOutputConfig structured;
+    structured.grammar = "root ::= \"a\" | \"<image>\"";
+    config.structured_output_config = structured;
+    config.stop_token_ids = {0};
+    auto transformer = controller.get_logits_transformer(config);
+    std::vector<float> scores(32, 0.f);
+    Logits logits(scores.data(), scores.size());
+    transformer->apply(logits);
+    EXPECT_EQ(scores[1], 0.f);
+    EXPECT_TRUE(std::isinf(scores[2]) && scores[2] < 0.f);
 }
 
 TEST(GGUFMultimodal, ClipRequiresCompatibleLanguageInputs) {

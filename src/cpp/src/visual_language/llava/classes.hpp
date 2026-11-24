@@ -12,10 +12,6 @@
 
 namespace ov::genai {
 
-ov::Tensor merge_image_embeddings_with_slots(const std::vector<bool>& image_slots,
-                                             const ov::Tensor& text_embeddings,
-                                             const std::vector<ov::Tensor>& image_embeddings);
-
 class VisionEncoderLLaVA : public VisionEncoder {
 public:
     using VisionEncoder::VisionEncoder;
@@ -55,11 +51,6 @@ public:
         const std::vector<EncodedImage>& images
     ) const override;
 protected:
-    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) override;
-
-    bool m_image_token_is_placeholder = false;
-    std::vector<bool> m_image_slots;
-
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
         ov::Tensor& text_embeds,

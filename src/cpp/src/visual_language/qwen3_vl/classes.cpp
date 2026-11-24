@@ -358,8 +358,7 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen2VL(vlm_config, model_dir, tokenizer, device, device_config),
-    m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()),
-    m_deepstack_layers_num(vlm_config.vision_config_deepstack_visual_indexes.size()) {
+    m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     compile_pos_model(utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_pos_model.xml"),
                       device,
                       device_config);
@@ -373,8 +372,7 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
-    m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()),
-    m_deepstack_layers_num(vlm_config.vision_config_deepstack_visual_indexes.size()) {
+    m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     const auto& [pos_model_str, pos_weights] =
         utils::get_model_weights_pair(models_map, "vision_embeddings_pos");
     compile_pos_model(utils::singleton_core().read_model(pos_model_str, pos_weights), device, device_config);
@@ -385,15 +383,7 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(const VLMModels& models,
                                              const std::string& device,
                                              const ov::AnyMap& properties)
     : InputsEmbedderQwen2VL(models, tokenizer, device, properties),
-      m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()),
-      m_deepstack_layers_num(models.config.vision_config_deepstack_visual_indexes.size()) {
-    if (models.config.model_type == VLMModelType::QWEN3_VL) {
-        const auto shape = models.at("vision_embeddings_merger")->output("deepstack_feature_lists").get_partial_shape();
-        OPENVINO_ASSERT(shape.rank().is_static() && shape.rank().get_length() == 3 && shape[0].is_static() &&
-                            shape[0].get_length() > 0,
-                        "Qwen3-VL requires a static positive DeepStack layer count");
-        m_deepstack_layers_num = shape[0].get_length();
-    }
+      m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     compile_pos_model(models.at("vision_embeddings_pos"), device, properties);
 }
 
@@ -783,7 +773,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
         }
 
         if (has_lm_extra_input("deepstack_visual_embeds")) {
-            const size_t num_layers = m_deepstack_layers_num;
+            const size_t num_layers = m_vlm_config.vision_config_deepstack_visual_indexes.size();
             const size_t hidden_size = text_embeds.get_shape()[2];
             ov::Tensor deepstack_visual_embeds(ov::element::f32, {num_layers, 1, hidden_size});
             std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
