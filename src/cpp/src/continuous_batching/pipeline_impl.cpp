@@ -348,6 +348,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::validate_request(
     uint64_t request_id,
     size_t prompt_len,
     const ov::genai::GenerationConfig& sampling_params) const {
+    OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
     const auto config = _with_default_stop_tokens(sampling_params);
     config.validate();
     // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
