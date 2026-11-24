@@ -183,10 +183,13 @@ public:
                           size_t prompt_len,
                           const ov::genai::GenerationConfig& sampling_params) const;
 
-    // Throws for a request of input_ids that add_request() would reject, and changes nothing.
-    void validate_request(uint64_t request_id,
-                          const ov::Tensor& input_ids,
-                          const ov::genai::GenerationConfig& sampling_params) const;
+    // Throws for a request that add_request() would reject, and changes nothing.
+    void validate_request(
+        uint64_t request_id,
+        const ov::Tensor& input_ids,
+        const ov::genai::GenerationConfig& sampling_params,
+        const std::optional<ov::Tensor>& prompt_ids = std::nullopt,
+        const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs = std::nullopt) const;
 
     virtual void generate_candidates_for_prompt_lookup();
 

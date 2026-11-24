@@ -172,7 +172,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    validate_request(request_id, input_ids, sampling_params, prompt_ids);
+    validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
     const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
@@ -195,10 +195,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::validate_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    const std::optional<ov::Tensor>&) const {
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
     const size_t prompt_len = ContinuousBatchingImpl::get_prompt_len(input_ids);
     m_draft_pipeline->validate_request(request_id, prompt_len, make_draft_sampling_params(sampling_params));
-    m_main_pipeline->validate_request(request_id, input_ids, sampling_params);
+    m_main_pipeline->validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
 }
 
 bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_requests() {

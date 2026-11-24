@@ -163,7 +163,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    validate_request(request_id, input_ids, sampling_params, prompt_ids);
+    validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
     GenerationConfig draft_sampling_params = make_draft_generation_config(sampling_params);
     // Draft gets shifted embeds only; VLM extras belong to the main model.
     ov::Tensor draft_input_embeds = create_draft_input_embeds(input_ids);
@@ -202,7 +202,8 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::validate_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    const std::optional<ov::Tensor>& prompt_ids) const {
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
     validate_mtp_generation_config(sampling_params);
     const auto shape = input_ids.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 1,
@@ -217,7 +218,7 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::validate_request(
                     "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
     // The draft prompt is the prompt without its first row, see create_draft_input_embeds().
     m_draft_pipeline->validate_request(request_id, shape[1] - 1, make_draft_generation_config(sampling_params));
-    m_main_pipeline->validate_request(request_id, input_ids, sampling_params);
+    m_main_pipeline->validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
 }
 
 void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {

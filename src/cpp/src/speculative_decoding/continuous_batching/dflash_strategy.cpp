@@ -274,7 +274,7 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    validate_request(request_id, input_ids, sampling_params, prompt_ids);
+    validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
     const auto main_sampling_params = make_main_generation_config(sampling_params);
 
     // The draft prompt is the target prompt: draft position t pairs with target hidden state t.
@@ -311,7 +311,8 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    const std::optional<ov::Tensor>& prompt_ids) const {
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
     validate_request_config(sampling_params);
     const auto input_shape = input_ids.get_shape();
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
@@ -337,7 +338,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request(
                                            input_shape[1],
                                            make_draft_generation_config(main_sampling_params));
     }
-    m_main_pipeline->validate_request(request_id, input_shape[1], main_sampling_params);
+    m_main_pipeline->validate_request(request_id, input_ids, main_sampling_params, prompt_ids, lm_extra_inputs);
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingImpl::generate(

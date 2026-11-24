@@ -68,10 +68,12 @@ std::vector<EncodedGenerationResult> generate_common(
     for (size_t rid = 0; rid < input_ids.size(); ++rid) {
         strategy.prepare_request(rid, input_ids[rid], main_cfgs[rid], main_ins[rid]);
         const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
-        self->validate_request(rid,
-                               main_ins[rid],
-                               main_cfgs[rid],
-                               has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt);
+        self->validate_request(
+            rid,
+            main_ins[rid],
+            main_cfgs[rid],
+            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
+            lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt);
     }
 
     std::vector<GenerationHandle> main_generations;
@@ -236,10 +238,12 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 
     // Throws for a request that add_request() would reject, and changes nothing.
-    virtual void validate_request(uint64_t request_id,
-                                  const ov::Tensor& input_ids,
-                                  const ov::genai::GenerationConfig& sampling_params,
-                                  const std::optional<ov::Tensor>& prompt_ids) const;
+    virtual void validate_request(
+        uint64_t request_id,
+        const ov::Tensor& input_ids,
+        const ov::genai::GenerationConfig& sampling_params,
+        const std::optional<ov::Tensor>& prompt_ids,
+        const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const;
 
     std::optional<AdapterConfig> get_pipeline_adapters() const override {
         return m_main_pipeline->get_pipeline_adapters();

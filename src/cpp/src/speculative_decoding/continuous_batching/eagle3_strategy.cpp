@@ -326,7 +326,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    validate_request(request_id, input_ids, sampling_params, prompt_ids);
+    validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         // No speculative draft for this request: run only the main model.
         extract_draft_embeddings(lm_extra_inputs);
@@ -398,7 +398,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // remove first token from input_ids to create draft_input_ids
     // add_special_tokens is false for better compression rate
     auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
-    validate_request(request_id, input_ids, sampling_params, std::nullopt);
+    validate_request(request_id, input_ids, sampling_params, std::nullopt, std::nullopt);
     ov::Tensor draft_input_ids = create_draft_input(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
     auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params);
@@ -410,7 +410,8 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    const std::optional<ov::Tensor>&) const {
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
     validate_single_sequence(sampling_params);
     const size_t prompt_len = ContinuousBatchingImpl::get_prompt_len(input_ids);
     if (!sampling_params.num_assistant_tokens.has_value() || sampling_params.num_assistant_tokens.value() != 0) {
@@ -420,7 +421,10 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_request(
                         prompt_len);
         m_draft_pipeline->validate_request(request_id, prompt_len - 1, make_draft_sampling_params(sampling_params));
     }
-    m_main_pipeline->validate_request(request_id, input_ids, sampling_params);
+    // add_request() takes the draft embeddings out of lm_extra_inputs before it adds the main request
+    auto main_lm_extra_inputs = lm_extra_inputs;
+    extract_draft_embeddings(main_lm_extra_inputs);
+    m_main_pipeline->validate_request(request_id, input_ids, sampling_params, prompt_ids, main_lm_extra_inputs);
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingImpl::generate(

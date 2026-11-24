@@ -375,13 +375,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::validate_request(
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::validate_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
-    const ov::genai::GenerationConfig& sampling_params) const {
-    // SequenceGroup reads the hidden size of input embeddings from their third dimension
-    const auto element_type = input_ids.get_element_type();
-    OPENVINO_ASSERT(element_type == ov::element::i64 ||
-                        (element_type == ov::element::f32 && input_ids.get_shape().size() == 3),
-                    "input_ids must hold i64 token IDs or f32 input embeddings [1, seq_len, hidden_size], got ",
-                    element_type, " of shape ", input_ids.get_shape());
+    const ov::genai::GenerationConfig& sampling_params,
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
+    // add_request() passes prompt_ids and lm_extra_inputs on to the request only for a model of input embeddings
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        SequenceGroup::validate_inputs(input_ids, prompt_ids, lm_extra_inputs);
+    } else {
+        SequenceGroup::validate_inputs(input_ids);
+    }
     validate_request(request_id, get_prompt_len(input_ids), sampling_params);
 }
 
@@ -1177,7 +1179,15 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                     "(num_return_sequences == 1, no beam search)");
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        validate_request(request_id, input_ids[request_id], sampling_params[request_id]);
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+        const bool has_valid_lm_extra_inputs =
+            lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+        validate_request(
+            request_id,
+            input_ids[request_id],
+            sampling_params[request_id],
+            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt);
     }
 
     std::vector<GenerationHandle> generations;
