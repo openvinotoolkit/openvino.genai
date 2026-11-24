@@ -1113,8 +1113,8 @@ ExtensionList extract_extensions(ov::AnyMap& properties) {
     return extensions;
 }
 
-ExtensionList extract_extensions_to_core(ov::AnyMap& properties) {
-    return extract_extensions_to_core(properties, false);
+void extract_extensions_to_core(ov::AnyMap& properties) {
+    extract_extensions_to_core(properties, false);
 }
 
 ExtensionList extract_extensions_to_core(ov::AnyMap& properties, bool gguf_frontend_registers_extensions_separately) {

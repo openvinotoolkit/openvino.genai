@@ -439,7 +439,7 @@ ExtensionList extract_extensions(ov::AnyMap& properties);
  *
  * @param properties Properties map that may contain the "extensions" key.
  */
-ExtensionList extract_extensions_to_core(ov::AnyMap& properties);
+void extract_extensions_to_core(ov::AnyMap& properties);
 ExtensionList extract_extensions_to_core(ov::AnyMap& properties, bool gguf_frontend_registers_extensions_separately);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
