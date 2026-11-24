@@ -47,6 +47,16 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'LFM3Omni',
+    models: [
+      {
+        name: 'LFM3-Omni',
+        links: ['https://huggingface.co/LiquidAI/LFM3-Omni-2B'],
+        notesLink: '#lfm3-omni-notes',
+      },
+    ],
+  },
+  {
     architecture: 'LLaVA',
     models: [
       {
@@ -187,6 +197,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'Mistral3',
         links: [
+          'https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512',
           'https://huggingface.co/mistralai/Ministral-3-3B-Reasoning-2512',
         ],
         notesLink: '#mistral3-notes',

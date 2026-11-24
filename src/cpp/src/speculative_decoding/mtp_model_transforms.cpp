@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <unordered_map>
+#include <nlohmann/json.hpp>
 
 #include "openvino/op/constant.hpp"
 #include "openvino/op/matmul.hpp"
@@ -57,6 +58,34 @@ std::shared_ptr<ov::Node> clone_subgraph(const std::shared_ptr<ov::Node>& node,
     return cloned;
 }
 
+// The MTP head input when it is not the lm_head input (Qwen4Exp: the pre-final-mixer hyper-connection streams),
+// located by the `mtp_hidden_states` rt_info JSON {"producer", "output_index", "hidden_size"} of the main model.
+ov::Output<ov::Node> find_mtp_hidden_states_producer(const std::shared_ptr<ov::Model>& main_model) {
+    constexpr const char* MTP_HIDDEN_STATES_RT_INFO_KEY = "mtp_hidden_states";
+    if (!main_model->has_rt_info(MTP_HIDDEN_STATES_RT_INFO_KEY)) {
+        return {};
+    }
+    const auto annotation = nlohmann::json::parse(main_model->get_rt_info<std::string>(MTP_HIDDEN_STATES_RT_INFO_KEY));
+    const auto producer = annotation.at("producer").get<std::string>();
+    const auto output_index = annotation.at("output_index").get<size_t>();
+    std::shared_ptr<ov::Node> node;
+    for (const auto& op : main_model->get_ordered_ops()) {
+        if (op->get_friendly_name() == producer) {
+            OPENVINO_ASSERT(!node, "MTP hidden-state producer ", producer, " is not unique in the main model.");
+            node = op;
+        }
+    }
+    OPENVINO_ASSERT(node && output_index < node->get_output_size(),
+                    "Failed to locate MTP hidden-state producer ", producer, ":", output_index, " in the main model.");
+    const auto& shape = node->get_output_partial_shape(output_index);
+    if (annotation.contains("hidden_size")) {
+        OPENVINO_ASSERT(shape.rank().is_static() && shape[shape.size() - 1].compatible(annotation.at("hidden_size").get<int64_t>()),
+                        "MTP hidden-state producer ", producer, " has shape ", shape, ", expected hidden size ",
+                        annotation.at("hidden_size").get<int64_t>());
+    }
+    return node->output(output_index);
+}
+
 }  // namespace
 
 MtpRTInfo extract_mtp_info_from_config(ov::AnyMap& config) {
@@ -100,7 +129,10 @@ void expose_last_hidden_state(const std::shared_ptr<ov::Model>& main_model) {
     OPENVINO_ASSERT(matmul, "Expected the main model `logits` output to be produced by a MatMul (lm_head).");
 
     // The lm_head MatMul consumes the model's last hidden state as its first input.
-    auto hidden_state = matmul->input_value(0);
+    auto hidden_state = find_mtp_hidden_states_producer(main_model);
+    if (!hidden_state.get_node()) {
+        hidden_state = matmul->input_value(0);
+    }
 
     auto hidden_result = std::make_shared<ov::op::v0::Result>(hidden_state);
     hidden_result->output(0).set_names({"last_hidden_state"});
