@@ -348,15 +348,25 @@ const std::set<int64_t>& InputsEmbedder::IInputsEmbedder::get_suppressed_token_i
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
-                               const ov::AnyMap device_config,
-                               const std::optional<std::string>& audio_encoder_device) :
-    InputsEmbedder(model_dir, Tokenizer(model_dir, device_config), device, device_config, audio_encoder_device) {}
+                               const ov::AnyMap device_config)
+    : InputsEmbedder(model_dir, DeviceContext{device, device}, device_config) {}
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const Tokenizer& tokenizer,
                                const std::string& device,
-                               const ov::AnyMap device_config,
-                               const std::optional<std::string>& audio_encoder_device) {
+                               const ov::AnyMap device_config)
+    : InputsEmbedder(model_dir, tokenizer, DeviceContext{device, device}, device_config) {}
+
+InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
+                               const DeviceContext& devices,
+                               const ov::AnyMap device_config)
+    : InputsEmbedder(model_dir, Tokenizer(model_dir, device_config), devices, device_config) {}
+
+InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
+                               const Tokenizer& tokenizer,
+                               const DeviceContext& devices,
+                               const ov::AnyMap device_config) {
+    const auto& device = devices.default_device;
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -395,8 +405,7 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
         m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_ASR) {
-        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(
-            vlm_config, model_dir, tokenizer, device, device_config, audio_encoder_device);
+        m_impl = std::make_shared<InputsEmbedderQwen3ASR>(vlm_config, model_dir, tokenizer, devices, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
@@ -519,6 +528,18 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_
 
 const std::set<int64_t>& InputsEmbedder::get_suppressed_token_ids() const {
     return m_impl->get_suppressed_token_ids();
+}
+
+InputsEmbedder::NpuGenerationPolicy InputsEmbedder::prepare_npu_generation(size_t prompt_len,
+                                                                           GenerationConfig& config,
+                                                                           size_t max_prompt_len,
+                                                                           size_t kv_cache_capacity) const {
+    return m_impl->prepare_npu_generation(prompt_len, config, max_prompt_len, kv_cache_capacity);
+}
+
+void InputsEmbedder::finish_npu_generation(const NpuGenerationPolicy& policy,
+                                           const std::vector<GenerationFinishReason>& finish_reasons) const {
+    m_impl->finish_npu_generation(policy, finish_reasons);
 }
 
 std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_per_layer_embeddings_callback() {

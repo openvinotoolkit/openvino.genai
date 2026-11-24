@@ -23,8 +23,13 @@ DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE = 400
 DEFAULT_SPEECH_PROMPT = "Transcribe this audio."
 
 
-def _uses_native_npu_qwen3_asr_decoder(device, use_genai, model_type):
-    return use_genai and model_type == "qwen3-asr" and device.upper() == "NPU"
+def _uses_native_npu_qwen3_asr_decoder(device, use_genai, model_type, model_path):
+    return (
+        use_genai
+        and model_type == "qwen3-asr"
+        and device.upper() == "NPU"
+        and (Path(model_path) / "openvino_audio_encoder_model.xml").is_file()
+    )
 
 
 def _get_output_token_size(processor, text, use_genai, num_generated_tokens=None):
@@ -266,7 +271,9 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         "mem_consumption": mem_consumption,
         "processor": processor,
         "use_genai": use_genai,
-        "native_qwen3_asr_npu": _uses_native_npu_qwen3_asr_decoder(device, use_genai, args["use_case"].model_type),
+        "native_qwen3_asr_npu": _uses_native_npu_qwen3_asr_decoder(
+            device, use_genai, args["use_case"].model_type, model_path
+        ),
     }
     if input_param["native_qwen3_asr_npu"] and args["infer_count"] is None:
         log.info("No --infer_count specified; using the Qwen3-ASR pipeline's generation limits.")

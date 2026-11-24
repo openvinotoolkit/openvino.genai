@@ -233,7 +233,7 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 #  He has gone and gone for good answered Polychrome who...
 ```
 
-## Qwen3-ASR on NPU and continuous batching
+## Qwen3-ASR on NPU
 
 The current Qwen3-ASR split export contains an audio encoder, text embeddings and a language model.
 `ASRPipeline` on NPU runs the audio encoder and language model on NPU, while text embeddings run on CPU.
@@ -245,7 +245,9 @@ multinomial decoding, but not beam search.
 
 On NPU, an explicit output limit must fit the compiled KV cache; adjust `MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN`
 if needed. For a weightless decoder blob imported with `BLOB_PATH`, set `WEIGHTS_PATH` to the original
-`openvino_language_model.bin` for split exports or `openvino_decoder_model.bin` for legacy encoder-decoder exports.
+`openvino_language_model.bin` from the split export.
+
+## Qwen3-ASR continuous batching
 
 Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
 

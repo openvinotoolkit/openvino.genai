@@ -353,7 +353,7 @@ python benchmark.py -m models/sensevoice-small/ --media ./how_are_you_doing_toda
 
 > **NOTE:** For Qwen3-ASR on NPU, export with `--task automatic-speech-recognition-with-past` and
 > stateful decoding enabled. Omitting `--infer_count` preserves the model's generation limits; an
-> explicit value must fit the NPU KV-cache. See the [Qwen3-ASR NPU setup](../../samples/python/automatic_speech_recognition/README.md#qwen3-asr-on-npu-and-continuous-batching) for details.
+> explicit value must fit the NPU KV-cache. See the [Qwen3-ASR NPU setup](../../samples/python/automatic_speech_recognition/README.md#qwen3-asr-on-npu) for details.
 
 
 ### Text Rerank models

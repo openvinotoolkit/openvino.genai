@@ -14,16 +14,9 @@ class Qwen3ASREncoder {
 public:
     Qwen3ASREncoder(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
-    virtual ~Qwen3ASREncoder() = default;
-
     ov::Tensor encode(const WhisperFeatures& features);
 
-protected:
-    explicit Qwen3ASREncoder(const std::filesystem::path& models_path);
-
-    virtual ov::Tensor infer(const ov::Tensor& input);
-    virtual void reset_input();
-
+private:
     InferRequest m_request;
     Qwen3ASRConfig m_model_config;
 
@@ -31,7 +24,6 @@ protected:
     // and applies positional embeddings independently to each chunk.
     const size_t m_encoder_chunk_frames = m_model_config.n_window * 2;
 
-private:
     ov::Tensor chunk_mel_features(const WhisperFeatures& features);
 
     size_t get_remainder_output_tokens(const size_t remainder_frames, const size_t tokens_per_full_chunk);

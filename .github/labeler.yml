@@ -157,6 +157,7 @@
 - 'tests/python_tests/test_asr_pipeline.py'
 - 'tests/python_tests/test_whisper_pipeline_static.py'
 - 'tests/python_tests/test_asr_forced_aligner.py'
+- 'tests/python_tests/test_llm_bench_speech_to_text.py'
 - 'tests/python_tests/samples/test_automatic_speech_recognition.py'
 
 'category: image generation':
@@ -265,7 +266,6 @@
 'category: llm_bench':
 - 'tools/llm_bench/**/*'
 - 'tests/python_tests/samples/test_tools_llm_benchmark.py'
-- 'tests/python_tests/test_llm_bench_speech_to_text.py'
 
 'category: WWB':
 - 'tools/who_what_benchmark/**/*'

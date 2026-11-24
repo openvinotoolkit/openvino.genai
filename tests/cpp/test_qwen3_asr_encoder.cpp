@@ -12,9 +12,8 @@
 #include <vector>
 
 #include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
-#include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/encoder.hpp"
-#include "automatic_speech_recognition/models/qwen3-asr/encoder_decoder/npu/encoder.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/split/audio_encoder.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/npu/generation.hpp"
 #include "openvino/op/ops.hpp"
 #include "openvino/openvino.hpp"
 
@@ -45,39 +44,12 @@ protected:
         std::ofstream(m_model_dir / "config.json") << R"({"thinker_config":{"audio_config":{"n_window":2}}})";
         std::ofstream(m_model_dir / "preprocessor_config.json")
             << R"({"feature_size":8,"sampling_rate":16000,"hop_length":160,"n_fft":400})";
-
-        auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1, -1});
-        input->output(0).set_names({"input_features"});
-        auto mean = std::make_shared<ov::op::v1::ReduceMean>(
-            input,
-            ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {1, 2}),
-            false);
-        auto output = std::make_shared<ov::op::v0::Unsqueeze>(
-            mean,
-            ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {1, 2}));
-        output->output(0).set_names({"last_hidden_state"});
-        auto model = std::make_shared<ov::Model>(ov::OutputVector{output}, ov::ParameterVector{input});
-        ov::save_model(model, m_model_dir / "openvino_encoder_model.xml", false);
     }
 
     void TearDown() override {
         if (m_owns_directory) {
             std::filesystem::remove_all(m_model_dir);
         }
-    }
-
-    static ov::genai::WhisperFeatures make_features(size_t frames) {
-        ov::genai::WhisperFeatures features{};
-        features.feature_size = 8;
-        features.n_frames = frames;
-        features.n_active_frames = frames;
-        features.data.resize(features.feature_size * frames);
-        for (size_t feature = 0; feature < features.feature_size; ++feature) {
-            for (size_t frame = 0; frame < frames; ++frame) {
-                features.data[feature * frames + frame] = static_cast<float>(frame + 1);
-            }
-        }
-        return features;
     }
 
     static ov::AnyMap cpu_fallback() {
@@ -126,34 +98,18 @@ protected:
 
 TEST_P(Qwen3ASRStaticEncoderTest, FullPartialAndRepeatedChunksMatchCPU) {
     const auto frames = GetParam();
-    const auto features = make_features(frames);
-    ov::genai::Qwen3ASREncoder cpu(m_model_dir, "CPU", {});
-    std::unique_ptr<ov::genai::Qwen3ASREncoder> npu =
-        std::make_unique<ov::genai::Qwen3ASREncoderNPU>(m_model_dir, cpu_fallback());
-    const auto expected = cpu.encode(features);
-    const auto first = npu->encode(features);
-    const auto repeated = npu->encode(features);
-
-    const ov::Shape expected_shape{1, (frames + 3) / 4, 1};
-    ASSERT_EQ(expected.get_shape(), expected_shape);
-    ASSERT_EQ(first.get_shape(), expected_shape);
-    ASSERT_EQ(repeated.get_shape(), expected_shape);
-    for (size_t index = 0; index < expected.get_size(); ++index) {
-        EXPECT_FLOAT_EQ(first.data<const float>()[index], expected.data<const float>()[index]);
-        EXPECT_FLOAT_EQ(repeated.data<const float>()[index], expected.data<const float>()[index]);
-    }
-
     auto model = split_model();
     ov::genai::AudioEncoderQwen3ASR split_cpu(split_config(), model, m_model_dir, "CPU", {});
-    ov::genai::AudioEncoderQwen3ASR split_npu(split_config(), model, m_model_dir, "NPU", cpu_fallback());
+    auto split_npu =
+        ov::genai::create_qwen3_asr_audio_encoder(split_config(), model, m_model_dir, "NPU", cpu_fallback());
     const size_t sample_count = std::max<size_t>(frames, 3) * 160;
     ov::Tensor audio(ov::element::f32, {sample_count});
     for (size_t i = 0; i < sample_count; ++i) {
         audio.data<float>()[i] = static_cast<float>(i % 31) / 31.0f;
     }
     const auto split_expected = split_cpu.encode({audio}).at(0);
-    const auto split_first = split_npu.encode({audio}).at(0);
-    const auto split_repeated = split_npu.encode({audio}).at(0);
+    const auto split_first = split_npu->encode({audio}).at(0);
+    const auto split_repeated = split_npu->encode({audio}).at(0);
     ASSERT_EQ(split_first.num_audio_tokens, split_expected.num_audio_tokens);
     ASSERT_EQ(split_first.audio_features.get_shape(), split_expected.audio_features.get_shape());
     for (size_t index = 0; index < split_expected.audio_features.get_size(); ++index) {
@@ -165,7 +121,8 @@ TEST_P(Qwen3ASRStaticEncoderTest, FullPartialAndRepeatedChunksMatchCPU) {
 }
 
 TEST_F(Qwen3ASRStaticEncoderTest, EncoderCapacityIncludesBoundarySearchMargin) {
-    ov::genai::Qwen3ASREncoderNPU encoder(m_model_dir, cpu_fallback());
+    auto encoder =
+        ov::genai::create_qwen3_asr_audio_encoder(split_config(), split_model(), m_model_dir, "NPU", cpu_fallback());
     constexpr size_t sampling_rate = 16000;
     constexpr size_t hop_length = 160;
     std::vector<float> audio(66 * sampling_rate, 0.01f);
@@ -173,18 +130,19 @@ TEST_F(Qwen3ASRStaticEncoderTest, EncoderCapacityIncludesBoundarySearchMargin) {
     const auto chunks = ov::genai::split_audio_into_chunks({audio}, sampling_rate, 60);
     ASSERT_EQ(chunks.size(), 2u);
     ASSERT_GT(chunks.front().wav.size(), 60 * sampling_rate);
-    const auto capacity =
-        encoder.get_max_encoder_len(60 + ov::genai::CHUNK_BOUNDARY_SEARCH_SECONDS, sampling_rate, hop_length);
-    const auto nominal_capacity = encoder.get_max_encoder_len(60, sampling_rate, hop_length);
+    const auto capacity = (65 * sampling_rate / hop_length + 3) / 4;
+    const auto nominal_capacity = (60 * sampling_rate / hop_length + 3) / 4;
     EXPECT_EQ(capacity, 1625u);
     for (const auto& chunk : chunks) {
         ASSERT_LE(chunk.wav.size(), 65 * sampling_rate);
         const auto frames = chunk.wav.size() / hop_length;
-        const auto output = encoder.encode(make_features(frames));
-        EXPECT_EQ(output.get_shape(), (ov::Shape{1, (frames + 3) / 4, 1}));
-        EXPECT_LE(output.get_shape()[1], capacity);
+        auto chunk_audio = ov::Tensor(ov::element::f32, {chunk.wav.size()}, chunk.wav.data());
+        const auto output = encoder->encode({chunk_audio}).at(0);
+        EXPECT_EQ(output.num_audio_tokens, (frames + 3) / 4);
+        EXPECT_EQ(output.audio_features.get_shape(), (ov::Shape{output.num_audio_tokens, 1}));
+        EXPECT_LE(output.num_audio_tokens, capacity);
         if (chunk.chunk_index == 0) {
-            EXPECT_GT(output.get_shape()[1], nominal_capacity);
+            EXPECT_GT(output.num_audio_tokens, nominal_capacity);
         }
     }
 }
@@ -201,19 +159,40 @@ TEST_F(Qwen3ASRStaticEncoderTest, SharedDecoderOptionsDoNotEnableLLMModeForEncod
     properties["BLOB_PATH"] = "decoder-only.blob";
     properties["WEIGHTS_PATH"] = "decoder-only.bin";
     properties["EXPORT_BLOB"] = false;
-    ov::genai::Qwen3ASREncoderNPU encoder(m_model_dir, properties);
-    const auto output = encoder.encode(make_features(6));
-    ASSERT_EQ(output.get_shape(), (ov::Shape{1, 2, 1}));
-    EXPECT_FLOAT_EQ(output.data<const float>()[0], 2.5f);
-    EXPECT_FLOAT_EQ(output.data<const float>()[1], 2.75f);
     EXPECT_EQ(properties.at("NPUW_LLM").as<std::string>(), "YES");
     EXPECT_EQ(properties.at("MAX_PROMPT_LEN").as<int>(), 4096);
 
-    ov::genai::AudioEncoderQwen3ASR split_encoder(split_config(), split_model(), m_model_dir, "NPU", properties);
-    EXPECT_THROW(ov::genai::AudioEncoderQwen3ASR(split_config(), split_model(true), m_model_dir, "NPU", properties),
-                 ov::Exception);
+    auto split_encoder =
+        ov::genai::create_qwen3_asr_audio_encoder(split_config(), split_model(), m_model_dir, "NPU", properties);
+    EXPECT_THROW(
+        ov::genai::create_qwen3_asr_audio_encoder(split_config(), split_model(true), m_model_dir, "NPU", properties),
+        ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(ChunkLengths, Qwen3ASRStaticEncoderTest, ::testing::Values(1u, 4u, 6u, 8u));
+
+TEST(Qwen3ASRNPUGenerationTest, EnforcesCapacityAndCapsUnboundedRequests) {
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 65;
+    EXPECT_FALSE(ov::genai::limit_qwen3_asr_npu_generation(128, config, 128, 191));
+    EXPECT_EQ(config.max_new_tokens, 65u);
+    config.max_new_tokens = 66;
+    EXPECT_THROW(ov::genai::limit_qwen3_asr_npu_generation(128, config, 128, 191), ov::Exception);
+    EXPECT_EQ(config.max_new_tokens, 66u);
+    config.max_new_tokens = SIZE_MAX;
+    EXPECT_TRUE(ov::genai::limit_qwen3_asr_npu_generation(128, config, 128, 191));
+    EXPECT_EQ(config.max_new_tokens, 65u);
+    config.min_new_tokens = 66;
+    EXPECT_THROW(ov::genai::limit_qwen3_asr_npu_generation(128, config, 128, 191), ov::Exception);
+}
+
+TEST(Qwen3ASRNPUGenerationTest, RejectsInvalidPromptsAndBeamSearch) {
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 1;
+    EXPECT_THROW(ov::genai::limit_qwen3_asr_npu_generation(0, config, 128, 191), ov::Exception);
+    EXPECT_THROW(ov::genai::limit_qwen3_asr_npu_generation(129, config, 128, 191), ov::Exception);
+    config.num_beams = 2;
+    EXPECT_THROW(ov::genai::limit_qwen3_asr_npu_generation(2, config, 128, 191), ov::Exception);
+}
 
 }  // namespace

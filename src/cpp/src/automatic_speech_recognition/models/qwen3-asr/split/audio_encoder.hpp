@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <memory>
 #include <mutex>
 
 #include "openvino/runtime/infer_request.hpp"
@@ -20,9 +21,13 @@ public:
                          const std::string& device,
                          const ov::AnyMap& properties);
 
+    virtual ~AudioEncoderQwen3ASR() = default;
+
     std::vector<EncodedAudio> encode(const std::vector<ov::Tensor>& audios);
 
-private:
+protected:
+    AudioEncoderQwen3ASR(const VLMConfig& config, const std::filesystem::path& config_dir);
+
     struct PreprocessedAudio {
         ov::Tensor padded_feature;
         ov::Tensor padded_mask_after_cnn;
@@ -32,7 +37,6 @@ private:
         size_t total_tokens;
     };
 
-    void validate_audio_input(const ov::Tensor& audio) const;
     /**
      * @brief Prepare one recording for audio encoder inference without running the encoder.
      * @param audio Validated, nonempty 1-D float32 PCM tensor at the configured sampling rate.
@@ -40,7 +44,7 @@ private:
      *         and valid-token counts used to compact the encoder output.
      */
     PreprocessedAudio preprocess_audio(const ov::Tensor& audio);
-    EncodedAudio encode_audio(const ov::Tensor& audio);
+    virtual EncodedAudio encode_audio(const ov::Tensor& audio);
 
     static constexpr size_t get_feat_extract_output_length(size_t input_length) {
         size_t length = input_length;
@@ -53,8 +57,16 @@ private:
     const VLMConfig m_config;
     WhisperFeatureExtractor m_feature_extractor;
     ov::InferRequest m_request;
-    bool m_static_npu = false;
+
+private:
+    void validate_audio_input(const ov::Tensor& audio) const;
     std::mutex m_audio_mutex;
 };
+
+std::unique_ptr<AudioEncoderQwen3ASR> create_qwen3_asr_audio_encoder(const VLMConfig& config,
+                                                                     const std::shared_ptr<ov::Model>& audio_model,
+                                                                     const std::filesystem::path& config_dir,
+                                                                     const std::string& device,
+                                                                     const ov::AnyMap& properties);
 
 }  // namespace ov::genai

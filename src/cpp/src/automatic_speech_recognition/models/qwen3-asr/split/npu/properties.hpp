@@ -27,8 +27,8 @@ inline ov::AnyMap qwen3_asr_encoder_properties(const ov::AnyMap& properties) {
     const bool decoder_blob = blob != properties.end() && !blob->second.as<std::string>().empty();
     for (auto it = result.begin(); it != result.end();) {
         const auto option = it->first.rfind("++", 0) == 0 ? it->first.substr(2) : it->first;
-        if (option == "NPUW_LLM" || option.rfind("NPUW_LLM_", 0) == 0 || option.rfind("NPUW_QWEN3_ASR", 0) == 0 ||
-            decoder_options.count(option) || (option == "WEIGHTS_PATH" && decoder_blob)) {
+        if (option == "NPUW_LLM" || option.rfind("NPUW_LLM_", 0) == 0 || decoder_options.count(option) ||
+            (option == "WEIGHTS_PATH" && decoder_blob)) {
             it = result.erase(it);
         } else {
             ++it;

@@ -3,6 +3,7 @@
 
 #include "pipeline.hpp"
 
+#include "npu/pipeline.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -125,28 +126,19 @@ std::vector<std::string> Qwen3ASRContinuousBatchingAdapter::infer(const std::vec
 Qwen3ASRVLMPipelineAdapter::Qwen3ASRVLMPipelineAdapter(const std::filesystem::path& models_path,
                                                        const std::string& device,
                                                        const ov::AnyMap& properties)
-    : Qwen3ASRVLMPipelineAdapter(models_path,
-                                 create_sdpa_vlm_pipeline(models_path, device, properties),
-                                 properties,
-                                 device == "NPU") {}
+    : Qwen3ASRVLMPipelineAdapter(models_path, create_sdpa_vlm_pipeline(models_path, device, properties), properties) {}
 
 Qwen3ASRVLMPipelineAdapter::Qwen3ASRVLMPipelineAdapter(const std::filesystem::path& models_path,
                                                        std::unique_ptr<VLMPipeline> impl,
-                                                       const ov::AnyMap& properties,
-                                                       bool is_npu)
+                                                       const ov::AnyMap& properties)
     : Qwen3ASRPipelineBase(models_path, impl->get_tokenizer(), properties),
-      m_impl{std::move(impl)},
-      m_is_npu{is_npu} {
-    if (m_is_npu) {
-        m_max_asr_input_seconds = 60;
-    }
-}
+      m_impl{std::move(impl)} {}
 
 std::vector<std::string> Qwen3ASRVLMPipelineAdapter::infer(const std::vector<AudioChunk>& chunks,
                                                            const ASRGenerationConfig& config,
                                                            ASRPerfMetrics& perf_metrics,
                                                            const std::shared_ptr<StreamerBase>& streamer) {
-    OPENVINO_ASSERT(!m_is_npu || !config.is_beam_search(), "Qwen3-ASR NPU decoder does not support beam search.");
+    validate_generation_config(config);
     const std::string prompt = build_text_prompt(config);
     const GenerationConfig chunk_config = create_chunk_generation_config(config);
     // Qwen3ASRPipelineBase::generate() allows a streamer only for a single chunk.
@@ -174,7 +166,7 @@ std::unique_ptr<ASRPipelineImplBase> create_qwen3_asr_split_pipeline(const std::
                         "Qwen3-ASR NPU split export supports only the SDPA attention backend.");
         ov::AnyMap sdpa_properties = properties_without_backend;
         sdpa_properties["ATTENTION_BACKEND"] = SDPA_BACKEND;
-        return std::make_unique<Qwen3ASRVLMPipelineAdapter>(models_path, device, sdpa_properties);
+        return std::make_unique<Qwen3ASRNPUVLMPipelineAdapter>(models_path, sdpa_properties);
     }
 
     if (utils::explicitly_requires_paged_attention(properties)) {

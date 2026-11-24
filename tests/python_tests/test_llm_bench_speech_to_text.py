@@ -92,12 +92,16 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
 
     def test_native_qwen_npu_default_is_scoped_to_genai_and_device(self):
         classify = self.speech._uses_native_npu_qwen3_asr_decoder
-        self.assertTrue(classify("NPU", True, "qwen3-asr"))
-        self.assertTrue(classify("npu", True, "qwen3-asr"))
-        self.assertFalse(classify("CPU", True, "qwen3-asr"))
-        self.assertFalse(classify("NPU.0", True, "qwen3-asr"))
-        self.assertFalse(classify("NPU", False, "qwen3-asr"))
-        self.assertFalse(classify("NPU", True, "whisper"))
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = Path(directory)
+            self.assertFalse(classify("NPU", True, "qwen3-asr", model_path))
+            (model_path / "openvino_audio_encoder_model.xml").touch()
+            self.assertTrue(classify("NPU", True, "qwen3-asr", model_path))
+            self.assertTrue(classify("npu", True, "qwen3-asr", model_path))
+            self.assertFalse(classify("CPU", True, "qwen3-asr", model_path))
+            self.assertFalse(classify("NPU.0", True, "qwen3-asr", model_path))
+            self.assertFalse(classify("NPU", False, "qwen3-asr", model_path))
+            self.assertFalse(classify("NPU", True, "whisper", model_path))
 
     def _run_native_generation(
         self, model_type, infer_count, native_qwen_npu, configured_max, tokenizer=None, token_count=1, iter_data=None
@@ -266,7 +270,7 @@ class SpeechBenchmarkGenAITest(unittest.TestCase):
                 self.speech.run_speech_2_txt_benchmark(Path(directory), "ov", "CPU", args, 0, memory)
                 (Path(directory) / "openvino_audio_encoder_model.xml").touch()
                 self.speech.run_speech_2_txt_benchmark(Path(directory), "ov", "NPU", args, 0, memory)
-        self.assertEqual(observed, [True, False, True])
+        self.assertEqual(observed, [False, False, True])
 
     def test_vlm_genai_keeps_upstream_config_loading(self):
         module = self.ov_utils

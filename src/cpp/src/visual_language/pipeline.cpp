@@ -8,7 +8,6 @@
 #include <optional>
 #include <random>
 
-#include "automatic_speech_recognition/models/qwen3-asr/npu_generation.hpp"
 #include "lm_encoding.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -20,10 +19,10 @@
 #include "utils.hpp"
 #include "visual_language/continuous_batching_adapter.hpp"
 #include "visual_language/embedding_model.hpp"
+#include "visual_language/embeddings_registry.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/lfm3_omni/speech_engine.hpp"
 #include "visual_language/pipeline_base.hpp"
-#include "visual_language/embeddings_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -229,11 +228,9 @@ private:
         if (!device_properties.empty()) {
             properties_copy[ov::device::properties.name()] = device_properties;
         }
-        const auto audio_encoder_device = m_is_npu && m_vlm_config.model_type == VLMModelType::QWEN3_ASR
-                                              ? std::optional<std::string>{device}
-                                              : std::nullopt;
-        m_inputs_embedder =
-            std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy, audio_encoder_device);
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir,
+                                                             InputsEmbedder::DeviceContext{device, embedder_device},
+                                                             properties_copy);
 
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
@@ -1137,17 +1134,13 @@ private:
         perf_metrics.num_input_tokens = prompt_ids.get_size();
 
         size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
-        bool qwen_capacity_limited = false;
-        const bool qwen_npu = m_is_npu && m_vlm_config.model_type == VLMModelType::QWEN3_ASR;
+        InputsEmbedder::NpuGenerationPolicy npu_policy;
         if (m_is_npu) {
             max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
-            if (qwen_npu) {
-                OPENVINO_ASSERT(max_kv_cache_size > 0, "Qwen3-ASR NPU KV-cache capacity must be positive.");
-                // The shared VLM loop stops one token earlier than the legacy ASR decoder.
-                qwen_capacity_limited =
-                    limit_qwen3_asr_npu_generation(prompt_ids.get_size(), generation_config,
-                                                    m_max_prompt_len, max_kv_cache_size - 1);
-            }
+            npu_policy = m_inputs_embedder->prepare_npu_generation(prompt_ids.get_size(),
+                                                                   generation_config,
+                                                                   m_max_prompt_len,
+                                                                   max_kv_cache_size);
         }
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config);
         requests.push_back(std::move(sequence_group));
@@ -1203,13 +1196,9 @@ private:
             lm_extra_inputs,
             std::move(per_layer_callback),
             std::move(ngram_embeddings_callback),
-            qwen_npu
-        );
-        if (qwen_capacity_limited &&
-            std::find(result.results.finish_reasons.begin(), result.results.finish_reasons.end(),
-                      GenerationFinishReason::LENGTH) != result.results.finish_reasons.end()) {
-            GENAI_ERR("Qwen3-ASR NPU KV-cache capacity was reached; the returned transcription may be truncated. "
-                      "Increase MAX_PROMPT_LEN or MIN_RESPONSE_LEN to allow longer output.");
+            npu_policy.preserve_finished_at_capacity);
+        if (m_is_npu) {
+            m_inputs_embedder->finish_npu_generation(npu_policy, result.results.finish_reasons);
         }
         return result;
     }

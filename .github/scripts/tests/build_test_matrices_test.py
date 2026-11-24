@@ -94,9 +94,23 @@ def test_speech_benchmark_unit_tests_are_selected_for_wheels(platform, component
     assert "tests/python_tests/test_llm_bench_speech_to_text.py" in matching[0]["cmd"]
 
 
-def test_speech_benchmark_unit_tests_have_llm_bench_label():
+def test_speech_benchmark_unit_tests_have_asr_label():
     labeler = load_yaml(SCRIPTS_DIR.parent / "labeler.yml")
-    assert "tests/python_tests/test_llm_bench_speech_to_text.py" in labeler["category: llm_bench"]
+    path = "tests/python_tests/test_llm_bench_speech_to_text.py"
+    assert path in labeler["category: automatic speech recognition"]
+    assert path not in labeler["category: llm_bench"]
+
+
+def test_qwen3_asr_benchmark_has_separate_linux_step():
+    workflow = load_yaml(SCRIPTS_DIR.parent / "workflows" / "linux.yml")
+    job = workflow["jobs"]["genai_tools_tests"]
+    steps = {step["name"]: step for step in job["steps"] if "name" in step}
+    qwen_step = steps["Test LLM Benchmark Tools with Qwen3-ASR model"]
+    assert "automatic_speech_recognition" in job["if"]
+    assert "automatic_speech_recognition" in qwen_step["if"]
+    assert "test_llm_bench_speech_to_text.py" in qwen_step["run"]
+    assert "samples and llm_bench_qwen3_asr" in qwen_step["run"]
+    assert "not llm_bench_qwen3_asr" in steps["Test LLM Benchmark Tools"]["run"]
 
 
 @pytest.mark.parametrize("platform", PLATFORMS)

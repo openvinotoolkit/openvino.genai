@@ -18,7 +18,7 @@ from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechR
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
-import re
+import shutil
 import typing
 import numpy as np
 import pathlib
@@ -44,7 +44,6 @@ from utils.asr_utils.qwen3_asr import (
     QWEN3_ASR_SPLIT_EXPORT_SUFFIX,
     SKIP_IF_PAGED_ATTENTION_UNAVAILABLE,
     Qwen3ASROptimumPipeline,
-    qwen3_asr_model_path,
     save_model,
     skip_if_qwen3_asr_package_is_unavailable,
 )
@@ -682,76 +681,90 @@ def test_max_new_tokens(pipelines_fixture, sample_from_dataset, request):
     compare_results(expected, genai_result)
 
 
-@pytest.mark.parametrize(
-    "model_path_factory",
-    [
-        pytest.param(
-            qwen3_asr_model_path,
-            id="qwen3-asr-legacy-NPUW-CPU",
-            marks=[pytest.mark.qwen3_asr_npu, pytest.mark.skipif(**should_skip_npuw_tests())],
-        )
-    ],
-)
-def test_qwen3_asr_legacy_npu_generation_and_recovery(model_path_factory):
-    core = openvino.Core()
-    try:
-        core.get_property("NPU", "NPUW_QWEN3_ASR")
-    except RuntimeError as exception:
-        if "Unsupported configuration key: NPUW_QWEN3_ASR" not in str(exception):
-            raise
-        pytest.skip("Legacy Qwen3-ASR NPUW requires openvinotoolkit/openvino#39312.")
-
-    model_path = pathlib.Path(model_path_factory())
-    assert (model_path / "openvino_encoder_model.xml").is_file()
-    assert (model_path / "openvino_decoder_model.xml").is_file()
-    assert not (model_path / "openvino_audio_encoder_model.xml").exists()
-    pipe = ov_genai.ASRPipeline(
+@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
+def test_qwen3_asr_direct_vlm_npu_generation_and_capacity(pipelines_fixture, capfd):
+    _, asr_pipe, model_id, _ = pipelines_fixture
+    model_path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
+    _, model_path, _, _ = read_asr_model(
+        (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
+    )
+    vlm_pipe = ov_genai.VLMPipeline(
         model_path,
         "NPU",
-        **NPUW_CPU_PROPERTIES,
-        MAX_PROMPT_LEN=1024,
-        MIN_RESPONSE_LEN=256,
+        DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES},
+        MODEL_PROPERTIES={"text_embeddings": {"CPU_DENORMALS_OPTIMIZATION": True}},
+        ATTENTION_BACKEND="SDPA",
+        MAX_PROMPT_LEN=64,
+        MIN_RESPONSE_LEN=16,
     )
     audio = np.zeros(3200, dtype=np.float32)
-    generation = {"language": "English", "max_new_tokens": 8, "ignore_eos": True}
-    expected = pipe.generate(audio, **generation)
-    assert len(expected.texts) == 1
-    assert expected.languages == ["English"]
-    assert expected.perf_metrics.get_num_generated_tokens() == 8
+    prompt = (
+        "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n<|audio_start|><|audio_pad|>"
+        "<|audio_end|><|im_end|>\n<|im_start|>assistant\nlanguage English<asr_text>"
+    )
+    config = ov_genai.GenerationConfig(max_new_tokens=8, do_sample=False, apply_chat_template=False)
+    expected = asr_pipe.generate(audio, language="English", max_new_tokens=8, do_sample=False)
+    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+    assert result.texts == expected.texts
 
-    with pytest.raises(RuntimeError, match=r"requested 1000000 new tokens.*KV-cache can accommodate only") as error:
-        pipe.generate(audio, language="English", max_new_tokens=1_000_000, ignore_eos=True)
-    capacity = re.search(r"KV-cache can accommodate only (\d+) after a prompt of (\d+) tokens", str(error.value))
-    assert capacity is not None
-    available = int(capacity.group(1))
+    available = 64 + 16 - result.perf_metrics.get_num_input_tokens()
     assert available >= 8
-    with pytest.raises(
-        RuntimeError,
-        match=rf"requested {available + 1} new tokens.*KV-cache can accommodate only {available} ",
-    ):
-        pipe.generate(audio, language="English", max_new_tokens=available + 1, ignore_eos=True)
+    config.max_new_tokens = available
+    config.ignore_eos = True
+    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+    assert result.perf_metrics.get_num_generated_tokens() == available
 
-    class StopAfterFirstToken(ov_genai.StreamerBase):
-        def __init__(self):
-            super().__init__()
-            self.tokens = []
-            self.ended = False
+    config.max_new_tokens = available + 1
+    with pytest.raises(RuntimeError, match=rf"requested {available + 1} new tokens.*accommodate only {available}"):
+        vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
 
-        def write(self, tokens):
-            self.tokens.extend(tokens if isinstance(tokens, list) else [tokens])
-            return ov_genai.StreamingStatus.STOP
+    config.max_new_tokens = (1 << 64) - 1
+    config.max_length = (1 << 64) - 1
+    config.ignore_eos = False
+    config.min_new_tokens = available
+    result = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
+    assert result.perf_metrics.get_num_generated_tokens() == available
+    assert "Qwen3-ASR NPU KV-cache capacity was reached" in capfd.readouterr().err
 
-        def end(self):
-            self.ended = True
-
-    streamer = StopAfterFirstToken()
-    pipe.generate(audio, language="English", max_new_tokens=available, ignore_eos=True, streamer=streamer)
-    assert len(streamer.tokens) == 1
-    assert streamer.ended
-    recovered = pipe.generate(audio, **generation)
+    config.max_new_tokens = 8
+    config.min_new_tokens = 0
+    recovered = vlm_pipe.generate(prompt, audios=[openvino.Tensor(audio)], generation_config=config)
     assert recovered.texts == expected.texts
-    assert recovered.languages == expected.languages
-    assert recovered.perf_metrics.get_num_generated_tokens() == 8
+
+
+@pytest.mark.parametrize("pipeline_cls", [ov_genai.ASRPipeline, ov_genai.VLMPipeline], ids=["ASR", "VLM"])
+@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
+def test_qwen3_asr_npu_routes_split_components(pipelines_fixture, pipeline_cls, tmp_path):
+    from openvino import opset13 as ops
+
+    _, _, model_id, _ = pipelines_fixture
+    model_path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
+    _, model_path, _, _ = read_asr_model(
+        (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
+    )
+    copied_model = tmp_path / "model"
+    shutil.copytree(model_path, copied_model)
+    encoder_path = copied_model / "openvino_audio_encoder_model.xml"
+    encoder = openvino.Core().read_model(model_path / "openvino_audio_encoder_model.xml")
+    lengths = encoder.input("aftercnn_lens")
+    assert not lengths.get_target_inputs()
+    length_sum = ops.reduce_sum(
+        ops.convert(lengths, openvino.Type.f32), ops.constant(np.array([0], dtype=np.int64)), False
+    )
+    zero = ops.multiply(length_sum, ops.constant(np.float32(0)))
+    output = encoder.get_results()[0]
+    output.input(0).replace_source_output(ops.add(output.input_value(0), zero).output(0))
+    encoder.validate_nodes_and_infer_types()
+    openvino.save_model(encoder, encoder_path, compress_to_fp16=False)
+
+    with pytest.raises(RuntimeError, match="requires independent windows; input 'aftercnn_lens' is used"):
+        pipeline_cls(
+            copied_model,
+            "NPU",
+            DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES},
+            ATTENTION_BACKEND="SDPA",
+            MODEL_PROPERTIES={"text_embeddings": {"CPU_DENORMALS_OPTIMIZATION": True}},
+        )
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")

@@ -13,9 +13,8 @@ public:
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const std::filesystem::path& model_dir,
                            const Tokenizer& tokenizer,
-                           const std::string& device,
-                           const ov::AnyMap& properties,
-                           const std::optional<std::string>& audio_encoder_device = std::nullopt);
+                           const InputsEmbedder::DeviceContext& devices,
+                           const ov::AnyMap& properties);
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const ModelsMap& models_map,
                            const Tokenizer& tokenizer,
@@ -57,6 +56,13 @@ public:
                                                                    size_t history_size) override;
     void start_chat(const std::string& system_message) override;
 
+    InputsEmbedder::NpuGenerationPolicy prepare_npu_generation(size_t prompt_len,
+                                                               GenerationConfig& config,
+                                                               size_t max_prompt_len,
+                                                               size_t kv_cache_capacity) const override;
+    void finish_npu_generation(const InputsEmbedder::NpuGenerationPolicy& policy,
+                               const std::vector<GenerationFinishReason>& finish_reasons) const override;
+
 private:
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const Tokenizer& tokenizer,
@@ -71,7 +77,7 @@ private:
                                 const std::vector<EncodedAudio>& audios,
                                 const std::vector<size_t>& audios_sequence) const;
 
-    AudioEncoderQwen3ASR m_audio_encoder;
+    std::unique_ptr<AudioEncoderQwen3ASR> m_audio_encoder;
 };
 
 }  // namespace ov::genai

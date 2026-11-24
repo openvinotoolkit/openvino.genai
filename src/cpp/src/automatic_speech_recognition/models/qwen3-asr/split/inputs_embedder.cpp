@@ -69,15 +69,14 @@ void expand_audio_tags_in_prompt(std::string& prompt,
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const std::filesystem::path& model_dir,
                                                const Tokenizer& tokenizer,
-                                               const std::string& device,
-                                               const ov::AnyMap& properties,
-                                               const std::optional<std::string>& audio_encoder_device)
+                                               const InputsEmbedder::DeviceContext& devices,
+                                               const ov::AnyMap& properties)
     : InputsEmbedderQwen3ASR(config,
                              tokenizer,
-                             EmbeddingsModel::create(model_dir, config.scale_emb, device, properties),
+                             EmbeddingsModel::create(model_dir, config.scale_emb, devices.default_device, properties),
                              utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
                              model_dir,
-                             audio_encoder_device.value_or(device),
+                             devices.primary_device,
                              properties) {}
 
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
@@ -108,7 +107,7 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const std::string& device,
                                                const ov::AnyMap& properties)
     : IInputsEmbedder(config, tokenizer, std::move(embedding)),
-      m_audio_encoder(config, audio_model, config_dir, device, properties) {
+      m_audio_encoder(create_qwen3_asr_audio_encoder(config, audio_model, config_dir, device, properties)) {
     const auto vocab = tokenizer.get_vocab();
     const auto audio_token = vocab.find(AUDIO_PAD);
     OPENVINO_ASSERT(audio_token != vocab.end() && audio_token->second == config.audio_token_id,
@@ -117,7 +116,7 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
 }
 
 std::vector<EncodedAudio> InputsEmbedderQwen3ASR::encode_audios(const std::vector<ov::Tensor>& audios) {
-    return m_audio_encoder.encode(audios);
+    return m_audio_encoder->encode(audios);
 }
 
 std::vector<EncodedImage> InputsEmbedderQwen3ASR::encode_images(const std::vector<ov::Tensor>& images) {
