@@ -623,6 +623,30 @@ private:
         }
     }
 
+    // The sampler, the hidden-state sync of EAGLE3 and MTP drafts and the tree mask read all rows of a validation
+    // window, the base token and its candidates, from one forward. A forward runs the window whole or stops before
+    // its base token; the rows before it, of a prompt or a recompute, split like any others.
+    size_t _fit_validation_window(SequenceGroup::CPtr sequence_group,
+                                  size_t num_available_tokens,
+                                  size_t num_scheduled_tokens) const {
+        const size_t num_candidates = sequence_group->get_num_tokens_to_validate();
+        if (!m_is_validation_mode_enabled || num_candidates == 0 || num_scheduled_tokens >= num_available_tokens) {
+            return num_scheduled_tokens;
+        }
+        const size_t validation_window = num_candidates + 1;
+        const size_t num_running_seqs = sequence_group->num_running_seqs();
+        OPENVINO_ASSERT(m_config.max_num_batched_tokens >= validation_window * num_running_seqs,
+                        "max_num_batched_tokens (", m_config.max_num_batched_tokens,
+                        ") is too small to ever schedule the speculative validation windows of ", num_running_seqs,
+                        " running sequences of ", validation_window, " tokens each (1 base + ", num_candidates,
+                        " candidates) for sequence group ", sequence_group->get_request_id(),
+                        "; increase max_num_batched_tokens to at least (num_assistant_tokens + 1) * num_return_sequences");
+        OPENVINO_ASSERT(num_available_tokens >= validation_window,
+                        "Sequence group ", sequence_group->get_request_id(), " has ", num_available_tokens,
+                        " tokens to schedule, fewer than its validation window of ", validation_window);
+        return std::min(num_scheduled_tokens, num_available_tokens - validation_window);
+    }
+
     void _schedule_prompt_phase_dynamic_split_fuse(
         std::vector<SequenceGroup::Ptr>& sequence_groups,
         Output& scheduler_output,
@@ -668,6 +692,7 @@ private:
                     }
                 }
                 num_scheduled_tokens = std::min(num_scheduled_tokens, m_cache_orchestrator->available_token_slots(sequence_group));
+                num_scheduled_tokens = _fit_validation_window(sequence_group, num_available_tokens, num_scheduled_tokens);
 
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
@@ -743,12 +768,11 @@ private:
                 std::optional<LinearAttentionReservationTransaction::GroupReservation>
                     linear_attention_group_reservation;
 
-                // Speculative LA paging requires the whole validation window in one step.
+                // Speculative LA paging runs the whole validation window in one step, with no rows before it.
                 const bool is_speculative_linear_attention_window =
                     linear_attention_mode &&
                     linear_attention_mode->step() == detail::LinearAttentionPagingStep::VERIFY;
                 if (is_speculative_linear_attention_window) {
-                    // LA validation must fit one base token plus all candidates.
                     const size_t validation_window = sequence_group->get_num_tokens_to_validate() + 1;
                     OPENVINO_ASSERT(num_available_tokens_per_seq == validation_window,
                                     "Speculative linear-attention validation window must be scheduled atomically as ",
@@ -756,23 +780,23 @@ private:
                                     " candidates) for sequence group ", sequence_group->get_request_id(), ", but ",
                                     num_available_tokens_per_seq, " tokens are pending; recompute/eviction of a validating "
                                     "sequence is not supported with linear-attention speculative decoding");
-                    OPENVINO_ASSERT(m_config.max_num_batched_tokens >= num_available_tokens_per_seq,
-                                    "max_num_batched_tokens (", m_config.max_num_batched_tokens,
-                                    ") is too small to ever schedule the speculative linear-attention validation window of ",
-                                    num_available_tokens_per_seq, " tokens for sequence group ", sequence_group->get_request_id(),
-                                    "; increase max_num_batched_tokens to at least the validation window size");
-                    if (available_tokens_per_seq_in_megabatch < num_available_tokens_per_seq) {
-                        // Remaining megabatch budget cannot fit the full window: defer to a later step without scheduling
-                        continue;
-                    }
-                    linear_attention_group_reservation = linear_attention_reservations.try_reserve_group(
-                        sequence_group, num_available_tokens_per_seq);
+                }
+
+                size_t num_scheduled_tokens_per_seq = _fit_validation_window(
+                    sequence_group,
+                    num_available_tokens_per_seq,
+                    std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq));
+                if (!num_scheduled_tokens_per_seq) {
+                    // the validation window waits for a step with room for it
+                    continue;
+                }
+                if (is_speculative_linear_attention_window) {
+                    linear_attention_group_reservation =
+                        linear_attention_reservations.try_reserve_group(sequence_group, num_scheduled_tokens_per_seq);
                     if (!linear_attention_group_reservation) {
                         continue;
                     }
                 }
-
-                size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
                 while (!m_cache_orchestrator->can_append_slots(sequence_group)) {
@@ -785,7 +809,7 @@ private:
 
                 // if we can't preempt any more sequences, clear scheduled tokens and move to next sequence
                 if (!m_cache_orchestrator->can_append_slots(sequence_group)) {
-                    sequence_group->clear_scheduled_tokens();
+                    sequence_group->unschedule_tokens();
                     if (linear_attention_group_reservation) {
                         linear_attention_reservations.release_group(*linear_attention_group_reservation);
                     }
