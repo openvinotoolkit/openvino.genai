@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 #include "gtest/gtest.h"
 #include "openvino/genai/gguf.hpp"
@@ -497,7 +498,7 @@ TEST(GGUFMultimodal, LlavaAutomaticEosFollowsAllImageSlots) {
     }
 }
 
-TEST(GGUFMultimodal, StructuredOutputIgnoresSyntheticImageToken) {
+TEST(GGUFMultimodal, StructuredOutputKeepsSyntheticImageTokenUnselectable) {
     using namespace ov::genai;
     if (!StructuredOutputController::get_backend_registry().count("xgrammar"))
         GTEST_SKIP() << "CVS-195111: xgrammar is not enabled in this build";
@@ -508,18 +509,47 @@ TEST(GGUFMultimodal, StructuredOutputIgnoresSyntheticImageToken) {
         tokenizer.m_vocab.push_back("token" + std::to_string(i));
     tokenizer.m_vocab.push_back("<image>");
 
-    StructuredOutputController controller(tokenizer, 32);
+    StructuredOutputController controller(tokenizer, 33);
     GenerationConfig config;
     StructuredOutputConfig structured;
     structured.grammar = "root ::= \"a\" | \"<image>\"";
     config.structured_output_config = structured;
     config.stop_token_ids = {0};
     auto transformer = controller.get_logits_transformer(config);
-    std::vector<float> scores(32, 0.f);
+    std::vector<float> scores(33, 0.f);
+    scores.back() = -std::numeric_limits<float>::infinity();
     Logits logits(scores.data(), scores.size());
     transformer->apply(logits);
     EXPECT_EQ(scores[1], 0.f);
     EXPECT_TRUE(std::isinf(scores[2]) && scores[2] < 0.f);
+    EXPECT_TRUE(std::isinf(scores.back()) && scores.back() < 0.f);
+}
+
+TEST(GGUFMultimodal, SyntheticImageTokenGetsUnselectableLanguageLogit) {
+    using namespace ov::genai;
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1, 32});
+    auto model = std::make_shared<ov::Model>(ov::OutputVector{input}, ov::ParameterVector{input});
+    extend_gguf_language_logits_for_token(model, 32);
+
+    ASSERT_EQ(model->output(0).get_partial_shape(), (ov::PartialShape{-1, -1, 33}));
+    auto compiled = ov::Core().compile_model(model, "CPU");
+    auto request = compiled.create_infer_request();
+    ov::Tensor input_logits(ov::element::f32, {1, 2, 32});
+    std::fill_n(input_logits.data<float>(), input_logits.get_size(), 1.f);
+    request.set_input_tensor(input_logits);
+    request.infer();
+    const auto logits = request.get_output_tensor();
+    ASSERT_EQ(logits.get_shape(), (ov::Shape{1, 2, 33}));
+    for (size_t sequence = 0; sequence < 2; ++sequence) {
+        const size_t row_start = sequence * 33;
+        for (size_t token = 0; token < 32; ++token)
+            EXPECT_FLOAT_EQ(logits.data<const float>()[row_start + token], 1.f);
+        const float synthetic_token_logit = logits.data<const float>()[row_start + 32];
+        EXPECT_TRUE(std::isinf(synthetic_token_logit) && synthetic_token_logit < 0.f);
+    }
+
+    EXPECT_NO_THROW(extend_gguf_language_logits_for_token(model, 32));
+    EXPECT_THROW(extend_gguf_language_logits_for_token(model, 34), ov::Exception);
 }
 
 TEST(GGUFMultimodal, ClipRequiresCompatibleLanguageInputs) {

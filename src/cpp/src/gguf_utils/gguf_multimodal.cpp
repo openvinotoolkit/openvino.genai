@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <sstream>
 
@@ -19,6 +20,7 @@
 #include "openvino/op/constant.hpp"
 #include "openvino/op/equal.hpp"
 #include "openvino/op/select.hpp"
+#include "openvino/opsets/opset13.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -65,6 +67,43 @@ void map_gguf_image_token_for_embeddings(const std::shared_ptr<ov::Model>& model
         std::make_shared<ov::op::v1::Equal>(input, marker), replacement, input);
     for (auto consumer : consumers)
         consumer.replace_source_output(selected);
+    model->validate_nodes_and_infer_types();
+}
+
+void extend_gguf_language_logits_for_token(const std::shared_ptr<ov::Model>& model, size_t token_id) {
+    OPENVINO_ASSERT(model && !model->get_results().empty(), "GGUF language model must have a logits output");
+    const auto result = model->get_results().front();
+    const auto logits = result->input_value(0);
+    const auto shape = logits.get_partial_shape();
+    OPENVINO_ASSERT(shape.rank().is_static() && shape.rank().get_length() == 3 && shape[2].is_static() &&
+                        shape[2].get_length() > 0,
+                    "GGUF language logits must have a static vocabulary dimension and rank 3");
+    const size_t vocab_size = static_cast<size_t>(shape[2].get_length());
+    if (token_id < vocab_size)
+        return;
+    OPENVINO_ASSERT(token_id == vocab_size,
+                    "GGUF image token ID ",
+                    token_id,
+                    " is not contiguous with the language vocabulary of size ",
+                    vocab_size);
+
+    const auto shape_of_logits = std::make_shared<ov::op::v3::ShapeOf>(logits);
+    const auto batch_and_sequence_indices =
+        std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{2}, std::vector<int64_t>{0, 1});
+    const auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{}, 0);
+    const auto batch_and_sequence_shape =
+        std::make_shared<ov::op::v8::Gather>(shape_of_logits, batch_and_sequence_indices, axis);
+    const auto vocab_extension_shape =
+        std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, 1);
+    const auto fill_shape =
+        std::make_shared<ov::op::v0::Concat>(ov::OutputVector{batch_and_sequence_shape, vocab_extension_shape}, 0);
+    const auto fill_value = ov::op::v0::Constant::create(
+        logits.get_element_type(),
+        ov::Shape{},
+        {-std::numeric_limits<float>::infinity()});
+    const auto fill = std::make_shared<ov::op::v3::Broadcast>(fill_value, fill_shape);
+    const auto extended_logits = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{logits, fill}, 2);
+    result->input(0).replace_source_output(extended_logits);
     model->validate_nodes_and_infer_types();
 }
 
@@ -390,6 +429,8 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
         eos.data<uint32_t>()[0] = static_cast<uint32_t>(*result.stop_token_ids.begin());
         tokenizer_metadata["eos_token_id"] = eos;
     }
+    if (image_token_id)
+        extend_gguf_language_logits_for_token(result.language, *image_token_id);
     result.tokenizer = GGUFTokenizer(GGUFTokenizerParameters(std::move(tokenizer_metadata)), properties);
     const bool clip = projector == "mlp" || projector == "internvl";
     if (clip)
