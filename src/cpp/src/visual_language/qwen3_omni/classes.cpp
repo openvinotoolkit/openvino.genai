@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 
+#include "lora/helper.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/vl_sdpa_transformations.hpp"
@@ -467,8 +468,9 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
     : InputsEmbedderQwen3VL(vlm_config, model_dir, tokenizer, device, device_config),
       m_audio_token_id(vlm_config.audio_token_id),
       m_tokenizer_encodes_audio_pad(encodes_audio_pad_as_single_token(m_tokenizer, m_audio_token_id)) {
+    const auto filtered_properties = extract_adapters_from_properties(device_config);
     // Audio encoder is optional — check is_available() / has_audio_encoder() before encoding
-    m_audio_encoder = std::make_unique<AudioEncoderQwen3Omni>(model_dir, vlm_config, device, device_config);
+    m_audio_encoder = std::make_unique<AudioEncoderQwen3Omni>(model_dir, vlm_config, device, *filtered_properties);
 
     // Merged vision model is optional — check has_merged_vision_model() before calling
     // run_video_image_embeddings_merger(). Without it the model works as text+audio only.
@@ -480,7 +482,7 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
         // "attention_mask" parameter with a packed "cu_seq_lens" input (eliminates N*N score I/O).
         utils::request_vl_sdpa_transformations(model);
         auto compiled = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings", device));
+            model, device, utils::get_model_properties(*filtered_properties, "vision_embeddings", device));
         m_with_cu_seqlens_input = utils::has_vl_sdpa_input(compiled, "cu_seq_lens");
         ov::genai::utils::print_compiled_model_properties(compiled,
             m_with_cu_seqlens_input ? "Omni vision embeddings model with VLSDPA optimization ENABLED"
@@ -505,8 +507,9 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
     : InputsEmbedderQwen3VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
       m_audio_token_id(vlm_config.audio_token_id),
       m_tokenizer_encodes_audio_pad(encodes_audio_pad_as_single_token(m_tokenizer, m_audio_token_id)) {
+    const auto filtered_properties = extract_adapters_from_properties(device_config);
     // Audio encoder is optional — check is_available() / has_audio_encoder() before encoding
-    m_audio_encoder = std::make_unique<AudioEncoderQwen3Omni>(config_dir_path, vlm_config, device, device_config);
+    m_audio_encoder = std::make_unique<AudioEncoderQwen3Omni>(config_dir_path, vlm_config, device, *filtered_properties);
 
     // Merged vision model is optional — check has_merged_vision_model() before calling
     // run_video_image_embeddings_merger(). Without it the model works as text+audio only.
@@ -518,7 +521,7 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
         // "attention_mask" parameter with a packed "cu_seq_lens" input (eliminates N*N score I/O).
         utils::request_vl_sdpa_transformations(model);
         auto compiled = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(device_config, "vision_embeddings", device));
+            model, device, utils::get_model_properties(*filtered_properties, "vision_embeddings", device));
         m_with_cu_seqlens_input = utils::has_vl_sdpa_input(compiled, "cu_seq_lens");
         ov::genai::utils::print_compiled_model_properties(compiled,
             m_with_cu_seqlens_input ? "Omni vision embeddings model with VLSDPA optimization ENABLED"

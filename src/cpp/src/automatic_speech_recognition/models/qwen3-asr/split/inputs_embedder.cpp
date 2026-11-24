@@ -7,6 +7,7 @@
 #include <cstring>
 #include <numeric>
 
+#include "lora/helper.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 
 namespace ov::genai {
@@ -73,7 +74,8 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const ov::AnyMap& properties)
     : InputsEmbedderQwen3ASR(config,
                              tokenizer,
-                             EmbeddingsModel::create(model_dir, config.scale_emb, device, properties),
+                             EmbeddingsModel::create(model_dir, config.scale_emb, device,
+                                                     *extract_adapters_from_properties(properties)),
                              utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
                              model_dir,
                              device,
@@ -92,7 +94,7 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                   utils::get_model_weights_pair(models_map, "text_embeddings").second,
                                   config.scale_emb,
                                   device,
-                                  properties),
+                                  *extract_adapters_from_properties(properties)),
           utils::singleton_core().read_model(utils::get_model_weights_pair(models_map, "audio_encoder").first,
                                              utils::get_model_weights_pair(models_map, "audio_encoder").second),
           config_dir,
@@ -107,7 +109,7 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const std::string& device,
                                                const ov::AnyMap& properties)
     : IInputsEmbedder(config, tokenizer, std::move(embedding)),
-      m_audio_encoder(config, audio_model, config_dir, device, properties) {
+      m_audio_encoder(config, audio_model, config_dir, device, *extract_adapters_from_properties(properties)) {
     const auto vocab = tokenizer.get_vocab();
     const auto audio_token = vocab.find(AUDIO_PAD);
     OPENVINO_ASSERT(audio_token != vocab.end() && audio_token->second == config.audio_token_id,

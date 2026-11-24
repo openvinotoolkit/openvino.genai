@@ -3,9 +3,7 @@
 
 """LoRA adapters applied to the vision sub-models of a VLM pipeline."""
 
-import json
 import re
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -31,22 +29,31 @@ from test_vlm_pipeline import (
 
 # Qwen3.5 is multimodal on its own, there is no separate VL line for it.
 VISION_LORA_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5"
-
-pytestmark = [
-    pytest.mark.vlm,
-    pytest.mark.parametrize("model_id", [VISION_LORA_MODEL_ID], scope="module"),
+# An architecture whose inputs embedder does not support visual LoRA.
+UNSUPPORTED_VISION_LORA_MODEL_ID = "optimum-intel-internal-testing/tiny-random-mistral3"
+# Architectures whose inputs embedders compile extra sub-models with the pipeline properties.
+EXTRA_SUBMODELS_MODEL_IDS = [
+    UNSUPPORTED_VISION_LORA_MODEL_ID,
+    "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-qwen3-omni",
 ]
 
+pytestmark = pytest.mark.vlm
 
-def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> int:
-    """Creates a LoRA adapter targeting every linear layer of the vision merger sub-model.
 
-    Layer names follow the PyTorch frontend convention `__module.<module path>/aten::linear/MatMul`,
-    and `openvino_vision_embeddings_merger_model.xml` is exported from the `model.visual` submodule.
+@pytest.fixture(scope="module")
+def model_id() -> str:
+    return VISION_LORA_MODEL_ID
+
+
+def _build_lora(model_path: Path, adapter_path: Path, key_prefix: str, rank: int = 2) -> int:
+    """Creates a LoRA adapter targeting every linear layer of the given sub-model.
+
+    Layer names follow the PyTorch frontend convention `__module.<module path>/aten::linear/MatMul`.
     """
     from safetensors.numpy import save_file
 
-    model = openvino.Core().read_model(Path(models_path) / "openvino_vision_embeddings_merger_model.xml")
+    model = openvino.Core().read_model(model_path)
     tensors: dict[str, np.ndarray] = {}
     for op in model.get_ops():
         if op.get_type_name() != "MatMul":
@@ -58,7 +65,7 @@ def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> 
         transpose_b = op.get_attributes()["transpose_b"]
         input_dim = weight_shape[1 if transpose_b else 0].get_length()
         output_dim = weight_shape[0 if transpose_b else 1].get_length()
-        key = f"base_model.model.model.visual.{module_path.group(1)}"
+        key = f"{key_prefix}{module_path.group(1)}"
         tensors[f"{key}.lora_A.weight"] = np.full((rank, input_dim), 0.5, dtype=np.float32)
         tensors[f"{key}.lora_B.weight"] = np.full((output_dim, rank), 0.5, dtype=np.float32)
 
@@ -66,19 +73,10 @@ def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> 
     return len(tensors) // 2
 
 
-def _create_vlm_pipeline(models_path, backend, from_memory, **properties) -> VLMPipeline:
-    if not from_memory:
-        return VLMPipeline(str(models_path), "CPU", ATTENTION_BACKEND=backend, **properties)
-    models_path = Path(models_path)
-    models = {
-        path.stem.removeprefix("openvino_").removesuffix("_model"): (
-            path.read_text(encoding="utf-8"),
-            openvino.Tensor(np.fromfile(path.with_suffix(".bin"), dtype=np.uint8)),
-        )
-        for path in models_path.glob("openvino_*_model.xml")
-    }
-    return VLMPipeline(
-        models, Tokenizer(models_path), models_path, "CPU", ATTENTION_BACKEND=backend, **properties
+def _build_vision_lora(models_path: Path, adapter_path: Path) -> int:
+    # `openvino_vision_embeddings_merger_model.xml` is exported from the `model.visual` submodule.
+    return _build_lora(
+        Path(models_path) / "openvino_vision_embeddings_merger_model.xml", adapter_path, "base_model.model.model.visual."
     )
 
 
@@ -107,14 +105,13 @@ def vision_lora_reference(
 @pytest.mark.parametrize(
     "mode", [AdapterConfig.Mode.MODE_STATIC, AdapterConfig.Mode.MODE_DYNAMIC, AdapterConfig.Mode.MODE_FUSE]
 )
-@pytest.mark.parametrize("from_memory", [False, True], ids=["path", "models-map"])
-def test_vlm_vision_lora(mode, from_memory, vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor) -> None:
+def test_vlm_vision_lora(mode, vision_lora, vision_lora_reference, cat_tensor: openvino.Tensor) -> None:
     models_path, adapter = vision_lora
     backend, reference = vision_lora_reference
     config = GenerationConfig(max_new_tokens=10, do_sample=False)
 
-    adapted = _create_vlm_pipeline(
-        models_path, backend, from_memory, adapters=AdapterConfig(adapter, 1.0, mode)
+    adapted = VLMPipeline(
+        models_path, "CPU", ATTENTION_BACKEND=backend, adapters=AdapterConfig(adapter, 1.0, mode)
     ).generate(PROMPTS[0], images=[cat_tensor], generation_config=config)
 
     assert adapted.texts[0] != reference, "Vision LoRA adapter did not affect the generated text"
@@ -183,28 +180,39 @@ def test_vlm_vision_lora_cb_constructors(with_tokenizer, vision_lora, cat_tensor
 
 
 @pytest.fixture(scope="module")
-def unsupported_vision_lora_model(vision_lora, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    models_path, _ = vision_lora
-    models_path = Path(models_path)
-    target = tmp_path_factory.mktemp("unsupported_vision_lora")
-    for source in models_path.iterdir():
-        if source.is_file() and (source.suffix == ".json" or source.stem in {
-            "openvino_language_model", "openvino_text_embeddings_model", "openvino_tokenizer", "openvino_detokenizer"
-        }):
-            shutil.copy2(source, target / source.name)
-    config_path = target / "config.json"
-    config = json.loads(config_path.read_text())
-    config["model_type"] = "llava"
-    config_path.write_text(json.dumps(config))
-    pixel_values = openvino.opset13.parameter([1, 3, 14, 14], dtype=np.float32, name="pixel_values")
-    openvino.save_model(
-        openvino.Model([pixel_values], [pixel_values]), target / "openvino_vision_embeddings_model.xml"
-    )
-    return target
+def unsupported_vision_lora_model() -> Path:
+    pytest.importorskip("transformers", minversion="5.2.0")
+    return _get_ov_model(UNSUPPORTED_VISION_LORA_MODEL_ID)
 
 
-@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-@pytest.mark.parametrize("from_memory", [False, True], ids=["path", "models-map"])
+def _create_unsupported_visual_lora_pipeline(
+    models_path: Path, backend: str, target_modules, unsupported_visual_lora: bool, tmp_path: Path
+) -> None:
+    from safetensors.numpy import save_file
+
+    properties = {}
+    if target_modules:
+        # Rank 2 LoRA for the 64x64 projections of tiny-random-mistral3, so language model layers accept it.
+        shapes = {"A": (2, 64), "B": (64, 2)}
+        tensors = {
+            f"base_model.model.{module}.lora_{matrix}.weight": np.ones(shapes[matrix], dtype=np.float32)
+            for module in target_modules
+            for matrix in ("A", "B")
+        }
+        adapter_path = tmp_path / "adapter.safetensors"
+        save_file(tensors, str(adapter_path))
+        properties["adapters"] = AdapterConfig(Adapter(str(adapter_path)))
+    elif target_modules is not None:
+        properties["adapters"] = AdapterConfig()
+
+    if unsupported_visual_lora:
+        with pytest.raises(RuntimeError, match="Visual LoRA adapters are not supported"):
+            VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, **properties)
+    else:
+        VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, **properties)
+
+
+# The adapter check does not depend on the attention backend, so one backend covers the names.
 @pytest.mark.parametrize("target_modules, unsupported_visual_lora", [
     pytest.param(["model.visual.blocks.0.attn.q_proj"], True, id="qwen-vision"),
     pytest.param(["vision_tower.vision_model.encoder.layers.0.self_attn.q_proj"], False, id="other-vision"),
@@ -219,43 +227,56 @@ def unsupported_vision_lora_model(vision_lora, tmp_path_factory: pytest.TempPath
     pytest.param(None, False, id="omitted"),
 ])
 def test_vlm_unsupported_visual_lora_constructor(
-    backend, from_memory, target_modules, unsupported_visual_lora, unsupported_vision_lora_model: Path, tmp_path: Path
+    target_modules, unsupported_visual_lora, unsupported_vision_lora_model: Path, tmp_path: Path
 ) -> None:
-    from safetensors.numpy import save_file
-
-    properties = {}
-    if target_modules:
-        tensors = {
-            f"base_model.model.{module}.lora_{matrix}.weight": np.ones((2, 2), dtype=np.float32)
-            for module in target_modules
-            for matrix in ("A", "B")
-        }
-        adapter_path = tmp_path / "adapter.safetensors"
-        save_file(tensors, str(adapter_path))
-        properties["adapters"] = AdapterConfig(Adapter(str(adapter_path)))
-    elif target_modules is not None:
-        properties["adapters"] = AdapterConfig()
-
-    if unsupported_visual_lora:
-        with pytest.raises(RuntimeError, match="Visual LoRA adapters are not supported"):
-            _create_vlm_pipeline(unsupported_vision_lora_model, backend, from_memory, **properties)
-    else:
-        _create_vlm_pipeline(unsupported_vision_lora_model, backend, from_memory, **properties)
+    _create_unsupported_visual_lora_pipeline(
+        unsupported_vision_lora_model, "SDPA", target_modules, unsupported_visual_lora, tmp_path
+    )
 
 
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-@pytest.mark.parametrize("from_memory", [False, True], ids=["path", "models-map"])
-def test_vlm_unsupported_visual_lora_generate(backend, from_memory, unsupported_vision_lora_model, vision_lora) -> None:
+@pytest.mark.parametrize("target_modules, unsupported_visual_lora", [
+    pytest.param(["model.visual.blocks.0.attn.q_proj"], True, id="qwen-vision"),
+    pytest.param(["model.layers.0.self_attn.q_proj"], False, id="lm-only"),
+])
+def test_vlm_unsupported_visual_lora_constructor_backends(
+    backend, target_modules, unsupported_visual_lora, unsupported_vision_lora_model: Path, tmp_path: Path
+) -> None:
+    _create_unsupported_visual_lora_pipeline(
+        unsupported_vision_lora_model, backend, target_modules, unsupported_visual_lora, tmp_path
+    )
+
+
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+def test_vlm_unsupported_visual_lora_generate(backend, unsupported_vision_lora_model, vision_lora) -> None:
     _, adapter = vision_lora
-    pipe = _create_vlm_pipeline(unsupported_vision_lora_model, backend, from_memory)
+    pipe = VLMPipeline(unsupported_vision_lora_model, "CPU", ATTENTION_BACKEND=backend)
     with pytest.raises(RuntimeError, match="Visual LoRA adapters are not supported"):
         pipe.generate(PROMPTS[0], max_new_tokens=1, adapters=AdapterConfig(adapter))
 
 
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-@pytest.mark.parametrize("from_memory", [False, True], ids=["path", "models-map"])
-def test_vlm_visual_lora_requires_constructor_config(backend, from_memory, vision_lora) -> None:
+def test_vlm_visual_lora_requires_constructor_config(backend, vision_lora) -> None:
     models_path, adapter = vision_lora
-    pipe = _create_vlm_pipeline(models_path, backend, from_memory)
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     with pytest.raises(RuntimeError, match="Visual LoRA was not enabled when this pipeline was created"):
         pipe.generate(PROMPTS[0], max_new_tokens=1, adapters=AdapterConfig(adapter))
+
+
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+@pytest.mark.parametrize("extra_submodels_model_id", EXTRA_SUBMODELS_MODEL_IDS)
+def test_vlm_language_model_lora_with_extra_submodels(extra_submodels_model_id, backend, tmp_path: Path) -> None:
+    pytest.importorskip("transformers", minversion="5.2.0")
+    models_path = Path(_get_ov_model(extra_submodels_model_id))
+    adapter_path = tmp_path / "adapter.safetensors"
+    assert _build_lora(models_path / "openvino_language_model.xml", adapter_path, "base_model.model.") > 0
+    config = GenerationConfig(max_new_tokens=5, do_sample=False)
+
+    reference = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend).generate(
+        PROMPTS[0], generation_config=config
+    )
+    adapted = VLMPipeline(
+        models_path, "CPU", ATTENTION_BACKEND=backend, adapters=AdapterConfig(Adapter(str(adapter_path)))
+    ).generate(PROMPTS[0], generation_config=config)
+
+    assert adapted.texts[0] != reference.texts[0], "Language model LoRA adapter did not affect the generated text"

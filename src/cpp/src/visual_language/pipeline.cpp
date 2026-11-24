@@ -268,7 +268,8 @@ private:
                 return std::filesystem::exists(models_dir / ("openvino_" + std::string(name) + "_model.xml"));
             })) {
             m_speech_engine =
-                std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device, properties_copy);
+                std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device,
+                                                       *extract_adapters_from_properties(properties_copy));
         }
     }
 
@@ -331,7 +332,7 @@ private:
                                                                      m_language,
                                                                      m_embedding,
                                                                      device,
-                                                                     properties_copy);
+                                                                     *extract_adapters_from_properties(properties_copy));
         }
     }
 public:

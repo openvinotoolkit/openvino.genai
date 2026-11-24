@@ -3,6 +3,7 @@
 
 #include "visual_language/qwen4_exp/classes.hpp"
 #include "logger.hpp"
+#include "lora/helper.hpp"
 
 #include <algorithm>
 #include <numeric>
@@ -78,7 +79,7 @@ void InputsEmbedderQwen4_Exp::init_ngram_embeddings_model(
     auto compiled_model = utils::singleton_core().compile_model(
         model,
         model_supported_device,
-        utils::get_model_properties(device_config, "ngram_embeddings", model_supported_device)
+        utils::get_model_properties(*extract_adapters_from_properties(device_config), "ngram_embeddings", model_supported_device)
     );
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM ngram embeddings model");

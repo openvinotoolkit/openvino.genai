@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "json_utils.hpp"
+#include "lora/helper.hpp"
 #include "utils.hpp"
 #include "visual_language/lfm3_omni/speech_engine.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -128,7 +129,7 @@ InputsEmbedderLFM3Omni::InputsEmbedderLFM3Omni(const VLMConfig& vlm_config,
         m_audio_encoder = std::make_unique<AudioEncoderLFM3>(utils::singleton_core().read_model(audio_encoder_path),
                                                              model_dir,
                                                              device,
-                                                             device_config);
+                                                             *extract_adapters_from_properties(device_config));
     }
 }
 
@@ -145,7 +146,7 @@ InputsEmbedderLFM3Omni::InputsEmbedderLFM3Omni(const VLMConfig& vlm_config,
         m_audio_encoder = std::make_unique<AudioEncoderLFM3>(utils::singleton_core().read_model(model, weights),
                                                              config_dir_path,
                                                              device,
-                                                             device_config);
+                                                             *extract_adapters_from_properties(device_config));
     }
 }
 
