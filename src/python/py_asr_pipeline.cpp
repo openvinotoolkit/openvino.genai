@@ -12,6 +12,7 @@
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
 #include "openvino/genai/automatic_speech_recognition/perf_metrics.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
+#include "openvino/genai/automatic_speech_recognition/voice_activity_detector.hpp"
 #include "py_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
@@ -26,9 +27,12 @@ using ov::genai::ASRRawPerfMetrics;
 using ov::genai::AudioInputs;
 using ov::genai::GenerationConfig;
 using ov::genai::PerfMetrics;
+using ov::genai::SileroVADConfig;
+using ov::genai::SpeechTimestamp;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
 using ov::genai::Tokenizer;
+using ov::genai::VoiceActivityDetector;
 
 namespace pyutils = ov::genai::pybind::utils;
 namespace common_utils = ov::genai::common_bindings::utils;
@@ -458,5 +462,81 @@ void init_asr_pipeline(py::module_& m) {
             R"(
             Aligns a transcript to audio and returns word-level timestamps relative to the audio start.
             Returns list[ASRDecodedResultChunk].
+        )");
+
+    py::class_<SpeechTimestamp>(m,
+                                "SpeechTimestamp",
+                                "Speech interval on the input audio timeline in seconds, [start_ts, end_ts).")
+        .def_readonly("start_ts", &SpeechTimestamp::start_ts)
+        .def_readonly("end_ts", &SpeechTimestamp::end_ts);
+
+    py::class_<SileroVADConfig>(m,
+                                "SileroVADConfig",
+                                "Segmentation options for the Silero voice activity detector. Segmentation "
+                                "parameters follow Silero VAD v6.3 for 16 kHz audio.")
+        .def(py::init<>())
+        .def_readwrite("threshold",
+                       &SileroVADConfig::threshold,
+                       "Speech probability at or above which a window starts speech, in (0, 1).")
+        .def_readwrite("neg_threshold",
+                       &SileroVADConfig::neg_threshold,
+                       "Speech probability below which a window counts as potential silence, in (0, threshold]; "
+                       "max(threshold - 0.15, 0.01) when None.")
+        .def_readwrite("min_speech_duration_ms",
+                       &SileroVADConfig::min_speech_duration_ms,
+                       "Minimum speech segment duration in milliseconds; segments not longer than this are "
+                       "discarded before padding.")
+        .def_readwrite("min_silence_duration_ms",
+                       &SileroVADConfig::min_silence_duration_ms,
+                       "Minimum silence duration in milliseconds that ends a speech segment.")
+        .def_readwrite("speech_pad_ms",
+                       &SileroVADConfig::speech_pad_ms,
+                       "Padding in milliseconds added to both sides of each segment; gaps narrower than twice "
+                       "this value are split evenly.")
+        .def_readwrite("max_speech_duration_s",
+                       &SileroVADConfig::max_speech_duration_s,
+                       "Speech duration limit in seconds used to split long speech regions; returned padded "
+                       "segments may be longer. Infinity disables splitting.")
+        .def_readwrite("min_silence_at_max_speech_ms",
+                       &SileroVADConfig::min_silence_at_max_speech_ms,
+                       "Minimum silence considered as a split point for overlong segments.");
+
+    py::class_<VoiceActivityDetector, std::shared_ptr<VoiceActivityDetector>>(
+        m,
+        "VoiceActivityDetector",
+        "Standalone voice activity detector for mono 16 kHz audio.")
+        .def(
+            py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
+                return std::make_shared<VoiceActivityDetector>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+            }),
+            py::arg("models_path"),
+            py::arg("device"),
+            R"(
+            VoiceActivityDetector class constructor.
+            models_path (os.PathLike): Directory containing silero_vad_16k_sequence.onnx from Silero VAD v6.3.
+            device (str): Device to run the model on (e.g., CPU).
+
+            Keyword arguments: OpenVINO compile properties.
+
+            The caller must supply mono 16 kHz audio; the detector does not resample it.
+
+            Concurrent get_speech_timestamps() calls on the same instance are not supported; use one instance per
+            thread.
+        )")
+        .def(
+            "get_speech_timestamps",
+            [](VoiceActivityDetector& detector, const std::vector<float>& audio, const py::kwargs& kwargs) {
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                return detector.get_speech_timestamps(audio, properties);
+            },
+            py::arg("audio"),
+            "List of floats representing mono 16 kHz float PCM samples.",
+            R"(
+            Detects speech and returns sorted, non-overlapping list[SpeechTimestamp] in seconds, not rounded;
+            empty when there is no speech.
+
+            Keyword arguments: silero_vad_config (SileroVADConfig), a call-time property rather than a
+            constructor option. Other keyword arguments are rejected.
         )");
 }
