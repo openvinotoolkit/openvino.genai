@@ -409,6 +409,8 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
+    // Speculative decoding reads the hidden state of a sequence after a forward that did not run it.
+    bool m_preserve_unscheduled_hidden_states = false;
     bool m_mtp_draft_positions = false;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
@@ -525,6 +527,7 @@ public:
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
+    void enable_unscheduled_hidden_state_preservation(bool on) { m_preserve_unscheduled_hidden_states = on; }
 
     // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
     void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on && !m_has_mrope_position_ids; }
@@ -589,6 +592,7 @@ public:
      * @return An ov::Tensor with next-token logit scores for each sequence processed during this `forward` call.
      */
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const ContinuousBatchingScheduler::Output& scheduler_output) {
+        _preserve_hidden_states_of_unscheduled_sequences(sequence_groups, scheduler_output);
         m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
@@ -1169,7 +1173,8 @@ public:
                 for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                     Sequence::Ptr sequence = running_sequences[seq_idx];
                     sequence->update_hidden_state(
-                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()),
+                        sequence_group->get_num_processed_tokens());
                     if (m_has_intermediate_hidden_states_output) {
                         auto ihs = _get_intermediate_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id());
                         if (ihs.get_size() == 0) {
@@ -1450,6 +1455,36 @@ private:
 
     ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
         return _get_hidden_state_slice(m_hidden_states, request_id, seq_grouped_id);
+    }
+
+    /// @brief A sequence's hidden state is a view of the output of the forward that ran it, and the next inference
+    /// writes that output again. A sequence that this forward does not schedule keeps a copy of its rows instead.
+    void _preserve_hidden_states_of_unscheduled_sequences(
+        const std::vector<SequenceGroup::Ptr>& sequence_groups,
+        const ContinuousBatchingScheduler::Output& scheduler_output) const {
+        if (!m_preserve_unscheduled_hidden_states || m_sequence_hidden_state_mapping.empty()) {
+            return;
+        }
+        std::vector<bool> is_scheduled(sequence_groups.size(), false);
+        for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+            is_scheduled[seq_group_id] = true;
+        }
+        for (size_t seq_group_id = 0; seq_group_id < sequence_groups.size(); ++seq_group_id) {
+            if (is_scheduled[seq_group_id]) {
+                continue;
+            }
+            const SequenceGroup::Ptr& sequence_group = sequence_groups[seq_group_id];
+            for (const auto& sequence : sequence_group->get_running_sequences()) {
+                const SequenceKey key{sequence_group->get_request_id(), sequence->get_grouped_id()};
+                const ov::Tensor view = sequence->get_hidden_state();
+                if (!m_sequence_hidden_state_mapping.count(key) || !view) {
+                    continue;
+                }
+                ov::Tensor rows(view.get_element_type(), view.get_shape());
+                view.copy_to(rows);
+                sequence->update_hidden_state(rows, sequence->get_hidden_state_first_position());
+            }
+        }
     }
 
     ov::Tensor _get_intermediate_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {

@@ -133,6 +133,10 @@ These metrics distinguish draft candidates from draft-model processing work:
 - `get_draft_acceptance_rate()` returns `accepted / draft` as a value in the `[0, 1]` range.
 - `draft_model_metrics.get_num_generated_tokens()` reports draft-model processed tokens and can include non-candidate work such as cache or state alignment; do not use it as the acceptance-rate denominator.
 
+`draft_step_metrics` records the wall-clock duration of every draft step, from the start of drafting until the candidates are submitted to the main model; the Stateful backend leaves it empty.
+It differs from `draft_model_metrics`, which records draft model inferences: a FastDraft, EAGLE3 or MTP draft step runs several of them, and every draft step also spends time on scheduling, input preparation and candidate submission.
+A DFlash, DSpark or DFlash-2 draft step runs one draft forward, and `draft_model_metrics`, `draft_markov_head_metrics` and `draft_sampling_metrics` report its parts: the backbone forward, the Markov head inferences of a DSpark or DFlash-2 draft, and candidate sampling.
+
 <LanguageTabs>
     <TabItemPython>
         ```python

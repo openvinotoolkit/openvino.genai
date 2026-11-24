@@ -362,6 +362,20 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     }
     OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len,
                     "'max_length' must be greater than the number of prompt tokens");
+    if (m_is_validation_mode_enabled && sampling_params_copy.is_assisting_generation()) {
+        // The scheduler runs the validation windows of all sequences of a request in one forward, so a request whose
+        // windows exceed the budget would fail every request of the pipeline. A confidence-driven draft proposes at
+        // least one candidate.
+        const size_t num_candidates = std::max<size_t>(sampling_params_copy.num_assistant_tokens.value_or(0), 1);
+        const size_t validation_window = num_candidates + 1;
+        const size_t max_num_batched_tokens = m_scheduler->get_config().max_num_batched_tokens;
+        OPENVINO_ASSERT(max_num_batched_tokens >= validation_window * sampling_params_copy.num_return_sequences,
+                        "max_num_batched_tokens (", max_num_batched_tokens,
+                        ") is too small to ever schedule the speculative validation windows of ",
+                        sampling_params_copy.num_return_sequences, " sequences of ", validation_window,
+                        " tokens each (1 base + ", num_candidates, " candidates) for request ", request_id,
+                        "; increase max_num_batched_tokens to at least (num_assistant_tokens + 1) * num_return_sequences");
+    }
 
     std::shared_ptr<SequenceGroup> sequence_group;
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
@@ -426,6 +440,20 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     _throw_if_failed();
     return !m_awaiting_requests.empty() || !m_requests.empty();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::discard_awaiting_request(uint64_t request_id) {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+        if ((*request)->get_request_id() != request_id) {
+            continue;
+        }
+        for (const auto& sequence : (*request)->get_sequences()) {
+            m_scheduler->free_sequence(sequence->get_id());
+        }
+        m_awaiting_requests.erase(request);
+        return;
+    }
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {
@@ -696,6 +724,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
+    m_validated_windows.clear();
 
     _pull_awaiting_requests();
     _validate_linear_verifier_constraints();
@@ -825,6 +854,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         m_pipeline_metrics.sampling_duration =
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
+        m_validated_windows = sampler_output.validated_windows;
         timer.end();
     }
 
@@ -1139,26 +1169,33 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                     "(num_return_sequences == 1, no beam search)");
 
     std::vector<GenerationHandle> generations;
-    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        if (position_ids_list.has_value()) {
-            const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
-            m_inputs_embedder->set_position_ids(position_ids);
-            if (rope_delta.has_value()) {
-                m_inputs_embedder->set_rope_delta(*rope_delta);
+    try {
+        for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+            OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+            if (position_ids_list.has_value()) {
+                const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
+                m_inputs_embedder->set_position_ids(position_ids);
+                if (rope_delta.has_value()) {
+                    m_inputs_embedder->set_rope_delta(*rope_delta);
+                }
             }
+
+            const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+            const bool has_valid_lm_extra_inputs =
+                lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+
+            generations.push_back(add_request(
+                request_id,
+                input_ids[request_id],
+                sampling_params[request_id],
+                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
         }
-
-        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
-        const bool has_valid_lm_extra_inputs =
-            lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
-
-        generations.push_back(add_request(
-            request_id,
-            input_ids[request_id],
-            sampling_params[request_id],
-            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
+    } catch (...) {
+        for (size_t request_id = 0; request_id < generations.size(); ++request_id) {
+            discard_awaiting_request(request_id);
+        }
+        throw;
     }
 
     auto all_requests =
