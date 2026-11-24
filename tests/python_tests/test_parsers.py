@@ -364,6 +364,49 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
 
 @pytest.mark.parametrize(
     "hf_ov_genai_models",
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
+    indirect=True
+)
+@pytest.mark.parametrize("tokens_per_write", [1, 2, 3])
+def test_incremental_parser_delta_tokens_cover_each_token_once(hf_ov_genai_models, tokens_per_write):
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+
+    received = []
+
+    class TokenRecordingParser(IncrementalParser):
+        def parse(self, delta_message: dict, delta_text: str, delta_tokens=None) -> str:
+            received.append((delta_text, list(delta_tokens)))
+            return delta_text
+
+        def reset(self):
+            pass
+
+    class CustomStreamer(TextParserStreamer):
+        def write(self, delta_message):
+            return StreamingStatus.RUNNING
+
+    streamer = CustomStreamer(genai_tokenizer, parsers=[TokenRecordingParser()])
+
+    # A new line in the middle and at the end of the text, and <s> which adds no text.
+    answers = [
+        "<s>Okay, the user is asking.\nThe answer to 2 + 1 is 3.",
+        "Okay, the<s> user is asking for the answer to 2 + 1.\n",
+    ]
+    # The same streamer is used for several answers and reset in between, as LLMPipeline does.
+    for answer in answers:
+        received.clear()
+        encoded_tokens = genai_tokenizer.encode(answer, add_special_tokens=False).input_ids.data.tolist()[0]
+        for i in range(0, len(encoded_tokens), tokens_per_write):
+            streamer._write(encoded_tokens[i : i + tokens_per_write])
+        streamer.end()
+
+        # Every token is passed to the parsers once and in order.
+        assert [token for _, tokens in received for token in tokens] == encoded_tokens
+        streamer.reset()
+
+
+@pytest.mark.parametrize(
+    "hf_ov_genai_models",
     ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],
     indirect=True,
 )
