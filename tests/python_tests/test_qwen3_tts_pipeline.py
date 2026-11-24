@@ -2,8 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import os
 import re
 import subprocess  # nosec B404
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -1410,3 +1413,262 @@ class TestQwen3TTSPipelineVoiceDesign:
             f"optimum={optimum_sr}, genai={result.output_sample_rate}"
         )
         _assert_waveform_equal(optimum_speech, genai_speech, "voicedesign parity")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Input streaming: Text2SpeechStreamingSession (SDPA backend, stateful codec decoder)
+# ---------------------------------------------------------------------------------------------------------------------
+
+SESSION_TEXT = "Okay, let's run some tests! Is everything okay? Yes, it should be fine, thank you."
+SESSION_SHORT_TEXT = "Hi there."
+SESSION_GENERATION_KWARGS = {
+    "do_sample": False,
+    "subtalker_dosample": False,
+    "max_new_tokens": 32,
+    "rng_seed": 42,
+}
+
+
+def _skip_without_stateful_decoder():
+    # The stateless decoder re-decodes left context per chunk, so its audio depends on where the chunks fall, which
+    # depends on when the text arrives. Exact equality with generate() needs the stateful decoder.
+    if os.environ.get("OV_GENAI_QWEN_TTS_STREAM_DECODER", "auto").lower() == "stateless":
+        pytest.skip("exact equality with generate() needs the stateful codec decoder")
+
+
+def _split_every(text: str, size: int) -> list[str]:
+    return [text[i : i + size] for i in range(0, len(text), size)]
+
+
+def _split_words(text: str) -> list[str]:
+    return re.findall(r"\s*\S+|\s+$", text)
+
+
+SESSION_SPLITS = {
+    "whole": lambda text: [text],
+    "words": _split_words,
+    "7-characters": lambda text: _split_every(text, 7),
+    "1-character": lambda text: _split_every(text, 1),
+}
+
+
+def _run_session(pipe, pieces, speaker_embedding=None, **config):
+    """Pushes `pieces`, reading after every push, then ends the text. Returns (audio, results)."""
+    session = ov_genai.Text2SpeechStreamingSession(pipe, speaker_embedding, **config)
+    results = []
+
+    def drain():
+        while True:
+            result = session.read()
+            if result is None:
+                return
+            results.append(result)
+            if result.is_final:
+                return
+
+    for piece in pieces:
+        session.push(piece)
+        drain()
+    session.end()
+    drain()
+    assert session.read() is None, "read() after the final result must return None"
+    samples = [np.array(r.speech.data, dtype=np.float32).reshape(-1) for r in results]
+    return (np.concatenate(samples) if samples else np.zeros(0, dtype=np.float32)), results
+
+
+def _assert_results_are_consistent(results):
+    assert results, "the session returned no results"
+    assert [r.is_final for r in results].count(True) == 1 and results[-1].is_final
+    position = 0
+    for result in results:
+        assert result.start_sample == position
+        assert result.output_sample_rate == SAMPLE_RATE
+        assert len(result.speech.shape) == 1
+        position += result.speech.get_size()
+
+
+def _offline_streaming_layout(pipe, text, speaker_embedding=None, **config):
+    result = pipe.generate(text, speaker_embedding, non_streaming_mode=False, **config)
+    return np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+
+def _assert_session_equals_generate(pipe, text, speaker_embedding=None, **config):
+    _skip_without_stateful_decoder()
+    expected = _offline_streaming_layout(pipe, text, speaker_embedding, **config)
+    assert expected.size > 0
+    for name, split in SESSION_SPLITS.items():
+        audio, results = _run_session(pipe, split(text), speaker_embedding, **config)
+        _assert_results_are_consistent(results)
+        assert audio.shape == expected.shape, f"{name}: {audio.size} samples, generate() has {expected.size}"
+        assert np.array_equal(audio, expected), f"{name}: the audio differs from generate()"
+
+
+def _random_speaker_embedding(pipe):
+    rng = np.random.default_rng(11)
+    return ov.Tensor(rng.normal(0.0, 0.5, list(pipe.get_speaker_embedding_shape())).astype(np.float32))
+
+
+def test_qwen3_tts_streaming_session_customvoice_equals_generate(genai_qwen3_tts_customvoice_pipe):
+    for text in (SESSION_TEXT, SESSION_SHORT_TEXT):
+        _assert_session_equals_generate(
+            genai_qwen3_tts_customvoice_pipe, text, speaker="serena", **SESSION_GENERATION_KWARGS
+        )
+
+
+def test_qwen3_tts_streaming_session_voicedesign_equals_generate(genai_qwen3_tts_voicedesign_pipe):
+    _assert_session_equals_generate(
+        genai_qwen3_tts_voicedesign_pipe,
+        SESSION_TEXT,
+        instruct="Speak with a calm, friendly, and reassuring tone.",
+        **SESSION_GENERATION_KWARGS,
+    )
+
+
+def test_qwen3_tts_streaming_session_base_xvector_equals_generate(genai_qwen3_tts_base_pipe):
+    _assert_session_equals_generate(
+        genai_qwen3_tts_base_pipe,
+        SESSION_TEXT,
+        _random_speaker_embedding(genai_qwen3_tts_base_pipe),
+        **SESSION_GENERATION_KWARGS,
+    )
+
+
+def test_qwen3_tts_streaming_session_base_voice_clone_equals_generate(genai_qwen3_tts_base_pipe):
+    rng = np.random.default_rng(5)
+    # The tiny-random model has 4 code groups.
+    ref_codec_ids = ov.Tensor(rng.integers(0, 100, (20, 4)).astype(np.int64))
+    for text in (SESSION_TEXT, SESSION_SHORT_TEXT):  # the second is too short to cover the reference
+        _assert_session_equals_generate(
+            genai_qwen3_tts_base_pipe,
+            text,
+            _random_speaker_embedding(genai_qwen3_tts_base_pipe),
+            ref_text="This is a dummy-generated waveform for parity testing",
+            ref_codec_ids=ref_codec_ids,
+            **SESSION_GENERATION_KWARGS,
+        )
+
+
+def test_qwen3_tts_streaming_session_sampling_matches_generate_with_a_fixed_seed(genai_qwen3_tts_customvoice_pipe):
+    _skip_without_stateful_decoder()
+    config = {"speaker": "serena", "max_new_tokens": 32, "rng_seed": 42}  # the sampling defaults
+    expected = _offline_streaming_layout(genai_qwen3_tts_customvoice_pipe, SESSION_TEXT, **config)
+    audio, results = _run_session(genai_qwen3_tts_customvoice_pipe, _split_words(SESSION_TEXT), **config)
+    _assert_results_are_consistent(results)
+    # generate() lets the model end the utterance at any step, a session only after the text has ended, so they can
+    # differ when the (random tiny) model draws EOS early; otherwise the draws are the same.
+    if expected.size == audio.size:
+        assert np.array_equal(audio, expected)
+    whole, _ = _run_session(genai_qwen3_tts_customvoice_pipe, [SESSION_TEXT], **config)
+    assert np.array_equal(whole, audio), "the audio of a session must not depend on how the text is split"
+
+
+def test_qwen3_tts_streaming_session_returns_audio_before_the_text_ends(genai_qwen3_tts_customvoice_pipe):
+    session = ov_genai.Text2SpeechStreamingSession(
+        genai_qwen3_tts_customvoice_pipe, speaker="serena", **{**SESSION_GENERATION_KWARGS, "max_new_tokens": 64}
+    )
+    audio_before_end = 0
+    for word in _split_words(SESSION_TEXT):
+        session.push(word)
+        while (result := session.read()) is not None:
+            audio_before_end += result.speech.get_size()
+            assert not result.is_final
+    session.end()
+    while (result := session.read()) is not None:
+        if result.is_final:
+            break
+    assert audio_before_end > 0
+
+
+def test_qwen3_tts_streaming_session_pushes_from_another_thread(genai_qwen3_tts_customvoice_pipe):
+    _skip_without_stateful_decoder()
+    pipe = genai_qwen3_tts_customvoice_pipe
+    config = {"speaker": "serena", **SESSION_GENERATION_KWARGS}
+    expected = _offline_streaming_layout(pipe, SESSION_TEXT, **config)
+
+    session = ov_genai.Text2SpeechStreamingSession(pipe, **config)
+
+    def produce():
+        for word in _split_words(SESSION_TEXT):
+            session.push(word)
+            time.sleep(0.01)
+        session.end()
+
+    producer = threading.Thread(target=produce)
+    producer.start()
+    chunks = []
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        result = session.read()
+        if result is None:
+            time.sleep(0.002)
+            continue
+        chunks.append(np.array(result.speech.data, dtype=np.float32).reshape(-1))
+        if result.is_final:
+            break
+    producer.join()
+    assert chunks and np.array_equal(np.concatenate(chunks), expected)
+
+
+def test_qwen3_tts_streaming_session_finish_reason(genai_qwen3_tts_customvoice_pipe):
+    _, results = _run_session(
+        genai_qwen3_tts_customvoice_pipe,
+        [SESSION_TEXT],
+        speaker="serena",
+        **{**SESSION_GENERATION_KWARGS, "max_new_tokens": 6},
+    )
+    assert results[-1].finish_reason == ov_genai.GenerationFinishReason.LENGTH
+    assert all(r.finish_reason == ov_genai.GenerationFinishReason.NONE for r in results[:-1])
+
+
+def test_qwen3_tts_streaming_session_lifecycle(genai_qwen3_tts_customvoice_pipe):
+    pipe = genai_qwen3_tts_customvoice_pipe
+    config = {"speaker": "serena", **SESSION_GENERATION_KWARGS}
+
+    session = ov_genai.Text2SpeechStreamingSession(pipe, **config)
+    assert session.read() is None  # nothing pushed yet
+    session.push("Hello")
+    assert session.read() is None  # "Hello" may still grow into a longer word
+    with pytest.raises(RuntimeError):  # one session per pipeline
+        ov_genai.Text2SpeechStreamingSession(pipe, **config)
+    with pytest.raises(RuntimeError):  # generate() shares the talker with the session
+        pipe.generate("Hello", None, **config)
+    session.end()
+    with pytest.raises(RuntimeError):
+        session.end()
+    with pytest.raises(RuntimeError):
+        session.push("more")
+    finals = 0
+    while (result := session.read()) is not None:
+        finals += int(result.is_final)
+    assert finals == 1
+    del session
+    pipe.generate("Hello", None, **config)  # the slot is free again
+
+    empty = ov_genai.Text2SpeechStreamingSession(pipe, **config)
+    empty.end()
+    with pytest.raises(RuntimeError):  # no text to speak
+        empty.read()
+
+
+def test_qwen3_tts_streaming_session_streaming_config(genai_qwen3_tts_customvoice_pipe):
+    streaming_config = ov_genai.Text2SpeechStreamingConfig()
+    assert streaming_config.max_holdback_chars == 32
+    streaming_config.max_holdback_chars = 0  # no holdback: every complete character is committed at once
+    session = ov_genai.Text2SpeechStreamingSession(
+        genai_qwen3_tts_customvoice_pipe,
+        streaming_config=streaming_config,
+        speaker="serena",
+        **SESSION_GENERATION_KWARGS,
+    )
+    session.push(SESSION_SHORT_TEXT)
+    session.end()
+    results = []
+    while (result := session.read()) is not None:
+        results.append(result)
+    _assert_results_are_consistent(results)
+
+
+def test_qwen3_tts_streaming_session_needs_the_sdpa_backend(tiny_qwen3_tts_customvoice_ov_path):
+    pipe = ov_genai.Text2SpeechPipeline(str(tiny_qwen3_tts_customvoice_ov_path), "CPU", ATTENTION_BACKEND="PA")
+    with pytest.raises(RuntimeError, match="SDPA"):
+        ov_genai.Text2SpeechStreamingSession(pipe, speaker="serena")

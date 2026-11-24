@@ -5,6 +5,7 @@ This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 - `text2speech.py`: basic text → audio generation (SpeechT5 and Kokoro)
 - `kokoro_phonemize_fallback.py`: Kokoro unknown-word fallback behavior
 - `qwen3_tts.py`: unified Qwen3-TTS sample with subcommands for Base, CustomVoice, and VoiceDesign
+- `qwen3_tts_input_streaming.py`: Qwen3-TTS speaking text while it arrives (input streaming with `Text2SpeechStreamingSession`)
 
 ## Supported Models
 
@@ -271,6 +272,51 @@ python qwen3_tts.py base qwen3_tts_base_ov "Hello again." --speaker_embedding_fi
 ```
 
 For Qwen3-TTS Base examples above, output is 24 kHz WAV.
+
+### 6) `qwen3_tts_input_streaming.py`: speak text while it arrives
+
+`Text2SpeechStreamingSession` speaks text that arrives in pieces, for example an LLM reply while it is being generated,
+and returns the audio as soon as it is ready. `push()` only buffers text, `read()` returns the next audio (and runs the
+inference that produces it on the calling thread), `end()` closes the input, and the last result has `is_final == True`.
+The sample pushes a text word by word from a producer thread at a chosen rate, and reads from the main thread:
+
+```
+python qwen3_tts_input_streaming.py qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice. This text is pushed word by word, and spoken while it arrives." --speaker ryan --tokens_per_second 10
+```
+
+It prints a timeline of the audio it gets back, the time to first audio, and writes `output_streaming_audio.wav`. `--compare`
+also runs `generate()` on the whole text and checks that the audio is identical. The voice options are those of
+`qwen3_tts.py` (`--speaker`, `--instruct`, `--ref_audio_wav_path` with `--ref_text` for voice cloning, ...).
+
+```python
+import openvino_genai
+
+pipe = openvino_genai.Text2SpeechPipeline(model_dir, "CPU", ATTENTION_BACKEND="SDPA")
+session = openvino_genai.Text2SpeechStreamingSession(pipe, speaker="ryan")
+
+for text_piece in llm_reply_stream():      # for example, from another thread
+    session.push(text_piece)
+    while (result := session.read()) is not None:
+        play(result.speech)                # float32 [N] at result.output_sample_rate
+session.end()
+while (result := session.read()) is not None:
+    play(result.speech)                    # the last one has result.is_final == True
+```
+
+Things to know:
+
+- Input streaming needs the SDPA backend: create the pipeline with `ATTENTION_BACKEND="SDPA"` (the default
+  PagedAttention backend does not support it yet).
+- One session at a time per pipeline, and `generate()` cannot be called while a session is alive.
+- A session always uses the streaming prompt layout (`non_streaming_mode=False`). With the same seed it produces the
+  same audio as `generate(..., non_streaming_mode=False)` on the whole text, however the text is split into `push()` calls,
+  as long as the pieces end at word boundaries and the stateful codec decoder is used (the default when the model has it).
+  The default `non_streaming_mode=True` of `generate()` gives the model the whole text up front, which a session cannot do,
+  so its audio differs.
+- The model is only allowed to end the utterance once the text has ended, so an early end-of-speech cannot cut the text short.
+- Words are held back until a following space shows where they end (`Text2SpeechStreamingConfig.max_holdback_chars`
+  bounds this for text without spaces). Voice cloning needs enough text to cover the reference transcript before it can
+  start, or `end()`.
 
 Refer to [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for model details.
 

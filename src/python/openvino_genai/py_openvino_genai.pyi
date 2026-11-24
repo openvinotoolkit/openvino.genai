@@ -5977,6 +5977,132 @@ class Text2SpeechPipeline:
         """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
+class Text2SpeechStreamingConfig:
+    """
+    
+        Text2SpeechStreamingConfig
+    
+        Parameters of a Text2SpeechStreamingSession.
+    
+        :param max_holdback_chars: Pushed text is held back until it is certain to tokenize the same as in the complete
+                                   text: a trailing partial word is kept until whitespace follows it, or end() is called.
+                                   A held-back run longer than this many characters (text without spaces, e.g. Chinese)
+                                   is committed anyway, and the tokens at that boundary may then differ from the
+                                   complete text.
+        :type max_holdback_chars: int
+    
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def max_holdback_chars(self) -> int:
+        ...
+    @max_holdback_chars.setter
+    def max_holdback_chars(self, arg0: typing.SupportsInt) -> None:
+        ...
+class Text2SpeechStreamingResult:
+    """
+    
+        Text2SpeechStreamingResult
+    
+        Audio produced by one Text2SpeechStreamingSession.read().
+    
+        :param speech: float32 PCM, shape [N], at output_sample_rate. Append-only across results: the audio of all results
+                       concatenated is the audio of the whole utterance.
+        :type speech: openvino.Tensor
+    
+        :param output_sample_rate: sample rate of the audio.
+        :type output_sample_rate: int
+    
+        :param start_sample: index of the first sample of ``speech`` in the utterance.
+        :type start_sample: int
+    
+        :param is_final: True for the last result, after end(). ``speech`` may be empty.
+        :type is_final: bool
+    
+        :param finish_reason: set on the final result: STOP when the model ended the utterance, LENGTH when
+                              max_new_tokens was reached.
+        :type finish_reason: GenerationFinishReason
+    
+        :param perf_metrics: metrics of this read().
+        :type perf_metrics: SpeechGenerationPerfMetrics
+    
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def finish_reason(self) -> openvino_genai.py_openvino_genai.GenerationFinishReason:
+        ...
+    @property
+    def is_final(self) -> bool:
+        ...
+    @property
+    def output_sample_rate(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> SpeechGenerationPerfMetrics:
+        ...
+    @property
+    def speech(self) -> openvino._pyopenvino.Tensor:
+        ...
+    @property
+    def start_sample(self) -> int:
+        ...
+class Text2SpeechStreamingSession:
+    """
+    
+        Speech synthesis of text that arrives in pieces, for example an LLM reply while it is being generated.
+    
+        push() only buffers text. read() returns the next audio that is ready and runs the inference that produces it on
+        the calling thread; it never waits for text. end() closes the input; the following read() calls drain the rest,
+        and the last result has is_final == True. push()/end() may be called from one thread while read() is called from
+        another.
+    
+        With the same seed and the Qwen3-TTS streaming prompt layout (non_streaming_mode=False, which a session always
+        uses), the audio equals what Text2SpeechPipeline.generate() produces for the complete text, however the text is
+        split into push() calls, as long as the pieces end at word boundaries. This needs the stateful codec decoder (the
+        default when the model has it). With sampling, generate() lets the model end the utterance at any step while a
+        session does so only after the text has ended, so they can differ when the model ends early.
+    
+        Qwen3-TTS supports one live session per pipeline, only on the SDPA backend (pass ATTENTION_BACKEND="SDPA" to
+        Text2SpeechPipeline), and generate() cannot be called while a session is alive. The constructor raises otherwise.
+    
+    """
+    def __init__(self, pipeline: Text2SpeechPipeline, speaker_embedding: typing.Any = None, generation_config: SpeechGenerationConfig | None = None, streaming_config: Text2SpeechStreamingConfig | None = None, **kwargs) -> None:
+        """
+    
+                Creates a session.
+    
+                :param pipeline: the pipeline to speak with.
+                :type pipeline: Text2SpeechPipeline
+    
+                :param speaker_embedding: optional speaker embedding, as for Text2SpeechPipeline.generate().
+                :type speaker_embedding: openvino.Tensor or None
+    
+                :param generation_config: optional configuration; the pipeline's configuration when not given.
+                                          ``non_streaming_mode`` is ignored: a session always uses the streaming layout.
+                :type generation_config: SpeechGenerationConfig or None
+    
+                :param streaming_config: session parameters.
+                :type streaming_config: Text2SpeechStreamingConfig or None
+    
+                :param kwargs: keyword arguments with keys corresponding to SpeechGenerationConfig fields, applied on top of
+                               the configuration (for example ``speaker="serena"`` or ``rng_seed=42``).
+                :type kwargs: dict
+    
+        """
+    def end(self) -> None:
+        """
+        Close the text input. May be called once. read() then drains the rest.
+        """
+    def push(self, text: str) -> None:
+        """
+        Append text. Never runs inference. Raises after end().
+        """
+    def read(self) -> openvino_genai.py_openvino_genai.Text2SpeechStreamingResult | None:
+        """
+        Return the next audio, or None if there is nothing to return yet (more text is needed and end() has not been called) or the final result was already returned.
+        """
 class Text2VideoPipeline:
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes) -> None:

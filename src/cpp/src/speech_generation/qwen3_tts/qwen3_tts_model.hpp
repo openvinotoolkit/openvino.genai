@@ -93,7 +93,8 @@ public:
         // `incremental_text` ignores `trailing_text_hidden` and starts from an empty incremental text that the
         // caller feeds through text() while the run waits (NEED_TEXT). Codec EOS is then not allowed until the
         // text is finished and its last row has been consumed, so the talker cannot end the utterance while text is
-        // still to come. With fixed text (the default) EOS is allowed at every step, as before.
+        // still to come: when the talker draws EOS before that, the token is drawn again without it. With fixed text
+        // (the default) EOS is allowed at every step, as before.
         TalkerRun(Qwen3TTSImpl& impl,
                   const ov::Tensor& talker_prefill,
                   const ov::Tensor& tts_pad,

@@ -174,4 +174,7 @@ from .py_openvino_genai import (
     Text2SpeechContinuousBatchingPipeline,
     Text2SpeechDecodedResults,
     Text2SpeechPipeline,
+    Text2SpeechStreamingConfig,
+    Text2SpeechStreamingResult,
+    Text2SpeechStreamingSession,
 )

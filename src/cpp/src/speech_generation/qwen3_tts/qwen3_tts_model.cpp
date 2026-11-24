@@ -151,9 +151,15 @@ Qwen3TTSImpl::TalkerRun::Status Qwen3TTSImpl::TalkerRun::step(std::vector<float>
     // The logits come from a talker input that contained text rows 0 .. m_step - 1, so the row that ends the text
     // (the last one) has been seen once m_step >= rows. Before that the talker must not end the utterance.
     const bool eos_allowed = !m_gate_eos || (m_text.finished() && m_step >= m_text.rows());
-    int64_t token = m_engine.sample_token_from_logits(m_logits, m_config, m_generated_main,
-                                                      eos_allowed ? m_suppress_tokens : m_suppress_tokens_and_eos,
+    int64_t token = m_engine.sample_token_from_logits(m_logits, m_config, m_generated_main, m_suppress_tokens,
                                                       m_talker_rng);
+    if (token == m_engine.ids().codec_eos_token_id && !eos_allowed) {
+        // The model wants to end the utterance, but the text has not been spoken yet. The first draw is made from the
+        // distribution generate() uses, so the audio matches it whenever it would not have ended here; only now is
+        // EOS removed and the token drawn again.
+        token = m_engine.sample_token_from_logits(m_logits, m_config, m_generated_main, m_suppress_tokens_and_eos,
+                                                  m_talker_rng);
+    }
     if (token == m_engine.ids().codec_eos_token_id) {
         m_done = true;
         m_eos = true;

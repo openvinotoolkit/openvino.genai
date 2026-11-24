@@ -13,6 +13,7 @@
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 #include "openvino/genai/speech_generation/text2speech_continuous_batching_pipeline.hpp"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
+#include "openvino/genai/speech_generation/text2speech_streaming_session.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "py_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
@@ -29,6 +30,9 @@ using ov::genai::SpeechGenerationPerfMetrics;
 using ov::genai::Text2SpeechContinuousBatchingPipeline;
 using ov::genai::Text2SpeechDecodedResults;
 using ov::genai::Text2SpeechPipeline;
+using ov::genai::Text2SpeechStreamingConfig;
+using ov::genai::Text2SpeechStreamingResult;
+using ov::genai::Text2SpeechStreamingSession;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -247,6 +251,84 @@ py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
     }
     return py::cast(res);
 }
+auto text2speech_streaming_config_docstring = R"(
+    Text2SpeechStreamingConfig
+
+    Parameters of a Text2SpeechStreamingSession.
+
+    :param max_holdback_chars: Pushed text is held back until it is certain to tokenize the same as in the complete
+                               text: a trailing partial word is kept until whitespace follows it, or end() is called.
+                               A held-back run longer than this many characters (text without spaces, e.g. Chinese)
+                               is committed anyway, and the tokens at that boundary may then differ from the
+                               complete text.
+    :type max_holdback_chars: int
+)";
+
+auto text2speech_streaming_result_docstring = R"(
+    Text2SpeechStreamingResult
+
+    Audio produced by one Text2SpeechStreamingSession.read().
+
+    :param speech: float32 PCM, shape [N], at output_sample_rate. Append-only across results: the audio of all results
+                   concatenated is the audio of the whole utterance.
+    :type speech: openvino.Tensor
+
+    :param output_sample_rate: sample rate of the audio.
+    :type output_sample_rate: int
+
+    :param start_sample: index of the first sample of ``speech`` in the utterance.
+    :type start_sample: int
+
+    :param is_final: True for the last result, after end(). ``speech`` may be empty.
+    :type is_final: bool
+
+    :param finish_reason: set on the final result: STOP when the model ended the utterance, LENGTH when
+                          max_new_tokens was reached.
+    :type finish_reason: GenerationFinishReason
+
+    :param perf_metrics: metrics of this read().
+    :type perf_metrics: SpeechGenerationPerfMetrics
+)";
+
+auto text2speech_streaming_session_docstring = R"(
+    Speech synthesis of text that arrives in pieces, for example an LLM reply while it is being generated.
+
+    push() only buffers text. read() returns the next audio that is ready and runs the inference that produces it on
+    the calling thread; it never waits for text. end() closes the input; the following read() calls drain the rest,
+    and the last result has is_final == True. push()/end() may be called from one thread while read() is called from
+    another.
+
+    With the same seed and the Qwen3-TTS streaming prompt layout (non_streaming_mode=False, which a session always
+    uses), the audio equals what Text2SpeechPipeline.generate() produces for the complete text, however the text is
+    split into push() calls, as long as the pieces end at word boundaries. This needs the stateful codec decoder (the
+    default when the model has it). With sampling, generate() lets the model end the utterance at any step while a
+    session does so only after the text has ended, so they can differ when the model ends early.
+
+    Qwen3-TTS supports one live session per pipeline, only on the SDPA backend (pass ATTENTION_BACKEND="SDPA" to
+    Text2SpeechPipeline), and generate() cannot be called while a session is alive. The constructor raises otherwise.
+)";
+
+auto text2speech_streaming_session_init_docstring = R"(
+            Creates a session.
+
+            :param pipeline: the pipeline to speak with.
+            :type pipeline: Text2SpeechPipeline
+
+            :param speaker_embedding: optional speaker embedding, as for Text2SpeechPipeline.generate().
+            :type speaker_embedding: openvino.Tensor or None
+
+            :param generation_config: optional configuration; the pipeline's configuration when not given.
+                                      ``non_streaming_mode`` is ignored: a session always uses the streaming layout.
+            :type generation_config: SpeechGenerationConfig or None
+
+            :param streaming_config: session parameters.
+            :type streaming_config: Text2SpeechStreamingConfig or None
+
+            :param kwargs: keyword arguments with keys corresponding to SpeechGenerationConfig fields, applied on top of
+                           the configuration (for example ``speaker="serena"`` or ``rng_seed=42``).
+            :type kwargs: dict
+)";
+
 auto text2speech_cb_pipeline_docstring = R"(
     Text2SpeechContinuousBatchingPipeline class.
 
@@ -396,6 +478,64 @@ void init_speech_generation_pipeline(py::module_& m) {
              "Get the expected speaker embedding shape for the loaded model. "
                "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}. "
                "Qwen3 Base: Shape{1, 1, D}.");
+
+    py::class_<Text2SpeechStreamingConfig>(m, "Text2SpeechStreamingConfig", text2speech_streaming_config_docstring)
+        .def(py::init<>())
+        .def_readwrite("max_holdback_chars", &Text2SpeechStreamingConfig::max_holdback_chars);
+
+    py::class_<Text2SpeechStreamingResult>(m, "Text2SpeechStreamingResult", text2speech_streaming_result_docstring)
+        .def(py::init<>())
+        .def_readonly("speech", &Text2SpeechStreamingResult::speech)
+        .def_readonly("output_sample_rate", &Text2SpeechStreamingResult::output_sample_rate)
+        .def_readonly("start_sample", &Text2SpeechStreamingResult::start_sample)
+        .def_readonly("is_final", &Text2SpeechStreamingResult::is_final)
+        .def_readonly("finish_reason", &Text2SpeechStreamingResult::finish_reason)
+        .def_readonly("perf_metrics", &Text2SpeechStreamingResult::perf_metrics);
+
+    py::class_<Text2SpeechStreamingSession>(m, "Text2SpeechStreamingSession", text2speech_streaming_session_docstring)
+        .def(py::init([](Text2SpeechPipeline& pipeline,
+                         py::object speaker_embedding,
+                         const std::optional<SpeechGenerationConfig>& generation_config,
+                         const std::optional<Text2SpeechStreamingConfig>& streaming_config,
+                         const py::kwargs& kwargs) {
+                 // Like generate(): the pipeline's configuration is the base, keyword arguments are applied on top.
+                 const std::optional<SpeechGenerationConfig> base_config =
+                     generation_config.has_value() ? generation_config : pipeline.get_generation_config();
+                 const std::optional<SpeechGenerationConfig> config =
+                     update_speech_generation_config_from_kwargs(base_config, kwargs);
+                 const ov::Tensor speaker_embedding_tensor =
+                     speaker_embedding.is_none() ? ov::Tensor() : speaker_embedding.cast<ov::Tensor>();
+                 const Text2SpeechStreamingConfig session_config = streaming_config.value_or(Text2SpeechStreamingConfig{});
+                 // Resolving the voice can take a while (reference audio is encoded here).
+                 py::gil_scoped_release release;
+                 return std::make_unique<Text2SpeechStreamingSession>(pipeline, speaker_embedding_tensor, config,
+                                                                      session_config);
+             }),
+             py::arg("pipeline"),
+             py::arg("speaker_embedding") = py::none(),
+             py::arg("generation_config") = std::nullopt,
+             py::arg("streaming_config") = std::nullopt,
+             text2speech_streaming_session_init_docstring)
+        .def("push",
+             [](Text2SpeechStreamingSession& session, const std::string& text) {
+                 py::gil_scoped_release release;
+                 session.push(text);
+             },
+             py::arg("text"),
+             "Append text. Never runs inference. Raises after end().")
+        .def("end",
+             [](Text2SpeechStreamingSession& session) {
+                 py::gil_scoped_release release;
+                 session.end();
+             },
+             "Close the text input. May be called once. read() then drains the rest.")
+        .def("read",
+             [](Text2SpeechStreamingSession& session) {
+                 py::gil_scoped_release release;
+                 return session.read();
+             },
+             "Return the next audio, or None if there is nothing to return yet (more text is needed and end() has not "
+             "been called) or the final result was already returned.");
 
     py::class_<SpeechGenerationOutput>(m,
                                        "SpeechGenerationOutput",

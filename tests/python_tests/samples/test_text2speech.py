@@ -913,3 +913,43 @@ class TestTextToSpeechSample:
         assert "Text successfully converted to audio file" in c_result.stdout
 
         compare_speech_audio(cpp_output_wav, py_output_wav, c_output_wav, 24000, True)
+
+
+    @pytest.mark.speech_generation
+    @pytest.mark.qwen3_tts
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model",
+        ["tiny-random-qwen3-tts-customvoice"],
+        ids=["qwen3_tts_customvoice"],
+        indirect=True,
+    )
+    def test_sample_qwen3_tts_input_streaming(self, convert_model, tmp_path: Path):
+        output_wav = tmp_path / "input_streaming.wav"
+        py_script = SAMPLES_PY_DIR / "speech_generation/qwen3_tts_input_streaming.py"
+        py_command = [
+            sys.executable,
+            py_script,
+            convert_model,
+            "Okay, let's run some tests! Is everything okay? Yes, it should be fine, thank you.",
+            "--speaker",
+            "serena",
+            "--max_new_tokens",
+            "32",
+            "--tokens_per_second",
+            "0",
+            "--compare",
+            "--output_wav_path",
+            str(output_wav),
+        ]
+        py_result = run_sample(py_command)
+
+        assert "Audio written to" in py_result.stdout
+        assert "partial audio" in py_result.stdout or "final   audio" in py_result.stdout
+        # Same seed and the same streaming prompt layout as generate(): the session speaks the same audio.
+        assert "the audio is identical" in py_result.stdout
+
+        audio, sample_rate = sf.read(output_wav, dtype="float32")
+        assert sample_rate == 24000
+        assert audio.ndim == 1 and audio.size > 0
+        assert np.max(np.abs(audio)) > 1e-4, "the sample must produce non-silent audio"
