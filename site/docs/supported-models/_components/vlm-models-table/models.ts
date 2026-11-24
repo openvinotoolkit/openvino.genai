@@ -197,6 +197,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'Mistral3',
         links: [
+          'https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512',
           'https://huggingface.co/mistralai/Ministral-3-3B-Reasoning-2512',
         ],
         notesLink: '#mistral3-notes',
