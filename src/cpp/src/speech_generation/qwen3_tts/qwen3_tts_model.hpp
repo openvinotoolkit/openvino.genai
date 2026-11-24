@@ -5,11 +5,14 @@
 
 #include <filesystem>
 #include <optional>
+#include <random>
 #include <string>
+#include <vector>
 
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_audio_streaming.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_codec_engine.hpp"
 #include "speech_generation/text2speech_pipeline_impl.hpp"
 
@@ -44,6 +47,63 @@ public:
                                        const OmniSpeechStreamerVariant& streamer) override;
 
     ov::Shape get_speaker_embedding_shape() const override;
+
+    // The generation of ONE utterance on the talker, advanced one codec frame per step(). All the state that lives
+    // between two frames (the talker's last logits and hidden states, the sampling RNGs and history, the text term
+    // source, the frames and their audio) is held here, so a run can be paused after any frame and continued later.
+    // The talker's KV cache lives in the pipeline's talker request: one run at a time, and no other talker call
+    // (another generate(), a second run) while a run is unfinished.
+    class TalkerRun {
+    public:
+        // Prefills the talker with `talker_prefill`. `stream_audio` decodes the frames to audio while they arrive
+        // (see qwen3_tts::UtteranceFrames); otherwise finish() returns the waveform of the whole utterance.
+        TalkerRun(Qwen3TTSImpl& impl,
+                  const ov::Tensor& talker_prefill,
+                  const ov::Tensor& tts_pad,
+                  const ov::Tensor& trailing_text_hidden,
+                  const SpeechGenerationConfig& generation_config,
+                  const std::vector<bool>& suppress_tokens,
+                  const ov::Tensor& ref_codec_ids,
+                  bool stream_audio);
+
+        // Generates the next codec frame. Returns false when the utterance is complete (codec EOS, or the step
+        // limit), and true after a frame; then `chunk` holds the audio of a chunk that became ready (empty if none).
+        // The talker is advanced to the following frame lazily, at the start of the next call, so a caller that
+        // stops after a frame does not pay for it.
+        bool step(std::vector<float>& chunk);
+
+        // End of the utterance: streaming, the audio not yet handed over; otherwise, the whole waveform.
+        std::vector<float> finish() {
+            return m_frames.finish();
+        }
+
+        bool streaming() const {
+            return m_frames.streaming();
+        }
+
+    private:
+        // Feeds the frame generated last (its codec embeddings and the text term of its step) to the talker.
+        void advance();
+
+        Qwen3TTSImpl& m_impl;
+        Qwen3TTSCodecEngine& m_engine;
+        SpeechGenerationConfig m_config;
+        std::vector<bool> m_suppress_tokens;
+        qwen3_tts::TrailingText m_text;
+        qwen3_tts::UtteranceFrames m_frames;
+        std::mt19937 m_talker_rng;
+        std::mt19937 m_subtalker_rng;
+        size_t m_absolute_pos;  // position of the next talker input
+        ov::Tensor m_logits;
+        ov::Tensor m_hidden_states;
+        size_t m_hidden = 0;
+        size_t m_max_steps = 0;
+        size_t m_step = 0;  // frames generated so far
+        std::vector<int64_t> m_generated_main;
+        std::vector<int64_t> m_groups;  // codes of the frame generated last
+        bool m_pending = false;         // that frame has not been fed to the talker yet
+        bool m_done = false;
+    };
 
 private:
     ov::Tensor infer_talker(const ov::Tensor& inputs_embeds,

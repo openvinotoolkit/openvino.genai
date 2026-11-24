@@ -81,6 +81,88 @@ ov::Tensor Qwen3TTSImpl::infer_talker(const ov::Tensor& inputs_embeds,
     return m_talker.get_tensor("logits");
 }
 
+Qwen3TTSImpl::TalkerRun::TalkerRun(Qwen3TTSImpl& impl,
+                                   const ov::Tensor& talker_prefill,
+                                   const ov::Tensor& tts_pad,
+                                   const ov::Tensor& trailing_text_hidden,
+                                   const SpeechGenerationConfig& generation_config,
+                                   const std::vector<bool>& suppress_tokens,
+                                   const ov::Tensor& ref_codec_ids,
+                                   bool stream_audio)
+    : m_impl(impl),
+      m_engine(impl.m_engine),
+      m_config(generation_config),
+      m_suppress_tokens(suppress_tokens),
+      m_text(generation_config.non_streaming_mode, tts_pad, trailing_text_hidden),
+      m_frames(impl.m_engine, stream_audio, generation_config, ref_codec_ids),
+      m_talker_rng(generation_config.rng_seed),
+      m_subtalker_rng(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed)
+                                                      : std::random_device{}()),
+      m_absolute_pos(talker_prefill.get_shape()[1]) {
+    auto prefill_mask = make_causal_attention_mask_4d(talker_prefill.get_shape()[1]);
+    auto prefill_pos = make_position_ids_prefill(talker_prefill.get_shape()[1]);
+    m_logits = impl.infer_talker(talker_prefill, prefill_mask, prefill_pos, true);
+    // Hold the talker's own last_hidden_state output (no clone). We only read its last
+    // row into past_hidden in step(), which happens before the next m_talker.infer().
+    m_hidden_states = impl.m_talker.get_tensor("last_hidden_state");
+    OPENVINO_ASSERT(m_hidden_states.get_shape().size() == 3, "Talker last_hidden_state must have rank 3");
+    m_hidden = m_hidden_states.get_shape()[2];
+    OPENVINO_ASSERT(tts_pad.get_shape().size() == 3 && tts_pad.get_shape()[2] == m_hidden,
+                    "tts_pad hidden size (", tts_pad.get_shape()[2], ") must match talker hidden size (", m_hidden, ")");
+
+    m_max_steps = generation_config.get_max_new_tokens();
+    if (m_max_steps == SIZE_MAX) {
+        m_max_steps = 2048;
+    }
+    // Reference HF generate() computes a token's residual codes on the NEXT forward call (fed
+    // that token as input), and its loop stops as soon as max_new_tokens is reached -- before
+    // that extra call happens -- so the last sampled token's codes are silently dropped whenever
+    // generation is capped by length rather than natural EOS. Mirror that here so max_new_tokens
+    // yields the same number of audio-code frames as optimum-intel / native HF.
+    if (m_max_steps > 0) {
+        --m_max_steps;
+    }
+    m_generated_main.reserve(std::min(m_max_steps, size_t(8192)));
+    m_frames.reserve(std::min(m_max_steps, size_t(8192)));
+}
+
+bool Qwen3TTSImpl::TalkerRun::step(std::vector<float>& chunk) {
+    if (m_done || m_step >= m_max_steps) {
+        m_done = true;
+        return false;
+    }
+    if (m_pending) {
+        advance();
+    }
+
+    int64_t token = m_engine.sample_token_from_logits(m_logits, m_config, m_generated_main, m_suppress_tokens, m_talker_rng);
+    if (token == m_engine.ids().codec_eos_token_id) {
+        m_done = true;
+        return false;
+    }
+    m_generated_main.push_back(token);
+
+    const size_t hs_len = m_hidden_states.get_shape()[1];
+    ov::Tensor past_hidden(m_hidden_states, ov::Coordinate{0, hs_len - 1, 0}, ov::Coordinate{1, hs_len, m_hidden});
+
+    m_groups = m_engine.generate_codec_groups(past_hidden, token, m_config, m_subtalker_rng);
+    chunk = m_frames.push_frame(m_groups);
+    m_pending = true;
+    ++m_step;
+    return true;
+}
+
+void Qwen3TTSImpl::TalkerRun::advance() {
+    auto token_embed = m_engine.build_talker_step_input(m_groups, m_text, m_step - 1);
+
+    auto attn = make_decode_attention_mask_4d(m_absolute_pos + 1);
+    auto pos = make_position_ids_decode(m_absolute_pos);
+    m_logits = m_impl.infer_talker(token_embed, attn, pos, false);
+    m_hidden_states = m_impl.m_talker.get_tensor("last_hidden_state");
+    ++m_absolute_pos;
+    m_pending = false;
+}
+
 Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& talker_prefill,
                                                             const ov::Tensor& tts_pad,
                                                             const ov::Tensor& trailing_text_hidden,
@@ -92,43 +174,11 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     Text2SpeechDecodedResults result;
     result.output_sample_rate = m_engine.output_sample_rate();
 
-    auto prefill_mask = make_causal_attention_mask_4d(talker_prefill.get_shape()[1]);
-    auto prefill_pos = make_position_ids_prefill(talker_prefill.get_shape()[1]);
-    auto logits = infer_talker(talker_prefill, prefill_mask, prefill_pos, true);
-    // Hold the talker's own last_hidden_state output (no clone). We only read its last
-    // row into past_hidden below, which happens before the next m_talker.infer().
-    const char* hidden_out_name = "last_hidden_state";
-    auto hidden_states = m_talker.get_tensor(hidden_out_name);
-    OPENVINO_ASSERT(hidden_states.get_shape().size() == 3, "Talker last_hidden_state must have rank 3");
-    const size_t hidden = hidden_states.get_shape()[2];
-    OPENVINO_ASSERT(tts_pad.get_shape().size() == 3 && tts_pad.get_shape()[2] == hidden,
-                    "tts_pad hidden size (", tts_pad.get_shape()[2], ") must match talker hidden size (", hidden, ")");
-
-    std::vector<int64_t> generated_main;
-    size_t max_steps = generation_config.get_max_new_tokens();
-    if (max_steps == SIZE_MAX) {
-        max_steps = 2048;
-    }
-    // Reference HF generate() computes a token's residual codes on the NEXT forward call (fed
-    // that token as input), and its loop stops as soon as max_new_tokens is reached -- before
-    // that extra call happens -- so the last sampled token's codes are silently dropped whenever
-    // generation is capped by length rather than natural EOS. Mirror that here so max_new_tokens
-    // yields the same number of audio-code frames as optimum-intel / native HF.
-    if (max_steps > 0) {
-        --max_steps;
-    }
-    generated_main.reserve(std::min(max_steps, size_t(8192)));
-
-    const qwen3_tts::TrailingText text(generation_config.non_streaming_mode, tts_pad, trailing_text_hidden);
-    std::mt19937 talker_rng(generation_config.rng_seed);
-    std::mt19937 subtalker_rng(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed)
-                                                             : std::random_device{}());
-    size_t absolute_pos = talker_prefill.get_shape()[1];
-
     // Audio output streaming: decode codec frames in small chunks while the talker keeps running.
     const bool streaming = is_speech_streamer_active(streamer);
-    qwen3_tts::UtteranceFrames frames(m_engine, streaming, generation_config, ref_codec_ids);
-    frames.reserve(std::min(max_steps, size_t(8192)));
+    TalkerRun run(*this, talker_prefill, tts_pad, trailing_text_hidden, generation_config, suppress_tokens,
+                  ref_codec_ids, streaming);
+
     std::vector<float> streamed_waveform;
     bool stopped_by_streamer = false;
     auto emit_chunk = [&](const std::vector<float>& samples) {
@@ -139,36 +189,19 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         return write_to_speech_streamer(streamer, make_chunk_tensor(samples));
     };
 
-    for (size_t step = 0; step < max_steps; ++step) {
-        int64_t token = m_engine.sample_token_from_logits(logits, generation_config, generated_main, suppress_tokens, talker_rng);
-        if (token == m_engine.ids().codec_eos_token_id) {
-            break;
-        }
-        generated_main.push_back(token);
-
-        const size_t hs_len = hidden_states.get_shape()[1];
-        ov::Tensor past_hidden(hidden_states, ov::Coordinate{0, hs_len - 1, 0}, ov::Coordinate{1, hs_len, hidden});
-
-        auto groups = m_engine.generate_codec_groups(past_hidden, token, generation_config, subtalker_rng);
-        if (emit_chunk(frames.push_frame(groups)) != StreamingStatus::RUNNING) {
+    std::vector<float> chunk;
+    while (run.step(chunk)) {
+        if (emit_chunk(chunk) != StreamingStatus::RUNNING) {
             stopped_by_streamer = true;
             break;
         }
-
-        auto token_embed = m_engine.build_talker_step_input(groups, text, step);
-
-        auto attn = make_decode_attention_mask_4d(absolute_pos + 1);
-        auto pos = make_position_ids_decode(absolute_pos);
-        logits = infer_talker(token_embed, attn, pos, false);
-        hidden_states = m_talker.get_tensor(hidden_out_name);
-        ++absolute_pos;
     }
 
     if (streaming && !stopped_by_streamer) {
-        emit_chunk(frames.finish());  // flush the tail
+        emit_chunk(run.finish());  // flush the tail
     }
 
-    auto waveform = streaming ? std::move(streamed_waveform) : frames.finish();
+    auto waveform = streaming ? std::move(streamed_waveform) : run.finish();
 
     ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
     if (!waveform.empty()) {
