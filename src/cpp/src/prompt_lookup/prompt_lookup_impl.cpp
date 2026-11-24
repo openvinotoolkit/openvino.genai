@@ -65,6 +65,10 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
         if (generated_len_after.count(request.first)) {
             auto present_req_len = generated_len_after.at(request.first).first;
             auto prev_full_req_len = request.second.first;
+            if (present_req_len <= prev_full_req_len) {
+                // the validation window waits for a later step
+                continue;
+            }
 
             num_matches = (present_req_len - prev_full_req_len - 1);
             acceptance_rate = static_cast<float>(num_matches) / static_cast<float>(prev_validation_len);
@@ -123,11 +127,16 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         OPENVINO_ASSERT(lm_extra_inputs_list->size() == input_ids.size(), "lm_extra_inputs_list size must match input_ids size.");
     }
 
-    std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
         OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
+        m_pipeline->validate_request(request_id,
+                                     ContinuousBatchingImpl::get_prompt_len(input_ids[request_id]),
+                                     sampling_params[request_id]);
+    }
 
+    std::vector<GenerationHandle> generations;
+    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
         bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
         generations.push_back(m_pipeline->add_request(

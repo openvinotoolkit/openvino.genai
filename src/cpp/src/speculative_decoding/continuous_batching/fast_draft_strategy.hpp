@@ -63,12 +63,19 @@ std::vector<EncodedGenerationResult> generate_common(
                         "lm_extra_inputs_list size must match input_ids size.");
     }
 
+    std::vector<GenerationConfig> main_cfgs(sampling_params);
+    std::vector<ov::Tensor> main_ins(input_ids.size());
+    for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+        strategy.prepare_request(rid, input_ids[rid], main_cfgs[rid], main_ins[rid]);
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
+        self->validate_request(rid,
+                               main_ins[rid],
+                               main_cfgs[rid],
+                               has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt);
+    }
+
     std::vector<GenerationHandle> main_generations;
     for (size_t rid = 0; rid < input_ids.size(); ++rid) {
-        GenerationConfig main_cfg = sampling_params[rid];
-        ov::Tensor main_in;
-        strategy.prepare_request(rid, input_ids[rid], main_cfg, main_in);
-
         const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
 
         if (position_ids.has_value() && self->m_inputs_embedder) {
@@ -82,8 +89,8 @@ std::vector<EncodedGenerationResult> generate_common(
 
         main_generations.push_back(self->add_request(
             rid,
-            main_in,
-            main_cfg,
+            main_ins[rid],
+            main_cfgs[rid],
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
             lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
     }
@@ -112,6 +119,8 @@ std::vector<EncodedGenerationResult> generate_common(
     OPENVINO_ASSERT(self->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
     self->perf_metrics().draft_model_metrics.raw_metrics = self->draft_pipeline()->raw_perf_metrics;
+    self->perf_metrics().draft_markov_head_metrics.raw_metrics = self->draft_pipeline()->dflash_markov_head_perf_metrics;
+    self->perf_metrics().draft_sampling_metrics.raw_metrics = self->draft_pipeline()->dflash_sampling_perf_metrics;
     uint64_t generate_duration_us = strategy.stop_timer(t_start);
 
     std::vector<EncodedGenerationResult> results;
@@ -186,8 +195,7 @@ protected:
 
     void reset_generate_metrics() {
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-        m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
-        m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+        m_draft_pipeline->reset_draft_perf_metrics();
     }
 
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);
@@ -226,6 +234,12 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const ov::genai::GenerationConfig& sampling_params) override;
+
+    // Throws for a request that add_request() would reject, and changes nothing.
+    virtual void validate_request(uint64_t request_id,
+                                  const ov::Tensor& input_ids,
+                                  const ov::genai::GenerationConfig& sampling_params,
+                                  const std::optional<ov::Tensor>& prompt_ids) const;
 
     std::optional<AdapterConfig> get_pipeline_adapters() const override {
         return m_main_pipeline->get_pipeline_adapters();
