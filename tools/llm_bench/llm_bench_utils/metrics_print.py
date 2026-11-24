@@ -28,17 +28,21 @@ def print_metrics(
     chat_idx=None,
     prefill_time=None,
     tts_audio=None,
+    decode_latency_per_token=False,
 ):
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
     output_str = ''
     latency_unit = 'token' if latency_unit is None else latency_unit
+    decode_unit = latency_unit
     is_chat_mode = chat_idx is not None
     chat_str = f"[C{chat_idx}]" if is_chat_mode else ""
     prefix = f"[{iter_str}]{chat_str}[P{prompt_idx}]"
     if batch_size > 1:
         latency_unit = '{}{}s'.format(batch_size, latency_unit)
+    if not decode_latency_per_token:
+        decode_unit = latency_unit
     if iter_data['input_size'] != '':
         output_str += 'Input token size: {}, '.format(iter_data['input_size'])
     if iter_data.get('output_size', '') != '':
@@ -78,12 +82,18 @@ def print_metrics(
         if is_chat_mode and len(tms) > 0 and iter_data["input_size"] != "" and int(iter_data["input_size"]) > 0:
             iter_data["first_token_latency"] /= iter_data["input_size"]
         iter_data["other_tokens_avg_latency"] = sum(tms[1:]) / (len(tms) - 1) * 1000 if len(tms) > 1 else -1
+        if decode_latency_per_token:
+            iter_data["decode_latency_per_token"] = True
         first_token_latency = (
             "NA" if iter_data["first_token_latency"] == -1 else f"{iter_data['first_token_latency']:.2f}"
         )
         # in chat model prompts can be different from iteration to iteration, so we need to calculate latency per token
         first_token_latency += f" ms/{latency_unit}" if is_chat_mode else " ms"
-        other_token_latency = 'NA' if iter_data['other_tokens_avg_latency'] == -1 else f"{iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}"
+        other_token_latency = (
+            "NA"
+            if iter_data["other_tokens_avg_latency"] == -1
+            else f"{iter_data['other_tokens_avg_latency']:.2f} ms/{decode_unit}"
+        )
         if text_emb is not None:
             log.info(
                 f"{prefix} First iteration latency: {first_token_latency}, "
@@ -364,8 +374,9 @@ def output_avg_statis_tokens(
         if index_num > 0:
             avg_1st_token_latency = avg_1st_token_latency / index_num
             avg_2nd_tokens_latency = avg_2nd_tokens_latency / index_num
+            decode_batch_size = 1 if input_iter_data_list[0].get("decode_latency_per_token") else batch_size
             if avg_2nd_tokens_latency > 0:
-                avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
+                avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * decode_batch_size * 1000
             # in chat mode we need just last input size, because it increase with every iteration
             # in non-chat mode we need to calculate average input size
             if not chat_mode:
@@ -380,8 +391,9 @@ def output_avg_statis_tokens(
                 )
             else:
                 avg_1st_token_latency = "NA"
+            decode_unit = latency_unit if decode_batch_size == 1 else display_unit
             avg_2nd_tokens_latency = (
-                "NA" if avg_2nd_tokens_latency < 0 else f"{avg_2nd_tokens_latency:.2f} ms/{display_unit}"
+                "NA" if avg_2nd_tokens_latency < 0 else f"{avg_2nd_tokens_latency:.2f} ms/{decode_unit}"
             )
             avg_2nd_token_tput = "NA" if avg_2nd_tokens_latency == "NA" else f"{avg_2nd_token_tput:.2f} {tput_unit}s/s"
             prefix = (

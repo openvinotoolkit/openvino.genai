@@ -107,7 +107,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         if sys_mem_share:
             res_data["max_share_sys_mem"] = round(sys_mem_share, 3)
 
-        second_token_throughput = estimate_throughput(other_latency, model_args["batch_size"])
+        decode_batch_size = 1 if iter_data.get("decode_latency_per_token") else model_args["batch_size"]
+        second_token_throughput = estimate_throughput(other_latency, decode_batch_size)
         if second_token_throughput:
             res_data["second_token_throughput"] = second_token_throughput
         result.append(res_data)
@@ -138,7 +139,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
 
     if "second_avg_latency" in results_averaged:
         avg_2nd_tokens_latency = results_averaged.get("second_avg_latency")
-        second_token_throughput = estimate_throughput(avg_2nd_tokens_latency, model_args["batch_size"])
+        decode_batch_size = 1 if iter_data_list[0].get("decode_latency_per_token") else model_args["batch_size"]
+        second_token_throughput = estimate_throughput(avg_2nd_tokens_latency, decode_batch_size)
         if second_token_throughput:
             results_averaged["second_token_throughput"] = second_token_throughput
 
