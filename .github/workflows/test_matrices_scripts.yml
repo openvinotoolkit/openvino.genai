@@ -4,20 +4,24 @@ on:
   pull_request:
     paths:
       - '.github/components.yml'
+      - '.github/labeler.yml'
       - '.github/scripts/build_test_matrices.py'
       - '.github/scripts/tests/**'
       - '.github/workflows/test_matrices/**'
       - '.github/workflows/test_matrices_scripts.yml'
+      - 'tests/cpp/test_gguf_*.cpp'
   push:
     branches:
       - master
       - 'releases/**'
     paths:
       - '.github/components.yml'
+      - '.github/labeler.yml'
       - '.github/scripts/build_test_matrices.py'
       - '.github/scripts/tests/**'
       - '.github/workflows/test_matrices/**'
       - '.github/workflows/test_matrices_scripts.yml'
+      - 'tests/cpp/test_gguf_*.cpp'
 
 permissions: read-all
 

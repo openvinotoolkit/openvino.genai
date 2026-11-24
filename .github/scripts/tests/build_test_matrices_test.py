@@ -1,7 +1,9 @@
 """Tests for .github/scripts/build_test_matrices.py and the matrix definition files."""
 
 import json
+import re
 import sys
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ import build_test_matrices as bm  # noqa: E402
 
 MATRICES_DIR = bm.MATRICES_DIR
 COMPONENTS_YML = SCRIPTS_DIR.parent / "components.yml"
+LABELER_YML = SCRIPTS_DIR.parent / "labeler.yml"
 
 PLATFORMS = sorted(path.name for path in MATRICES_DIR.iterdir() if path.is_dir())
 MATRIX_FILES = sorted(MATRICES_DIR.glob("*/*.yml"))
@@ -82,6 +85,63 @@ def test_filter_matrix_keeps_matching_and_strips_components():
 def test_filter_matrix_excludes_when_no_component_affected():
     entries = [{"name": "a", "cmd": "x", "components": ["LLM"]}]
     assert bm.filter_matrix({"RAG": {"test": True}}, entries) == []
+
+
+@pytest.mark.parametrize(
+    "files,expected",
+    [
+        (["tests/python_tests/gguf_reference/CMakeLists.txt"], False),
+        (["tests/python_tests/gguf_reference/generate.cpp"], False),
+        (["CMakeLists.txt"], True),
+        (["src/cpp/CMakeLists.txt"], True),
+        (["tests/cpp/CMakeLists.txt"], True),
+        (["cmake/features.cmake"], True),
+        (["src/python/compare_pyi.cmake"], True),
+        (["requirements-build.txt"], True),
+        (["pyproject.toml"], True),
+        (["tests/python_tests/gguf_reference/CMakeLists.txt", "src/cpp/CMakeLists.txt"], True),
+    ],
+)
+def test_gguf_reference_build_does_not_trigger_global_build(files, expected):
+    rules = load_yaml(LABELER_YML)["category: build"]
+
+    def matches(path, pattern):
+        if pattern.startswith("!"):
+            return not matches(path, pattern[1:])
+        return fnmatchcase(path, pattern) or (
+            pattern.startswith("**/") and fnmatchcase(path, pattern.removeprefix("**/"))
+        )
+
+    # Labeler v4's "any" requires all patterns to match at least one changed file.
+    assert (
+        any(
+            all(matches(path, pattern) for pattern in ([rule] if isinstance(rule, str) else rule["any"]))
+            for rule in rules
+            for path in files
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_gguf_only_selects_existing_gguf_jobs(monkeypatch, tmp_path, platform):
+    outputs = run_main(monkeypatch, tmp_path, platform, {"GGUF": {"build": True, "test": True}})
+    expected_names = {"GGUF Reader tests"}
+    if platform in {"linux", "manylinux"}:
+        expected_names.add("GGUF Frontend tiny models")
+    assert {entry["name"] for entry in outputs["wheel_tests"]} == expected_names
+    assert outputs.get("samples_tests", []) == []
+
+
+def test_gguf_gtest_filter_covers_gguf_test_files():
+    gguf_gtest_filter = "*GGUF*"
+    suites = set()
+    for path in (SCRIPTS_DIR.parents[1] / "tests" / "cpp").glob("test_gguf_*.cpp"):
+        text = path.read_text(encoding="utf-8")
+        suites.update(re.findall(r"^TEST(?:_F|_P)?\((\w+),", text, re.MULTILINE))
+        suites.update(re.findall(r"^INSTANTIATE_TEST_SUITE_P\((\w+),", text, re.MULTILINE))
+    assert suites
+    assert all(fnmatchcase(suite, gguf_gtest_filter) for suite in suites)
 
 
 @pytest.mark.parametrize("platform", PLATFORMS)

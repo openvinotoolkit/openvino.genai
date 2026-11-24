@@ -52,6 +52,7 @@ jobs:
       affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
       changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
+      gguf_only: "${{ steps.gguf_only.outputs.gguf_only }}"
     steps:
       - name: checkout action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -74,6 +75,15 @@ jobs:
 
       - name: Show affected components
         run: echo "${{ toJSON(steps.smart_ci.outputs.affected_components) }}"
+        shell: bash
+
+      - name: Detect GGUF-only changes
+        id: gguf_only
+        env:
+          AFFECTED_COMPONENTS: ${{ steps.smart_ci.outputs.affected_components }}
+        run: |
+          gguf_only=$(jq -r 'keys | (index("GGUF") != null) and ((. - ["GGUF", "GH_Pages_Docs"]) == [])' <<< "${AFFECTED_COMPONENTS}")
+          echo "gguf_only=${gguf_only}" >> "$GITHUB_OUTPUT"
         shell: bash
 
   openvino_download:
@@ -825,7 +835,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
+    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching || fromJSON(needs.smart_ci.outputs.affected_components).GGUF }}
     timeout-minutes: 90
     defaults:
       run:
@@ -899,6 +909,13 @@ jobs:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
+
+      - name: GGUF gtests
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF && !fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
+          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="*GGUF*"
 
       - name: Test Continuous Batching Tools
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
@@ -1061,6 +1078,7 @@ jobs:
   genai_xgrammar_off_tests:
     name: Build & Test when ENABLE_XGRAMMAR=OFF
     needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheels]
+    if: ${{ needs.smart_ci.outputs.gguf_only != 'true' }}
     timeout-minutes: 45
     defaults:
       run:
