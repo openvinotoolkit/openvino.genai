@@ -892,18 +892,12 @@ std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3Omni::create_position_ids(
                                                                           video_id,
                                                                           history_vision_count);
 
-    const auto* input_ids = input_ids_tensor.data<int64_t>();
     size_t batch_size = input_ids_tensor.get_shape().at(0);
     size_t seq_len = input_ids_tensor.get_shape().at(1);
 
     OPENVINO_ASSERT(batch_size == 1, "create_position_ids currently supports only batch_size == 1");
 
-    std::vector<size_t> vision_start_indices;
-    for (size_t i = 0; i < seq_len; ++i) {
-        if (input_ids[i] == vision_start_token_id) {
-            vision_start_indices.push_back(i);
-        }
-    }
+    const std::vector<size_t> vision_start_indices = get_vision_start_indices(input_ids_tensor, vision_start_token_id);
 
     // 4 dimensions: temporal, height, width, text
     ov::Tensor position_ids{ov::element::i64, {4, batch_size, seq_len}};
