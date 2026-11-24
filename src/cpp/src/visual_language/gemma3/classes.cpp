@@ -174,12 +174,17 @@ ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
 
     auto inputs_embeds = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    ov::Tensor token_type_ids(ov::element::i64, input_ids.get_shape());
+    const ov::Shape& shape = input_ids.get_shape();
+    size_t num_elements = input_ids.get_size();
+    ov::Tensor token_type_ids(ov::element::i64, shape);
     int64_t* token_type_data = token_type_ids.data<int64_t>();
-    for (size_t i = 0; i < input_ids.get_size(); ++i)
+    for (size_t i = 0; i < num_elements; ++i) {
         token_type_data[i] = (input_ids_data[i] == image_token_id) ? 1 : 0;
+    }
     m_lm_extra_inputs["token_type_ids"] = token_type_ids;
+
     return inputs_embeds;
 }
 

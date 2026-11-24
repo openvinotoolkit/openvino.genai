@@ -821,8 +821,8 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     auto original_width = image_shape.at(2);
 
     ImageSize target_image_size = qwen2_vl_utils::smart_resize(
-        original_height,
-        original_width,
+        original_height, 
+        original_width, 
         config.patch_size * config.merge_size,
         config.min_pixels,
         config.max_pixels

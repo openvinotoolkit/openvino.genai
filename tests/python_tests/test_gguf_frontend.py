@@ -356,7 +356,9 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
             config["text_config"]["rope_parameters"]["mrope_section"] = [1, 1, 0]
         elif family in ("qwen3vl", "qwen3vlmoe"):
             # The frontend requires fewer DeepStack features than decoder layers.
-            config["vision_config"]["deepstack_visual_indexes"] = config["vision_config"]["deepstack_visual_indexes"][:1]
+            config["vision_config"]["deepstack_visual_indexes"] = config["vision_config"]["deepstack_visual_indexes"][
+                :1
+            ]
         elif family == "gemma4-unified":
             config["text_config"]["expert_intermediate_size"] = None
         else:

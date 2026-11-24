@@ -70,7 +70,7 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
 
 constexpr std::array<const char*, 3> LFM3_SPEECH_MODELS{"depth_decoder", "audio_out_embeddings", "audio_decoder"};
 
-}  // namespace
+}
 
 VLMDecodedResults VLMPipelineBase::generate(const std::string& prompt,
                                           const std::vector<ov::Tensor>& images,
@@ -166,12 +166,14 @@ private:
                                 const std::string& device,
                                 const ov::AnyMap& properties) {
         utils::apply_slice_before_matmul_transformation(language_model);
-        auto compiled = utils::singleton_core().compile_model(language_model, device, properties);
-        utils::print_compiled_model_properties(compiled, "VLM language model");
-        m_language = compiled.create_infer_request();
+        m_language = utils::singleton_core().compile_model(
+            language_model, device, properties).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
-        if (m_adapter_controller)
+        if (m_adapter_controller) {
+            // Initialize LoRA state before the first generation and reuse constructor-prepared tensors.
+            // Subsequent unchanged applies on this request can then skip state uploads.
             m_adapter_controller->apply(m_language);
+        }
     }
 
     void finalize_initialization(
@@ -595,12 +597,14 @@ public:
 
             if (m_use_full_chat_history) {
                 m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
+
                 m_encoded_images.reserve(m_encoded_images.size() + encoded_images.size());
                 m_encoded_images.insert(m_encoded_images.end(), encoded_images.begin(), encoded_images.end());
                 m_history_image_sequence.insert(m_history_image_sequence.end(),
                                                 image_sequence.begin(), image_sequence.end());
                 image_sequence = m_history_image_sequence;
                 encoded_images = m_encoded_images;
+
                 m_encoded_videos.reserve(m_encoded_videos.size() + encoded_videos.size());
                 m_encoded_videos.insert(m_encoded_videos.end(), encoded_videos.begin(), encoded_videos.end());
                 m_history_video_sequence.insert(m_history_video_sequence.end(),
@@ -685,6 +689,7 @@ public:
                     OPENVINO_ASSERT(new_image_count <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
                     m_encoded_images.resize(m_encoded_images.size() - new_image_count);
                     m_history_image_sequence.resize(history_image_sequence_before);
+
                     OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
                     m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
                     m_history_video_sequence.resize(history_video_sequence_before);

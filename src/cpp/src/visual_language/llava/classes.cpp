@@ -136,8 +136,7 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_pro
         return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
-    const auto encoded_image_token =
-        m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
