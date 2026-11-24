@@ -52,6 +52,10 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
 
 void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates_for_prompt_lookup() {
     for (auto& request : m_requests) {
+        if (request->get_num_tokens_to_validate() > 0) {
+            // the validation window of the candidates has not run yet
+            continue;
+        }
         const auto prompt = request->get_prompt_ids();
 
         size_t max_validation_len = 0;
