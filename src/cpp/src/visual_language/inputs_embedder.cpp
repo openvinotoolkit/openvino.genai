@@ -126,6 +126,9 @@ InputsEmbedder::InputsEmbedder(const VLMModels& models,
     case VLMModelType::GEMMA4_UNIFIED:
         m_impl = std::make_shared<InputsEmbedderGemma4>(models, tokenizer, device, properties);
         break;
+    case VLMModelType::QWEN3_VL:
+        m_impl = std::make_shared<InputsEmbedderQwen3VL>(models, tokenizer, device, properties);
+        break;
     case VLMModelType::QWEN3_5:
     case VLMModelType::QWEN3_5_MOE:
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(models, tokenizer, device, properties);

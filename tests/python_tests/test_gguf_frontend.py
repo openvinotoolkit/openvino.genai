@@ -106,6 +106,8 @@ TINY_GGUF_VLM_MODELS = {
     "gemma3": ("gemma3", "0cc4c5a822bbc68aeb312fd789046463ca301d14"),
     "gemma4": ("gemma4", "422d12880b72b92b1547ac7ce2e1a4865f6bec6c"),
     "gemma4-unified": ("gemma4-unified-it", "becd0eb532fcbccb96576e32eab0dd304e4e4c47"),
+    "qwen3vl": ("qwen3-vl", "098dceb06fabbdbc1d4b9cecaf9aa4ee403d6bbb"),
+    "qwen3vlmoe": ("qwen3-vl-moe", "f35222d37b2a017792b72ded29e90ae49341af6e"),
     "qwen35": ("qwen3.5", "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf"),
     "qwen35moe": ("qwen3.5-moe", "3061bafacf5a42fc57e620dc54ab19fae19ad594"),
     "muse-glimmer": ("muse-glimmer", "cb70af191bbbf704a47b7d24dd5287d97dd60103"),
@@ -335,19 +337,26 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
 
     family = getattr(request, "param", "gemma3")
     name, revision = TINY_GGUF_VLM_MODELS[family]
-    repo = "optimum-intel-internal-testing/tiny-random-" + name
+    repo = (
+        "yujiepan/qwen3-vl-moe-tiny-random"
+        if family == "qwen3vlmoe"
+        else "optimum-intel-internal-testing/tiny-random-" + name
+    )
     source = Path(retry_request(lambda: snapshot_download(repo, revision=revision)))
     build = llama_reference_tools[0].parent.parent
     converter_source = "llama_converter-src" if family == "lfm3" else "llama_cpp-src"
     converter = build / "_deps" / converter_source / "convert_hf_to_gguf.py"
     directory = Path.home() / "gguf_models" / "genai_vlm_tests" / family
     directory.mkdir(parents=True, exist_ok=True)
-    if family.startswith("qwen35") or family in ("gemma4-unified", "lfm3"):
+    if family.startswith("qwen35") or family in ("gemma4-unified", "lfm3", "qwen3vl", "qwen3vlmoe"):
         fixture_source = tmp_path_factory.mktemp(family)
         config = json.loads((source / "config.json").read_text(encoding="utf-8"))
         if family.startswith("qwen35"):
             # The production mRoPE default exceeds the tiny model's rotary width.
             config["text_config"]["rope_parameters"]["mrope_section"] = [1, 1, 0]
+        elif family in ("qwen3vl", "qwen3vlmoe"):
+            # The frontend requires fewer DeepStack features than decoder layers.
+            config["vision_config"]["deepstack_visual_indexes"] = config["vision_config"]["deepstack_visual_indexes"][:1]
         elif family == "gemma4-unified":
             config["text_config"]["expert_intermediate_size"] = None
         else:
@@ -368,9 +377,25 @@ def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
             config["projector_hidden_act"] = "gelu"
             config["projector_bias"] = True
         for path in source.iterdir():
-            if path.name != "config.json" and not (family == "lfm3" and path.name == "model.safetensors"):
+            if path.name != "config.json" and not (
+                family in ("lfm3", "qwen3vl", "qwen3vlmoe")
+                and path.name in ("model.safetensors", "model copy.safetensors")
+            ):
                 shutil.copy2(path, fixture_source / path.name)
-        if family == "lfm3":
+        if family in ("qwen3vl", "qwen3vlmoe"):
+            from safetensors.torch import load_file, save_file
+
+            weights = load_file(source / "model.safetensors")
+            prefix = "model.visual.deepstack_merger_list."
+            save_file(
+                {
+                    name: weight
+                    for name, weight in weights.items()
+                    if not name.startswith(prefix) or name.startswith(prefix + "0.")
+                },
+                fixture_source / "model.safetensors",
+            )
+        elif family == "lfm3":
             from safetensors.torch import load_file, save_file
 
             weights = {}
@@ -502,7 +527,13 @@ def gguf_vlm_pipelines(tiny_gguf_vlm_model):
         pytest.param(family, media, id=f"{family}-{media}")
         for family in TINY_GGUF_VLM_MODELS
         if family not in {"gemma3", "llava", "internvl2"}
-        for media in (["image", "video", "audio"] if family.startswith("gemma4") else ["image", "video"])
+        for media in (
+            ["text", "image", "video"]
+            if family in {"qwen3vl", "qwen3vlmoe"}
+            else ["image", "video", "audio"]
+            if family.startswith("gemma4")
+            else ["image", "video"]
+        )
     ],
     indirect=["tiny_gguf_vlm_model"],
 )
@@ -514,7 +545,9 @@ def test_gguf_vlm_projector_layouts(tiny_gguf_vlm_model, backend, media):
     )
     image = np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8)
     inputs = {"images": [ov.Tensor(image)]}
-    if media == "video":
+    if media == "text":
+        inputs = {}
+    elif media == "video":
         metadata = genai.VideoMetadata()
         metadata.fps = 2.0
         inputs = {"videos": [ov.Tensor(np.repeat(image, 4, axis=0))], "videos_metadata": [metadata]}

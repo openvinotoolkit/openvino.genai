@@ -168,7 +168,9 @@ Configs gguf_configs(const std::string& architecture,
         c.video["max_video_frame_tokens"] = 4096;
         return c;
     }
-    c.config["model_type"] = architecture == "qwen35moe" ? "qwen3_5_moe" : "qwen3_5";
+    c.config["model_type"] = architecture == "qwen3vl" || architecture == "qwen3vlmoe" ? "qwen3_vl"
+                            : architecture == "qwen35moe"                              ? "qwen3_5_moe"
+                                                                                       : "qwen3_5";
     const auto side = meta.integer("clip.vision.image_size") / patch;
     c.config["vision_config"]["num_position_embeddings"] = side * side;
     c.image["temporal_patch_size"] = 2;
@@ -327,6 +329,8 @@ GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
     const bool gemma4 = architecture == "gemma4" && (projector == "gemma4v" || projector == "gemma4uv");
     OPENVINO_ASSERT((architecture == "gemma3" && projector == "gemma3") ||
                         ((architecture == "qwen35" || architecture == "qwen35moe") && projector == "qwen3vl_merger") ||
+                        ((architecture == "qwen3vl" || architecture == "qwen3vlmoe") &&
+                         projector == "qwen3vl_merger" && !meta.has("audio.projector")) ||
                         (architecture == "lfm3" && projector == "lfm3vl" && !meta.has("audio.projector")) ||
                         (architecture == "muse-glimmer" && projector == "muse-glimmer") || gemma4 || clip,
                     "Unsupported GGUF language/projector pair: ",

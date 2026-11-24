@@ -272,6 +272,8 @@ VisionEncoder::Ptr VisionEncoder::create(const VLMModels& models,
     case VLMModelType::GEMMA4:
     case VLMModelType::GEMMA4_UNIFIED:
         return std::make_shared<VisionEncoderGemma4>(models, device, properties);
+    case VLMModelType::QWEN3_VL:
+        return std::make_shared<VisionEncoderQwen3VL>(models, device, properties);
     case VLMModelType::QWEN3_5:
     case VLMModelType::QWEN3_5_MOE:
         return std::make_shared<VisionEncoderQwen3_5>(models, device, properties);

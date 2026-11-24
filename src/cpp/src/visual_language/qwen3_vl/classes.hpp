@@ -70,6 +70,7 @@ protected:
     // device (faster, deterministic on GPU). Setting the VISION_POS_EMBEDS=CPP environment
     // variable disables the patch and falls back to a C++ weighted sum on the host.
     bool m_use_patched_pos_model = true;
+    size_t m_deepstack_layers_num = 0;
 
     void compile_pos_model(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties);
 
