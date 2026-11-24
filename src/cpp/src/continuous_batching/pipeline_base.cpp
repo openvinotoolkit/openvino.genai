@@ -102,23 +102,11 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         // TODO: remove this code and within model runner add check: if sequence group type is tokens,
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
-        std::vector<std::vector<VideoMetadata>> videos_metadata(prompts.size());
-        std::vector<EncodedGenerationResult> encoded;
-        auto results_vlm = generate_with_encoded_results(prompts,
-                                                         images,
-                                                         images,
-                                                         videos_metadata,
-                                                         images,
-                                                         sampling_params,
-                                                         streamer,
-                                                         nullptr,
-                                                         &encoded);
+        auto results_vlm = generate(prompts, images, sampling_params, streamer);
         std::vector<GenerationResult> results;
-        for (size_t i = 0; i < results_vlm.size(); ++i) {
-            auto& vlm_result = results_vlm[i];
+        for (auto& vlm_result : results_vlm) {
             GenerationResult result;
-            result.m_request_id = encoded.at(i).m_request_id;
-            result.m_status = encoded.at(i).m_status;
+            result.m_request_id = results.size();
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
@@ -241,23 +229,11 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         // TODO: remove this code and within model runner add check: if sequence group type is tokens,
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(histories.size());
-        std::vector<std::vector<VideoMetadata>> videos_metadata(histories.size());
-        std::vector<EncodedGenerationResult> encoded;
-        auto results_vlm = generate_with_encoded_results(histories,
-                                                         images,
-                                                         images,
-                                                         videos_metadata,
-                                                         images,
-                                                         sampling_params,
-                                                         streamer,
-                                                         nullptr,
-                                                         &encoded);
+        auto results_vlm = generate(histories, images, sampling_params, streamer);
         std::vector<GenerationResult> results;
-        for (size_t i = 0; i < results_vlm.size(); ++i) {
-            auto& vlm_result = results_vlm[i];
+        for (auto& vlm_result : results_vlm) {
             GenerationResult result;
-            result.m_request_id = encoded.at(i).m_request_id;
-            result.m_status = encoded.at(i).m_status;
+            result.m_request_id = results.size();
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
@@ -353,26 +329,6 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     return generate(prompts, images_vector, empty_videos_vector, sampling_params, streamer);
 }
 
-std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-    const std::vector<std::string>& prompts,
-    const std::vector<std::vector<ov::Tensor>>& images_vector,
-    const std::vector<std::vector<ov::Tensor>>& videos_vector,
-    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
-    const std::vector<std::vector<ov::Tensor>>& audios_vector,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer,
-    std::shared_ptr<OmniStreamerBase> omni_streamer) {
-    return generate_with_encoded_results(prompts,
-                                         images_vector,
-                                         videos_vector,
-                                         videos_metadata_vector,
-                                         audios_vector,
-                                         sampling_params,
-                                         streamer,
-                                         std::move(omni_streamer),
-                                         nullptr);
-}
-
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
@@ -385,7 +341,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return generate(prompts, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
 }
 
-std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_encoded_results(
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
     const std::vector<std::vector<ov::Tensor>>& images_vector,
     const std::vector<std::vector<ov::Tensor>>& videos_vector,
@@ -393,8 +350,8 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     const std::vector<std::vector<ov::Tensor>>& audios_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    std::shared_ptr<OmniStreamerBase> omni_streamer,
-    std::vector<EncodedGenerationResult>* encoded_results_out) {
+    std::shared_ptr<OmniStreamerBase> omni_streamer
+) {
     PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
@@ -644,29 +601,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
             m_history_vision_count.pop_back();
         }
     }
-    if (encoded_results_out)
-        *encoded_results_out = std::move(encoded_results);
     return results;
-}
-
-std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-    const std::vector<ChatHistory>& histories,
-    const std::vector<std::vector<ov::Tensor>>& images_vector,
-    const std::vector<std::vector<ov::Tensor>>& videos_vector,
-    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
-    const std::vector<std::vector<ov::Tensor>>& audios_vector,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer,
-    std::shared_ptr<OmniStreamerBase> omni_streamer) {
-    return generate_with_encoded_results(histories,
-                                         images_vector,
-                                         videos_vector,
-                                         videos_metadata_vector,
-                                         audios_vector,
-                                         sampling_params,
-                                         streamer,
-                                         std::move(omni_streamer),
-                                         nullptr);
 }
 
 std::vector<VLMDecodedResults>
@@ -753,7 +688,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_omni_stre
     return generate(input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list);
 }
 
-std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_encoded_results(
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
     const std::vector<std::vector<ov::Tensor>>& images_vector,
     const std::vector<std::vector<ov::Tensor>>& videos_vector,
@@ -761,8 +697,8 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     const std::vector<std::vector<ov::Tensor>>& audios_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    std::shared_ptr<OmniStreamerBase> omni_streamer,
-    std::vector<EncodedGenerationResult>* encoded_results_out) {
+    std::shared_ptr<OmniStreamerBase> omni_streamer
+) {
     PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
@@ -934,8 +870,6 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
         }
     }
 
-    if (encoded_results_out)
-        *encoded_results_out = std::move(encoded_results);
     return results;
 }
 

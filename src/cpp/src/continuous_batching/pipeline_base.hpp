@@ -250,17 +250,6 @@ public:
         std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
     );
 
-    std::vector<VLMDecodedResults> generate_with_encoded_results(
-        const std::vector<std::string>& prompts,
-        const std::vector<std::vector<ov::Tensor>>& images,
-        const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
-        const std::vector<std::vector<ov::Tensor>>& audios,
-        const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer,
-        std::shared_ptr<OmniStreamerBase> omni_streamer,
-        std::vector<EncodedGenerationResult>* encoded_results_out);
-
     /**
      * Performs monolithic generation based on ChatHistory objects
      */
@@ -304,17 +293,6 @@ public:
         const StreamerVariant& streamer,
         std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
     );
-
-    std::vector<VLMDecodedResults> generate_with_encoded_results(
-        const std::vector<ChatHistory>& histories,
-        const std::vector<std::vector<ov::Tensor>>& images,
-        const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
-        const std::vector<std::vector<ov::Tensor>>& audios,
-        const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer,
-        std::shared_ptr<OmniStreamerBase> omni_streamer,
-        std::vector<EncodedGenerationResult>* encoded_results_out);
 
     /**
      * Starts chat with a given system prompt
