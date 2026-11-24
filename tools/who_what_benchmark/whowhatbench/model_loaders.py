@@ -67,6 +67,32 @@ def _resolve_torch_dtype(dtype):
         raise ValueError(f"Unsupported PyTorch dtype '{dtype}'. Supported values: {', '.join(TORCH_DTYPES)}.") from exc
 
 
+_CASTABLE_FLOAT_DTYPES = {torch.float16, torch.bfloat16, torch.float32, torch.float64}
+
+
+def _unify_floating_dtype(model, dtype):
+    """Cast a model to ``dtype`` when its floating-point parameters are left with mixed dtypes.
+
+    Some quantized checkpoints (e.g. FP8 with ``modules_to_not_convert``) are dequantized on CPU
+    into the requested dtype while the excluded modules keep the checkpoint dtype, which breaks
+    generation with dtype mismatches. Only applied for an explicit concrete ``dtype``.
+    """
+    if not isinstance(dtype, torch.dtype) or not dtype.is_floating_point:
+        return model
+    float_dtypes = {p.dtype for p in model.parameters() if p.is_floating_point()}
+    # Keep models that still hold low-precision quantized storage (e.g. float8) untouched.
+    if not float_dtypes or not float_dtypes <= _CASTABLE_FLOAT_DTYPES:
+        return model
+    if len(float_dtypes) > 1:
+        logger.info(
+            "Model parameters have mixed floating dtypes %s after loading; casting to %s.",
+            sorted(str(d) for d in float_dtypes),
+            dtype,
+        )
+        model = model.to(dtype)
+    return model
+
+
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
@@ -666,6 +692,10 @@ def load_visual_text_model(
                         model.set_lora_adapter = lambda _: None
                     if hasattr(model.model, "_require_grads_hook"):
                         model.model.disable_input_require_grads()
+
+        if getattr(config, "model_type", None) == "mistral3":
+            # Mistral3 FP8 checkpoints may keep mixed floating dtypes after loading; unify them.
+            model = _unify_floating_dtype(model, model_kwargs["torch_dtype"])
 
         # Common LoRA support via PEFT
         if kwargs.get("adapters") is not None:
