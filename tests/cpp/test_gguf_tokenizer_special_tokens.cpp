@@ -10,7 +10,6 @@
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "gguf_utils/gguf_multimodal.hpp"
-#include "gguf_utils/gguf_clip_adapter.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "sampling/sampler.hpp"
 #include "visual_language/clip.hpp"
@@ -80,15 +79,15 @@ ov::genai::GGUFTokenizerParameters combining_marks_config(const std::string& pre
          {"pre", pre},
          {"tokens",
           std::vector<std::string>{"a",
-                                   u8"\u00cc",
-                                   u8"\u0123",
-                                   u8"\u00cc\u0123",
-                                   u8"a\u00cc",
-                                   u8"a\u00cc\u0123",
+                                   "\xC3\x8C",
+                                   "\xC4\xA3",
+                                   "\xC3\x8C\xC4\xA3",
+                                   "a\xC3\x8C",
+                                   "a\xC3\x8C\xC4\xA3",
                                    "<unk>",
                                    "<bos>",
                                    "<eos>"}},
-         {"merges", std::vector<std::string>{u8"\u00cc \u0123", u8"a \u00cc", u8"a\u00cc \u0123", u8"a \u00cc\u0123"}},
+         {"merges", std::vector<std::string>{"\xC3\x8C \xC4\xA3", "a \xC3\x8C", "a\xC3\x8C \xC4\xA3", "a \xC3\x8C\xC4\xA3"}},
          {"token_type", types},
          {"unknown_token_id", unknown_id},
          {"bos_token_id", bos_id},
@@ -236,7 +235,7 @@ TEST(GGUFTokenizer, GPT4OSplitsCombiningMarksLikeLlamaCPU) {
     const std::vector<int64_t> expected{0, 3};
     for (const auto& pre : {"gpt-4o", "llama4"}) {
         ov::genai::GGUFTokenizer tokenizer(combining_marks_config(pre));
-        const auto ids = tokenizer.encode(u8"a\u0301", ov::genai::add_special_tokens(false)).input_ids;
+        const auto ids = tokenizer.encode("a\xCC\x81", ov::genai::add_special_tokens(false)).input_ids;
         ASSERT_EQ(ids.get_size(), expected.size()) << pre;
         EXPECT_EQ(std::vector<int64_t>(ids.data<int64_t>(), ids.data<int64_t>() + ids.get_size()), expected) << pre;
     }

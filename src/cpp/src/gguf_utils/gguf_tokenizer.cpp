@@ -206,11 +206,6 @@ std::vector<std::string> get_split_regex(const std::string& pre) {
              "\\p{N}",
              "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)",
          }},
-        {"qwen35",
-         {
-             "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| "
-             "?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
-         }},
         {"gpt-4o", {gpt4o}},
         {"llama4", {gpt4o}},
     };

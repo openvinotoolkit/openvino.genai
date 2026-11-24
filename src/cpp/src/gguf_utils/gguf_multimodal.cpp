@@ -8,7 +8,6 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 
-#include "gguf_clip_adapter.hpp"
 #include "gguf_modeling.hpp"
 #include "gguf_tokenizer.hpp"
 #include "gguf_utils.hpp"
@@ -122,7 +121,6 @@ Configs gguf_configs(const std::string& architecture,
     if (architecture == "gemma3") {
         const auto size = meta.integer("clip.vision.image_size");
         c.config["model_type"] = "gemma3";
-        c.config["position_ids_offset"] = 0;
         c.config["image_separator"] = "";
         c.image["pad_to_target"] = true;
         c.image["size"] = {{"height", size}, {"width", size}};
@@ -154,7 +152,6 @@ Configs gguf_configs(const std::string& architecture,
     c.image["merge_size"] = merge;
     if (architecture == "lfm3") {
         c.config["model_type"] = "lfm3_vl";
-        c.config["position_ids_offset"] = 0;
         c.image["temporal_patch_size"] = meta.integer("vision.temporal_patch_size");
         const auto min_pixels = meta.integer("clip.vision.image_min_pixels", 65536);
         const auto max_pixels = meta.integer("clip.vision.image_max_pixels", 16777216);
@@ -192,6 +189,19 @@ Configs gguf_configs(const std::string& architecture,
     return c;
 }
 }  // namespace
+
+void validate_gguf_clip_language(const std::shared_ptr<ov::Model>& model) {
+    const auto positions = model->input("position_ids");
+    OPENVINO_ASSERT(positions.get_element_type() == ov::element::i64 && positions.get_partial_shape().rank() == 2,
+                    "GGUF LLaVA and InternVL require rank-2 int64 language position_ids [batch, tokens]");
+    for (const auto& input : model->inputs()) {
+        const auto& names = input.get_names();
+        OPENVINO_ASSERT(names.count("inputs_embeds") || names.count("attention_mask") || names.count("position_ids") ||
+                            names.count("beam_idx"),
+                        "GGUF LLaVA and InternVL do not support additional language input ",
+                        input.get_any_name());
+    }
+}
 
 void validate_gguf_multimodal_dimensions(const std::shared_ptr<ov::Model>& language, const VLMModels& models) {
     const auto& inputs_shape = language->input("inputs_embeds").get_partial_shape();

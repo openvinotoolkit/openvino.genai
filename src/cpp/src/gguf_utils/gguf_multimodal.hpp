@@ -29,6 +29,8 @@ struct GGUFMultimodalModels {
     }
 };
 
+void validate_gguf_clip_language(const std::shared_ptr<ov::Model>& model);
+
 void validate_gguf_multimodal_dimensions(const std::shared_ptr<ov::Model>& language, const VLMModels& models);
 
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
