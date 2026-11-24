@@ -37,6 +37,11 @@ void VisionTokenPruningProcessor::set_config(const cdpruner::Config& config) {
     m_config.device = std::move(device);
 
     if (!m_pruner) {
+        // Pruning is off: keep the config and defer building the pruner (and compiling its kernels)
+        // until a non-zero pruning_ratio is requested.
+        if (m_config.pruning_ratio == 0) {
+            return;
+        }
         m_pruner = std::make_unique<cdpruner::CDPruner>(m_config);
     } else {
         // Update existing pruner configuration

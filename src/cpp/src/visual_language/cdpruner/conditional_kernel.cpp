@@ -21,7 +21,7 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
       m_requests_initialized(false) {
     // Precompile models and create infer requests for performance optimization
     try {
-        ov::Core core;
+        ov::Core& core = utils::singleton_core();
 
         // Compile and create infer request for conditional kernel model
         auto kernel_model = create_conditional_kernel_model();
