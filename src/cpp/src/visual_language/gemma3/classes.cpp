@@ -144,63 +144,13 @@ ov::Tensor InputsEmbedderGemma3::apply_chat_template_tokenize(const std::string&
 
     const auto* ids = input_ids.data<const int64_t>();
     bool inside_image = false;
-    bool seen_image_start = false;
-    bool leading_pad = false;
-    bool recover_leading_image = false;
     for (size_t i = 0; i < input_ids.get_size(); ++i) {
-        if (ids[i] == start_of_image_id) {
+        if (ids[i] == start_of_image_id)
             inside_image = true;
-            seen_image_start = true;
-        } else if (ids[i] == end_of_image_id) {
-            recover_leading_image |= !seen_image_start && leading_pad;
+        else if (ids[i] == end_of_image_id)
             inside_image = false;
-        } else {
+        else
             mask[i] = inside_image && ids[i] == image_token_id;
-            leading_pad |= !seen_image_start && ids[i] == image_token_id;
-        }
-    }
-
-    if (recover_leading_image) {
-        OPENVINO_ASSERT(!m_vlm_config.start_of_image.empty() && !m_vlm_config.image_soft_token.empty() &&
-                            !m_vlm_config.end_of_image.empty(),
-                        "Gemma3 image tokens must not be empty");
-        OPENVINO_ASSERT(start_of_image_id != image_token_id, "Gemma3 image and start tokens must differ");
-        // Mark only image slots before tokenization so the same truncation preserves their positions.
-        std::string marked_prompt;
-        marked_prompt.reserve(prompt.size());
-        size_t offset = 0;
-        while (true) {
-            const auto start = prompt.find(m_vlm_config.start_of_image, offset);
-            if (start == std::string::npos)
-                break;
-            const auto content = start + m_vlm_config.start_of_image.size();
-            const auto end = prompt.find(m_vlm_config.end_of_image, content);
-            if (end == std::string::npos)
-                break;
-            marked_prompt.append(prompt, offset, content - offset);
-            size_t pos = content;
-            while (true) {
-                const auto image_token = prompt.find(m_vlm_config.image_soft_token, pos);
-                if (image_token == std::string::npos || image_token + m_vlm_config.image_soft_token.size() > end)
-                    break;
-                marked_prompt.append(prompt, pos, image_token - pos);
-                marked_prompt += m_vlm_config.start_of_image;
-                pos = image_token + m_vlm_config.image_soft_token.size();
-            }
-            marked_prompt.append(prompt, pos, end + m_vlm_config.end_of_image.size() - pos);
-            offset = end + m_vlm_config.end_of_image.size();
-        }
-        marked_prompt.append(prompt, offset, std::string::npos);
-        VLMPerfMetrics marked_metrics;
-        const auto marked_ids = IInputsEmbedder::apply_chat_template_tokenize(marked_prompt, marked_metrics);
-        OPENVINO_ASSERT(marked_ids.get_shape() == input_ids.get_shape(),
-                        "Gemma3 image mask could not be aligned with tokenized prompt");
-        const auto* marked = marked_ids.data<const int64_t>();
-        for (size_t i = 0; i < input_ids.get_size(); ++i) {
-            OPENVINO_ASSERT(ids[i] == marked[i] || (ids[i] == image_token_id && marked[i] == start_of_image_id),
-                            "Gemma3 image mask could not be aligned with tokenized prompt");
-            mask[i] = ids[i] != marked[i];
-        }
     }
     metrics.raw_metrics.tokenization_durations.back() +=
         ov::genai::MicroSeconds(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_tokenizer_time));

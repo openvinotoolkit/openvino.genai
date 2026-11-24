@@ -4,6 +4,8 @@
 #include "gguf_tokenizer.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
@@ -364,7 +366,13 @@ int utf8_char_length(unsigned char lead_byte) {
 
 // Byte tokens are spelled "<0xNN>".
 uint8_t byte_token_value(const std::string& token) {
-    return static_cast<uint8_t>(std::stoul(token.substr(3, 2), nullptr, 16));
+    uint8_t value = 0;
+    const bool valid = token.size() == 6 && token.compare(0, 3, "<0x") == 0 && token[5] == '>' &&
+                       std::isxdigit(static_cast<unsigned char>(token[3])) &&
+                       std::isxdigit(static_cast<unsigned char>(token[4])) &&
+                       std::from_chars(token.data() + 3, token.data() + 5, value, 16).ec == std::errc{};
+    OPENVINO_ASSERT(valid, "[gguf tokenizer] BYTE token must be spelled <0xNN>: ", token);
+    return value;
 }
 
 // A merge is "left right"; the left piece may itself start with a space.
@@ -1003,16 +1011,16 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
             add_token_segment(eos_id);
         }
 
-        if (segment_ids.size() > 1) {
-            cs_inputs.push_back(
-                std::make_shared<v0::Constant>(element::i32, ov::Shape{segment_ids.size()}, segment_ids)->output(0));
-            auto combined = create_func("CombineSegments", cs_inputs, {});
-            // CombineSegments returns [begins, ends, values, ...]; keep the ragged token ids.
-            OPENVINO_ASSERT(combined.size() >= 3, "[gguf tokenizer] CombineSegments must have >=3 outputs");
-            outputs[0] = combined[0];
-            outputs[1] = combined[1];
-            outputs[2] = combined[2];
-        }
+        // Emitted even for a lone main segment: MakeCombineSegmentsStateful only turns the
+        // truncation above into the runtime `truncation` flag (default off) through CombineSegments.
+        cs_inputs.push_back(
+            std::make_shared<v0::Constant>(element::i32, ov::Shape{segment_ids.size()}, segment_ids)->output(0));
+        auto combined = create_func("CombineSegments", cs_inputs, {});
+        // CombineSegments returns [begins, ends, values, ...]; keep the ragged token ids.
+        OPENVINO_ASSERT(combined.size() >= 3, "[gguf tokenizer] CombineSegments must have >=3 outputs");
+        outputs[0] = combined[0];
+        outputs[1] = combined[1];
+        outputs[2] = combined[2];
     }
 
     // Left padding

@@ -563,7 +563,15 @@ def test_gguf_vlm_projector_layouts(tiny_gguf_vlm_model, backend, media):
 @pytest.mark.parametrize("tiny_gguf_vlm_model", ["lfm3"], indirect=True)
 @pytest.mark.parametrize(
     "min_pixels,max_pixels,image_tokens",
-    [(None, None, 64), (16384, None, 16), (1024, 4096, 4), (1024, 1024, 1), (0, 4096, None), (8192, 4096, None)],
+    [
+        (None, None, 64),
+        (16384, None, 16),
+        (1024, 4096, 4),
+        (1024, 1024, 1),
+        (0, 4096, None),
+        (8192, 4096, None),
+        (-1, -1, None),
+    ],
 )
 def test_gguf_lfm3_image_pixel_limits(tiny_gguf_vlm_model, min_pixels, max_pixels, image_tokens):
     from gguf import GGUFReader, GGUFWriter
@@ -578,7 +586,9 @@ def test_gguf_lfm3_image_pixel_limits(tiny_gguf_vlm_model, min_pixels, max_pixel
             continue
         writer.add_key_value(name, field.contents(), field.types[0], field.types[1] if len(field.types) > 1 else None)
     for name, value in limits.items():
-        if value is not None:
+        if value is not None and value < 0:
+            writer.add_int32(name, value)
+        elif value is not None:
             writer.add_uint32(name, value)
     for tensor in reader.tensors:
         writer.add_tensor(tensor.name, tensor.data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
@@ -588,7 +598,12 @@ def test_gguf_lfm3_image_pixel_limits(tiny_gguf_vlm_model, min_pixels, max_pixel
     writer.close()
     properties = dict(mmproj_path=str(modified), ATTENTION_BACKEND="SDPA", **reference_properties())
     if image_tokens is None:
-        with pytest.raises(RuntimeError, match="GGUF LFM3 image pixel limits must be positive and ordered"):
+        error = (
+            "must be a non-negative integer"
+            if min_pixels < 0
+            else "GGUF LFM3 image pixel limits must be positive and ordered"
+        )
+        with pytest.raises(RuntimeError, match=error):
             genai.VLMPipeline(language, "CPU", **properties)
         return
     pipeline = genai.VLMPipeline(language, "CPU", **properties)
@@ -980,38 +995,31 @@ def test_gguf_vlm_language_adapter_overlay(tiny_gguf_vlm_model, tmp_path, prompt
         assert pipe.generate("Describe.", images=[image], **config).texts == with_adapter
 
 
-def test_gguf_vlm_gemma3_partial_image_chat_cache(tiny_gguf_vlm_model, tmp_path):
+def test_gguf_vlm_gemma3_chat_cache_after_cancel(tiny_gguf_vlm_model, tmp_path):
     from gguf import GGUFReader, GGUFWriter
 
     language, projector = tiny_gguf_vlm_model
-    test_language = tmp_path / "language.gguf"
     test_projector = tmp_path / "projector.gguf"
-    # Keep retained image slots visible to attention and make the tiny projector image-sensitive.
-    for source, target in ((language, test_language), (projector, test_projector)):
-        reader = GGUFReader(source)
-        writer = GGUFWriter(target, reader.fields["general.architecture"].contents(), endianess=reader.endianess)
-        for name, field in reader.fields.items():
-            if name.startswith("GGUF.") or name == "general.architecture":
-                continue
-            value = field.contents()
-            if name == "tokenizer.ggml.add_bos_token":
-                value = False
-            elif name == "gemma3.attention.sliding_window":
-                value = 16384
-            writer.add_key_value(name, value, field.types[0], field.types[1] if len(field.types) > 1 else None)
-        for tensor in reader.tensors:
-            data = tensor.data
-            if tensor.name == "mm.input_projection.weight":
-                assert data.shape == (8, 8)
-                data = np.eye(8, dtype=data.dtype)
-            writer.add_tensor(tensor.name, data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
-        writer.write_header_to_file()
-        writer.write_kv_data_to_file()
-        writer.write_tensors_to_file()
-        writer.close()
+    # Make the tiny projector image-sensitive.
+    reader = GGUFReader(projector)
+    writer = GGUFWriter(test_projector, reader.fields["general.architecture"].contents(), endianess=reader.endianess)
+    for name, field in reader.fields.items():
+        if name.startswith("GGUF.") or name == "general.architecture":
+            continue
+        writer.add_key_value(name, field.contents(), field.types[0], field.types[1] if len(field.types) > 1 else None)
+    for tensor in reader.tensors:
+        data = tensor.data
+        if tensor.name == "mm.input_projection.weight":
+            assert data.shape == (8, 8)
+            data = np.eye(8, dtype=data.dtype)
+        writer.add_tensor(tensor.name, data, raw_dtype=tensor.tensor_type, tensor_endianess=reader.endianess)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
 
     pipe = genai.VLMPipeline(
-        test_language,
+        language,
         "CPU",
         mmproj_path=str(test_projector),
         GGUF_READER="FRONTEND",
@@ -1019,54 +1027,9 @@ def test_gguf_vlm_gemma3_partial_image_chat_cache(tiny_gguf_vlm_model, tmp_path)
         INFERENCE_NUM_THREADS=2,
         **reference_properties(),
     )
-    tokenizer = pipe.get_tokenizer()
-
-    def encode(text):
-        return tokenizer.encode(text, add_special_tokens=False).input_ids.data.reshape(-1).copy()
-
-    start, pad, end = "<start_of_image>", "<pad>", "<end_of_image>"
-    prompt = start + "Describe."
+    prompt = "<start_of_image>Describe."
     image = ov.Tensor(np.random.default_rng(42).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
-    history = genai.ChatHistory([{"role": "user", "content": prompt}])
-    raw_count = len(encode(tokenizer.apply_chat_template(history, True)))
-    first = pipe.generate(history, images=[image], max_new_tokens=1, do_sample=False, ignore_eos=True)
-    patches = first.perf_metrics.get_num_input_tokens() - raw_count - 1
-    assert patches >= 2
-    history.append({"role": "assistant", "content": first.texts[0]})
-
-    def normalized_history(user_text):
-        return genai.ChatHistory(
-            [
-                {"role": "user", "content": start + pad * patches + end + "Describe."},
-                {"role": "assistant", "content": first.texts[0]},
-                {"role": "user", "content": user_text},
-            ]
-        )
-
-    short = encode(tokenizer.apply_chat_template(normalized_history("<start_of_turn>"), True))
-    start_pos = np.flatnonzero(short == encode(start)[0])[0]
-    desired_drop = int(start_pos + 1 + patches // 2)
-    filler = "<start_of_turn>" * (8192 + desired_drop - len(short) + 1)
-    retained = encode(tokenizer.apply_chat_template(normalized_history(filler), True))
-    pad_id = encode(pad)[0]
-    assert len(retained) == 8192 and retained[0] == pad_id
-    assert 0 < np.argmax(retained != pad_id) < patches
-
-    history.append({"role": "user", "content": filler})
     config = dict(max_new_tokens=1, do_sample=True, top_k=8, rng_seed=7, logprobs=1, ignore_eos=True)
-    cached_history = pipe.generate(history, **config)
-    pipe.finish_chat()
-    full_history = pipe.generate(history, **config)
-    pipe.finish_chat()
-
-    pipe.start_chat()
-    first_legacy = pipe.generate(prompt, images=[image], max_new_tokens=1, do_sample=False, ignore_eos=True)
-    assert first_legacy.texts == first.texts
-    cached_legacy = pipe.generate(filler, **config)
-    pipe.finish_chat()
-    for result in (cached_history, cached_legacy):
-        assert result.texts == full_history.texts
-        np.testing.assert_allclose(result.scores, full_history.scores, rtol=1e-6, atol=1e-6)
 
     cancelled_image = ov.Tensor(np.zeros((1, 48, 64, 3), dtype=np.uint8))
     next_image = ov.Tensor(np.full((1, 48, 64, 3), 255, dtype=np.uint8))

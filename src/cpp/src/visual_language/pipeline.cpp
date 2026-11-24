@@ -362,6 +362,7 @@ public:
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix(
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model."));
+            set_foreign_tensor_name_prefix(*m_generation_config.adapters, m_inputs_embedder->get_lora_tensor_prefix());
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
         compile_language_model(language_model, device, lm_properties);
@@ -379,7 +380,7 @@ public:
         const auto scheduled =
             utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         const auto& plugin_properties = scheduled.first;
-        auto embedder_properties = extract_adapters_from_properties(plugin_properties).fork();
+        auto embedder_properties = forward_adapters_to_submodels(plugin_properties, std::nullopt);
         embedder_properties.erase(ov::genai::prompt_lookup.name());
         auto embedder = std::make_shared<InputsEmbedder>(models, tokenizer, device, embedder_properties);
         const auto paged = [&](const std::shared_ptr<ov::Model>& language) {

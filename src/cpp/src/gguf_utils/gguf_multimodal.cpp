@@ -4,6 +4,7 @@
 #include "gguf_multimodal.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <nlohmann/json.hpp>
 #include <sstream>
 
@@ -62,7 +63,15 @@ public:
         return it->second.as<std::string>();
     }
     size_t integer(const std::string& key) const {
-        return std::stoull(text(key));
+        const auto value_text = text(key);
+        size_t value = 0;
+        const auto [end, error] = std::from_chars(value_text.data(), value_text.data() + value_text.size(), value);
+        OPENVINO_ASSERT(!value_text.empty() && error == std::errc{} && end == value_text.data() + value_text.size(),
+                        "GGUF mmproj metadata ",
+                        key,
+                        " must be a non-negative integer: ",
+                        value_text);
+        return value;
     }
     size_t integer(const std::string& key, size_t fallback) const {
         return has(key) ? integer(key) : fallback;
