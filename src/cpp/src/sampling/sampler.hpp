@@ -58,6 +58,12 @@ struct SamplerOutput {
         size_t accepted_depth = 0;
         size_t processed_tokens_after = 0;
     };
+    // The candidates of a validation window and the ones the main model accepted, the fewest of any running sequence.
+    // A matched stop string can remove accepted candidates from the generated tokens afterwards.
+    struct ValidatedWindow {
+        size_t num_candidates = 0;
+        size_t num_accepted = 0;
+    };
 
     // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;
@@ -70,6 +76,8 @@ struct SamplerOutput {
     // Requests in a chunked-prefill step are present with a zero count.
     std::unordered_map<uint64_t, size_t> num_generated_tokens_per_request;
     std::unordered_map<uint64_t, AcceptanceResult> acceptance_by_sequence;
+    // The validation windows that this step validated, by request id.
+    std::unordered_map<uint64_t, ValidatedWindow> validated_windows;
 };
 
 struct AssistingPipelineInfo {
@@ -177,11 +185,13 @@ class Sampler {
 
     // Verify the candidate tree against target-model logits: greedily accept the longest
     // matching prefix across all tree paths, then append a bonus token.
-    // Returns accepted_steps = number of accepted draft tokens + 1 (for the bonus token).
+    // Returns accepted_steps = number of accepted draft tokens + 1 (for the bonus token). num_accepted_candidates
+    // also counts a stop token accepted on the path, which ends it without a bonus token.
     size_t verify_draft_tree(Sequence::Ptr& sequence,
                              const ov::Tensor& sequence_group_logits,
                              LogitProcessor& logit_processor,
-                             size_t num_tokens_to_validate);
+                             size_t num_tokens_to_validate,
+                             size_t& num_accepted_candidates);
 
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
                                                         RequestSamplerContext& context,
@@ -189,7 +199,7 @@ class Sampler {
                                                         bool notify_handle);
 
     // Block sampling of one request: samples one token from each gathered row, in row order, in place of the
-    // request's trailing placeholder tokens.
+    // request's trailing placeholder tokens. A sampled token carries its proposal when proposals are collected.
     SequenceGroupSamplingInfo _sample_block_from_sequence_group(const SequenceGroup::Ptr& sequence_group,
                                                                 const ov::Tensor& sequence_group_logits,
                                                                 RequestSamplerContext& context);
@@ -220,6 +230,7 @@ class Sampler {
     size_t m_default_seed = std::mt19937::default_seed;  // kept for set_seed/get_seed API compat
 
     Tokenizer m_tokenizer;
+    std::set<int64_t> m_suppressed_token_ids;
 
     ThreadPool m_thread_pool;
     std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
@@ -252,6 +263,11 @@ public:
 
     void set_tokenizer(const Tokenizer& tokenizer) {
         m_tokenizer = tokenizer;
+    }
+
+    // Token ids that are never sampled, whatever the generation config says.
+    void set_suppressed_token_ids(const std::set<int64_t>& token_ids) {
+        m_suppressed_token_ids = token_ids;
     }
 
     void clear_request_info(uint64_t request_id);

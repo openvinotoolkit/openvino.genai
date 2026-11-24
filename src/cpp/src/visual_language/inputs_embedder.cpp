@@ -32,6 +32,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 #include "visual_language/minicpmv4_7/classes.hpp"
+#include "visual_language/lfm3_omni/classes.hpp"
 #include "visual_language/mistral3/classes.hpp"
 #include "visual_language/lfm3_vl/classes.hpp"
 
@@ -340,6 +341,11 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedd
     return empty_map;
 }
 
+const std::set<int64_t>& InputsEmbedder::IInputsEmbedder::get_suppressed_token_ids() const {
+    static const std::set<int64_t> empty_set;
+    return empty_set;
+}
+
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
                                const ov::AnyMap device_config) :
@@ -358,6 +364,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
         m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderLFM3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -425,6 +433,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LFM3_VL) {
         m_impl = std::make_shared<InputsEmbedderLFM3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderLFM3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -502,6 +512,10 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {
     return m_impl->get_lm_extra_inputs();
+}
+
+const std::set<int64_t>& InputsEmbedder::get_suppressed_token_ids() const {
+    return m_impl->get_suppressed_token_ids();
 }
 
 std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_per_layer_embeddings_callback() {

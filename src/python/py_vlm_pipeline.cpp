@@ -12,6 +12,7 @@
 
 #include "openvino/core/except.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
+#include "openvino/genai/omni/streamer_base.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
@@ -27,9 +28,98 @@ namespace common_utils = ov::genai::common_bindings::utils;
 
 namespace {
 
+constexpr const char* OMNI_STREAMER_ARG_NAME = "omni_streamer";
+
+// Owns a bridge taken from kwargs until generate() takes it over. A keyword that fails to parse in
+// between would otherwise leave the bridge open and a talker reading its other end blocked forever.
+struct OmniStreamerKwarg {
+    std::shared_ptr<ov::genai::OmniStreamerBase> streamer;
+
+    // None and a missing key both yield a null bridge, which selects the non-streaming overload.
+    explicit OmniStreamerKwarg(const py::kwargs& kwargs) {
+        if (kwargs.contains(OMNI_STREAMER_ARG_NAME)) {
+            streamer = kwargs[OMNI_STREAMER_ARG_NAME].cast<std::shared_ptr<ov::genai::OmniStreamerBase>>();
+        }
+    }
+    explicit OmniStreamerKwarg(std::shared_ptr<ov::genai::OmniStreamerBase> taken) : streamer{std::move(taken)} {}
+    OmniStreamerKwarg(const OmniStreamerKwarg&) = delete;
+    OmniStreamerKwarg& operator=(const OmniStreamerKwarg&) = delete;
+
+    ~OmniStreamerKwarg() noexcept {
+        if (streamer) {
+            try {
+                streamer->abandon();
+            } catch (...) {
+            }
+        }
+    }
+
+    std::shared_ptr<ov::genai::OmniStreamerBase> release() {
+        return std::exchange(streamer, nullptr);
+    }
+
+    static py::kwargs strip(const py::kwargs& kwargs) {
+        py::kwargs rest;
+        for (const auto& item : kwargs) {
+            if (py::cast<std::string>(item.first) != OMNI_STREAMER_ARG_NAME) {
+                rest[item.first] = item.second;
+            }
+        }
+        return rest;
+    }
+};
+
+// An explicit omni_streamer=None is the same call as one without the keyword.
+bool has_omni_streamer(const py::kwargs& kwargs) {
+    return kwargs.contains(OMNI_STREAMER_ARG_NAME) && !kwargs[OMNI_STREAMER_ARG_NAME].is_none();
+}
+
+// Property-bag inputs of VLMPipelineBase::generate(prompt, AnyMap) when the receiver is a Python
+// subclass. kwargs_to_any_map() accepts the speech_streamer key and extract_multimodal_inputs()
+// does not consume it, so letting it through would drop the caller's streamer without a word.
+ov::genai::MultimodalInputs unpack_config_map(const ov::AnyMap& config_map) {
+    OPENVINO_ASSERT(config_map.find(ov::genai::utils::SPEECH_STREAMER_ARG_NAME) == config_map.end(),
+                    "VLMPipelineBase: '",
+                    ov::genai::utils::SPEECH_STREAMER_ARG_NAME,
+                    "' is only consumed by the built-in Qwen3-Omni speech path and cannot be forwarded to a "
+                    "Python-defined subclass.");
+    return ov::genai::extract_multimodal_inputs(config_map);
+}
+
+ov::genai::GenerationConfig resolve_generation_config(ov::genai::VLMPipelineBase& pipe, const ov::AnyMap& config_map) {
+    const auto provided = ov::genai::utils::get_config_from_map(config_map);
+    auto config = provided.has_value() ? *provided : pipe.get_generation_config();
+    config.update_generation_config(config_map);
+    return config;
+}
+
+// Reduce a property bag to the omni-streaming overload a Python VLMPipelineBase subclass can
+// override. The AnyMap overloads of VLMPipelineBase carry no omni_streamer, so this is the only
+// way a bridge passed as a keyword reaches the subclass.
+template <typename Prompt>
+ov::genai::VLMDecodedResults generate_from_property_bag(ov::genai::VLMPipelineBase& pipe,
+                                                        const Prompt& prompt,
+                                                        const ov::AnyMap& config_map,
+                                                        std::shared_ptr<ov::genai::OmniStreamerBase> omni_streamer) {
+    OmniStreamerKwarg bridge{std::move(omni_streamer)};
+    const auto inputs = unpack_config_map(config_map);
+    const auto generation_config = resolve_generation_config(pipe, config_map);
+    const auto streamer = ov::genai::utils::get_streamer_from_map(config_map);
+    return pipe.generate(prompt,
+                         inputs.images.value_or(std::vector<ov::Tensor>{}),
+                         inputs.videos.value_or(std::vector<ov::Tensor>{}),
+                         inputs.audios.value_or(std::vector<ov::Tensor>{}),
+                         inputs.videos_metadata.value_or(std::vector<ov::genai::VideoMetadata>{}),
+                         generation_config,
+                         streamer,
+                         bridge.release());
+}
+
 // Trampoline enabling Python subclasses of VLMPipelineBase (injected via the OmniPipeline DI ctor).
 // C++ has many generate overloads but Python has one name: the videos_metadata-aware overloads map
 // to the Python "generate" and every other overload — narrow, or property-bag — reduces to them.
+// The omni-streaming overloads reach the same Python method with an extra `omni_streamer` keyword,
+// so a subclass opts in by accepting it.
 class PyVLMPipelineBase : public ov::genai::VLMPipelineBase {
 public:
     using ov::genai::VLMPipelineBase::VLMPipelineBase;
@@ -76,6 +166,28 @@ public:
 
     ov::genai::VLMDecodedResults generate(const std::string& prompt,
                                           const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                                          const ov::genai::GenerationConfig& generation_config,
+                                          const ov::genai::StreamerVariant& streamer,
+                                          const std::shared_ptr<ov::genai::OmniStreamerBase>& omni_streamer) override {
+        return generate_omni_streaming(prompt, images, videos, audios, videos_metadata, generation_config, streamer, omni_streamer);
+    }
+
+    ov::genai::VLMDecodedResults generate(const ov::genai::ChatHistory& history,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                                          const ov::genai::GenerationConfig& generation_config,
+                                          const ov::genai::StreamerVariant& streamer,
+                                          const std::shared_ptr<ov::genai::OmniStreamerBase>& omni_streamer) override {
+        return generate_omni_streaming(history, images, videos, audios, videos_metadata, generation_config, streamer, omni_streamer);
+    }
+
+    ov::genai::VLMDecodedResults generate(const std::string& prompt,
+                                          const std::vector<ov::Tensor>& images,
                                           const ov::genai::GenerationConfig& generation_config,
                                           const ov::genai::StreamerVariant& streamer) override {
         return generate(prompt, images, {}, {}, {}, generation_config, streamer);
@@ -105,26 +217,12 @@ public:
     }
 
     ov::genai::VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map) override {
-        const auto inputs = unpack_config_map(config_map);
-        return generate(prompt,
-                        inputs.images.value_or(std::vector<ov::Tensor>{}),
-                        inputs.videos.value_or(std::vector<ov::Tensor>{}),
-                        inputs.audios.value_or(std::vector<ov::Tensor>{}),
-                        inputs.videos_metadata.value_or(std::vector<ov::genai::VideoMetadata>{}),
-                        resolve_generation_config(config_map),
-                        ov::genai::utils::get_streamer_from_map(config_map));
+        return generate_from_property_bag(*this, prompt, config_map, nullptr);
     }
 
     ov::genai::VLMDecodedResults generate(const ov::genai::ChatHistory& history,
                                           const ov::AnyMap& config_map) override {
-        const auto inputs = unpack_config_map(config_map);
-        return generate(history,
-                        inputs.images.value_or(std::vector<ov::Tensor>{}),
-                        inputs.videos.value_or(std::vector<ov::Tensor>{}),
-                        inputs.audios.value_or(std::vector<ov::Tensor>{}),
-                        inputs.videos_metadata.value_or(std::vector<ov::genai::VideoMetadata>{}),
-                        resolve_generation_config(config_map),
-                        ov::genai::utils::get_streamer_from_map(config_map));
+        return generate_from_property_bag(*this, history, config_map, nullptr);
     }
 
     ov::genai::Tokenizer get_tokenizer() const override {
@@ -158,22 +256,41 @@ public:
     }
 
 private:
-    static ov::genai::MultimodalInputs unpack_config_map(const ov::AnyMap& config_map) {
-        // kwargs_to_any_map() accepts the key and extract_multimodal_inputs() does not consume it,
-        // so letting it through would drop the caller's streamer without a word.
-        OPENVINO_ASSERT(config_map.find(ov::genai::utils::SPEECH_STREAMER_ARG_NAME) == config_map.end(),
-                        "VLMPipelineBase: '",
-                        ov::genai::utils::SPEECH_STREAMER_ARG_NAME,
-                        "' is only consumed by the built-in Qwen3-Omni speech path and cannot be forwarded to a "
-                        "Python-defined subclass.");
-        return ov::genai::extract_multimodal_inputs(config_map);
-    }
-
-    ov::genai::GenerationConfig resolve_generation_config(const ov::AnyMap& config_map) {
-        const auto provided = ov::genai::utils::get_config_from_map(config_map);
-        auto config = provided.has_value() ? *provided : get_generation_config();
-        config.update_generation_config(config_map);
-        return config;
+    // Body of the two omni-streaming overrides. A null bridge means the non-streaming overload, as
+    // in VLMPipelineBase. Otherwise the Python method is called with `omni_streamer` as a keyword,
+    // so a subclass written for the 7-argument form fails with a signature error naming it rather
+    // than silently generating text without feeding the talker. No override at all keeps the
+    // base's NotImplemented.
+    template <typename Prompt>
+    ov::genai::VLMDecodedResults generate_omni_streaming(const Prompt& prompt,
+                                                         const std::vector<ov::Tensor>& images,
+                                                         const std::vector<ov::Tensor>& videos,
+                                                         const std::vector<ov::Tensor>& audios,
+                                                         const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                                                         const ov::genai::GenerationConfig& generation_config,
+                                                         const ov::genai::StreamerVariant& streamer,
+                                                         const std::shared_ptr<ov::genai::OmniStreamerBase>& omni_streamer) {
+        if (!omni_streamer) {
+            return generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
+        }
+        py::gil_scoped_acquire acquire;
+        py::function override = py::get_override(static_cast<const ov::genai::VLMPipelineBase*>(this), "generate");
+        if (!override) {
+            return ov::genai::VLMPipelineBase::generate(prompt, images, videos, audios, videos_metadata,
+                                                        generation_config, streamer, omni_streamer);
+        }
+        py::object result;
+        try {
+            result = override(prompt, images, videos, audios, videos_metadata, generation_config, streamer,
+                              py::arg("omni_streamer") = omni_streamer);
+        } catch (const py::error_already_set& error) {
+            // No traceback: the call was rejected before the override ran, so nothing else closes the bridge.
+            if (!error.trace()) {
+                omni_streamer->abandon();
+            }
+            throw;
+        }
+        return result.cast<ov::genai::VLMDecodedResults>();
     }
 };
 
@@ -226,7 +343,10 @@ auto vlm_generate_common_params = R"(
         Ignored when speech_streamer is not provided.
     :type audio_chunk_frames: int
 
-    :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+    :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields,
+        plus omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden
+        states, so a Talker reading the other end can speak while text is still being generated.
+        Requires the continuous batching backend and batch size 1.
     :type kwargs: dict
 
     :return: return results in decoded form
@@ -246,6 +366,7 @@ auto vlm_generate_kwargs_param = R"(
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
     speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
     audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when speech_streamer is not provided.
+    omni_streamer: OmniStreamerBase - sink for every decode step's tokens and thinker hidden states. Requires the continuous batching backend and batch size 1.
 
     :return: return results in decoded form
     :rtype: VLMDecodedResults
@@ -316,6 +437,9 @@ auto decoded_results_docstring = R"(
     texts:            vector of resulting sequences.
     scores:           scores for each sequence.
     metrics:          performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+    speech_result:    speech output of type openvino_genai.TalkerResults. VLMPipeline fills it only for LFM3-Omni
+                      when talker_speech_config.return_audio is True; empty for other models. OmniPipeline also
+                      fills it for Qwen3-Omni. Preview API: subject to change.
 )";
 
 auto video_metadata_docstring = R"(
@@ -331,6 +455,62 @@ auto video_metadata_docstring = R"(
     :type frames_indices: list[int]
 )";
 
+// The AnyMap overload of VLMPipeline::generate has no omni_streamer entry, so a call with that
+// keyword goes to the typed omni-streaming overload instead. Inputs the typed overload takes are
+// pulled out of kwargs here; what remains must be GenerationConfig fields.
+template <typename Prompt>
+py::object call_vlm_generate_omni_streaming(
+    ov::genai::VLMPipeline& pipe,
+    const Prompt& prompt,
+    std::vector<ov::Tensor> images,
+    std::vector<ov::Tensor> videos,
+    std::optional<ov::genai::GenerationConfig> generation_config,
+    pyutils::PyBindStreamerVariant py_streamer,
+    const py::kwargs& kwargs
+) {
+    OmniStreamerKwarg omni_streamer(kwargs);
+    std::vector<ov::Tensor> audios;
+    std::vector<ov::genai::VideoMetadata> videos_metadata;
+    py::kwargs config_kwargs;
+    for (const auto& item : kwargs) {
+        const std::string key = py::cast<std::string>(item.first);
+        const py::object value = py::reinterpret_borrow<py::object>(item.second);
+        if (key == OMNI_STREAMER_ARG_NAME) {
+            continue;
+        } else if (key == ov::genai::audios.name()) {
+            audios = value.cast<std::vector<ov::Tensor>>();
+        } else if (key == ov::genai::videos_metadata.name()) {
+            videos_metadata = value.cast<std::vector<ov::genai::VideoMetadata>>();
+        } else if (key == ov::genai::image.name()) {
+            images = {value.cast<ov::Tensor>()};
+        } else if (key == ov::genai::images.name()) {
+            images = value.cast<std::vector<ov::Tensor>>();
+        } else if (key == ov::genai::videos.name()) {
+            videos = value.cast<std::vector<ov::Tensor>>();
+        } else if (key == "generation_config") {
+            generation_config = value.cast<ov::genai::GenerationConfig>();
+        } else if (key == "streamer") {
+            py_streamer = value.cast<pyutils::PyBindStreamerVariant>();
+        } else {
+            OPENVINO_ASSERT(key != ov::genai::utils::SPEECH_STREAMER_ARG_NAME,
+                            "speech_streamer and omni_streamer cannot be combined: with omni_streamer the talker runs "
+                            "separately and takes the speech_streamer itself");
+            config_kwargs[item.first] = item.second;
+        }
+    }
+    const auto updated_config = pyutils::update_config_from_kwargs(
+        generation_config.has_value() ? *generation_config : pipe.get_generation_config(), config_kwargs);
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+
+    ov::genai::VLMDecodedResults res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(prompt, images, videos, audios, videos_metadata, updated_config, streamer,
+                            omni_streamer.release());
+    }
+    return py::cast(res);
+}
+
 py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe,
     const std::string& prompt,
@@ -338,11 +518,16 @@ py::object call_vlm_generate(
     const std::vector<ov::Tensor>& videos,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs
+    const py::kwargs& all_kwargs
 ) {
+    if (has_omni_streamer(all_kwargs)) {
+        return call_vlm_generate_omni_streaming(pipe, prompt, images, videos, generation_config, py_streamer,
+                                                all_kwargs);
+    }
+    const py::kwargs kwargs = OmniStreamerKwarg::strip(all_kwargs);
     // Route through AnyMap overload when audio kwargs are present, since only the AnyMap path
-    // extracts the audio tensors and sets up the speech streamer for the underlying pipeline.
-    if (kwargs.contains("audios") || kwargs.contains("speech_streamer")) {
+    // extracts the audio tensors and sets up the speech config and streamer for the underlying pipeline.
+    if (kwargs.contains("audios") || kwargs.contains("speech_streamer") || kwargs.contains("talker_speech_config")) {
         auto map = pyutils::kwargs_to_any_map(kwargs);
         if (!images.empty()) {
             map[ov::genai::images.name()] = images;
@@ -389,9 +574,14 @@ py::object call_vlm_generate_with_chat_history(
     const std::vector<ov::Tensor>& videos,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs
+    const py::kwargs& all_kwargs
 ) {
-    if (kwargs.contains("audios") || kwargs.contains("speech_streamer")) {
+    if (has_omni_streamer(all_kwargs)) {
+        return call_vlm_generate_omni_streaming(pipe, history, images, videos, generation_config, py_streamer,
+                                                all_kwargs);
+    }
+    const py::kwargs kwargs = OmniStreamerKwarg::strip(all_kwargs);
+    if (kwargs.contains("audios") || kwargs.contains("speech_streamer") || kwargs.contains("talker_speech_config")) {
         auto map = pyutils::kwargs_to_any_map(kwargs);
         if (!images.empty()) {
             map[ov::genai::images.name()] = images;
@@ -466,6 +656,31 @@ void init_vlm_pipeline(py::module_& m) {
 An input image without explicit slicing metadata counts as one slice.)")
         .def_readonly("vlm_raw_metrics", &ov::genai::VLMPerfMetrics::vlm_raw_metrics);
 
+    // Registered before VLMDecodedResults so its speech_result renders as a Python type.
+    py::class_<ov::genai::TalkerPerfMetrics>(m, "TalkerPerfMetrics",
+        R"(Performance metrics for Talker speech generation.
+
+        Parameters:
+        num_generated_samples:  number of audio samples generated (waveform length).
+        generation_time_ms:     total speech generation time in milliseconds. LFM3-Omni decodes
+                                text and speech in one loop, so its value is the whole generate() call.
+        )")
+        .def(py::init<>())
+        .def_readonly("num_generated_samples", &ov::genai::TalkerPerfMetrics::num_generated_samples)
+        .def_readonly("generation_time_ms", &ov::genai::TalkerPerfMetrics::generation_time_ms);
+
+    py::class_<ov::genai::TalkerResults>(m, "TalkerResults",
+        R"(Speech output: waveforms and perf metrics. Returned by TalkerBase.generate and held by
+        VLMDecodedResults.speech_result.
+
+        Parameters:
+        waveforms:       speech waveform tensors (one per result, present when return_audio=True).
+        perf_metrics:    speech-side perf metrics (TalkerPerfMetrics).
+        )")
+        .def(py::init<>())
+        .def_readonly("waveforms", &ov::genai::TalkerResults::waveforms)
+        .def_readonly("perf_metrics", &ov::genai::TalkerResults::perf_metrics);
+
     py::class_<ov::genai::VLMDecodedResults, ov::genai::DecodedResults>(m, "VLMDecodedResults", decoded_results_docstring)
         .def(py::init<>())
         .def_property_readonly("texts", [](const ov::genai::VLMDecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8(dr.texts); })
@@ -473,6 +688,7 @@ An input image without explicit slicing metadata counts as one slice.)")
         .def_readonly("perf_metrics", &ov::genai::VLMDecodedResults::perf_metrics)
         .def_readonly("intermediate_hidden_states", &ov::genai::VLMDecodedResults::intermediate_hidden_states)
         .def_readonly("full_token_ids", &ov::genai::VLMDecodedResults::full_token_ids)
+        .def_readonly("speech_result", &ov::genai::VLMDecodedResults::speech_result)
         .def("__str__", [](const ov::genai::VLMDecodedResults &dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8(dr.texts);
             py::str res;
@@ -493,7 +709,13 @@ An input image without explicit slicing metadata counts as one slice.)")
         Subclass to plug a custom thinker into OmniPipeline via its dependency-injection
         constructor. A subclass must override generate(), get_tokenizer(), get_generation_config(),
         set_generation_config(), set_chat_template(), and the Qwen3-Omni capability queries
-        supports_hidden_states_collection() and is_audio_output_enabled().)")
+        supports_hidden_states_collection() and is_audio_output_enabled().
+
+        When GenerationConfig.stream_text2speech is set, OmniPipeline calls generate() with an
+        extra `omni_streamer` keyword argument (an OmniStreamerBase) that the subclass must feed
+        with every decode step's tokens and hidden states and close with end() or abandon().
+        Accept `omni_streamer=None` in the override to support it; a subclass without that
+        parameter cannot be used with stream_text2speech.)")
         .def(py::init<>())
         .def("generate",
              [](ov::genai::VLMPipelineBase& self,
@@ -503,13 +725,14 @@ An input image without explicit slicing metadata counts as one slice.)")
                 const std::vector<ov::Tensor>& audios,
                 const std::vector<ov::genai::VideoMetadata>& videos_metadata,
                 const ov::genai::GenerationConfig& generation_config,
-                const pyutils::PyBindStreamerVariant& streamer) -> ov::genai::VLMDecodedResults {
+                const pyutils::PyBindStreamerVariant& streamer,
+                const std::shared_ptr<ov::genai::OmniStreamerBase>& omni_streamer) -> ov::genai::VLMDecodedResults {
                  auto native_streamer = pyutils::pystreamer_to_streamer(streamer);
                  ov::genai::VLMDecodedResults res;
                  {
                      py::gil_scoped_release rel;
                      res = self.generate(prompt, images, videos, audios, videos_metadata,
-                                         generation_config, native_streamer);
+                                         generation_config, native_streamer, omni_streamer);
                  }
                  return res;
              },
@@ -520,7 +743,9 @@ An input image without explicit slicing metadata counts as one slice.)")
              py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
              py::arg("generation_config") = ov::genai::GenerationConfig{},
              py::arg("streamer") = std::monostate{},
-             "Generate a VLM response from a prompt. Override in a subclass.")
+             py::arg("omni_streamer") = nullptr,
+             "Generate a VLM response from a prompt. Override in a subclass. With omni_streamer set, "
+             "additionally push every decode step's tokens and thinker hidden states into it.")
         .def("generate",
              [](ov::genai::VLMPipelineBase& self,
                 const ov::genai::ChatHistory& history,
@@ -529,13 +754,14 @@ An input image without explicit slicing metadata counts as one slice.)")
                 const std::vector<ov::Tensor>& audios,
                 const std::vector<ov::genai::VideoMetadata>& videos_metadata,
                 const ov::genai::GenerationConfig& generation_config,
-                const pyutils::PyBindStreamerVariant& streamer) -> ov::genai::VLMDecodedResults {
+                const pyutils::PyBindStreamerVariant& streamer,
+                const std::shared_ptr<ov::genai::OmniStreamerBase>& omni_streamer) -> ov::genai::VLMDecodedResults {
                  auto native_streamer = pyutils::pystreamer_to_streamer(streamer);
                  ov::genai::VLMDecodedResults res;
                  {
                      py::gil_scoped_release rel;
                      res = self.generate(history, images, videos, audios, videos_metadata,
-                                         generation_config, native_streamer);
+                                         generation_config, native_streamer, omni_streamer);
                  }
                  return res;
              },
@@ -546,39 +772,47 @@ An input image without explicit slicing metadata counts as one slice.)")
              py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
              py::arg("generation_config") = ov::genai::GenerationConfig{},
              py::arg("streamer") = std::monostate{},
-             "Generate a VLM response from a chat history. Override in a subclass.")
+             py::arg("omni_streamer") = nullptr,
+             "Generate a VLM response from a chat history. Override in a subclass. With omni_streamer set, "
+             "additionally push every decode step's tokens and thinker hidden states into it.")
         .def("generate",
              [](ov::genai::VLMPipelineBase& self,
                 const std::string& prompt,
                 const py::kwargs& kwargs) -> ov::genai::VLMDecodedResults {
-                 const ov::AnyMap config_map = pyutils::kwargs_to_any_map(kwargs);
+                 OmniStreamerKwarg omni_streamer(kwargs);
+                 const ov::AnyMap config_map = pyutils::kwargs_to_any_map(OmniStreamerKwarg::strip(kwargs));
                  ov::genai::VLMDecodedResults res;
                  {
                      py::gil_scoped_release rel;
-                     res = self.generate(prompt, config_map);
+                     res = omni_streamer.streamer
+                               ? generate_from_property_bag(self, prompt, config_map, omni_streamer.release())
+                               : self.generate(prompt, config_map);
                  }
                  return res;
              },
              py::arg("prompt"), "Input prompt",
              "Generate a VLM response from a prompt plus a property bag: images, videos, audios, "
-             "videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword "
-             "argument. Reduces to the typed generate() the subclass overrides.")
+             "videos_metadata, generation_config, streamer, omni_streamer, or any GenerationConfig field as a "
+             "keyword argument. Reduces to the typed generate() the subclass overrides.")
         .def("generate",
              [](ov::genai::VLMPipelineBase& self,
                 const ov::genai::ChatHistory& history,
                 const py::kwargs& kwargs) -> ov::genai::VLMDecodedResults {
-                 const ov::AnyMap config_map = pyutils::kwargs_to_any_map(kwargs);
+                 OmniStreamerKwarg omni_streamer(kwargs);
+                 const ov::AnyMap config_map = pyutils::kwargs_to_any_map(OmniStreamerKwarg::strip(kwargs));
                  ov::genai::VLMDecodedResults res;
                  {
                      py::gil_scoped_release rel;
-                     res = self.generate(history, config_map);
+                     res = omni_streamer.streamer
+                               ? generate_from_property_bag(self, history, config_map, omni_streamer.release())
+                               : self.generate(history, config_map);
                  }
                  return res;
              },
              py::arg("history"), "Chat history",
              "Generate a VLM response from a chat history plus a property bag: images, videos, audios, "
-             "videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword "
-             "argument. Reduces to the typed generate() the subclass overrides.")
+             "videos_metadata, generation_config, streamer, omni_streamer, or any GenerationConfig field as a "
+             "keyword argument. Reduces to the typed generate() the subclass overrides.")
         .def("get_tokenizer", &ov::genai::VLMPipelineBase::get_tokenizer)
         .def("set_chat_template", &ov::genai::VLMPipelineBase::set_chat_template, py::arg("chat_template"))
         .def("get_generation_config", &ov::genai::VLMPipelineBase::get_generation_config)
@@ -728,7 +962,10 @@ An input image without explicit slicing metadata counts as one slice.)")
                const std::string& prompt,
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                auto map = pyutils::kwargs_to_any_map(kwargs);
+                if (has_omni_streamer(kwargs)) {
+                    return call_vlm_generate_omni_streaming(pipe, prompt, {}, {}, std::nullopt, std::monostate{}, kwargs);
+                }
+                auto map = pyutils::kwargs_to_any_map(OmniStreamerKwarg::strip(kwargs));
                 ov::genai::VLMDecodedResults res;
                 {
                     py::gil_scoped_release rel;
@@ -798,7 +1035,10 @@ An input image without explicit slicing metadata counts as one slice.)")
                const ov::genai::ChatHistory& history,
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                auto map = pyutils::kwargs_to_any_map(kwargs);
+                if (has_omni_streamer(kwargs)) {
+                    return call_vlm_generate_omni_streaming(pipe, history, {}, {}, std::nullopt, std::monostate{}, kwargs);
+                }
+                auto map = pyutils::kwargs_to_any_map(OmniStreamerKwarg::strip(kwargs));
                 ov::genai::VLMDecodedResults res;
                 {
                     py::gil_scoped_release rel;
