@@ -407,17 +407,16 @@ static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
 /**
 * @brief speculative_type property selects a speculative decoding type when constructing a pipeline from a path.
-* Set "mtp" to use openvino_mtp_model.xml in the main model directory or the draft given by draft_model_path.
-* Raw GGUF main models do not support MTP. See draft_model_path for GGUF draft requirements.
+* Set "mtp" to use openvino_mtp_model.xml in the main model directory, the draft given by draft_model_path,
+* or the NextN layers of a GGUF main model, which runs on the paged attention backend.
 */
 static constexpr ov::Property<std::string> speculative_type{"speculative_type"};
 
 /**
 * @brief draft_model_path property loads a draft model from a GGUF file or an IR directory.
-* The draft inherits the main model's device and properties. A GGUF MTP draft requires
-* ContinuousBatchingPipeline, the frontend reader, and a converted OpenVINO main model directory
-* containing openvino_text_embeddings_model.xml. LLMPipeline does not support GGUF MTP drafts.
-* Use draft_model() instead to configure the draft device or properties separately.
+* The draft inherits the main model's device and properties. A GGUF draft must be the GGUF main model
+* itself, which is equivalent to speculative_type="mtp". Use draft_model() instead to configure an IR
+* draft device or properties separately.
 */
 static constexpr ov::Property<std::filesystem::path> draft_model_path{"draft_model_path"};
 

@@ -27,7 +27,6 @@ struct ModelDesc {
     ov::AnyMap properties;
     ov::genai::SchedulerConfig scheduler_config;
     ov::genai::GenerationConfig generation_config;
-    bool is_gguf_mtp = false;
 
     ModelDesc(const std::shared_ptr<ov::Model>& model,
               const ov::genai::Tokenizer& tokenizer,
@@ -65,12 +64,18 @@ ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
 ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
 
 /// Replaces speculative_type and draft_model_path with a draft_model descriptor created
-/// with the main model device and properties. GGUF MTP drafts require continuous batching,
-/// a converted target, and an explicit draft_model_path.
+/// with the main model device and properties. GGUF targets with MTP layers are handled by
+/// is_gguf_mtp_request() instead.
 ov::AnyMap resolve_draft_model_request(const std::filesystem::path& models_path,
                                        const std::string& device,
-                                       const ov::AnyMap& properties,
-                                       bool allow_mtp = false);
+                                       const ov::AnyMap& properties);
+
+/// True for a GGUF model requesting its embedded MTP draft: speculative_type="mtp", or a
+/// GGUF draft_model_path, which must name the same file.
+bool is_gguf_mtp_request(const std::filesystem::path& models_path, const ov::AnyMap& properties);
+
+/// Validates a GGUF MTP request and removes speculative_type and draft_model_path.
+void strip_gguf_mtp_request(const std::filesystem::path& models_path, ov::AnyMap& properties);
 
 }  // namespace genai
 }  // namespace ov

@@ -488,6 +488,41 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     }
 }
 
+InputsEmbedder::InputsEmbedder(const std::shared_ptr<ov::Model>& text_embeddings,
+                               const Tokenizer& tokenizer,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    class TextInputsEmbedder : public IInputsEmbedder {
+    public:
+        TextInputsEmbedder(const Tokenizer& tokenizer, EmbeddingsModel::Ptr embedding)
+            : IInputsEmbedder(VLMConfig{}, tokenizer, std::move(embedding)) {}
+
+        ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                     const std::vector<EncodedImage>& images,
+                                     VLMPerfMetrics& metrics,
+                                     bool,
+                                     const std::vector<size_t>&) override {
+            OPENVINO_ASSERT(images.empty(), "This text-only model does not accept images.");
+            auto ids = get_encoded_input_ids(prompt, metrics);
+            CircularBufferQueueElementGuard<EmbeddingsRequest> guard(m_embedding->get_request_queue().get());
+            auto embeddings = get_text_embedding(guard.get(), ids, metrics);
+            ov::Tensor copy(embeddings.get_element_type(), embeddings.get_shape());
+            embeddings.copy_to(copy);
+            return copy;
+        }
+
+        NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                          size_t,
+                                          const std::vector<EncodedImage>& images) const override {
+            OPENVINO_ASSERT(images.empty(), "This text-only model does not accept images.");
+            return {prompt, {}, {}, {}};
+        }
+    };
+    m_impl = std::make_shared<TextInputsEmbedder>(
+        tokenizer,
+        std::make_shared<EmbeddingsModel>(text_embeddings, 1.0f, device, properties));
+}
+
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
     return m_impl->get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
 }

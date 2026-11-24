@@ -5,6 +5,7 @@
 
 #include "gguf_utils/gguf_utils.hpp"
 #include "model_desc.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/op/parameter.hpp"
 #include "utils.hpp"
 
@@ -31,25 +32,29 @@ TEST(GGUFProperties, RejectInvalidReader) {
                  ov::Exception);
 }
 
-TEST(GGUFProperties, IrMtpDraftIsAllowedForLlmPipeline) {
+TEST(GGUFProperties, IrMtpDraftRequiresIrTarget) {
     ov::genai::ModelDesc draft;
     draft.properties["mtp_mode"] = true;
     const ov::AnyMap properties{{ov::genai::utils::DRAFT_MODEL_ARG_NAME, ov::Any::make<ov::genai::ModelDesc>(draft)}};
 
     EXPECT_NO_THROW(ov::genai::resolve_draft_model_request("converted-model", "CPU", properties));
-    EXPECT_NO_THROW(ov::genai::resolve_draft_model_request("converted-model", "CPU", properties, true));
-    EXPECT_THROW(ov::genai::resolve_draft_model_request("target.gguf", "CPU", properties, true), ov::Exception);
+    EXPECT_THROW(ov::genai::resolve_draft_model_request("target.gguf", "CPU", properties), ov::Exception);
 }
 
-TEST(GGUFProperties, GgufMtpDraftIsContinuousBatchingOnly) {
-    ov::genai::ModelDesc draft;
-    draft.properties["mtp_mode"] = true;
-    draft.is_gguf_mtp = true;
-    const ov::AnyMap properties{{ov::genai::utils::DRAFT_MODEL_ARG_NAME, ov::Any::make<ov::genai::ModelDesc>(draft)}};
+TEST(GGUFProperties, GgufMtpRequestDetection) {
+    const ov::AnyMap mtp{{ov::genai::speculative_type.name(), std::string("mtp")}};
+    EXPECT_TRUE(ov::genai::is_gguf_mtp_request("target.gguf", mtp));
+    EXPECT_FALSE(ov::genai::is_gguf_mtp_request("converted-model", mtp));
+    EXPECT_FALSE(ov::genai::is_gguf_mtp_request("target.gguf", {}));
 
-    EXPECT_THROW(ov::genai::resolve_draft_model_request("converted-model", "CPU", properties), ov::Exception);
-    EXPECT_NO_THROW(ov::genai::resolve_draft_model_request("converted-model", "CPU", properties, true));
-    EXPECT_THROW(ov::genai::resolve_draft_model_request("target.gguf", "CPU", properties, true), ov::Exception);
+    ov::AnyMap unsupported{{ov::genai::speculative_type.name(), std::string("eagle3")}};
+    EXPECT_THROW(ov::genai::strip_gguf_mtp_request("target.gguf", unsupported), ov::Exception);
+    ov::AnyMap with_lookup{{ov::genai::speculative_type.name(), std::string("mtp")},
+                           {ov::genai::prompt_lookup.name(), true}};
+    EXPECT_THROW(ov::genai::strip_gguf_mtp_request("target.gguf", with_lookup), ov::Exception);
+    ov::AnyMap valid = mtp;
+    EXPECT_NO_THROW(ov::genai::strip_gguf_mtp_request("target.gguf", valid));
+    EXPECT_TRUE(valid.empty());
 }
 
 TEST(CacheTypes, GGUFRecurrentMetadataRequiresLinearCache) {

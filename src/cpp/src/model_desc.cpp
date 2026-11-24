@@ -24,10 +24,41 @@ bool has_mtp_mode(const ov::genai::ModelDesc& draft) {
 
 void validate_mtp_target(const std::filesystem::path& models_path, const ov::genai::ModelDesc& draft) {
     OPENVINO_ASSERT(!has_mtp_mode(draft) || !is_gguf_model(models_path),
-                    "MTP drafts do not support raw GGUF target models; use a converted OpenVINO target model.");
+                    "An OpenVINO IR MTP draft cannot be paired with a GGUF target. For a GGUF with MTP layers, "
+                    "pass the GGUF file as the model and set speculative_type=\"mtp\".");
 }
 
 }  // namespace
+
+bool is_gguf_mtp_request(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
+    if (!is_gguf_model(models_path))
+        return false;
+    if (properties.count(ov::genai::speculative_type.name()))
+        return true;
+    const auto it = properties.find(ov::genai::draft_model_path.name());
+    return it != properties.end() && is_gguf_model(get_draft_model_path(it->second));
+}
+
+void strip_gguf_mtp_request(const std::filesystem::path& models_path, ov::AnyMap& properties) {
+    if (const auto it = properties.find(ov::genai::speculative_type.name()); it != properties.end()) {
+        const auto type = it->second.as<std::string>();
+        OPENVINO_ASSERT(type == "mtp", "Unsupported speculative_type '", type, "'. Supported value: 'mtp'.");
+        properties.erase(it);
+    }
+    if (const auto it = properties.find(ov::genai::draft_model_path.name()); it != properties.end()) {
+        const auto draft_path = get_draft_model_path(it->second);
+        OPENVINO_ASSERT(is_gguf_model(draft_path) && std::filesystem::equivalent(draft_path, models_path),
+                        "A GGUF target runs MTP with the draft layers of the same file. Set speculative_type=\"mtp\" "
+                        "or pass the same GGUF file as draft_model_path.");
+        properties.erase(it);
+    }
+    OPENVINO_ASSERT(properties.find(utils::DRAFT_MODEL_ARG_NAME) == properties.end(),
+                    "draft_model cannot be combined with speculative_type or draft_model_path.");
+    const auto prompt_lookup_it = properties.find(ov::genai::prompt_lookup.name());
+    OPENVINO_ASSERT(prompt_lookup_it == properties.end() || !prompt_lookup_it->second.as<bool>(),
+                    "Speculative decoding and prompt lookup decoding are mutually exclusive.");
+}
+
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
     ov::genai::ModelDesc draft_model;
     if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
@@ -47,8 +78,7 @@ ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config) {
 
 ov::AnyMap resolve_draft_model_request(const std::filesystem::path& models_path,
                                        const std::string& device,
-                                       const ov::AnyMap& properties,
-                                       bool allow_mtp) {
+                                       const ov::AnyMap& properties) {
     ov::AnyMap resolved = properties;
     std::optional<std::string> speculative_type;
     std::optional<std::filesystem::path> draft_path;
@@ -63,10 +93,7 @@ ov::AnyMap resolve_draft_model_request(const std::filesystem::path& models_path,
     if (!speculative_type && !draft_path) {
         const auto draft_it = resolved.find(utils::DRAFT_MODEL_ARG_NAME);
         if (draft_it != resolved.end()) {
-            const auto& draft = draft_it->second.as<ov::genai::ModelDesc>();
-            OPENVINO_ASSERT(allow_mtp || !draft.is_gguf_mtp,
-                            "GGUF MTP drafts are supported only by ContinuousBatchingPipeline.");
-            validate_mtp_target(models_path, draft);
+            validate_mtp_target(models_path, draft_it->second.as<ov::genai::ModelDesc>());
         }
         return resolved;
     }
@@ -84,15 +111,10 @@ ov::AnyMap resolve_draft_model_request(const std::filesystem::path& models_path,
                         *speculative_type,
                         "'. Supported value: 'mtp'.");
     }
-    if (is_gguf_model(source)) {
-        OPENVINO_ASSERT(allow_mtp, "GGUF MTP drafts are supported only by ContinuousBatchingPipeline.");
-        OPENVINO_ASSERT(!is_gguf_model(models_path) && draft_path.has_value(),
-                        "GGUF MTP requires a converted VLM model directory and an explicit GGUF "
-                        "draft_model_path.");
-        OPENVINO_ASSERT(std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml"),
-                        "GGUF MTP requires the converted VLM directory to contain "
-                        "openvino_text_embeddings_model.xml.");
-    } else if (speculative_type) {
+    OPENVINO_ASSERT(!is_gguf_model(source),
+                    "A GGUF MTP draft runs only with its own GGUF target. Pass the GGUF file as the model and set "
+                    "speculative_type=\"mtp\".");
+    if (speculative_type) {
         OPENVINO_ASSERT(std::filesystem::exists(source / "openvino_mtp_model.xml"),
                         "speculative_type='mtp' requires MTP layers, but none were found in '",
                         source.string(),
@@ -115,10 +137,7 @@ ov::AnyMap resolve_draft_model_request(const std::filesystem::path& models_path,
         draft_properties.erase(ov::genai::enable_save_ov_model.name());
     }
     const auto draft = ov::genai::draft_model(source, device, draft_properties);
-    const auto& loaded_draft = draft.second.as<ov::genai::ModelDesc>();
-    OPENVINO_ASSERT(allow_mtp || !loaded_draft.is_gguf_mtp,
-                    "GGUF MTP drafts are supported only by ContinuousBatchingPipeline.");
-    validate_mtp_target(models_path, loaded_draft);
+    validate_mtp_target(models_path, draft.second.as<ov::genai::ModelDesc>());
     resolved.insert(draft);
     return resolved;
 }

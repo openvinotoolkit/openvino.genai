@@ -154,7 +154,8 @@ ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model
                     "' is an mmproj and cannot be loaded as a language model.");
     ov::frontend::gguf::GenAIAdaptOptions options;
     if (include_mtp_draft) {
-        options.input = ov::frontend::gguf::pass::AdaptToGenAI::InputMode::EMBEDS_TO_LOGITS;
+        // Text-only MTP: embedding inputs with ordinary [batch, sequence] positions.
+        options.input = ov::frontend::gguf::pass::AdaptToGenAI::InputMode::EMBEDS_TO_LOGITS_TEXT;
     }
     return ov::frontend::gguf::adapt_to_genai(converted_model, options);
 }

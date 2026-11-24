@@ -79,61 +79,51 @@ Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tok
 ## Multi-token prediction (MTP)
 
 Some GGUF checkpoints store NextN draft blocks after the target layers
-(`<arch>.nextn_predict_layers`). GGUF MTP drafts are supported by the
-`ContinuousBatchingPipeline` with the matching converted VLM target that provides a text embeddings model
-(`openvino_text_embeddings_model.xml`). Pass the VLM directory as the main model and the GGUF
-checkpoint as `draft_model_path`. The regular `LLMPipeline` and a raw GGUF main model are not
-supported for GGUF MTP.
+(`<arch>.nextn_predict_layers`), for example PrismML's `Ternary-Bonsai-2-4B-PQ2_0-MTP-Q8_0.gguf` and
+`Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf`. Load such a file as usual and set `speculative_type="mtp"` to
+draft with its NextN block, as `--spec-type draft-mtp` does in llama.cpp. The OpenVINO GGUF frontend
+converts the target and the draft once, and they share weights.
 
 <LanguageTabs>
     <TabItemPython>
         ```python
         import openvino_genai as genai
 
-        pipe = genai.ContinuousBatchingPipeline(
-            "path/to/converted-vlm", genai.SchedulerConfig(), "CPU",
-            {"draft_model_path": "model-with-mtp.gguf", "GGUF_READER": "FRONTEND"},
-        )
-        config = genai.GenerationConfig(max_new_tokens=64)
-        print(pipe.generate(["Explain speculative decoding."], [config])[0].m_generation_ids[0])
+        pipe = genai.LLMPipeline("model-with-mtp.gguf", "GPU", speculative_type="mtp")
+        config = genai.GenerationConfig(max_new_tokens=64, num_assistant_tokens=2)
+        print(pipe.generate("Explain speculative decoding.", config))
         ```
     </TabItemPython>
     <TabItemCpp>
         ```cpp
         #include <iostream>
 
-        #include <openvino/genai/continuous_batching_pipeline.hpp>
-        #include <openvino/genai/gguf.hpp>
+        #include <openvino/genai/llm_pipeline.hpp>
 
         int main() {
-            ov::genai::ContinuousBatchingPipeline pipe(
-                "path/to/converted-vlm", ov::genai::SchedulerConfig{}, "CPU",
-                {ov::genai::draft_model_path("model-with-mtp.gguf"), ov::genai::gguf_reader("FRONTEND")});
+            ov::genai::LLMPipeline pipe("model-with-mtp.gguf", "GPU", ov::genai::speculative_type("mtp"));
             ov::genai::GenerationConfig config;
             config.max_new_tokens = 64;
-            const auto results = pipe.generate(std::vector<std::string>{"Explain speculative decoding."}, {config});
-            std::cout << results[0].m_generation_ids[0];
+            config.num_assistant_tokens = 2;
+            std::cout << pipe.generate("Explain speculative decoding.", config) << std::endl;
         }
         ```
     </TabItemCpp>
 </LanguageTabs>
 
-`draft_model_path` may point to a GGUF file with MTP layers or an OpenVINO IR directory.
-The GGUF draft is compiled with the target device and properties.
+`ContinuousBatchingPipeline` accepts the same property. Passing the same GGUF file as `draft_model_path`
+is equivalent; a draft from another file, or a GGUF draft with an OpenVINO IR target, is not supported.
+The GGUF frontend currently builds drafts for `qwen35` checkpoints with one NextN block that shares the
+target token embeddings. A GGUF file without NextN weights raises an error.
 
-The GGUF frontend currently builds drafts for `qwen35` checkpoints with one NextN block that
-shares the target token embeddings, such as PrismML's
-`Ternary-Bonsai-2-4B-PQ2_0-MTP-Q8_0.gguf` and `Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf`.
-GGUF files without NextN weights cannot be used as MTP drafts.
-For M-RoPE MTP targets, provide text prompts; pre-tokenized token-ID inputs are not supported.
-
-GGUF MTP uses paged attention and supports greedy or multinomial decoding, one returned sequence
-and a fixed positive `num_assistant_tokens`; an unset value means 3. Confidence-based drafting and
-tree search are not supported. With prefix caching enabled for a model with linear-attention state,
-decoding must be greedy. A one-token prompt runs without drafting because the shifted draft context
-is empty.
+GGUF MTP runs on the paged attention backend and supports greedy or multinomial decoding, one returned
+sequence and a fixed positive `num_assistant_tokens`; an unset value means 3. Confidence-based drafting
+and tree search are not supported. With prefix caching enabled for a model with linear-attention state,
+decoding must be greedy. A one-token prompt runs without drafting because the shifted draft context is
+empty. For M-RoPE targets, provide text prompts; pre-tokenized token-ID inputs are not supported.
 Recurrent-state capacity must cover both live requests and MTP verification scratch. With a custom
 `scheduler_config`, set `num_linear_attention_blocks` to at least the number of live requests plus
 `num_assistant_tokens + 1`, and add one more block when prefix caching is enabled. The legacy reader and
-`enable_save_ov_model` are not supported for GGUF MTP drafts and raise an error. MTP acceptance
-and speed depend on the checkpoint, prompt and hardware; enabling it does not guarantee a speedup.
+`enable_save_ov_model` are not supported with MTP; MTP uses the frontend reader by default. Acceptance and speed depend on the checkpoint, prompt
+and hardware; enabling MTP does not guarantee a speedup.
+

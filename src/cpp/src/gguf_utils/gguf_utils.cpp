@@ -72,7 +72,9 @@ GGUFMtpModels read_gguf_mtp_models(const std::filesystem::path& model_path, cons
     OPENVINO_ASSERT(draft != models.end(),
                     "A GGUF draft model must contain supported MTP layers (<arch>.nextn_predict_layers > 0): ",
                     model_path.string());
-    return {models.at("language"), draft->second};
+    const auto embeddings = models.find("text_embeddings");
+    OPENVINO_ASSERT(embeddings != models.end(), "The GGUF frontend did not return text embeddings for an MTP model.");
+    return {models.at("language"), embeddings->second, draft->second};
 #else
     OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif

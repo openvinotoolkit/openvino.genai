@@ -33,12 +33,34 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
     return it->second.as<ov::genai::ModelDesc>().model;
 }
 
-void assert_no_gguf_mtp_draft(const ov::AnyMap& properties) {
-    const auto draft_it = properties.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
-    if (draft_it == properties.end())
-        return;
-    const auto& draft = draft_it->second.as<ov::genai::ModelDesc>();
-    OPENVINO_ASSERT(!draft.is_gguf_mtp, "GGUF MTP drafts are supported only by ContinuousBatchingPipeline.");
+// A GGUF target with MTP layers runs its embedded draft under continuous batching.
+std::unique_ptr<ov::genai::LLMPipelineImplBase> create_gguf_mtp_pipeline(
+    const std::filesystem::path& models_path,
+    const std::optional<ov::genai::Tokenizer>& tokenizer,
+    const std::string& device,
+    const ov::AnyMap& user_properties) {
+    OPENVINO_ASSERT(!ov::genai::utils::is_npu_requested(device, user_properties), "GGUF MTP is not supported on NPU.");
+    auto [properties, attention_backend] = ov::genai::utils::extract_attention_backend(user_properties, false);
+    OPENVINO_ASSERT(attention_backend == ov::genai::PA_BACKEND,
+                    "GGUF MTP requires the paged attention backend (ATTENTION_BACKEND=\"PA\").");
+    auto [device_properties, scheduler_config] =
+        ov::genai::utils::extract_scheduler_config(properties,
+                                                   ov::genai::utils::get_latency_oriented_scheduler_config());
+    device_properties["sampler_num_threads"] = 1;
+    std::unique_ptr<ov::genai::ContinuousBatchingPipeline> pipeline;
+    if (tokenizer) {
+        pipeline = std::make_unique<ov::genai::ContinuousBatchingPipeline>(models_path,
+                                                                           *tokenizer,
+                                                                           scheduler_config,
+                                                                           device,
+                                                                           device_properties);
+    } else {
+        pipeline = std::make_unique<ov::genai::ContinuousBatchingPipeline>(models_path,
+                                                                           scheduler_config,
+                                                                           device,
+                                                                           device_properties);
+    }
+    return std::make_unique<ov::genai::ContinuousBatchingAdapter>(std::move(pipeline));
 }
 
 // With the main model on NPU, NPUW_PA=YES selects the NPU PA front-end, which runs under continuous batching.
@@ -163,28 +185,13 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
-static ModelDesc gguf_mtp_draft_model(const std::filesystem::path& models_path,
-                                     const std::string& device,
-                                     const ov::AnyMap& properties) {
-    auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
-    const auto gguf_properties = gguf_utils::extract_gguf_properties(plugin_config);
-    auto models = gguf_utils::read_gguf_mtp_models(models_path, gguf_properties);
-    auto tokenizer = GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(models.target)), properties);
-    plugin_config = gguf_properties.rest;
-    plugin_config["mtp_mode"] = true;
-    auto generation_config = utils::from_config_json_if_exists(models_path);
-    auto draft = ModelDesc(models.draft, tokenizer, device, plugin_config, scheduler_config, generation_config);
-    draft.is_gguf_mtp = true;
-    return draft;
-}
-
 std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& properties) {
-    if (is_gguf_model(models_path))
-        return {utils::DRAFT_MODEL_ARG_NAME,
-                Any::make<ModelDesc>(gguf_mtp_draft_model(models_path, device, properties))};
+    OPENVINO_ASSERT(!is_gguf_model(models_path),
+                    "A GGUF MTP draft runs only with its own GGUF target. Pass the GGUF file as the model and set "
+                    "speculative_type=\"mtp\".");
 
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
@@ -260,7 +267,6 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
     OPENVINO_ASSERT(main_model_descr.model, "Model descriptor must contain a valid model");
 
     if (draft_model_descr.model) {
-        assert_no_gguf_mtp_draft(properties);
         if (is_gemma4_mtp_model_pair(main_model_descr.model, draft_model_descr.model)) {
             return std::make_unique<StatefulGemma4MTPLLMPipeline>(main_model_descr, draft_model_descr);
         }
@@ -314,6 +320,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& input_properties) :
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
+    if (is_gguf_mtp_request(models_path, input_properties)) {
+        m_pimpl = create_gguf_mtp_pipeline(models_path, tokenizer, device, input_properties);
+        utils::log_attention_backend(m_pimpl->get_attention_backend());
+        m_pimpl->save_load_time(start_time);
+        return;
+    }
     const auto user_properties = resolve_draft_model_request(models_path, device, input_properties);
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
@@ -373,6 +385,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& input_properties) :
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
+    if (is_gguf_mtp_request(models_path, input_properties)) {
+        m_pimpl = create_gguf_mtp_pipeline(models_path, std::nullopt, device, input_properties);
+        utils::log_attention_backend(m_pimpl->get_attention_backend());
+        m_pimpl->save_load_time(start_time);
+        return;
+    }
     const auto user_properties = resolve_draft_model_request(models_path, device, input_properties);
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
