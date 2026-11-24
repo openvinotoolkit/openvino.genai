@@ -5,14 +5,15 @@ import hashlib
 import json
 import pathlib
 
+import datasets
 import numpy as np
 import openvino_genai as ov_genai
 import pytest
 import requests
+from huggingface_hub import snapshot_download
 
 from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_downloaded_models_dir
-from utils.dataset_utils import load_dataset_via_snapshot
 from utils.network import retry_request
 
 pytestmark = pytest.mark.automatic_speech_recognition
@@ -33,6 +34,7 @@ def silero_model_dir() -> pathlib.Path:
     def fetch() -> bytes:
         response = requests.get(source["model_url"], timeout=60)
         response.raise_for_status()
+        assert hashlib.sha256(response.content).hexdigest() == source["model_sha256"], source["model_url"]
         return response.content
 
     AtomicDownloadManager(model_dir).execute(
@@ -45,7 +47,10 @@ def silero_model_dir() -> pathlib.Path:
 @functools.lru_cache()
 def recording() -> np.ndarray:
     audio = REFERENCE["audio"]
-    dataset = load_dataset_via_snapshot(audio["dataset"], audio["config"], split=audio["split"])
+    dataset_path = retry_request(
+        lambda: snapshot_download(audio["dataset"], repo_type="dataset", revision=audio["revision"])
+    )
+    dataset = datasets.load_dataset(dataset_path, audio["config"], split=audio["split"])
     gap = np.zeros(audio["gap_samples"], dtype=np.float32)
     samples = np.concatenate(
         [

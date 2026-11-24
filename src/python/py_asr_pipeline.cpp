@@ -507,7 +507,9 @@ void init_asr_pipeline(py::module_& m) {
         "Standalone voice activity detector for mono 16 kHz audio.")
         .def(
             py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
-                return std::make_shared<VoiceActivityDetector>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                return std::make_shared<VoiceActivityDetector>(models_path, device, properties);
             }),
             py::arg("models_path"),
             py::arg("device"),
