@@ -81,7 +81,19 @@
 - name: Video generation
   # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
   extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8.tar.gz"
-  marker: video_generation
+  # LTX-2.5 runs in its own job below
+  marker: video_generation and not ltx2_5
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - Video_generation_samples
+
+- name: LTX-2.5 Video generation
+  extra_cmd: |
+    # LTX-2.5 needs transformers >= 5.10, diffusers >= 0.40 and optimum-intel with its export support
+    python -m pip install transformers==5.15.1 diffusers==0.41.0
+    python -m pip install -U "optimum-intel @ https://github.com/anatyrova/optimum-intel/archive/1c2c2315e96cbeebaa269d47219a54f584229591.tar.gz"
+  marker: video_generation and ltx2_5
   cmd: tests/python_tests/samples
   runner: aks-linux-4-cores-16gb
   components:

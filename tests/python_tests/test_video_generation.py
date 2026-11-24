@@ -22,12 +22,17 @@ logger = logging.getLogger(__name__)
 LTX_VIDEO_MODEL_ID = "tiny-random-ltx-video"
 LTX2_MODEL_ID = "tiny-random-ltx2"
 LTX2_3_MODEL_ID = "tiny-random-ltx2.3"
+LTX2_5_MODEL_ID = "tiny-random-ltx2.5"
 
 VIDEO_GEN_MODELS = {
     LTX_VIDEO_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx-video",
     LTX2_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx2",
     LTX2_3_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx2.3",
+    LTX2_5_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx2.5",
 }
+
+# diffusers' DISTILLED_SIGMA_VALUES, LTX-2.5's default schedule
+DISTILLED_SIGMAS = [1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875]
 
 
 # Per-model source override, e.g. VIDEO_GEN_MODEL_SOURCE_tiny_random_ltx2_3=/path/to/fixture. Lets a fixture
@@ -121,14 +126,14 @@ class TestVideoGenerationConfig:
 
 class TestVideoGenerationPipelines:
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_constructor_path_only(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
         assert pipe is not None
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_constructor_with_device(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -136,7 +141,7 @@ class TestVideoGenerationPipelines:
 
     @pytest.mark.parametrize(
         ("video_generation_model", "audio_sample_rate"),
-        [(LTX_VIDEO_MODEL_ID, 0), (LTX2_MODEL_ID, 24000), (LTX2_3_MODEL_ID, 48000)],
+        [(LTX_VIDEO_MODEL_ID, 0), (LTX2_MODEL_ID, 24000), (LTX2_3_MODEL_ID, 48000), (LTX2_5_MODEL_ID, 48000)],
         indirect=["video_generation_model"],
     )
     def test_generate_basic(self, video_generation_model, audio_sample_rate):
@@ -166,10 +171,14 @@ class TestVideoGenerationPipelines:
             ("audio_modality_scale", 3.0),
             ("audio_guidance_rescale", 0.7),
             ("spatio_temporal_guidance_blocks", [0]),
+            ("sigmas", [1.0, 0.5]),
+            ("enable_prompt_enhancement", True),
+            ("system_prompt", "Describe the video."),
         ],
     )
     def test_audio_and_ltx2_3_fields_rejected(self, video_generation_model, field, value):
-        """LTX-Video has neither audio nor LTX-2.3 guidance, so these must fail loudly rather than be ignored."""
+        """LTX-Video has neither audio, LTX-2.3 guidance nor LTX-2.5's options, so these must fail loudly rather than be
+        ignored."""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         with pytest.raises(RuntimeError, match=field):
             pipe.generate("test prompt", **{field: value}, **GEN_KWARGS)
@@ -183,6 +192,8 @@ class TestVideoGenerationPipelines:
             # LTX-2.3's audio guidance scale defaults to 7.0 and keeps CFG on, so the negative prompt is used
             (LTX2_3_MODEL_ID, {"guidance_scale": 1.0}, False),
             (LTX2_3_MODEL_ID, {"guidance_scale": 1.0, "audio_guidance_scale": 1.0}, True),
+            # LTX-2.5's distilled defaults have every guidance term off
+            (LTX2_5_MODEL_ID, {}, True),
         ],
         indirect=["video_generation_model"],
     )
@@ -206,7 +217,7 @@ class TestVideoGenerationPipelines:
         assert ("ignores negative prompt" in result.stdout + result.stderr) == warns
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_generate_with_negative_prompt(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -214,7 +225,7 @@ class TestVideoGenerationPipelines:
         assert result.video.shape == [1, 9, 32, 32, 3]
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_generate_with_guidance_rescale(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -228,7 +239,7 @@ class TestVideoGenerationPipelines:
         assert result.video.shape == [1, 9, 32, 32, 3]
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_guidance_rescale_differs_from_no_rescale(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -247,7 +258,7 @@ class TestVideoGenerationPipelines:
         assert not np.array_equal(run(0.0), run(0.7))
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_generate_with_callback(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -262,7 +273,7 @@ class TestVideoGenerationPipelines:
         assert callback_calls == [(0, 2), (1, 2)]
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_generate_callback_early_stop(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -274,7 +285,7 @@ class TestVideoGenerationPipelines:
         assert len(list(result.video.shape)) == 0
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_generate_deterministic_with_seed(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -288,7 +299,7 @@ class TestVideoGenerationPipelines:
         assert np.array_equal(first_video, second_video)
         assert np.array_equal(first_audio, second_audio)
 
-    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True)
     @pytest.mark.parametrize(
         ("static_shapes", "denoise_device", "vae_device"),
         [(False, "GPU.0", "GPU.0"), (True, "GPU.0", "CPU"), (False, "CPU", "GPU.0")],
@@ -354,7 +365,7 @@ class TestVideoGenerationPipelines:
         assert np.array_equal(first.audio.data, second.audio.data)
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_num_videos_per_prompt(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -364,7 +375,7 @@ class TestVideoGenerationPipelines:
             assert list(result.audio.shape)[0] == 2
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_num_frames_floored_with_matching_audio(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -374,7 +385,7 @@ class TestVideoGenerationPipelines:
         assert result.audio.shape == reference.audio.shape
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_get_generation_config(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -382,7 +393,7 @@ class TestVideoGenerationPipelines:
         assert isinstance(config, ov_genai.VideoGenerationConfig)
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_set_generation_config(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -435,7 +446,7 @@ class TestVideoGenerationPipelines:
         assert config.audio_modality_scale == pytest.approx(3.0)
         assert config.spatio_temporal_guidance_blocks == [28]
 
-    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True)
     def test_audio_guidance_scale_roundtrip(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
         config = pipe.get_generation_config()
@@ -443,7 +454,7 @@ class TestVideoGenerationPipelines:
         pipe.set_generation_config(config)
         assert pipe.get_generation_config().audio_guidance_scale == pytest.approx(7.0)
 
-    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True)
     def test_audio_guidance_scale_affects_audio(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
 
@@ -577,19 +588,19 @@ class TestVideoGenerationPipelines:
         assert np.array_equal(off, run([28], 1.0)), "index 28 must be ignored, not perturb block 0"
         assert not np.array_equal(off, run([0], 1.0)), "block 0 must perturb where block 28 cannot"
 
-    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True)
     def test_taylorseer_rejected(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         with pytest.raises(RuntimeError, match="TaylorSeer"):
             pipe.generate("test prompt", taylorseer_config=ov_genai.TaylorSeerCacheConfig(), **GEN_KWARGS)
 
-    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True)
     def test_image2video_rejected(self, video_generation_model):
         with pytest.raises(RuntimeError, match="LTX2Pipeline"):
             ov_genai.Image2VideoPipeline(video_generation_model)
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_cpp_std_generator(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -597,7 +608,7 @@ class TestVideoGenerationPipelines:
         assert result.video.shape == [1, 9, 32, 32, 3]
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_reshape(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
@@ -608,7 +619,7 @@ class TestVideoGenerationPipelines:
         assert result.video.shape == [1, 9, 32, 32, 3]
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_reshape_multiple_videos_with_cfg(self, video_generation_model):
         """Widest timestep shape: batch is num_videos_per_prompt * 2 when CFG is enabled."""
@@ -620,7 +631,7 @@ class TestVideoGenerationPipelines:
         assert result.video.shape == [2, 9, 32, 32, 3]
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_generate_without_cfg_default_compile(self, video_generation_model):
         """Regression test: direct-compile constructor should work with guidance_scale <= 1."""
@@ -699,7 +710,7 @@ class TestVideoGenerationPipelines:
         assert not np.array_equal(off, modality), "Modality isolation was skipped after a static reshape"
 
     @pytest.mark.parametrize(
-        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID], indirect=True
+        "video_generation_model", [LTX_VIDEO_MODEL_ID, LTX2_MODEL_ID, LTX2_3_MODEL_ID, LTX2_5_MODEL_ID], indirect=True
     )
     def test_generate_with_cfg_after_reshape_without_cfg(self, video_generation_model):
         """Regression test: reshape without CFG then generate with CFG triggers rebuild."""
@@ -1161,3 +1172,92 @@ class TestImage2VideoPipeline:
         image = self._make_image()
         result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, adapters=adapter_config)
         assert result.video is not None
+
+
+def _count_steps(pipe, *args, **kwargs):
+    """Runs generate() and returns the result with the number of denoising steps it took."""
+    steps = []
+
+    def callback(step, total, latent):
+        steps.append(step)
+        return False
+
+    return pipe.generate(*args, callback=callback, **kwargs), len(steps)
+
+
+class TestLTX2_5TextToVideo:
+    GENERATE_KWARGS = dict(height=32, width=32)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_5_MODEL_ID], indirect=True)
+    def test_default_config_is_distilled_recipe(self, video_generation_model):
+        """LTX-2.5 exports ship the distilled transformer: 8 fixed sigmas, every guidance term off."""
+        config = ov_genai.Text2VideoPipeline(video_generation_model).get_generation_config()
+        assert config.sigmas == pytest.approx(DISTILLED_SIGMAS)
+        assert config.num_inference_steps == 8
+        assert config.guidance_scale == pytest.approx(1.0)
+        assert config.audio_guidance_scale == pytest.approx(1.0)
+        assert config.stg_scale == pytest.approx(0.0)
+        assert config.audio_stg_scale == pytest.approx(0.0)
+        assert config.modality_scale == pytest.approx(1.0)
+        assert config.audio_modality_scale == pytest.approx(1.0)
+        assert config.num_frames == 0
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_5_MODEL_ID], indirect=True)
+    def test_duration_head_picks_num_frames(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result, steps = _count_steps(pipe, "a cat", **self.GENERATE_KWARGS)
+        num_frames = result.video.data.shape[1]
+        # On the VAE grid (8k + 1), within diffusers' default bounds of 1 to 20 s at 24 fps
+        assert (num_frames - 1) % 8 == 0
+        assert 24 <= num_frames <= 481
+        assert steps == len(DISTILLED_SIGMAS)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_5_MODEL_ID], indirect=True)
+    def test_num_frames_bypasses_duration_head(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result = pipe.generate("a cat", num_frames=9, **self.GENERATE_KWARGS)
+        assert result.video.data.shape == (1, 9, 32, 32, 3)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_5_MODEL_ID], indirect=True)
+    def test_sigmas_set_step_count(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        _, steps = _count_steps(pipe, "a cat", num_frames=9, sigmas=[1.0, 0.5], **self.GENERATE_KWARGS)
+        assert steps == 2
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_5_MODEL_ID], indirect=True)
+    def test_num_inference_steps_drops_default_sigmas(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        _, steps = _count_steps(pipe, "a cat", num_frames=9, num_inference_steps=3, **self.GENERATE_KWARGS)
+        assert steps == 3
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_5_MODEL_ID], indirect=True)
+    def test_static_reshape(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 1.0)
+        pipe.compile("CPU")
+        result = pipe.generate("a cat", **self.GENERATE_KWARGS)
+        assert result.video.data.shape == (1, 9, 32, 32, 3)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_5_MODEL_ID], indirect=True)
+    def test_prompt_enhancement(self, video_generation_model):
+        if not Path(video_generation_model, "prompt_enhancer").exists():
+            pytest.skip("prompt_enhancer not present in test model")
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result = pipe.generate("a cat", num_frames=9, enable_prompt_enhancement=True, **self.GENERATE_KWARGS)
+        assert result.video.data.shape == (1, 9, 32, 32, 3)
+        assert "prompt_enhancer" in result.perf_metrics.get_text_encoder_infer_duration()
+        # Off by default
+        result = pipe.generate("a cat", num_frames=9, **self.GENERATE_KWARGS)
+        assert "prompt_enhancer" not in result.perf_metrics.get_text_encoder_infer_duration()
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
+    def test_prompt_enhancement_needs_ltx2_5(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        with pytest.raises(RuntimeError, match="prompt_enhancer"):
+            pipe.generate("a cat", num_frames=9, enable_prompt_enhancement=True, **self.GENERATE_KWARGS)
+
+    @pytest.mark.parametrize("video_generation_model", [LTX2_5_MODEL_ID], indirect=True)
+    def test_invalid_sigmas_rejected(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        with pytest.raises(RuntimeError, match="decreasing"):
+            pipe.generate("a cat", num_frames=9, sigmas=[0.5, 1.0], **self.GENERATE_KWARGS)

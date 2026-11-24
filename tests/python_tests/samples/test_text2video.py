@@ -73,6 +73,8 @@ class TestText2Video:
             pytest.param("tiny-random-ltx-video", PROMPT, False),
             pytest.param("tiny-random-ltx2", PROMPT, True),
             pytest.param("tiny-random-ltx2.3", PROMPT, True),
+            # Needs newer exporter versions, installed by its own CI job
+            pytest.param("tiny-random-ltx2.5", PROMPT, True, marks=pytest.mark.ltx2_5),
         ],
         indirect=["convert_model"],
     )

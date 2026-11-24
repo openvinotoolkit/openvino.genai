@@ -1017,6 +1017,25 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr& sequenc
     return dropped_seq_ids;
 }
 
+// Greedy and multinomial counterpart of the beam search n-gram ban (Hugging Face's NoRepeatNGramLogitsProcessor):
+// bans, for the next apply() of the logit processor, the tokens that would repeat an n-gram of the prompt and the
+// first 'generated_len' generated tokens. 0 disables it, as in Hugging Face.
+void ban_repeated_ngrams(LogitProcessor& logit_processor,
+                         const SequenceGroup& sequence_group,
+                         const std::vector<int64_t>& generated_ids,
+                         size_t generated_len) {
+    const size_t ngram_size = sequence_group.get_sampling_parameters().no_repeat_ngram_size;
+    if (ngram_size == 0 || ngram_size == std::numeric_limits<size_t>::max()) {
+        return;
+    }
+    std::vector<int64_t> full_text{sequence_group.get_prompt_ids()};
+    full_text.insert(full_text.end(), generated_ids.begin(), generated_ids.begin() + ptrdiff_t(generated_len));
+    if (full_text.size() >= ngram_size) {
+        const auto tail_start = full_text.end() - ptrdiff_t(ngram_size) + 1;
+        logit_processor.ban_next_tokens(kmp_search(full_text, {tail_start, full_text.end()}));
+    }
+}
+
 void append_sampled_token(const Token& sampled_token, const Sequence::Ptr& sequence, LogitProcessor& logit_processor) {
     logit_processor.register_new_generated_token(sampled_token.m_index);
     sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
@@ -1184,6 +1203,12 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
         // before the window and the depths accepted so far.
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, logit_idx);
         logit_processor.update_generated_len(generated_len - num_tokens_to_validate + accepted_steps - 1);
+        // The history at this depth: the committed tokens up to the root, then the path accepted so far
+        std::vector<int64_t> history(generated_ids.begin(), generated_ids.begin() + ptrdiff_t(base_offset));
+        history.insert(history.end(),
+                       candidate_token_ids[0].begin(),
+                       candidate_token_ids[0].begin() + ptrdiff_t(path_pos[0]));
+        ban_repeated_ngrams(logit_processor, *sequence->get_sequence_group_ptr(), history, history.size());
         logit_processor.apply(logit_vector);
         Token sampled_token = _greedy_sample(logit_vector, 0);
         int64_t pred_token = sampled_token.m_index;
@@ -1272,6 +1297,10 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
         // All draft tokens accepted; sample one extra token from the target model.
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, logit_idx);
         logit_processor.update_generated_len(sequence->get_generated_len());
+        ban_repeated_ngrams(logit_processor,
+                            *sequence->get_sequence_group_ptr(),
+                            sequence->get_generated_ids(),
+                            sequence->get_generated_len());
         logit_processor.apply(logit_vector);
         bonus_token = _greedy_sample(logit_vector, 0);
     }
@@ -1341,6 +1370,14 @@ void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
             }
 
             auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, 0);
+            // An EAGLE draft's logits index its own vocabulary, not the token ids the ban works on. The target
+            // model applies the ban when it validates the draft.
+            if (!d2t) {
+                ban_repeated_ngrams(logit_processor,
+                                    *sequence_group,
+                                    running_sequence->get_generated_ids(),
+                                    generated_len);
+            }
             logit_processor.update_generated_len(generated_len);
             logit_processor.apply(logit_vector);
             std::optional<SamplingDistribution> distribution;
@@ -1409,6 +1446,10 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
             // The processor is shared by the sequences of the group and by the positions of a validation window,
             // so min_new_tokens is evaluated against the tokens generated before this position of this sequence.
             logit_processor.update_generated_len(generated_and_verified_len);
+            ban_repeated_ngrams(logit_processor,
+                                *sequence_group,
+                                running_sequence->get_generated_ids(),
+                                generated_and_verified_len);
             logit_processor.apply(logit_vector);
             num_sampled_rows = i + 1;
 
@@ -1523,6 +1564,10 @@ int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
                                      Logits& logits,
                                      RequestSamplerContext& context) {
     context.logit_processor.update_generated_len(sequence->get_generated_len());
+    ban_repeated_ngrams(context.logit_processor,
+                        *sequence->get_sequence_group_ptr(),
+                        sequence->get_generated_ids(),
+                        sequence->get_generated_len());
     context.logit_processor.apply(logits);
     BlockToken block_token;
     if (sampling_params.is_greedy_decoding()) {
@@ -1786,6 +1831,10 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             OPENVINO_ASSERT(running_sequences.size() == 1);
             Sequence::Ptr& sequence = running_sequences[0];
             auto logit_vector = _get_logit_vector(sequence_group_logits, 0, 0);
+            ban_repeated_ngrams(logit_processor,
+                                *sequence_group,
+                                sequence->get_generated_ids(),
+                                sequence->get_generated_len());
             logit_processor.apply(logit_vector);
             const Token sampled_token = _greedy_sample(logit_vector, sampling_params.logprobs);
             sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);

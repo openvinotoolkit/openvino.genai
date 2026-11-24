@@ -7235,8 +7235,10 @@ class VLMRawPerfMetrics:
         ...
 class VideoGenerationConfig:
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
+    enable_prompt_enhancement: bool
     generator: Generator
     negative_prompt: str | None
+    system_prompt: str | None
     taylorseer_config: openvino_genai.py_openvino_genai.TaylorSeerCacheConfig | None
     def __init__(self) -> None:
         ...
@@ -7317,6 +7319,12 @@ class VideoGenerationConfig:
         ...
     @num_videos_per_prompt.setter
     def num_videos_per_prompt(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def sigmas(self) -> list[float] | None:
+        ...
+    @sigmas.setter
+    def sigmas(self, arg0: collections.abc.Sequence[typing.SupportsFloat] | None) -> None:
         ...
     @property
     def spatio_temporal_guidance_blocks(self) -> list[int] | None:

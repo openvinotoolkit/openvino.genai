@@ -547,6 +547,21 @@ protected:
     std::set<int64_t> m_token_ids;
 };
 
+// Tokens banned for the next logits only, for bans that depend on each position's history (the n-gram ban)
+class NextTokensBanTransform : public SuppressTokensTransform {
+public:
+    NextTokensBanTransform() : SuppressTokensTransform({}) {}
+
+    void set_token_ids(const std::vector<int64_t>& token_ids) {
+        m_token_ids = {token_ids.begin(), token_ids.end()};
+    }
+
+    void apply(Logits& logits) override {
+        SuppressTokensTransform::apply(logits);
+        m_token_ids.clear();
+    }
+};
+
 class FrequencyPenaltyTransform : public IPenaltyTransformer {
 public:
     FrequencyPenaltyTransform(double value) {

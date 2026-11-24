@@ -139,7 +139,18 @@
   cmd: |-
     # LTX-2.3 export support landed after the optimum-intel pin in tests/python_tests/requirements.txt
     python -m pip install -U "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8"
-    python -m pytest -v ./tests/python_tests/test_video_generation.py ./tests/python_tests/test_ltx2_rope.py --override-ini cache_dir=/mount/caches/pytest/
+    # LTX-2.5 runs in its own job below
+    python -m pytest -v ./tests/python_tests/test_video_generation.py ./tests/python_tests/test_ltx2_rope.py -k "not ltx2.5" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 60
+  components:
+    - video_generation
+
+- name: LTX-2.5 Video Generation
+  cmd: |-
+    # LTX-2.5 needs transformers >= 5.10, diffusers >= 0.40 and optimum-intel with its export support
+    python -m pip install transformers==5.15.1 diffusers==0.41.0
+    python -m pip install -U "optimum-intel @ git+https://github.com/anatyrova/optimum-intel.git@1c2c2315e96cbeebaa269d47219a54f584229591"
+    python -m pytest -v ./tests/python_tests/test_video_generation.py -k "ltx2.5" --override-ini cache_dir=/mount/caches/pytest/
   timeout: 60
   components:
     - video_generation

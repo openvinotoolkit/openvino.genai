@@ -95,6 +95,18 @@ struct VideoGenerationConfig {
     /// Transformer block indices perturbed by Spatio-Temporal Guidance. Indices outside the model's
     /// block range are ignored, matching the reference implementation.
     std::optional<std::vector<int64_t>> spatio_temporal_guidance_blocks = std::nullopt;
+
+    /// Custom denoising schedule, a decreasing list of sigmas in (0, 1]. It replaces the schedule the scheduler
+    /// would build from `num_inference_steps`, and its length is the number of steps. The scheduler's shifting
+    /// is applied to it as diffusers does. LTX-2.5 exports default to the 8 sigmas of its distilled transformer.
+    std::optional<std::vector<float>> sigmas = std::nullopt;
+
+    /// LTX-2.5: rewrite the prompt with the model's prompt enhancer before generating, as diffusers'
+    /// 'enable_prompt_enhancement' does.
+    bool enable_prompt_enhancement = false;
+
+    /// System prompt of the prompt enhancer. Unset means LTX-2.5's default for text-to-video.
+    std::optional<std::string> system_prompt = std::nullopt;
 };
 
 /**
@@ -136,6 +148,12 @@ static constexpr ov::Property<float> audio_guidance_rescale{"audio_guidance_resc
 /// Transformer block indices perturbed by Spatio-Temporal Guidance.
 static constexpr ov::Property<std::vector<int64_t>> spatio_temporal_guidance_blocks{
     "spatio_temporal_guidance_blocks"};
+/// Custom denoising schedule; see 'VideoGenerationConfig::sigmas'.
+static constexpr ov::Property<std::vector<float>> sigmas{"sigmas"};
+/// Rewrite the prompt with LTX-2.5's prompt enhancer; see 'VideoGenerationConfig::enable_prompt_enhancement'.
+static constexpr ov::Property<bool> enable_prompt_enhancement{"enable_prompt_enhancement"};
+/// System prompt of the prompt enhancer; see 'VideoGenerationConfig::system_prompt'.
+static constexpr ov::Property<std::string> system_prompt{"system_prompt"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.

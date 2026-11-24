@@ -60,6 +60,16 @@ optimum-cli export openvino --model diffusers/LTX-2.3-Diffusers --task text-to-v
 
 LTX-2.3 generates a synchronized audio track, so [`text2video.py`](./text2video.py) also writes `genai_audio.wav`. Its guidance defaults are read from the converted model and need no configuration; see the [generation config](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html) for the `stg_scale` / `modality_scale` knobs that control the extra guidance passes.
 
+### For LTX-2.5
+
+```sh
+optimum-cli export openvino --model Lightricks/LTX-2.5-Diffusers ltx_2_5_ov
+```
+
+LTX-2.5 ships a distilled transformer, so the pipeline defaults to its recipe: 8 fixed `sigmas`, with classifier-free, spatio-temporal and modality guidance off. When `num_frames` is not given, the model's duration head chooses it from the prompt.
+
+LTX-2.5 also ships a prompt enhancer, a small Gemma 4 VLM that rewrites a short prompt into the detailed description the model was trained on. It is off by default; pass `enable_prompt_enhancement=True` to `generate()`. `system_prompt` replaces its default instructions.
+
 ## Sample Descriptions
 
 ### Common Information
