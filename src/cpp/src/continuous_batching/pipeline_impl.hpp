@@ -39,6 +39,8 @@ protected:
 
     // for perf metrics
     size_t m_batch_size = 0; // stored number of processed tokens on last step
+    // the validation windows that the last step validated, by request id
+    std::unordered_map<uint64_t, SamplerOutput::ValidatedWindow> m_validated_windows;
 
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
@@ -169,6 +171,9 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 
     bool has_non_finished_requests() override;
+
+    // Removes a request that add_request() queued and no step has pulled yet.
+    void discard_awaiting_request(uint64_t request_id);
 
     virtual void generate_candidates_for_prompt_lookup();
 
