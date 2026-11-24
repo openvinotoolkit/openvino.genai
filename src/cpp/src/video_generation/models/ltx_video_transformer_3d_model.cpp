@@ -167,7 +167,10 @@ ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor& latent_model_inpu
         const ov::Shape& latent_shape = latent_model_input.get_shape();
         OPENVINO_ASSERT(latent_shape.size() == 3,
                         "Packed latents must be rank-3 [B, S, C], got rank ", latent_shape.size());
-        shape = {latent_shape[0], latent_shape[1]};
+        // All tokens share one timestep; pass [B, 1] when allowed to avoid ~10x memory from [B, S].
+        const auto& seq_dim = timestep_shape[1];
+        const bool broadcastable = seq_dim.is_dynamic() || seq_dim.get_length() == 1;
+        shape = {latent_shape[0], broadcastable ? size_t{1} : latent_shape[1]};
     }
 
     ov::Tensor timestep_tensor(ov::element::f32, shape);

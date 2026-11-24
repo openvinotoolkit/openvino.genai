@@ -124,6 +124,17 @@ void init_ltx_video_transformer_3d_model(py::module_& m) {
                 latent (ov.Tensor): Latent video tensor.
                 timestep (ov.Tensor): Current timestep tensor.
                 Returns: Denoised latent tensor.
+            )")
+        .def("infer",
+             py::overload_cast<const ov::Tensor&, float>(&ov::genai::LTXVideoTransformer3DModel::infer),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("latent"),
+             py::arg("timestep"),
+             R"(
+                Performs inference with one timestep shared by all tokens.
+                latent (ov.Tensor): Packed latent video tensor [B, S, C].
+                timestep (float): Current timestep.
+                Returns: Denoised latent tensor.
             )");
 }
 

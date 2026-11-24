@@ -3298,11 +3298,20 @@ class LTXVideoTransformer3DModel:
         """
     def get_config(self) -> LTXVideoTransformer3DModel.Config:
         ...
+    @typing.overload
     def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         """
                         Performs inference.
                         latent (ov.Tensor): Latent video tensor.
                         timestep (ov.Tensor): Current timestep tensor.
+                        Returns: Denoised latent tensor.
+        """
+    @typing.overload
+    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: typing.SupportsFloat) -> openvino._pyopenvino.Tensor:
+        """
+                        Performs inference with one timestep shared by all tokens.
+                        latent (ov.Tensor): Packed latent video tensor [B, S, C].
+                        timestep (float): Current timestep.
                         Returns: Denoised latent tensor.
         """
     def reshape(self, batch_size: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, tokenizer_model_max_length: typing.SupportsInt) -> LTXVideoTransformer3DModel:
