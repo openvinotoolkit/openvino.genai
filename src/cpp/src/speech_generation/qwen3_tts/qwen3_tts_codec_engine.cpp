@@ -1014,6 +1014,29 @@ std::vector<int64_t> Qwen3TTSCodecEngine::generate_codec_groups(const ov::Tensor
     return groups;
 }
 
+ov::Tensor Qwen3TTSCodecEngine::build_talker_step_input(const std::vector<int64_t>& groups,
+                                                        const qwen3_tts::TrailingText& text,
+                                                        size_t step) {
+    const size_t hidden = m_talker_hidden_size;
+    auto token_embed = infer_embedding(m_talker_embedding, groups[0]);
+    OPENVINO_ASSERT(token_embed.get_shape().size() == 3 && token_embed.get_shape()[2] == hidden,
+                    "Talker embedding hidden size (", token_embed.get_shape()[2],
+                    ") must match talker hidden size (", hidden, ")");
+    float* token_embed_ptr = token_embed.data<float>();
+    for (size_t g = 1; g < groups.size(); ++g) {
+        auto pred_emb = infer_predictor_embedding(groups[g], static_cast<int64_t>(g - 1));
+        OPENVINO_ASSERT(pred_emb.get_shape() == ov::Shape({1, 1, hidden}),
+                        "Code predictor residual embedding must have shape [1, 1, ", hidden, "], got ",
+                        pred_emb.get_shape());
+        const float* pred_ptr = pred_emb.data<const float>();
+        for (size_t h = 0; h < hidden; ++h) {
+            token_embed_ptr[h] += pred_ptr[h];
+        }
+    }
+    text.add_to(token_embed_ptr, hidden, step);
+    return token_embed;
+}
+
 std::vector<std::vector<int64_t>> Qwen3TTSCodecEngine::generate_codec_groups_batch(
     const std::vector<CodecGroupBatchItem>& batch_items) {
     OPENVINO_ASSERT(!batch_items.empty(), "Code-group batch must contain at least one frame");

@@ -304,8 +304,8 @@ SpeechGenerationHandle ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImp
     state.speaker_embedding = effective_speaker_embedding;
     state.rng.seed(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed)
                                                    : std::random_device{}());
-    state.tts_pad = prefill.tts_pad;
-    state.trailing_text_hidden = prefill.trailing_text_hidden;
+    state.trailing_text = qwen3_tts::TrailingText(generation_config.non_streaming_mode, prefill.tts_pad,
+                                                  prefill.trailing_text_hidden);
     state.ref_codec_ids = effective_ref_codec_ids;
     state.stream = SpeechGenerationStream::create();
     if (stream_audio) {
@@ -550,34 +550,8 @@ void ContinuousBatchingPipeline::Qwen3TTSContinuousBatchingImpl::process_new_fra
         }
     }
 
-    auto token_embed = m_engine.infer_embedding(m_engine.talker_embedding(), groups[0]);
-    float* token_embed_ptr = token_embed.data<float>();
-    for (size_t g = 1; g < groups.size(); ++g) {
-        auto pred_emb = m_engine.infer_predictor_embedding(groups[g], static_cast<int64_t>(g - 1));
-        OPENVINO_ASSERT(pred_emb.get_shape() == ov::Shape({1, 1, hidden}),
-                         "Code predictor residual embedding must have shape [1, 1, ",
-                         hidden, "], got ", pred_emb.get_shape());
-        const float* pred_ptr = pred_emb.data<const float>();
-        for (size_t h = 0; h < hidden; ++h) {
-            token_embed_ptr[h] += pred_ptr[h];
-        }
-    }
-
     const size_t step_index = position_id - sequence_group->get_prompt_len();
-    if (state.generation_config.non_streaming_mode) {
-        const float* tts_pad_ptr = state.tts_pad.data<const float>();
-        for (size_t h = 0; h < hidden; ++h) {
-            token_embed_ptr[h] += tts_pad_ptr[h];
-        }
-    } else if (state.trailing_text_hidden) {
-        const size_t trailing_len = state.trailing_text_hidden.get_shape()[1];
-        const float* add_ptr = (step_index < trailing_len)
-            ? state.trailing_text_hidden.data<const float>() + step_index * hidden
-            : state.tts_pad.data<const float>();
-        for (size_t h = 0; h < hidden; ++h) {
-            token_embed_ptr[h] += add_ptr[h];
-        }
-    }
+    auto token_embed = m_engine.build_talker_step_input(groups, state.trailing_text, step_index);
 
     sequence->append_generated_ids_embeds(token_embed);
     sequence->append_position_ids(make_position_ids_decode(position_id));

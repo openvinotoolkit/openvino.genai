@@ -13,6 +13,7 @@
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_trailing_text.hpp"
 
 namespace ov {
 namespace genai {
@@ -151,6 +152,12 @@ public:
                                                std::mt19937& rng);
     std::vector<std::vector<int64_t>> generate_codec_groups_batch(
         const std::vector<CodecGroupBatchItem>& batch_items);
+    // Talker input of the frame that follows a generated frame: the codec embedding of group 0, plus the code
+    // predictor embeddings of groups 1.., plus the text term of generation step `step`. Shared by the SDPA and
+    // the continuous-batching drivers. The result is [1, 1, talker_hidden_size].
+    ov::Tensor build_talker_step_input(const std::vector<int64_t>& groups,
+                                       const qwen3_tts::TrailingText& text,
+                                       size_t step);
 
     std::vector<float> decode_speech_tokenizer(const std::vector<int64_t>& codes);
 

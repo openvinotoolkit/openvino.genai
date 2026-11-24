@@ -67,8 +67,7 @@ private:
         MicroSeconds tokenization_duration{0};
         std::mt19937 rng;
         ov::Tensor speaker_embedding;
-        ov::Tensor tts_pad;
-        ov::Tensor trailing_text_hidden;
+        qwen3_tts::TrailingText trailing_text;
         ov::Tensor ref_codec_ids;
         std::vector<int64_t> all_codes;
         // Set only for audio-streaming requests: decodes finished chunks as frames arrive and pushes
