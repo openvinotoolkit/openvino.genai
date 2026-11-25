@@ -181,7 +181,8 @@ public:
     // The prompt length of input_ids of shape [seq_len], [1, seq_len] or [1, seq_len, hidden_size].
     static size_t get_prompt_len(const ov::Tensor& input_ids);
 
-    // Throws for a request of prompt_len tokens that add_request() would reject, and changes nothing.
+    // Throws for a request of prompt_len tokens whose sampling_params add_request() would reject, and changes nothing.
+    // The prompt itself is checked by the overload below.
     void validate_request(uint64_t request_id,
                           size_t prompt_len,
                           const ov::genai::GenerationConfig& sampling_params) const;

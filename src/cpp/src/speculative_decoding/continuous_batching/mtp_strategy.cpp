@@ -29,11 +29,17 @@ void validate_mtp_generation_config(const GenerationConfig& config) {
                     "MTP speculative decoding requires num_assistant_tokens > 0.");
 }
 
-// Align hidden[t] with embed(token[t+1]).
-ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
+// The shape of the input embeddings of a request, which the draft needs with more than one row.
+ov::Shape get_input_embeds_shape(const ov::Tensor& input_embeds) {
     const auto shape = input_embeds.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 1,
                     "MTP draft input embeds expect shape [1, seq_len>1, hidden_size], got ", shape);
+    return shape;
+}
+
+// Align hidden[t] with embed(token[t+1]).
+ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
+    const auto shape = get_input_embeds_shape(input_embeds);
 
     auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 1, 1, shape[1]);
     ov::Tensor shifted(input_embeds.get_element_type(), {shape[0], shape[1] - 1, shape[2]});
@@ -203,9 +209,7 @@ void ContinuousBatchingPipeline::MtpDecodingImpl::validate_request(
     const std::optional<ov::Tensor>& prompt_ids,
     const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
     validate_mtp_generation_config(sampling_params);
-    const auto shape = input_ids.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 1,
-                    "MTP draft input embeds expect shape [1, seq_len>1, hidden_size], got ", shape);
+    const auto shape = get_input_embeds_shape(input_ids);
     OPENVINO_ASSERT(!m_main_pipeline->is_prefix_caching_enabled() ||
                         (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
                          prompt_ids->get_size() == shape[1]),
