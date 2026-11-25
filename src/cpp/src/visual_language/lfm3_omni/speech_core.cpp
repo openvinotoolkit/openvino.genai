@@ -537,18 +537,16 @@ std::vector<int64_t> LFM3SpeechState::accept_frame(std::vector<int64_t> codes, L
 }
 
 void LFM3SpeechState::accept_text_stream_status(StreamingStatus stream_status) {
-    if (stream_status == StreamingStatus::STOP) {
-        m_result.status = GenerationStatus::STOP;
-        m_finished = true;
-    } else if (stream_status == StreamingStatus::CANCEL) {
-        m_result.status = GenerationStatus::CANCEL;
-        m_finished = true;
-    } else if (stream_status == StreamingStatus::TOOL_CALL_STOP) {
-        // As in the text pipelines: a tool call parser ends the turn with the TOOL_CALL reason.
-        m_result.status = GenerationStatus::STOP;
-        m_result.finish_reason = GenerationFinishReason::TOOL_CALL;
-        m_finished = true;
+    // An asynchronous status may arrive after a length or stop-token ending, and still wins as a synchronous one would.
+    // Only an earlier STOP or CANCEL, e.g. of the speech streamer, keeps its own.
+    if (stream_status == StreamingStatus::RUNNING || m_result.status != GenerationStatus::RUNNING) {
+        return;
     }
+    m_result.status = stream_status == StreamingStatus::CANCEL ? GenerationStatus::CANCEL : GenerationStatus::STOP;
+    // As in the text pipelines: a tool call parser ends the turn with the TOOL_CALL reason.
+    m_result.finish_reason = stream_status == StreamingStatus::TOOL_CALL_STOP ? GenerationFinishReason::TOOL_CALL
+                                                                               : GenerationFinishReason::STOP;
+    m_finished = true;
 }
 
 void LFM3SpeechState::end_with(GenerationStatus status) {

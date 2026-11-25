@@ -881,7 +881,9 @@ def test_streamer_stop_on_last_allowed_token_keeps_its_reason(
 @pytest.mark.parametrize("ending", ["cancel", "error"])
 def test_text_streamer_ending_on_last_token_leaves_chat_unchanged(vlm_pipe: ov_genai.VLMPipeline, ending: str) -> None:
     # The cancel or error of the last token's callback must roll the turn back before the chat history is kept.
+    # Only the failing turn decodes speech: return_audio=False runs plain VLM text generation, without the speech hook.
     text_only = _speech_config(2, return_audio=False)
+    speech = _speech_config(2)
 
     def text_turn() -> str:
         return vlm_pipe.generate(
@@ -894,11 +896,11 @@ def test_text_streamer_ending_on_last_token_leaves_chat_unchanged(vlm_pipe: ov_g
     vlm_pipe.start_chat()
     if ending == "cancel":
         streamer = TokenCollector(ov_genai.StreamingStatus.CANCEL)
-        vlm_pipe.generate(PROMPT, generation_config=_text_config(1), talker_speech_config=text_only, streamer=streamer)
+        vlm_pipe.generate(PROMPT, generation_config=_text_config(1), talker_speech_config=speech, streamer=streamer)
     else:
         with pytest.raises(Exception, match="streamer failure"):
             vlm_pipe.generate(
-                PROMPT, generation_config=_text_config(1), talker_speech_config=text_only, streamer=FailingStreamer()
+                PROMPT, generation_config=_text_config(1), talker_speech_config=speech, streamer=FailingStreamer()
             )
     actual = text_turn()
     vlm_pipe.finish_chat()

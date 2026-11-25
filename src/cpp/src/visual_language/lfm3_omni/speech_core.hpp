@@ -207,7 +207,7 @@ public:
     /// applies to it.
     void accept_text(int64_t token, float log_prob, StreamingStatus stream_status);
 
-    /// @brief Ends the decode if the text streamer stopped or cancelled between text slots, e.g. an asynchronous one.
+    /// @brief Ends the decode on a STOP or CANCEL of the text streamer, also one that arrives after the decode ended.
     void accept_text_stream_status(StreamingStatus stream_status);
 
     /// @brief Records the codes of a sampled frame and streams a chunk when one is due.

@@ -184,9 +184,7 @@ IStepHook::RowOutcome LFM3SpeechStepHook::after_slot(const Row& row) {
         if (const auto& text_streamer = state.payload->text_streamer) {
             // Callbacks of queued tokens run before the result is final, so a status or error of the last one counts.
             text_streamer->end();
-            if (!speech.finished()) {
-                speech.accept_text_stream_status(text_streamer->get_status());
-            }
+            speech.accept_text_stream_status(text_streamer->get_status());
         }
         state.result = speech.finish(*m_models);
         // A request only the sampler ended keeps the sampler's reason, unless the final flush stopped or cancelled it.
@@ -207,11 +205,8 @@ IStepHook::RowOutcome LFM3SpeechStepHook::after_slot(const Row& row) {
 std::vector<int64_t> LFM3SpeechStepHook::accept_frame_slot(RequestState& state, const Sequence& sequence) {
     auto& speech = state.speech;
     auto codes = speech.accept_frame(m_models->sample_frame(last_hidden_row(sequence), speech), *m_models);
-    const auto status = text_stream_status(*state.payload);
     // The stop of an asynchronous text streamer may arrive in a frame slot, after its last text token.
-    if (!speech.finished()) {
-        speech.accept_text_stream_status(status);
-    }
+    speech.accept_text_stream_status(text_stream_status(*state.payload));
     return codes;
 }
 

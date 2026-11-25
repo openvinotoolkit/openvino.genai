@@ -74,4 +74,41 @@ TEST_F(LFM3SpeechStateSlots, stops_counting_at_the_finishing_slot) {
     EXPECT_EQ(state.generated_slots(), 2);
 }
 
+class LFM3SpeechStateLateTextStatus
+    : public LFM3SpeechStateSlots,
+      public ::testing::WithParamInterface<std::pair<StreamingStatus, GenerationFinishReason>> {};
+
+// An asynchronous text streamer replies after max_new_tokens already ended the decode on the same token.
+TEST_P(LFM3SpeechStateLateTextStatus, overrides_a_length_ending) {
+    const auto [status, reason] = GetParam();
+    const auto request = make_request(SpeechOutputMode::SPEECH_ONLY, 1);
+    LFM3SpeechState state(m_model_config, request, m_streamer);
+    state.take_prompt_marker(1);
+    state.start(PROMPT_LENGTH);
+    state.accept_text(100, LOG_PROB, StreamingStatus::RUNNING);
+    ASSERT_TRUE(state.finished());
+    ASSERT_EQ(state.finish_reason(), GenerationFinishReason::LENGTH);
+
+    state.accept_text_stream_status(status);
+    EXPECT_EQ(state.finish_reason(), reason);
+}
+
+INSTANTIATE_TEST_SUITE_P(Statuses,
+                         LFM3SpeechStateLateTextStatus,
+                         ::testing::Values(std::pair{StreamingStatus::STOP, GenerationFinishReason::STOP},
+                                           std::pair{StreamingStatus::CANCEL, GenerationFinishReason::STOP},
+                                           std::pair{StreamingStatus::TOOL_CALL_STOP, GenerationFinishReason::TOOL_CALL}));
+
+TEST_F(LFM3SpeechStateSlots, keeps_the_first_streamer_status) {
+    const auto request = make_request(SpeechOutputMode::SPEECH_ONLY, 4);
+    LFM3SpeechState state(m_model_config, request, m_streamer);
+    state.take_prompt_marker(1);
+    state.start(PROMPT_LENGTH);
+    state.accept_text(100, LOG_PROB, StreamingStatus::STOP);
+    ASSERT_TRUE(state.finished());
+
+    state.accept_text_stream_status(StreamingStatus::TOOL_CALL_STOP);
+    EXPECT_EQ(state.finish_reason(), GenerationFinishReason::STOP);
+}
+
 }  // namespace
