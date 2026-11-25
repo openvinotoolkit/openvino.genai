@@ -1,0 +1,293 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "visual_language/embeddings_registry.hpp"
+
+#include <cstring>
+
+namespace ov::genai {
+
+EmbeddingsRegistry::EmbeddingEntry::EmbeddingEntry(ModalityType t, ov::Tensor tensor)
+    : type(t), original(std::move(tensor)), ref_count(0) {}
+
+EmbeddingsRegistry::EmbeddingEntry::EmbeddingEntry(EmbeddingEntry&& other) noexcept
+    : type(other.type),
+      original(std::move(other.original)),
+      encoded_image(std::move(other.encoded_image)),
+      encoded_video(std::move(other.encoded_video)),
+      encoded_audio(std::move(other.encoded_audio)),
+      ref_count(other.ref_count.load()) {}
+
+EmbeddingsRegistry::EmbeddingEntry& EmbeddingsRegistry::EmbeddingEntry::operator=(EmbeddingEntry&& other) noexcept {
+    if (this != &other) {
+        type = other.type;
+        original = std::move(other.original);
+        encoded_image = std::move(other.encoded_image);
+        encoded_video = std::move(other.encoded_video);
+        encoded_audio = std::move(other.encoded_audio);
+        ref_count.store(other.ref_count.load());
+    }
+    return *this;
+}
+
+namespace {
+
+constexpr size_t MIN_SAMPLE_BYTES = 64 * 1024;
+constexpr size_t MAX_SAMPLE_BYTES = 256 * 1024;
+constexpr double SAMPLE_RATIO = 0.0625; // 1 / 16
+constexpr size_t HASH_CHUNK_SIZE = sizeof(uint64_t);  // 8 bytes
+
+size_t calculate_hash_stride(size_t byte_size) {
+    if (byte_size <= MIN_SAMPLE_BYTES) {
+        return 1;
+    }
+
+    size_t target_size = static_cast<size_t>(byte_size * SAMPLE_RATIO);
+    target_size = std::clamp(target_size, MIN_SAMPLE_BYTES, MAX_SAMPLE_BYTES);
+ 
+    size_t stride = byte_size / target_size;
+    
+    // Align to 8-byte chunks for uint64_t access
+    stride = stride & ~(HASH_CHUNK_SIZE - 1);
+    return std::max(HASH_CHUNK_SIZE, stride);
+}
+
+// memcpy instead of a uint64_t* cast: user and ROI tensors are not guaranteed to be 8-byte aligned.
+uint64_t load_u64(const uint8_t* ptr) {
+    uint64_t value;
+    std::memcpy(&value, ptr, sizeof(value));
+    return value;
+}
+
+bool same_content(const ov::Tensor& lhs, const ov::Tensor& rhs) {
+    return lhs.get_element_type() == rhs.get_element_type() && lhs.get_shape() == rhs.get_shape() &&
+           (lhs.get_byte_size() == 0 || std::memcmp(lhs.data(), rhs.data(), lhs.get_byte_size()) == 0);
+}
+
+} // namespace
+
+// Hash tensor using FNV-1a algorithm.
+// See: https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+EmbeddingID EmbeddingsRegistry::compute_hash(const ov::Tensor& tensor) {
+    // FNV-1a parameters (64-bit)
+    constexpr uint64_t FNV_OFFSET_BASIS = 0xcbf29ce484222325;
+    constexpr uint64_t FNV_PRIME = 0x100000001b3;
+    
+    uint64_t hash = FNV_OFFSET_BASIS;
+
+    const auto& shape = tensor.get_shape();
+
+    // Hash shape
+    for (const auto dim : shape) {
+        hash ^= dim;
+        hash *= FNV_PRIME;
+    }
+    
+    // Hash element type
+    hash ^= static_cast<uint64_t>(tensor.get_element_type().hash());
+    hash *= FNV_PRIME;
+    
+    // Untyped pointer because data<uint8_t>() throws for f32 audio. The element type is already
+    // in the hash, so raw bytes stay unambiguous.
+    const auto* data = static_cast<const uint8_t*>(tensor.data());
+    const size_t byte_size = tensor.get_byte_size();
+
+    const size_t num_frames = shape.size() == 4 ? shape[0] : 1;
+    const size_t frame_size_bytes = byte_size / num_frames;
+    const size_t frame_chunks = frame_size_bytes / HASH_CHUNK_SIZE;
+    
+    const size_t frame_stride = calculate_hash_stride(frame_size_bytes);
+    
+    for (size_t frame_idx = 0; frame_idx < num_frames; ++frame_idx) {
+        const auto* frame_data = data + frame_idx * frame_size_bytes;
+
+        for (size_t i = 0; i < frame_chunks; i += frame_stride) {
+            hash ^= load_u64(frame_data + i * HASH_CHUNK_SIZE);
+            hash *= FNV_PRIME;
+        }
+        
+        // Hash last chunk if strided loop didn't process it
+        if (frame_stride > 1 && frame_chunks > 0 && (frame_chunks - 1) % frame_stride != 0) {
+            hash ^= load_u64(frame_data + (frame_chunks - 1) * HASH_CHUNK_SIZE);
+            hash *= FNV_PRIME;
+        }
+        
+        // Hash remaining bytes
+        const size_t frame_offset = frame_idx * frame_size_bytes;
+        const size_t remaining_start = frame_offset + frame_chunks * HASH_CHUNK_SIZE;
+        const size_t remaining_end = frame_offset + frame_size_bytes;
+        for (size_t i = remaining_start; i < remaining_end; ++i) {
+            hash ^= data[i];
+            hash *= FNV_PRIME;
+        }
+    }
+    
+    return hash;
+}
+
+EmbeddingID EmbeddingsRegistry::register_media(const ov::Tensor& tensor, ModalityType type) {
+    const auto pack = [&tensor]() {
+        ov::Tensor packed(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(packed);
+        return packed;
+    };
+    // Hashing and comparison read raw bytes, which for a strided ROI are not its logical content.
+    const bool is_contiguous = tensor.is_continuous();
+    ov::Tensor content = is_contiguous ? tensor : pack();
+    auto id = compute_hash(content);
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    // The hash samples large tensors, so a hit is only a candidate. Probe past entries with other content.
+    for (auto it = m_entries.find(id); it != m_entries.end(); it = m_entries.find(++id)) {
+        if (it->second.type == type && same_content(it->second.original, content)) {
+            it->second.ref_count++;
+            return id;
+        }
+    }
+    // A packed ROI is already a private copy; a contiguous tensor may be caller memory and needs one.
+    ov::Tensor owned_tensor = is_contiguous ? pack() : std::move(content);
+    m_entries.emplace(id, EmbeddingEntry(type, std::move(owned_tensor))).first->second.ref_count++;
+    return id;
+}
+
+EmbeddingID EmbeddingsRegistry::register_image(const ov::Tensor& image) {
+    return register_media(image, ModalityType::IMAGE);
+}
+
+EmbeddingID EmbeddingsRegistry::register_video(const ov::Tensor& video) {
+    return register_media(video, ModalityType::VIDEO);
+}
+
+EmbeddingID EmbeddingsRegistry::register_audio(const ov::Tensor& audio) {
+    return register_media(audio, ModalityType::AUDIO);
+}
+
+std::vector<EmbeddingID> EmbeddingsRegistry::register_images(const std::vector<ov::Tensor>& images) {
+    std::vector<EmbeddingID> ids;
+    ids.reserve(images.size());
+    for (const auto& img : images) {
+        ids.push_back(register_image(img));
+    }
+    return ids;
+}
+
+std::vector<EmbeddingID> EmbeddingsRegistry::register_videos(const std::vector<ov::Tensor>& videos) {
+    std::vector<EmbeddingID> ids;
+    ids.reserve(videos.size());
+    for (const auto& vid : videos) {
+        ids.push_back(register_video(vid));
+    }
+    return ids;
+}
+
+std::vector<EmbeddingID> EmbeddingsRegistry::register_audios(const std::vector<ov::Tensor>& audios) {
+    std::vector<EmbeddingID> ids;
+    ids.reserve(audios.size());
+    for (const auto& audio : audios) {
+        ids.push_back(register_audio(audio));
+    }
+    return ids;
+}
+
+void EmbeddingsRegistry::add_ref(const EmbeddingID& id) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_entries.find(id);
+    OPENVINO_ASSERT(it != m_entries.end(), "Embedding ID not found in EmbeddingsRegistry: ", id);
+    it->second.ref_count++;
+}
+
+void EmbeddingsRegistry::release_ref(const EmbeddingID& id) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_entries.find(id);
+    OPENVINO_ASSERT(it != m_entries.end(), "Embedding ID not found in EmbeddingsRegistry: ", id);
+    if (--it->second.ref_count == 0) {
+        m_entries.erase(it);
+    }
+}
+
+size_t EmbeddingsRegistry::size() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_entries.size();
+}
+
+bool EmbeddingsRegistry::contains(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_entries.find(id) != m_entries.end();
+}
+
+ModalityType EmbeddingsRegistry::get_type(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_entries.at(id).type;
+}
+
+const ov::Tensor& EmbeddingsRegistry::get_original(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_entries.at(id).original;
+}
+
+void EmbeddingsRegistry::set_encoded_image(const EmbeddingID& id, EncodedImage encoded) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto& entry = m_entries.at(id);
+    OPENVINO_ASSERT(entry.type == ModalityType::IMAGE, "Cannot set encoded image for a non-image entry");
+    entry.encoded_image = std::move(encoded);
+}
+
+bool EmbeddingsRegistry::has_encoded_image(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_entries.find(id);
+    return it != m_entries.end() && it->second.encoded_image.has_value();
+}
+
+const EncodedImage& EmbeddingsRegistry::get_encoded_image(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto& entry = m_entries.at(id);
+    OPENVINO_ASSERT(entry.type == ModalityType::IMAGE, "Cannot get encoded image for a non-image entry");
+    OPENVINO_ASSERT(entry.encoded_image.has_value(),
+                    "Encoded image not available for id: ", id);
+    return *entry.encoded_image;
+}
+
+void EmbeddingsRegistry::set_encoded_video(const EmbeddingID& id, EncodedVideo encoded) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto& entry = m_entries.at(id);
+    OPENVINO_ASSERT(entry.type == ModalityType::VIDEO, "Cannot set encoded video for a non-video entry");
+    entry.encoded_video = std::move(encoded);
+}
+
+bool EmbeddingsRegistry::has_encoded_video(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_entries.find(id);
+    return it != m_entries.end() && it->second.encoded_video.has_value();
+}
+
+const EncodedVideo& EmbeddingsRegistry::get_encoded_video(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto& entry = m_entries.at(id);
+    OPENVINO_ASSERT(entry.type == ModalityType::VIDEO, "Cannot get encoded video for a non-video entry");
+    OPENVINO_ASSERT(entry.encoded_video.has_value(),
+                    "Encoded video not available for id: ", id);
+    return *entry.encoded_video;
+}
+
+void EmbeddingsRegistry::set_encoded_audio(const EmbeddingID& id, EncodedAudio encoded) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto& entry = m_entries.at(id);
+    OPENVINO_ASSERT(entry.type == ModalityType::AUDIO, "Cannot set encoded audio for a non-audio entry");
+    entry.encoded_audio = std::move(encoded);
+}
+
+bool EmbeddingsRegistry::has_encoded_audio(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_entries.find(id);
+    return it != m_entries.end() && it->second.encoded_audio.has_value();
+}
+
+const EncodedAudio& EmbeddingsRegistry::get_encoded_audio(const EmbeddingID& id) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto& entry = m_entries.at(id);
+    OPENVINO_ASSERT(entry.type == ModalityType::AUDIO, "Cannot get encoded audio for a non-audio entry");
+    OPENVINO_ASSERT(entry.encoded_audio.has_value(), "Encoded audio not available for id: ", id);
+    return *entry.encoded_audio;
+}
+
+} // namespace ov::genai

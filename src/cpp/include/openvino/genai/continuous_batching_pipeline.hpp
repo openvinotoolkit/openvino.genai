@@ -140,6 +140,7 @@ protected:
     class ContinuousBatchingForSpeculativeDecodingImpl;
     class ContinuousBatchingForEagle3DecodingImpl;
     class ContinuousBatchingForMtpDecodingImpl;
+    class ContinuousBatchingForDFlashDecodingImpl;
     class ContinuousBatchingForPromptLookupImpl;
     class SpeculativeDecodingImpl;
     class Eagle3DecodingImpl;
@@ -152,6 +153,7 @@ protected:
     friend class ContinuousBatchingForPromptLookupImpl;
     friend class ContinuousBatchingForEagle3DecodingImpl;
     friend class ContinuousBatchingForMtpDecodingImpl;
+    friend class ContinuousBatchingForDFlashDecodingImpl;
     friend class SpeculativeDecodingImpl;
     friend class Eagle3DecodingImpl;
     friend class DFlashDecodingImpl;
@@ -293,6 +295,7 @@ public:
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const ov::genai::GenerationConfig& sampling_params);
+    GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const std::vector<ov::Tensor>& audios, const ov::genai::GenerationConfig& sampling_params);
 
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::AnyMap& properties_map);
 

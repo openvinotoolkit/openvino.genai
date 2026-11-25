@@ -44,12 +44,24 @@ protected:
             mtp_mode_enabled = true;
         }
 
+        void enable_validation_mode() {
+            m_is_validation_mode_enabled = true;
+        }
+
         bool is_waiting(uint64_t request_id) const {
             auto request_it = std::find_if(m_requests.begin(), m_requests.end(), [request_id](const ov::genai::SequenceGroup::Ptr& request) {
                 return request->get_request_id() == request_id;
             });
             OPENVINO_ASSERT(request_it != m_requests.end(), "Request is not found");
             return (*request_it)->is_waiting();
+        }
+
+        size_t get_num_tokens_to_validate(uint64_t request_id) const {
+            auto request_it = std::find_if(m_requests.begin(), m_requests.end(), [request_id](const ov::genai::SequenceGroup::Ptr& request) {
+                return request->get_request_id() == request_id;
+            });
+            OPENVINO_ASSERT(request_it != m_requests.end(), "Request is not found");
+            return (*request_it)->get_num_tokens_to_validate();
         }
 
         bool can_publish_kv_only_completed_blocks() const {
@@ -62,6 +74,7 @@ protected:
     public:
         MtpPipelineTestInstance() = default;
         using MtpDecodingImpl::make_draft_generation_config;
+        using MtpDecodingImpl::make_draft_sampling_params;
     };
 
     PipelineTestInstance m_pipeline = PipelineTestInstance();
@@ -84,6 +97,52 @@ TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnostics) {
     EXPECT_EQ(metrics.get_num_draft_processed_tokens(), 8);
     EXPECT_FLOAT_EQ(metrics.get_draft_processed_to_candidate_ratio(), 8.0f / 5.0f);
     EXPECT_FLOAT_EQ(metrics.get_draft_to_main_inference_duration_ratio(), 0.5f);
+}
+
+TEST(SDPerModelsPerfMetrics, DraftToMainInferenceDurationRatioCountsTheMarkovHead) {
+    ov::genai::SDPerModelsPerfMetrics metrics;
+    metrics.num_draft_tokens = 4;
+
+    metrics.main_model_metrics.raw_metrics.m_durations = {ov::genai::MicroSeconds(1000.0f)};
+    metrics.main_model_metrics.raw_metrics.m_batch_sizes = {4};
+    metrics.main_model_metrics.raw_metrics.m_inference_durations = {ov::genai::MicroSeconds(4000.0f)};
+
+    // the backbone forwards of two draft steps, and the Markov head inferences that ran during their sampling
+    metrics.draft_model_metrics.raw_metrics.m_durations = {ov::genai::MicroSeconds(750.0f),
+                                                           ov::genai::MicroSeconds(750.0f)};
+    metrics.draft_model_metrics.raw_metrics.m_batch_sizes = {3, 3};
+    metrics.draft_model_metrics.raw_metrics.m_inference_durations = {ov::genai::MicroSeconds(1500.0f)};
+    metrics.draft_markov_head_metrics.raw_metrics.m_durations = {ov::genai::MicroSeconds(250.0f),
+                                                                 ov::genai::MicroSeconds(250.0f)};
+    metrics.draft_markov_head_metrics.raw_metrics.m_batch_sizes = {2, 2};
+    metrics.draft_markov_head_metrics.raw_metrics.m_inference_durations = {ov::genai::MicroSeconds(500.0f)};
+
+    EXPECT_EQ(metrics.get_num_draft_processed_tokens(), 6);
+    EXPECT_FLOAT_EQ(metrics.get_draft_to_main_inference_duration_ratio(), 0.5f);
+}
+
+TEST(SDPerModelsPerfMetrics, DraftStepMetricsAreEvaluatedAndAccumulated) {
+    using Metrics = ov::genai::SDPerModelsPerfMetrics;
+    for (auto part : {&Metrics::draft_step_metrics, &Metrics::draft_markov_head_metrics, &Metrics::draft_sampling_metrics}) {
+        auto make_metrics = [part](float third_step_us) {
+            Metrics metrics;
+            auto& raw_metrics = (metrics.*part).raw_metrics;
+            raw_metrics.m_durations = {ov::genai::MicroSeconds(5000.0f),
+                                       ov::genai::MicroSeconds(4000.0f),
+                                       ov::genai::MicroSeconds(third_step_us)};
+            raw_metrics.m_batch_sizes = {7, 7, 7};
+            raw_metrics.m_inference_durations = {ov::genai::MicroSeconds(9000.0f + third_step_us)};
+            return metrics;
+        };
+
+        auto first = make_metrics(3000.0f);
+        EXPECT_FLOAT_EQ((first.*part).get_latency().mean, 3.0f);
+
+        auto accumulated = make_metrics(3000.0f) + make_metrics(1000.0f);
+        accumulated.evaluate_statistics();
+        EXPECT_EQ((accumulated.*part).raw_metrics.m_durations.size(), 6);
+        EXPECT_FLOAT_EQ((accumulated.*part).get_latency().mean, 2.0f);
+    }
 }
 
 TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnosticsReturnNanWithoutDenominator) {
@@ -129,6 +188,29 @@ TEST_F(CBForSDTest, MtpDraftConfigPreservesExplicitTokenLimit) {
     EXPECT_EQ(draft_length_config.max_new_tokens, SIZE_MAX);
     EXPECT_EQ(draft_length_config.max_length, 512);
     EXPECT_NO_THROW(draft_length_config.validate());
+}
+
+// The draft copy of a request samples from a stream independent of the main request's, whose draws accept or reject
+// the drafted tokens. FastDraft and EAGLE3 use make_draft_sampling_params, MTP make_draft_generation_config.
+TEST_F(CBForSDTest, DraftConfigsSampleFromAnIndependentStream) {
+    ov::genai::GenerationConfig config;
+    config.rng_seed = 42;
+    const size_t draft_seed = ov::genai::detail::proposal_rng_seed(config.rng_seed);
+
+    EXPECT_NE(draft_seed, config.rng_seed);
+    EXPECT_EQ(MtpPipelineTestInstance::make_draft_sampling_params(config).rng_seed, draft_seed);
+    EXPECT_EQ(MtpPipelineTestInstance::make_draft_generation_config(config).rng_seed, draft_seed);
+}
+
+// A sampled draft records its proposals without log-probs; a greedy draft keeps them for
+// assistant_confidence_threshold.
+TEST_F(CBForSDTest, OnlyGreedyDraftConfigsKeepLogProbs) {
+    ov::genai::GenerationConfig config;
+    config.logprobs = 3;
+    EXPECT_EQ(MtpPipelineTestInstance::make_draft_sampling_params(config).logprobs, 3u);
+    config.do_sample = true;
+    EXPECT_EQ(MtpPipelineTestInstance::make_draft_sampling_params(config).logprobs, 0u);
+    EXPECT_EQ(MtpPipelineTestInstance::make_draft_generation_config(config).logprobs, 0u);
 }
 
 TEST(MtpDraftUpdatePlan, PreservesAcceptedPrefixAfterPartialRejection) {
@@ -222,12 +304,12 @@ TEST_F(CBForSDTest, MtpAdmissionRejectsTreeSearch) {
     expect_mtp_request_rejected(pipeline, config, "does not support tree search");
 }
 
-TEST_F(CBForSDTest, MtpAdmissionRejectsNonGreedyDecoding) {
+TEST_F(CBForSDTest, MtpAdmissionRejectsBeamSearch) {
     MtpPipelineTestInstance pipeline;
     auto config = valid_mtp_config();
-    config.do_sample = true;
+    config.num_beams = 2;
 
-    expect_mtp_request_rejected(pipeline, config, "supports greedy decoding only");
+    expect_mtp_request_rejected(pipeline, config, "supports greedy and multinomial decoding only");
 }
 
 TEST_F(CBForSDTest, MtpAdmissionRejectsParallelSampling) {
@@ -249,13 +331,18 @@ TEST_F(CBForSDTest, MtpAdmissionRejectsZeroAssistantTokens) {
 TEST_F(CBForSDTest, MtpSupportedConfigPassesAdmissionValidation) {
     MtpPipelineTestInstance pipeline;
     ov::Tensor invalid_input(ov::element::f32, ov::Shape{});
+    auto sampled_config = valid_mtp_config();
+    sampled_config.do_sample = true;
+    sampled_config.top_k = 20;
 
-    try {
-        pipeline.add_request(0, invalid_input, valid_mtp_config());
-        FAIL() << "Expected the scalar test tensor to be rejected after admission validation";
-    } catch (const ov::Exception& exception) {
-        EXPECT_NE(std::string(exception.what()).find("MTP draft input embeds expect shape"), std::string::npos)
-            << exception.what();
+    for (const auto& config : {valid_mtp_config(), sampled_config}) {
+        try {
+            pipeline.add_request(0, invalid_input, config);
+            FAIL() << "Expected the scalar test tensor to be rejected after admission validation";
+        } catch (const ov::Exception& exception) {
+            EXPECT_NE(std::string(exception.what()).find("MTP draft input embeds expect shape"), std::string::npos)
+                << exception.what();
+        }
     }
 }
 
@@ -382,6 +469,67 @@ TEST_F(CBForSDTest, mtp_rejection_pauses_draft_generation) {
     ASSERT_TRUE(m_pipeline.is_waiting(0));
 }
 
+// The draft request has not processed its tokens, as after a recompute preemption. It still waits while the main model
+// inserts no token, so it does not draft past candidates the main model has not validated.
+TEST_F(CBForSDTest, draft_waits_while_the_main_model_inserts_no_token__one_sequence) {
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> tokens = {0, 1, 2};
+    std::vector<float> log_probs = {0.1f, 0.2f, 0.3f};
+    ov::genai::GeneratedSequences candidate{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, true).inserted_tokens_cnt, 3);
+    ASSERT_FALSE(m_pipeline.is_waiting(0));
+
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, true).inserted_tokens_cnt, 0);
+    EXPECT_TRUE(m_pipeline.is_waiting(0));
+
+    tokens.push_back(3);
+    log_probs.push_back(0.4f);
+    ov::genai::GeneratedSequences candidate_1{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate_1, true).inserted_tokens_cnt, 1);
+    EXPECT_FALSE(m_pipeline.is_waiting(0));
+}
+
+// The main model did not run the window of the candidates, so it keeps them when the draft sends them again.
+TEST_F(CBForSDTest, main_model_keeps_the_candidates_it_has_not_validated__one_sequence) {
+    m_pipeline.enable_validation_mode();
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> tokens = {10, 11};
+    std::vector<float> log_probs = {0.1f, 0.2f};
+    ov::genai::GeneratedSequences candidate{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, false).inserted_tokens_cnt, 2);
+    ASSERT_EQ(m_pipeline.get_num_tokens_to_validate(0), 2u);
+
+    const auto resent = m_pipeline.update_request(0, candidate, false);
+    ASSERT_EQ(resent.removed_tokens_cnt, 0);
+    ASSERT_EQ(resent.inserted_tokens_cnt, 0);
+    EXPECT_EQ(m_pipeline.get_num_tokens_to_validate(0), 2u);
+}
+
+// The draft waits while the main model has not run the window of the candidates, and a window that grew could outgrow
+// max_num_batched_tokens, so candidates added to it are an error.
+TEST_F(CBForSDTest, main_model_rejects_candidates_added_to_a_window_it_has_not_validated__one_sequence) {
+    m_pipeline.enable_validation_mode();
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> tokens = {10, 11};
+    std::vector<float> log_probs = {0.1f, 0.2f};
+    ov::genai::GeneratedSequences candidate{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, false).inserted_tokens_cnt, 2);
+
+    tokens.insert(tokens.end(), {12, 13});
+    log_probs.insert(log_probs.end(), {0.3f, 0.4f});
+    ov::genai::GeneratedSequences candidate_1{{0, ov::genai::GeneratedSequence(tokens, log_probs)}};
+    EXPECT_THROW(m_pipeline.update_request(0, candidate_1, false), ov::Exception);
+}
+
 TEST_F(CBForSDTest, remove_and_replace_tokens__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
@@ -438,6 +586,62 @@ TEST_F(CBForSDTest, add_tokens__one_sequence) {
     ASSERT_NE(after.at(0).at(0).log_probs, before.at(0).at(0).log_probs);
     ASSERT_EQ(after.at(0).at(0).token_ids, tokens);
     ASSERT_EQ(after.at(0).at(0).log_probs, log_probs);
+}
+
+// The main sampler verifies each candidate against the q(.) stored at its position, so proposals must stay attached
+// to the tokens they were drafted for across update rounds.
+TEST_F(CBForSDTest, draft_proposals_follow_inserted_tokens__one_sequence) {
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> tokens = { 0, 1, 2 };
+    std::vector<float> log_probs = { 0.1f, 0.2f, 0.3f };
+    ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, false).inserted_tokens_cnt, 3);
+
+    // The draft proposed tokens 3 and 4 this round.
+    tokens = { 0, 1, 2, 3, 4 };
+    log_probs = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f };
+    const auto q3 = std::make_shared<const ov::genai::DraftProposal>(ov::genai::DraftProposal{{3, 4}, {0.75f, 0.25f}});
+    const auto q4 = std::make_shared<const ov::genai::DraftProposal>(ov::genai::DraftProposal{{}, {0, 0, 0, 0, 1.f}});
+    ov::genai::GeneratedSequences candidate_1{
+        { 0, ov::genai::GeneratedSequence(tokens, log_probs, 0, {}, nullptr, {nullptr, nullptr, nullptr, q3, q4}) }};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate_1, false).inserted_tokens_cnt, 2);
+
+    auto proposals = m_pipeline.get_generated_requests().at(0).at(0).draft_proposals;
+    ASSERT_EQ(proposals, (std::vector<ov::genai::DraftProposalPtr>{nullptr, nullptr, nullptr, q3, q4}));
+
+    // A round without proposals leaves the pending ones in place.
+    tokens.push_back(5);
+    log_probs.push_back(0.6f);
+    ov::genai::GeneratedSequences candidate_2{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate_2, false).inserted_tokens_cnt, 1);
+    proposals = m_pipeline.get_generated_requests().at(0).at(0).draft_proposals;
+    ASSERT_EQ(proposals, (std::vector<ov::genai::DraftProposalPtr>{nullptr, nullptr, nullptr, q3, q4, nullptr}));
+
+    // Synchronizing a draft sequence with the main model's tokens commits them, so their proposals are dropped.
+    ASSERT_EQ(m_pipeline.update_request(0, candidate_2, true).inserted_tokens_cnt, 0);
+    EXPECT_TRUE(m_pipeline.get_generated_requests().at(0).at(0).draft_proposals.empty());
+}
+
+TEST_F(CBForSDTest, rejects_invalid_draft_proposal__one_sequence) {
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> tokens = { 0 };
+    std::vector<float> log_probs = { 0.1f };
+    ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
+    ASSERT_EQ(m_pipeline.update_request(0, candidate, false).inserted_tokens_cnt, 1);
+
+    tokens = { 0, 1 };
+    log_probs = { 0.1f, 0.2f };
+    const auto misaligned =
+        std::make_shared<const ov::genai::DraftProposal>(ov::genai::DraftProposal{{1, 2}, {1.0f}});
+    ov::genai::GeneratedSequences candidate_1{
+        { 0, ov::genai::GeneratedSequence(tokens, log_probs, 0, {}, nullptr, {nullptr, misaligned}) }};
+    EXPECT_THROW(m_pipeline.update_request(0, candidate_1, false), ov::Exception);
 }
 
 TEST_F(CBForSDTest, dflash_candidate_update_without_logit_processor_update__one_sequence) {

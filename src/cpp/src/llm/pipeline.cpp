@@ -19,6 +19,8 @@
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
 #include "utils.hpp"
+#include "gguf_utils/gguf_utils.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "model_desc.hpp"
 
 namespace {
@@ -29,6 +31,39 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
         return nullptr;
     }
     return it->second.as<ov::genai::ModelDesc>().model;
+}
+
+// With the main model on NPU, NPUW_PA=YES selects the NPU PA front-end, which runs under continuous batching.
+// It is read from the language model's compile properties, the ones continuous batching compiles with.
+// Without it the NPU runs the stateful pipeline, so explicit PA requests are rejected instead of ignored.
+bool use_npuw_pa(const std::string& device,
+                 const ov::AnyMap& user_properties,
+                 const ov::AnyMap& properties,
+                 const std::string& attention_backend) {
+    if (device != "NPU") {
+        return false;
+    }
+    const auto model_properties = ov::genai::utils::get_model_properties(properties, "language_model", device);
+    if (!ov::genai::utils::is_property_enabled(model_properties, "NPUW_PA")) {
+        const bool pa_backend_requested =
+            user_properties.count("ATTENTION_BACKEND") > 0 && attention_backend == ov::genai::PA_BACKEND;
+        OPENVINO_ASSERT(!pa_backend_requested,
+                        "ATTENTION_BACKEND=PA on NPU needs NPUW_PA=YES. Set NPUW_PA=YES, or remove ATTENTION_BACKEND "
+                        "to use the stateful NPU pipeline.");
+        OPENVINO_ASSERT(user_properties.count(ov::genai::scheduler_config.name()) == 0,
+                        "A scheduler config on NPU needs NPUW_PA=YES. Set NPUW_PA=YES, or remove the scheduler "
+                        "config to use the stateful NPU pipeline.");
+        return false;
+    }
+    OPENVINO_ASSERT(properties.count(ov::genai::utils::DRAFT_MODEL_ARG_NAME) == 0,
+                    "NPUW_PA=YES does not support speculative decoding. Remove the draft model or NPUW_PA.");
+    OPENVINO_ASSERT(model_properties.count("NPU_USE_NPUW") == 0 || ov::genai::utils::is_npuw_enabled(model_properties),
+                    "NPUW_PA=YES runs on NPUW, but NPU_USE_NPUW is NO. Remove NPU_USE_NPUW or NPUW_PA.");
+    OPENVINO_ASSERT(attention_backend == ov::genai::PA_BACKEND,
+                    "NPUW_PA=YES needs ATTENTION_BACKEND=PA, but ATTENTION_BACKEND is '",
+                    attention_backend,
+                    "'. Remove ATTENTION_BACKEND or set it to PA.");
+    return true;
 }
 
 bool should_use_stateful_pipeline(bool is_npu_requested,
@@ -130,6 +165,7 @@ std::pair<std::string, Any> draft_model(
     const std::filesystem::path openvino_model_name = is_mtp ? "openvino_mtp_model.xml" : "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
     utils::dflash::apply_dflash_rt_info(model, plugin_config);
+    utils::dflash::read_markov_head(models_path, plugin_config);
     if (is_mtp) {
         plugin_config["mtp_mode"] = true;
     }
@@ -186,6 +222,11 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
     OPENVINO_ASSERT(model, "Model must not be null");
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
+
+    // GGUF-specific properties configure conversion, which already happened by the time we get a
+    // model, so drop them: the plugin rejects unknown properties, and this descriptor outlives
+    // the function so strip once, here (StatefulLLMPipeline strips them itself elsewhere).
+    properties_without_draft_model = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
 
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
@@ -249,12 +290,26 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
+    utils::dflash::reject_dflash_draft_on_npu(is_npu_requested, properties);
     utils::extract_extensions_to_core(properties);
 
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
+    if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
+        // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
+        auto [device_properties, scheduler_config] =
+            utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        // NPUW_PA is an NPUW option, so NPUW is on by default, as for the stateful NPU pipeline
+        utils::set_config_default(device_properties, "NPU_USE_NPUW", std::string{"YES"});
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
+                                                              tokenizer,
+                                                              scheduler_config,
+                                                              device,
+                                                              device_properties,
+                                                              generation_config,
+                                                              models_path);
+    } else if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -294,13 +349,40 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
+    utils::dflash::reject_dflash_draft_on_npu(is_npu_requested, properties);
+
+    // The reader choice determines whether tokenizer metadata is available on the model.
+    const auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
-    const Tokenizer tokenizer(models_path, properties);
+    // For GGUF the frontend attaches tokenizer metadata to the model's rt_info, so build the
+    // tokenizer from what was already read instead of re-opening the .gguf. Exceptions: the
+    // legacy reader's model has no such rt_info, and enable_save_ov_model needs the source
+    // directory to write the tokenizer/detokenizer IRs to, which the metadata alone can't give.
+    const bool tokenizer_from_model = is_gguf_model(models_path) && !gguf_properties.enable_save_ov_model &&
+                                      !gguf_properties.use_legacy_reader();
+    const Tokenizer tokenizer =
+        tokenizer_from_model ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), properties)
+                             : Tokenizer(models_path, properties);
+    // On the from-file path the frontend's metadata is still on the model and no longer read.
+    erase_gguf_tokenizer_metadata(model);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
+    if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
+        // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
+        auto [device_properties, scheduler_config] =
+            utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        // NPUW_PA is an NPUW option, so NPUW is on by default, as for the stateful NPU pipeline
+        utils::set_config_default(device_properties, "NPU_USE_NPUW", std::string{"YES"});
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
+                                                              tokenizer,
+                                                              scheduler_config,
+                                                              device,
+                                                              device_properties,
+                                                              generation_config,
+                                                              models_path);
+    } else if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -343,11 +425,24 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
+    utils::dflash::reject_dflash_draft_on_npu(is_npu_requested, properties);
     utils::extract_extensions_to_core(properties);
 
     std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
 
-    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
+    if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
+        // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
+        auto [device_properties, scheduler_config] =
+            utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        // NPUW_PA is an NPUW option, so NPUW is on by default, as for the stateful NPU pipeline
+        utils::set_config_default(device_properties, "NPU_USE_NPUW", std::string{"YES"});
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
+                                                              tokenizer,
+                                                              scheduler_config,
+                                                              device,
+                                                              device_properties,
+                                                              generation_config);
+    } else if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(
             model,
             tokenizer,

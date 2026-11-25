@@ -5,21 +5,17 @@
 
 #include <napi.h>
 
+#include "include/base/thread_safe_callback.hpp"
 #include "openvino/genai/parsers.hpp"
 
 class JSParser : public ov::genai::Parser {
 public:
     JSParser(Napi::Env env, Napi::Object jsParser);
-    ~JSParser() override {
-        parser_tsfn.Release();
-        js_parser_ref.Unref();
-    };
     void parse(ov::genai::JsonContainer& message) override;
     Napi::Object get_js_object(Napi::Env env) const;
 
 private:
-    Napi::ThreadSafeFunction parser_tsfn;
-    Napi::ObjectReference js_parser_ref;
+    ThreadSafeCallback parser_callback;
 };
 
 class ReasoningParserWrapper : public Napi::ObjectWrap<ReasoningParserWrapper> {

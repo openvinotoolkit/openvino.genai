@@ -19,6 +19,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
 #include "logger.hpp"
+#include "sampling/draft_proposal.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
@@ -61,10 +62,13 @@ class Sequence {
 
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
+    // Empty until a proposal is recorded, then aligned with m_generated_ids.
+    std::vector<DraftProposalPtr> m_draft_proposals;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
-    // When enabled, one intermediate hidden state is accumulated per generated token
+    size_t m_hidden_state_first_position = 0;
+    // When enabled, one intermediate hidden state is kept per token position
     // (prefill batches are sliced into per-token tensors before accumulation)
     static constexpr size_t kMaxAccumulatedHiddenStates = 512;
     bool m_accumulate_hidden_states = false;
@@ -99,8 +103,10 @@ class Sequence {
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
         m_generated_log_probs(seq.m_generated_log_probs),
+        m_draft_proposals(seq.m_draft_proposals),
         m_grouped_id(id),
         m_hidden_state(seq.m_hidden_state),
+        m_hidden_state_first_position(seq.m_hidden_state_first_position),
         m_accumulate_hidden_states(seq.m_accumulate_hidden_states),
         m_hidden_state_cap_warned(seq.m_hidden_state_cap_warned),
         m_all_intermediate_hidden_states(seq.m_all_intermediate_hidden_states),
@@ -176,14 +182,23 @@ public:
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
         m_generated_ids.push_back(token_id);
+        if (!m_draft_proposals.empty()) {
+            m_draft_proposals.emplace_back();
+        }
     }
 
-    void update_hidden_state(const ov::Tensor& tensor) {
+    // first_position is the token position of the first row.
+    void update_hidden_state(const ov::Tensor& tensor, size_t first_position = 0) {
         m_hidden_state = tensor;
+        m_hidden_state_first_position = first_position;
     }
 
     ov::Tensor get_hidden_state() const {
         return m_hidden_state;
+    }
+
+    size_t get_hidden_state_first_position() const {
+        return m_hidden_state_first_position;
     }
 
     void set_tree_metadata(TreeMetaData metadata) {
@@ -194,20 +209,41 @@ public:
         return m_tree_metadata;
     }
 
-    void update_intermediate_hidden_state(const ov::Tensor& tensor) {
-        if (m_accumulate_hidden_states && tensor.get_size() > 0) {
-            if (m_all_intermediate_hidden_states.size() >= kMaxAccumulatedHiddenStates) {
-                if (!m_hidden_state_cap_warned) {
-                    GENAI_WARN("Hidden state accumulation cap reached (%zu tokens); stopping accumulation",
-                               kMaxAccumulatedHiddenStates);
-                    m_hidden_state_cap_warned = true;
-                }
-                return;
-            }
-            ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
-            tensor.copy_to(copy);
-            m_all_intermediate_hidden_states.push_back(std::move(copy));
+    // A position computed again after preemption replaces its earlier state, so the vector stays
+    // indexed by absolute token position.
+    void set_intermediate_hidden_state(size_t position, const ov::Tensor& tensor) {
+        if (!m_accumulate_hidden_states || tensor.get_size() == 0) {
+            return;
         }
+        if (position >= kMaxAccumulatedHiddenStates && !m_hidden_state_cap_warned) {
+            GENAI_WARN("Hidden state accumulation cap reached (%zu tokens); stopping accumulation",
+                       kMaxAccumulatedHiddenStates);
+            m_hidden_state_cap_warned = true;
+            return;
+        }
+        // Preemption can compute a position past the cap again after the warning was logged.
+        // A prefix restored without prefill_intermediate_hidden_states() belongs to a request that did
+        // not ask for hidden states; its later hidden states cannot be indexed, so they are dropped.
+        if (position >= kMaxAccumulatedHiddenStates || position > m_all_intermediate_hidden_states.size()) {
+            return;
+        }
+        ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(copy);
+        if (position == m_all_intermediate_hidden_states.size()) {
+            m_all_intermediate_hidden_states.push_back(std::move(copy));
+        } else {
+            m_all_intermediate_hidden_states[position] = std::move(copy);
+        }
+    }
+
+    /// @param hidden_states Hidden states restored from the prefix cache, for positions [0, hidden_states.size()).
+    void prefill_intermediate_hidden_states(std::vector<ov::Tensor> hidden_states) {
+        OPENVINO_ASSERT(m_all_intermediate_hidden_states.empty(),
+                        "Restored hidden states must precede every computed one");
+        if (hidden_states.size() > kMaxAccumulatedHiddenStates) {
+            hidden_states.resize(kMaxAccumulatedHiddenStates);
+        }
+        m_all_intermediate_hidden_states = std::move(hidden_states);
     }
 
     void set_accumulate_hidden_states(bool enable) {
@@ -231,6 +267,9 @@ public:
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
+            if (!m_draft_proposals.empty()) {
+                m_draft_proposals.pop_back();
+            }
         }
         if (m_type == SequenceGroupType::EMBEDDINGS) {
             const size_t tokens_to_remove = static_cast<size_t>(n);
@@ -288,7 +327,46 @@ public:
 
     void update_generated_log_prob(size_t idx, float log_prob) {
         OPENVINO_ASSERT(idx < m_generated_log_probs.size());
+        m_cumulative_log_prob += log_prob - m_generated_log_probs[idx];
         m_generated_log_probs[idx] = log_prob;
+    }
+
+    void set_draft_proposal(size_t idx, DraftProposalPtr proposal) {
+        if (m_draft_proposals.empty()) {
+            m_draft_proposals.resize(m_generated_ids.size());
+        }
+        OPENVINO_ASSERT(idx < m_draft_proposals.size());
+        m_draft_proposals[idx] = std::move(proposal);
+    }
+
+    void set_draft_proposal(size_t idx, DraftProposal proposal) {
+        set_draft_proposal(idx, std::make_shared<const DraftProposal>(std::move(proposal)));
+    }
+
+    const DraftProposal& get_draft_proposal(size_t idx) const {
+        static const DraftProposal empty_proposal;
+        if (m_draft_proposals.empty()) {
+            return empty_proposal;
+        }
+        OPENVINO_ASSERT(idx < m_draft_proposals.size());
+        const auto& proposal = m_draft_proposals[idx];
+        return proposal ? *proposal : empty_proposal;
+    }
+
+    const std::vector<DraftProposalPtr>& get_draft_proposals() const {
+        return m_draft_proposals;
+    }
+
+    void clear_draft_proposal(size_t idx) {
+        if (m_draft_proposals.empty()) {
+            return;
+        }
+        OPENVINO_ASSERT(idx < m_draft_proposals.size());
+        m_draft_proposals[idx].reset();
+    }
+
+    void clear_draft_proposals() {
+        m_draft_proposals.clear();
     }
 
     float get_beam_search_score(const ov::genai::GenerationConfig& sampling_params) const {
@@ -381,6 +459,10 @@ public:
     size_t get_hash(size_t content_length, size_t block_size);
     size_t get_hash(size_t block_size);
 
+    /// @return Number of leading positions get_hash() can identify. A stop-string trim can make it smaller
+    /// than the number of processed tokens.
+    size_t get_prefix_identity_length() const;
+
     void set_prefix_cache_policy(size_t publication_limit,
                                  std::function<size_t(size_t, size_t)> hash_provider = {}) {
         OPENVINO_ASSERT(m_prefix_hashes.empty(), "Prefix cache policy must be set before hashing");
@@ -392,7 +474,7 @@ public:
         return m_prefix_publication_limit;
     }
 
-    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
+    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimension) {
 
         ov::Coordinate begin;
         ov::Coordinate end;
@@ -401,7 +483,7 @@ public:
             end = ov::Coordinate{position_ids_elem_shape[0], 1, idx + 1};
         }
         else if (position_ids_elem_shape.size() == 2) {
-            if (need_batch_dimention) {
+            if (need_batch_dimension) {
                 begin = ov::Coordinate{0, idx};
                 end = ov::Coordinate{1, idx + 1};
             }
@@ -433,6 +515,9 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     std::optional<std::vector<bool>> m_visual_pos_masks;
     
     ov::Tensor m_per_layer_inputs;
+
+    ov::Tensor m_ngram_embeddings;
+    ov::Tensor m_ngram_history;
 
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
@@ -544,6 +629,16 @@ public:
                             tensor.data<const int64_t>(),
                             tensor.data<const int64_t>() + tensor.get_size()
                         );
+                    } else if (input_name == "ngram_embeddings") {
+                        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32, "ngram_embeddings must have element type f32");
+                        const auto& shape = tensor.get_shape();
+                        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1 && shape[1] == prompt_len,
+                            "ngram_embeddings must have shape [1, tokens, num_ple_layers, ple_embed_dim], got ", shape);
+                        m_ngram_embeddings = ov::Tensor(tensor.get_element_type(), shape);
+                        tensor.copy_to(m_ngram_embeddings);
+                    } else if (input_name == "ngram_history") {
+                        m_ngram_history = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
+                        tensor.copy_to(m_ngram_history);
                     } else {
                         OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }
@@ -781,8 +876,13 @@ public:
     }
 
     void clear_scheduled_tokens() {
-        m_num_scheduled_tokens = 0;
+        unschedule_tokens();
         m_num_validation_tokens = 0;
+    }
+
+    // Unlike clear_scheduled_tokens(), keeps the candidates of a validation window to validate in a later step.
+    void unschedule_tokens() {
+        m_num_scheduled_tokens = 0;
         m_output_seq_len = 0;
     }
 
@@ -804,19 +904,45 @@ public:
         m_stream_window_size = k;
     }
 
+    /// @brief Number of generated tokens prepare_notification() has released to the generation stream.
+    size_t get_num_streamed_tokens() const {
+        return m_num_streamed_tokens;
+    }
+
+    // The pending tokens of a request, the candidates of a validation window or the tokens a draft request takes over
+    // from the main model, are the last tokens of the sequence, and the forward that runs them samples after the last
+    // one, so it runs to the end of the sequence. After a recompute the group counts one row less: without pending
+    // tokens, the last generated token runs on its own in a later step.
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
-        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
-        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
+        const size_t num_available_tokens =
+            std::max<size_t>(std::max(get_prompt_len(), m_max_content_len) - m_num_processed_tokens, 1u) +
+            m_num_validation_tokens;
+        if (m_num_validation_tokens == 0) {
+            return num_available_tokens;
+        }
+        size_t sequence_len = 0;
+        for (const auto& sequence : get_running_sequences()) {
+            sequence_len = std::max(sequence_len, get_prompt_len() + sequence->get_generated_len());
+        }
+        return std::max(num_available_tokens,
+                        sequence_len > m_num_processed_tokens ? sequence_len - m_num_processed_tokens : 0);
     }
 
     void finish_iteration() {
+        finish_iteration_before_validation_window();
+        m_num_validation_tokens = 0;
+    }
+
+    // A forward that ends before the validation window, in a prompt or a recompute, leaves its candidates to the
+    // forward that runs the window.
+    void finish_iteration_before_validation_window() {
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
-        clear_scheduled_tokens();
+        unschedule_tokens();
     }
 
     void update_processed_tokens_num(size_t processed_tokens) {
@@ -861,6 +987,16 @@ public:
     const ov::Tensor& get_per_layer_inputs() const {
         OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         return m_per_layer_inputs;
+    }
+
+    const ov::Tensor& get_ngram_embeddings() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_ngram_embeddings;
+    }
+
+    const ov::Tensor& get_ngram_history() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_ngram_history;
     }
 
     size_t get_hidden_size() const {

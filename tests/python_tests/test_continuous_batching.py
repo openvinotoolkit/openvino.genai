@@ -5,6 +5,7 @@ import os
 import gc
 import pytest
 import math
+import random
 import sys
 import threading
 import numpy as np
@@ -25,6 +26,7 @@ from openvino_genai import (
     GenerationStatus,
     StreamingStatus,
     ChatHistory,
+    Tokenizer,
 )
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
@@ -520,6 +522,82 @@ def test_preemption(model_facebook_opt_125m: OVConvertedModelSchema, params):
         generation_config=generation_config
     )
 
+
+def get_hybrid_prefix_caching_scheduler_config(num_kv_blocks: int, cache_interval_multiplier: int) -> SchedulerConfig:
+    scheduler_config = SchedulerConfig()
+    scheduler_config.num_kv_blocks = num_kv_blocks
+    scheduler_config.num_linear_attention_blocks = 64
+    scheduler_config.cache_interval_multiplier = cache_interval_multiplier
+    scheduler_config.enable_prefix_caching = True
+    scheduler_config.dynamic_split_fuse = True
+    scheduler_config.max_num_batched_tokens = 256
+    scheduler_config.max_num_seqs = 16
+    return scheduler_config
+
+
+HYBRID_PREEMPTION_MODELS_LIST = [
+    pytest.param(model_id, marks=pytest.mark.skip(reason="CVS-195736: LFM2 conversion fails in CI"))
+    if model_id == "optimum-intel-internal-testing/tiny-random-lfm2"
+    else model_id
+    for model_id in LINEAR_ATTENTION_MODELS_LIST
+]
+
+
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
+@pytest.mark.parametrize("llm_model", HYBRID_PREEMPTION_MODELS_LIST, indirect=True)
+def test_hybrid_prefix_caching_preemption_matches_unconstrained_cache(llm_model: OVConvertedModelSchema):
+    prompts = ["What is OpenVINO?", "Why is the Sun yellow?", "Tell me something about Canada", "1+1="]
+    generation_configs = [GenerationConfig(max_new_tokens=64, ignore_eos=True, do_sample=False)] * len(prompts)
+
+    reference_pipe = ContinuousBatchingPipeline(
+        llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(256, 1), "CPU"
+    )
+    reference = reference_pipe.generate(prompts, generation_configs)
+
+    # A smaller interval gives preempted victims checkpoints to rewind to instead of recomputing from scratch.
+    constrained_pipe = ContinuousBatchingPipeline(
+        llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(4, 1), "CPU"
+    )
+    constrained = constrained_pipe.generate(prompts, generation_configs)
+
+    assert constrained_pipe.get_metrics().max_cache_usage >= 99.0, "KV pool was not under pressure"
+    for ref, res in zip(reference, constrained):
+        assert res.m_generation_ids == ref.m_generation_ids
+
+
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
+@pytest.mark.parametrize("llm_model", HYBRID_PREEMPTION_MODELS_LIST, indirect=True)
+def test_hybrid_prefix_caching_preemption_with_cancellations_does_not_raise(llm_model: OVConvertedModelSchema):
+    # Deterministic add_request / step / cancel workload from model_server#4428.
+    pipe = ContinuousBatchingPipeline(llm_model.models_path, get_hybrid_prefix_caching_scheduler_config(16, 64), "CPU")
+    base_prompt = "Explain the history of distributed systems and consensus algorithms such as Paxos and Raft. "
+    prompt_pool = [base_prompt * n for n in (1, 2, 4, 8)]
+
+    rng = random.Random(1000)  # nosec B311 - reproducible test schedule, not security-sensitive
+    # Handles must stay alive: dropping one stops its request.
+    handles, cancel_at = {}, {}
+    next_id = step = 0
+    for _ in range(3):
+        for _ in range(12):
+            config = GenerationConfig(min_new_tokens=32, max_new_tokens=rng.randint(64, 192))
+            handles[next_id] = pipe.add_request(next_id, rng.choice(prompt_pool), config)
+            if rng.random() < 0.75:
+                cancel_at[next_id] = step + rng.randint(5, 60)
+            next_id += 1
+        while pipe.has_non_finished_requests():
+            pipe.step()
+            step += 1
+            for request_id in [rid for rid, at in cancel_at.items() if step >= at]:
+                handles[request_id].cancel()
+                del cancel_at[request_id]
+
+    assert pipe.get_metrics().max_cache_usage >= 99.0, "KV pool was not under pressure"
+
+
 multinomial_params = RandomSamplingTestStruct(
     generation_config=[
         get_multinomial_temperature(),
@@ -809,7 +887,8 @@ def test_dynamic_split_fuse_doesnt_affect_generated_text():
     scheduler_config_ref = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
     cb_pipe_ref = create_ov_pipeline(models_path, scheduler_config=scheduler_config_ref, pipeline_type=pipeline_type)
 
-    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 5})
+    # The smallest budget for a validation window of num_assistant_tokens + 1 = 6 tokens; the prompt still splits.
+    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 6})
     cb_pipe_target = create_ov_pipeline(models_path, scheduler_config=scheduler_config_target, pipeline_type=pipeline_type)
 
     generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, eos_token_id=cb_pipe_ref.get_tokenizer().get_eos_token_id())
@@ -1099,6 +1178,65 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
     assert mtp_result[0].m_generation_ids == main_only_texts
 
 
+# After preemption, pending tokens must be replayed before MTP can enter its atomic verification window.
+# Currently step() raises instead, failing the batch rather than replaying and continuing generation.
+@pytest.mark.skip(reason="Hybrid MTP verification rejects preempted requests with pending tokens to replay, CVS-198275")
+def test_qwen35_mtp_preemption_replays_before_verification(qwen35_mtp_model_path: Path):
+    scheduler = get_hybrid_prefix_caching_scheduler_config(64, 64)
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.num_kv_blocks = 128
+    draft_scheduler.enable_prefix_caching = True
+    pipe = ContinuousBatchingPipeline(
+        qwen35_mtp_model_path,
+        scheduler,
+        "CPU",
+        {"draft_model": draft_model(qwen35_mtp_model_path, "CPU", scheduler_config=draft_scheduler)},
+    )
+
+    prompt_pool = [
+        "Explain in detail the history of distributed systems and consensus algorithms, covering "
+        "Paxos, Raft, and Byzantine fault tolerance. " * count
+        for count in (2, 4, 6, 8, 10)
+    ]
+    rng = random.Random(1000)  # nosec B311 - reproducible test schedule, not security-sensitive
+    handles, prompts, configs, cancel_at = {}, {}, {}, {}
+    cancelled_ids = set()
+    for request_id in range(12):
+        prompts[request_id] = rng.choice(prompt_pool)
+        configs[request_id] = GenerationConfig(
+            min_new_tokens=100, max_new_tokens=rng.randint(200, 600), num_assistant_tokens=4
+        )
+        handles[request_id] = pipe.add_request(request_id, prompts[request_id], configs[request_id])
+        if rng.random() < 0.75:
+            cancel_at[request_id] = rng.randint(5, 60)
+
+    for step in range(1000):
+        if not pipe.has_non_finished_requests():
+            break
+        pipe.step()
+        for request_id, cancel_step in list(cancel_at.items()):
+            if step + 1 >= cancel_step:
+                handles[request_id].cancel()
+                cancelled_ids.add(request_id)
+                del cancel_at[request_id]
+    else:
+        pytest.fail("MTP requests did not finish within 1000 steps")
+
+    assert pipe.get_metrics().max_cache_usage >= 99.0, "Cache was not under pressure"
+    surviving_ids = [request_id for request_id in handles if request_id not in cancelled_ids]
+    assert surviving_ids
+    assert all(handles[request_id].get_status() == GenerationStatus.FINISHED for request_id in surviving_ids)
+    survivor_id = surviving_ids[0]
+    output_ids = handles[survivor_id].read_all()[0].generated_ids
+
+    reference_scheduler = get_hybrid_prefix_caching_scheduler_config(256, 64)
+    reference = ContinuousBatchingPipeline(qwen35_mtp_model_path, reference_scheduler, "CPU")
+    reference_handle = reference.add_request(survivor_id, prompts[survivor_id], configs[survivor_id])
+    while reference.has_non_finished_requests():
+        reference.step()
+    assert output_ids == reference_handle.read_all()[0].generated_ids
+
+
 def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
     mtp_pipe = create_ov_cb_pipeline(
         qwen35_mtp_model_path,
@@ -1127,6 +1265,49 @@ def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
 
     generate_and_collect_metrics()
     generate_and_collect_metrics()
+
+
+def test_qwen35_mtp_sampled_streaming(qwen35_mtp_model_path: Path):
+    mtp_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+    )
+    generation_config = GenerationConfig(
+        do_sample=True,
+        temperature=0.8,
+        top_k=20,
+        top_p=0.95,
+        rng_seed=5,
+        max_new_tokens=32,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+    streamed = []
+
+    def streamer(subword):
+        streamed.append(subword)
+        return StreamingStatus.RUNNING
+
+    result = mtp_pipe.generate(["OpenVINO is"], [generation_config], streamer)[0]
+
+    assert result.m_generation_ids[0]
+    assert "".join(streamed) == result.m_generation_ids[0]
+    metrics = result.extended_perf_metrics
+    assert len(metrics.main_model_metrics.raw_metrics.m_durations) > 1
+    assert metrics.get_num_draft_tokens() > 0
+    assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
+
+
+def test_qwen35_mtp_sampling_rejects_prefix_caching(qwen35_mtp_model_path: Path):
+    mtp_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        scheduler_config=dict_to_scheduler_config({"enable_prefix_caching": True}),
+    )
+    generation_config = GenerationConfig(do_sample=True, max_new_tokens=8, num_assistant_tokens=3)
+
+    with pytest.raises(RuntimeError, match="set enable_prefix_caching to false"):
+        mtp_pipe.generate(["OpenVINO is"], [generation_config])
 
 
 @pytest.mark.parametrize(
@@ -1235,6 +1416,67 @@ def test_eagle3_llm_generate_zero_assistant_tokens_matches_main_only(eagle3_mode
     assert len(main_only_result.texts) == 1
     assert len(sd_result.texts[0]) > 0
     assert sd_result.texts[0] == main_only_result.texts[0]
+
+
+def test_eagle3_sampled_streaming(eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+    sd_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+    )
+    generation_config = GenerationConfig(
+        do_sample=True,
+        temperature=0.8,
+        top_k=20,
+        top_p=0.95,
+        rng_seed=5,
+        max_new_tokens=32,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+    streamed = []
+
+    def streamer(subword):
+        streamed.append(subword)
+        return StreamingStatus.RUNNING
+
+    result = sd_cb_pipe.generate(["Explain why sunsets often appear orange."], [generation_config], streamer)[0]
+
+    assert result.m_generation_ids[0]
+    assert "".join(streamed) == result.m_generation_ids[0]
+    metrics = result.extended_perf_metrics
+    assert len(metrics.main_model_metrics.raw_metrics.m_durations) > 1
+    # A draft whose hidden states fall out of step with the target would have almost none accepted.
+    assert 0 < metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
+
+
+@pytest.mark.parametrize(
+    "config_kwargs, use_streamer",
+    [
+        pytest.param({"do_sample": True, "num_return_sequences": 2}, True, id="sampled_streaming"),
+        pytest.param({"do_sample": True, "num_return_sequences": 2}, False, id="sampled"),
+        pytest.param({"num_beams": 2}, False, id="beam_search"),
+    ],
+)
+def test_eagle3_rejects_several_sequences_per_request(
+    eagle3_model_paths: tuple[Path, Path], config_kwargs: dict, use_streamer: bool
+):
+    main_model_path, draft_model_path = eagle3_model_paths
+    sd_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+    )
+    # num_assistant_tokens=0 turns drafting off, so GenerationConfig::validate() allows several sequences.
+    generation_config = GenerationConfig(max_new_tokens=8, num_assistant_tokens=0, **config_kwargs)
+    prompt = "Explain why sunsets often appear orange."
+    streamer = (lambda subword: StreamingStatus.RUNNING) if use_streamer else None
+
+    with pytest.raises(RuntimeError, match="one sequence per request"):
+        sd_cb_pipe.generate([prompt], [generation_config], streamer)
+    with pytest.raises(RuntimeError, match="one sequence per request"):
+        sd_cb_pipe.add_request(0, prompt, generation_config=generation_config)
 
 
 def test_eagle3_cb_add_request_mixed_batch_zero_assistant_tokens_matches_main_only(
@@ -1460,6 +1702,70 @@ def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_d
     del ov_pipe
 
 
+def test_eagle3_counts_the_tree_window_that_ends_a_request():
+    # The second token of the target stops each request, so the tree the target validates after the first token ends
+    # the request.
+    target_path = download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3-layer10").models_path
+    draft_path = download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3-eagle3").models_path
+    tokenizer = Tokenizer(target_path)
+    prompts = ["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada."]
+    input_ids = [tokenizer.encode(prompt).input_ids for prompt in prompts]
+    properties = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
+    main_only = ContinuousBatchingPipeline(target_path, SchedulerConfig(), "CPU", properties)
+    reference = [
+        result.m_generation_ids[0]
+        for result in main_only.generate(input_ids, [GenerationConfig(max_new_tokens=2)] * len(input_ids))
+    ]
+    configs = []
+    for tokens in reference:
+        config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=6, branching_factor=2, tree_depth=3)
+        config.stop_token_ids = {tokens[1]}
+        configs.append(config)
+    pipe = ContinuousBatchingPipeline(
+        target_path,
+        SchedulerConfig(),
+        "CPU",
+        {**properties, "draft_model": draft_model(draft_path, "CPU", **properties)},
+    )
+
+    results = pipe.generate(input_ids, configs)
+
+    assert [result.m_generation_ids[0] for result in results] == reference
+    metrics = results[0].extended_perf_metrics
+    assert metrics.get_num_draft_tokens() == len(input_ids) * 6
+    assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
+
+
+def test_speculative_decoding_counts_candidates_a_stop_string_removes():
+    # The target drafts for itself, so it accepts every candidate. A stop string in the first window removes the
+    # accepted candidates after it from the output, and its own tokens unless they are included; they count all the same.
+    target_path = download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3").models_path
+    properties = {hints.inference_precision: ov.Type.f32, hints.kv_cache_precision: ov.Type.f32}
+    pipe = ContinuousBatchingPipeline(
+        target_path,
+        SchedulerConfig(),
+        "CPU",
+        {**properties, "draft_model": draft_model(target_path, "CPU", **properties)},
+    )
+    tokenizer = pipe.get_tokenizer()
+    input_ids = tokenizer.encode("What's OpenVINO?").input_ids
+    config = GenerationConfig(do_sample=False, max_new_tokens=30, ignore_eos=True, num_assistant_tokens=5)
+    generated_ids = pipe.generate([input_ids], [config])[0].m_generation_ids[0]
+    # the target generates the first token from the prompt, and the first window drafts the next ones
+    stop_string = tokenizer.decode(generated_ids[1:3])
+    assert stop_string.strip()
+
+    def counts(include_stop_str_in_output):
+        config.stop_strings = {stop_string}
+        config.include_stop_str_in_output = include_stop_str_in_output
+        metrics = pipe.generate([input_ids], [config])[0].extended_perf_metrics
+        return metrics.get_num_draft_tokens(), metrics.get_num_accepted_tokens()
+
+    num_drafted, num_accepted = counts(False)
+    assert num_accepted == num_drafted
+    assert counts(True) == (num_drafted, num_accepted)
+
+
 @pytest.fixture(scope="module")
 def cb_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
     return download_and_convert_model(request.param)
@@ -1639,6 +1945,56 @@ def test_cb_generate_allows_unsupported_add_request_lora_mode(
     )
 
     results = pipe.generate(["test prompt"], [config])
+
+    assert len(results[0].m_generation_ids[0]) > 0
+
+
+@pytest.mark.parametrize(
+    "backend, rejection",
+    [
+        ("continuous_batching", "max_length"),
+        ("prompt_lookup", "max_length"),
+        ("prompt_lookup", "validation_window"),
+        ("speculative_decoding", "max_length"),
+        ("speculative_decoding", "validation_window"),
+    ],
+)
+def test_cb_generate_discards_its_requests_when_one_is_rejected(
+    model_facebook_opt_125m: OVConvertedModelSchema, backend: str, rejection: str
+):
+    """A request that add_request() rejects must not leave the requests generate() added before it queued."""
+    models_path = model_facebook_opt_125m.models_path
+    properties = {}
+    if backend == "prompt_lookup":
+        properties["prompt_lookup"] = True
+    elif backend == "speculative_decoding":
+        properties["draft_model"] = draft_model(models_path)
+
+    def make_config(num_assistant_tokens: int = 3) -> GenerationConfig:
+        config = GenerationConfig()
+        config.max_new_tokens = 5
+        if backend != "continuous_batching":
+            config.num_assistant_tokens = num_assistant_tokens
+        if backend == "prompt_lookup":
+            config.max_ngram_size = 3
+        return config
+
+    scheduler_config = SchedulerConfig()
+    if rejection == "max_length":
+        rejected = make_config()
+        rejected.max_length = 1
+        error = "'max_length' must be greater than the number of prompt tokens"
+    else:
+        # windows of 1 + 3 tokens fit the budget, windows of 1 + 4 tokens do not
+        scheduler_config.max_num_batched_tokens = 4
+        rejected = make_config(num_assistant_tokens=4)
+        error = "is too small to ever schedule the speculative validation windows"
+    pipe = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties=properties)
+
+    with pytest.raises(RuntimeError, match=error):
+        pipe.generate(["test prompt", "test prompt"], [make_config(), rejected])
+
+    results = pipe.generate(["test prompt"], [make_config()])
 
     assert len(results[0].m_generation_ids[0]) > 0
 

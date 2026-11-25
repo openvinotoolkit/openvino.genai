@@ -12,6 +12,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/gguf.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"

@@ -107,7 +107,9 @@ class LlamaCPPGeneration(BaseGenerationStrategy):
             )
             output_text = output["choices"][0]["message"]["content"]
         else:
-            output = model(question, max_tokens=max_new_tokens, echo=False, temperature=0.0)
+            # Explicit tokens preserve the GGUF special-token policy without wrapper-added EOS.
+            prompt_tokens = model.tokenize(question.encode("utf-8"), add_bos=True, special=True)
+            output = model(prompt_tokens, max_tokens=max_new_tokens, echo=False, temperature=0.0)
             output_text = output["choices"][0]["text"]
 
         return GenerationResults(answer_text=output_text)

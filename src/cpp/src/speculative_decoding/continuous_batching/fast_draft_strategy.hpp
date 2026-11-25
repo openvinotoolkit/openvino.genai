@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <future>
+#include <random>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
@@ -18,9 +19,7 @@ struct GenerateStrategy {
     std::function<void(size_t,
                        const ov::Tensor& in_ids,
                        GenerationConfig& main_cfg,
-                       GenerationConfig& draft_cfg,
-                       ov::Tensor& main_in,
-                       ov::Tensor& draft_in)> prepare_request;
+                       ov::Tensor& main_in)> prepare_request;
     std::function<void(const std::shared_ptr<ThreadedStreamerWrapper>&,
                        const std::vector<ov::Tensor>&,
                        const std::vector<GenerationConfig>&)> check_streaming;
@@ -77,31 +76,36 @@ std::vector<EncodedGenerationResult> generate_common(
     }
 
     std::vector<GenerationHandle> main_generations;
-    for (size_t rid = 0; rid < input_ids.size(); ++rid) {
-        GenerationConfig main_cfg = sampling_params[rid];
-        GenerationConfig draft_cfg = main_cfg;
-        ov::Tensor main_in, draft_in;
-        strategy.prepare_request(rid, input_ids[rid],
-                                main_cfg, draft_cfg,
-                                main_in, draft_in);
+    try {
+        for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+            GenerationConfig main_cfg = sampling_params[rid];
+            ov::Tensor main_in;
+            strategy.prepare_request(rid, input_ids[rid], main_cfg, main_in);
 
-        const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
+            const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
 
-        if (position_ids.has_value() && self->m_inputs_embedder) {
-            const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
-            self->m_inputs_embedder->set_position_ids(position_ids_tensor);
-            // TODO: The rope_delta here has to be recomputed, if rope_delta is not provided then a stale value is used
-            if (rope_delta.has_value()) {
-                self->m_inputs_embedder->set_rope_delta(*rope_delta);
+            if (position_ids.has_value() && self->m_inputs_embedder) {
+                const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
+                self->m_inputs_embedder->set_position_ids(position_ids_tensor);
+                // TODO: The rope_delta here has to be recomputed, if rope_delta is not provided then a stale value is used
+                if (rope_delta.has_value()) {
+                    self->m_inputs_embedder->set_rope_delta(*rope_delta);
+                }
             }
-        }
 
-        main_generations.push_back(self->add_request(
-            rid,
-            main_in,
-            main_cfg,
-            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
-            lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
+            main_generations.push_back(self->add_request(
+                rid,
+                main_in,
+                main_cfg,
+                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
+                lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
+        }
+    } catch (...) {
+        std::lock_guard<std::mutex> lock{self->m_draft_generations_mutex};
+        for (size_t rid = 0; rid < main_generations.size(); ++rid) {
+            self->discard_awaiting_request(rid);
+        }
+        throw;
     }
 
     auto all_requests = self->get_awaiting_requests();
@@ -128,6 +132,8 @@ std::vector<EncodedGenerationResult> generate_common(
     OPENVINO_ASSERT(self->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
     self->perf_metrics().draft_model_metrics.raw_metrics = self->draft_pipeline()->raw_perf_metrics;
+    self->perf_metrics().draft_markov_head_metrics.raw_metrics = self->draft_pipeline()->dflash_markov_head_perf_metrics;
+    self->perf_metrics().draft_sampling_metrics.raw_metrics = self->draft_pipeline()->dflash_sampling_perf_metrics;
     uint64_t generate_duration_us = strategy.stop_timer(t_start);
 
     std::vector<EncodedGenerationResult> results;
@@ -179,6 +185,16 @@ std::vector<EncodedGenerationResult> generate_common(
     return results;
 }
 
+namespace detail {
+inline constexpr uint32_t PROPOSAL_RNG_SEED_SALT = 0x9E3779B9U;
+
+// Seed of the draft copy of a request (make_draft_sampling_params). It differs from the main request's seed so that
+// the uniform draws accepting draft tokens are independent of the draws that proposed them.
+inline std::mt19937::result_type proposal_rng_seed(size_t generation_seed) {
+    return static_cast<std::mt19937::result_type>(generation_seed) ^ PROPOSAL_RNG_SEED_SALT;
+}
+}  // namespace detail
+
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
@@ -192,12 +208,16 @@ protected:
 
     void reset_generate_metrics() {
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-        m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
-        m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+        m_draft_pipeline->reset_draft_perf_metrics();
     }
 
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);
+    // The draft copy of a request never stops on its own, and it samples from a stream independent of the
+    // main request's, whose draws accept or reject the drafted tokens. A sampled draft requests no log-probs.
+    static GenerationConfig make_draft_sampling_params(const GenerationConfig& sampling_params);
     void drop_requests();
+    // Removes a request that add_request() queued from both pipelines. Callers hold m_draft_generations_mutex.
+    void discard_awaiting_request(uint64_t request_id);
     virtual void align_request_pair_processed_prefix(uint64_t) {}
     virtual void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
                                             const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {

@@ -67,6 +67,32 @@ def _resolve_torch_dtype(dtype):
         raise ValueError(f"Unsupported PyTorch dtype '{dtype}'. Supported values: {', '.join(TORCH_DTYPES)}.") from exc
 
 
+_CASTABLE_FLOAT_DTYPES = {torch.float16, torch.bfloat16, torch.float32, torch.float64}
+
+
+def _unify_floating_dtype(model, dtype):
+    """Cast a model to ``dtype`` when its floating-point parameters are left with mixed dtypes.
+
+    Some quantized checkpoints (e.g. FP8 with ``modules_to_not_convert``) are dequantized on CPU
+    into the requested dtype while the excluded modules keep the checkpoint dtype, which breaks
+    generation with dtype mismatches. Only applied for an explicit concrete ``dtype``.
+    """
+    if not isinstance(dtype, torch.dtype) or not dtype.is_floating_point:
+        return model
+    float_dtypes = {p.dtype for p in model.parameters() if p.is_floating_point()}
+    # Keep models that still hold low-precision quantized storage (e.g. float8) untouched.
+    if not float_dtypes or not float_dtypes <= _CASTABLE_FLOAT_DTYPES:
+        return model
+    if len(float_dtypes) > 1:
+        logger.info(
+            "Model parameters have mixed floating dtypes %s after loading; casting to %s.",
+            sorted(str(d) for d in float_dtypes),
+            dtype,
+        )
+        model = model.to(dtype)
+    return model
+
+
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
@@ -147,10 +173,16 @@ class GenAIModelWrapper:
     A helper class to store additional attributes for GenAI models
     """
 
-    def __init__(self, model, model_dir, model_type):
+    def __init__(self, model, model_dir, model_type, gguf_file=None):
         self.model = model
         self.model_dir = model_dir
         self.model_type = model_type
+        self.config = None
+
+        # GGUF models have no HF config.json in the directory; the GenAI pipeline carries its
+        # own config from the .gguf, so skip the AutoConfig load (it would raise).
+        if gguf_file:
+            return
 
         if model_type in (
             "text",
@@ -257,7 +289,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         logger.info("Using OpenVINO GenAI LLMPipeline API")
         pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, **ov_config)
 
-    return GenAIModelWrapper(pipeline, model_dir, "text")
+    return GenAIModelWrapper(pipeline, model_dir, "text", gguf_file=kwargs.get("gguf_file"))
 
 
 def load_text_llamacpp_pipeline(model_dir, **kwargs):
@@ -594,6 +626,12 @@ def load_visual_text_model(
                         model_kwargs["torch_dtype"],
                     )
                 model_kwargs.update({"torch_dtype": torch.float32})
+            elif config.model_type == "molmo2":
+                # The remote code of molmo2 checkpoints registers the model only under AutoModelForImageTextToText.
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+                model_kwargs["trust_remote_code"] = True
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
@@ -602,6 +640,15 @@ def load_visual_text_model(
                 from transformers import AutoModelForImageTextToText
 
                 model_cls = AutoModelForImageTextToText
+
+            if config.model_type == "mistral3":
+                # Checkpoint weights are bf16 while the processor emits fp32 pixel_values.
+                if model_kwargs["torch_dtype"] not in (None, torch.float32):
+                    logger.warning(
+                        "Mistral3 uses float32 because pixel_values are float32. Ignoring %s arg.",
+                        model_kwargs["torch_dtype"],
+                    )
+                model_kwargs.update({"torch_dtype": torch.float32})
 
             model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
         except ValueError:
@@ -645,6 +692,10 @@ def load_visual_text_model(
                         model.set_lora_adapter = lambda _: None
                     if hasattr(model.model, "_require_grads_hook"):
                         model.model.disable_input_require_grads()
+
+        if getattr(config, "model_type", None) == "mistral3":
+            # Mistral3 FP8 checkpoints may keep mixed floating dtypes after loading; unify them.
+            model = _unify_floating_dtype(model, model_kwargs["torch_dtype"])
 
         # Common LoRA support via PEFT
         if kwargs.get("adapters") is not None:
@@ -1311,7 +1362,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
 def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     language = kwargs.pop("speech_language", "") or ""
-    from .speech_recognition_evaluator import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
+    from .speech_recognition_model_wrappers import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
 
     if use_hf:
         kwargs["torch_dtype"] = _resolve_torch_dtype(kwargs.get("torch_dtype"))

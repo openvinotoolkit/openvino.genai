@@ -48,12 +48,15 @@ from .py_openvino_genai import (
     VideoMetadata,
 )
 
-# Omni pipeline (Qwen3-Omni text + speech)
+# Omni pipeline (Qwen3-Omni, LFM3-Omni text + speech)
 
 from .py_openvino_genai import (
     OmniDecodedResults,
     OmniPipeline,
+    OmniStreamerBase,
     OmniTalkerSpeechConfig,
+    OmniTextSourceBase,
+    SpeechOutputMode,
     Talker,
     TalkerBase,
     TalkerPerfMetrics,
@@ -82,7 +85,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import ChatHistory
 
 # Tokenizers
-from .py_openvino_genai import TokenizedInputs, Tokenizer
+from .py_openvino_genai import GGUFTokenizer, TokenizedInputs, Tokenizer
 
 # ASR pipeline
 from .py_openvino_genai import (
@@ -150,6 +153,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     ContinuousBatchingPipeline,
     GenerationFinishReason,
+    GenerationHandle,
     GenerationResult,
     GenerationStatus,
     SchedulerConfig,
