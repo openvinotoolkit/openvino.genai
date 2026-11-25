@@ -725,6 +725,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      PIP_CONSTRAINT: ${{ github.workspace }}/src/tests/python_tests/constraints.txt
       # The debug logging includes messages about the time it takes to read the GGUF model.
       # These messages differ from run to run, so we cannot compare the results of the CPP, Python, and JavaScript parts.
       OPENVINO_LOG_LEVEL: 1
@@ -821,6 +822,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      PIP_CONSTRAINT: ${{ github.workspace }}/src/tests/python_tests/constraints.txt
 
     steps:
       - name: Setup Variables
