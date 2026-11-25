@@ -235,8 +235,10 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 ## Qwen3-ASR on NPU
 
 The current Qwen3-ASR split export contains an audio encoder, text embeddings and a language model.
-`ASRPipeline` on NPU runs all three models on NPU. Text-embedding lookups are processed in fixed-size
-windows and merged, because the NPU compiler does not support the export's dynamic input shape.
+`ASRPipeline` on NPU runs all three models on NPU. Text-embedding lookups use NPUW to process dynamic
+token sequences in fixed-size windows. This requires an OpenVINO build with `NPUW_TOKEN_LOOKUP` and
+`NPUW_QWEN3_ASR_AUDIO_ENCODER` support;
+setting `NPU_USE_NPUW=NO` for either the audio encoder or text-embedding model is not supported.
 Audio is split into nominal 60-second segments, with up to five additional seconds for boundary selection.
 The audio encoder processes fixed-size windows sequentially; short windows are zero-padded. CPU/GPU retain
 dynamic batched encoder inference. Padding can introduce numerical differences for sub-window audio; check

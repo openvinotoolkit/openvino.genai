@@ -18,14 +18,6 @@ AudioEncoderQwen3ASR::AudioEncoderQwen3ASR(const VLMConfig& config,
                                            const std::filesystem::path& config_dir,
                                            const std::string& device,
                                            const ov::AnyMap& properties)
-    : AudioEncoderQwen3ASR(config, config_dir) {
-    m_request =
-        utils::singleton_core()
-            .compile_model(audio_model, device, utils::get_model_properties(properties, "audio_encoder", device))
-            .create_infer_request();
-}
-
-AudioEncoderQwen3ASR::AudioEncoderQwen3ASR(const VLMConfig& config, const std::filesystem::path& config_dir)
     : m_config(config),
       m_feature_extractor(config_dir / "preprocessor_config.json") {
     OPENVINO_ASSERT(
@@ -33,6 +25,10 @@ AudioEncoderQwen3ASR::AudioEncoderQwen3ASR(const VLMConfig& config, const std::f
         "Qwen3-ASR requires 0 < 2 * n_window <= n_window_infer");
     OPENVINO_ASSERT(config.audio_config_num_mel_bins == m_feature_extractor.feature_size,
                     "Qwen3-ASR audio config and preprocessor feature sizes must match");
+    m_request =
+        utils::singleton_core()
+            .compile_model(audio_model, device, utils::get_model_properties(properties, "audio_encoder", device))
+            .create_infer_request();
 }
 
 std::vector<EncodedAudio> AudioEncoderQwen3ASR::encode(const std::vector<ov::Tensor>& audios) {

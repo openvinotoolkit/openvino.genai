@@ -21,13 +21,9 @@ public:
                          const std::string& device,
                          const ov::AnyMap& properties);
 
-    virtual ~AudioEncoderQwen3ASR() = default;
-
     std::vector<EncodedAudio> encode(const std::vector<ov::Tensor>& audios);
 
-protected:
-    AudioEncoderQwen3ASR(const VLMConfig& config, const std::filesystem::path& config_dir);
-
+private:
     struct PreprocessedAudio {
         ov::Tensor padded_feature;
         ov::Tensor padded_mask_after_cnn;
@@ -44,7 +40,7 @@ protected:
      *         and valid-token counts used to compact the encoder output.
      */
     PreprocessedAudio preprocess_audio(const ov::Tensor& audio);
-    virtual EncodedAudio encode_audio(const ov::Tensor& audio);
+    EncodedAudio encode_audio(const ov::Tensor& audio);
 
     static constexpr size_t get_feat_extract_output_length(size_t input_length) {
         size_t length = input_length;
@@ -58,7 +54,6 @@ protected:
     WhisperFeatureExtractor m_feature_extractor;
     ov::InferRequest m_request;
 
-private:
     void validate_audio_input(const ov::Tensor& audio) const;
     std::mutex m_audio_mutex;
 };

@@ -196,6 +196,23 @@ TEST_F(Qwen3ASRStaticEncoderTest, SharedDecoderOptionsDoNotEnableLLMModeForEncod
         ov::Exception);
 }
 
+TEST_F(Qwen3ASRStaticEncoderTest, NPUAudioEncoderRequiresNPUW) {
+    const auto expect_error = [&](const ov::AnyMap& properties, const std::string& expected) {
+        try {
+            ov::genai::create_qwen3_asr_audio_encoder(split_config(), split_model(), m_model_dir, "NPU", properties);
+            FAIL() << "Expected the NPU audio encoder to reject the configuration";
+        } catch (const ov::Exception& error) {
+            EXPECT_NE(std::string(error.what()).find(expected), std::string::npos) << error.what();
+        }
+    };
+    auto disabled_npuw = cpu_fallback();
+    disabled_npuw["NPU_USE_NPUW"] = "NO";
+    expect_error(disabled_npuw, "audio encoder requires NPU_USE_NPUW=YES");
+    auto disabled_audio = cpu_fallback();
+    disabled_audio["NPUW_QWEN3_ASR_AUDIO_ENCODER"] = "NO";
+    expect_error(disabled_audio, "audio encoder requires NPUW_QWEN3_ASR_AUDIO_ENCODER=YES");
+}
+
 TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsMatchCPUAcrossChunkBoundaries) {
     save_embeddings();
     auto cpu = ov::genai::create_qwen3_asr_embeddings(m_model_dir, 0.5f, "CPU", {});
@@ -268,6 +285,24 @@ TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsAcceptInMemoryModels) {
 TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsRejectNonLookupModels) {
     save_embeddings(true);
     EXPECT_THROW(ov::genai::create_qwen3_asr_embeddings(m_model_dir, 1.0f, "NPU", cpu_fallback()), ov::Exception);
+}
+
+TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsRequireNPUWTokenLookup) {
+    save_embeddings();
+    const auto expect_error = [&](const ov::AnyMap& properties, const std::string& expected) {
+        try {
+            ov::genai::create_qwen3_asr_embeddings(m_model_dir, 1.0f, "NPU", properties);
+            FAIL() << "Expected the NPU text embedder to reject the configuration";
+        } catch (const ov::Exception& error) {
+            EXPECT_NE(std::string(error.what()).find(expected), std::string::npos) << error.what();
+        }
+    };
+    auto disabled_npuw = cpu_fallback();
+    disabled_npuw["NPU_USE_NPUW"] = "NO";
+    expect_error(disabled_npuw, "text embeddings require NPU_USE_NPUW=YES");
+    auto disabled_lookup = cpu_fallback();
+    disabled_lookup["NPUW_TOKEN_LOOKUP"] = "NO";
+    expect_error(disabled_lookup, "text embeddings require NPUW_TOKEN_LOOKUP=YES");
 }
 
 INSTANTIATE_TEST_SUITE_P(ChunkLengths, Qwen3ASRStaticEncoderTest, ::testing::Values(1u, 4u, 6u, 8u));
