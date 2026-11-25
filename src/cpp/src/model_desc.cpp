@@ -47,7 +47,9 @@ void strip_gguf_mtp_request(const std::filesystem::path& models_path, ov::AnyMap
     }
     if (const auto it = properties.find(ov::genai::draft_model_path.name()); it != properties.end()) {
         const auto draft_path = get_draft_model_path(it->second);
-        OPENVINO_ASSERT(is_gguf_model(draft_path) && std::filesystem::equivalent(draft_path, models_path),
+        std::error_code ec;
+        const bool same_file = std::filesystem::equivalent(draft_path, models_path, ec) && !ec;
+        OPENVINO_ASSERT(is_gguf_model(draft_path) && same_file,
                         "A GGUF target runs MTP with the draft layers of the same file. Set speculative_type=\"mtp\" "
                         "or pass the same GGUF file as draft_model_path.");
         properties.erase(it);
@@ -55,8 +57,11 @@ void strip_gguf_mtp_request(const std::filesystem::path& models_path, ov::AnyMap
     OPENVINO_ASSERT(properties.find(utils::DRAFT_MODEL_ARG_NAME) == properties.end(),
                     "draft_model cannot be combined with speculative_type or draft_model_path.");
     const auto prompt_lookup_it = properties.find(ov::genai::prompt_lookup.name());
-    OPENVINO_ASSERT(prompt_lookup_it == properties.end() || !prompt_lookup_it->second.as<bool>(),
-                    "Speculative decoding and prompt lookup decoding are mutually exclusive.");
+    if (prompt_lookup_it != properties.end()) {
+        OPENVINO_ASSERT(!prompt_lookup_it->second.as<bool>(),
+                        "Speculative decoding and prompt lookup decoding are mutually exclusive.");
+        properties.erase(prompt_lookup_it);
+    }
 }
 
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {

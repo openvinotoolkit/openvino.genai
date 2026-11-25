@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from gguf import GGUFWriter
 
+import openvino as ov
 import openvino_genai as genai
 
 
@@ -148,6 +149,11 @@ def test_gguf_mtp_draft_path_must_name_the_target(mtp_gguf, plain_gguf):
         )
 
 
+def test_gguf_mtp_draft_path_must_exist(mtp_gguf, tmp_path):
+    with pytest.raises(RuntimeError, match="same file"):
+        genai.LLMPipeline(mtp_gguf, "CPU", draft_model_path=str(tmp_path / "missing.gguf"), GGUF_READER="FRONTEND")
+
+
 @pytest.fixture(scope="module")
 def paired_pipelines(mtp_gguf):
     reader = dict(GGUF_READER="FRONTEND", **DEVICE_PROPERTIES)
@@ -197,3 +203,17 @@ def test_gguf_mtp_chat_history_with_prefix_caching(mtp_gguf):
     result = mtp.generate([history], generation_config=[config])[0]
     assert result.m_generation_ids == reference.m_generation_ids
     assert result.extended_perf_metrics.get_num_draft_tokens() > 0
+
+
+def test_gguf_mtp_rejects_images(paired_pipelines):
+    _, mtp = paired_pipelines
+    config = genai.GenerationConfig(max_new_tokens=2, apply_chat_template=False)
+    image = ov.Tensor(np.zeros((1, 8, 8, 3), dtype=np.uint8))
+    with pytest.raises(RuntimeError, match="does not accept images"):
+        mtp.add_request(0, "a", [image], config)
+
+
+def test_gguf_mtp_accepts_disabled_prompt_lookup(mtp_gguf):
+    pipe = genai.LLMPipeline(mtp_gguf, "CPU", prompt_lookup=False, **mtp_properties())
+    config = genai.GenerationConfig(max_new_tokens=2, ignore_eos=True, apply_chat_template=False)
+    assert pipe.generate("a b c", config)

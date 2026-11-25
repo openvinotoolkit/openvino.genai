@@ -497,6 +497,11 @@ InputsEmbedder::InputsEmbedder(const std::shared_ptr<ov::Model>& text_embeddings
         TextInputsEmbedder(const Tokenizer& tokenizer, EmbeddingsModel::Ptr embedding)
             : IInputsEmbedder(VLMConfig{}, tokenizer, std::move(embedding)) {}
 
+        std::vector<EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override {
+            OPENVINO_ASSERT(images.empty(), "This text-only model does not accept images.");
+            return {};
+        }
+
         ov::Tensor get_inputs_embeds(const std::string& prompt,
                                      const std::vector<EncodedImage>& images,
                                      VLMPerfMetrics& metrics,
