@@ -175,6 +175,9 @@ public:
 
     bool has_non_finished_requests() override;
 
+    // Removes a request that add_request() queued and no step has pulled yet.
+    void discard_awaiting_request(uint64_t request_id);
+
     // The prompt length of input_ids of shape [seq_len], [1, seq_len] or [1, seq_len, hidden_size].
     static size_t get_prompt_len(const ov::Tensor& input_ids);
 

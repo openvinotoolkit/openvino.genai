@@ -1963,6 +1963,7 @@ def test_cb_generate_allows_unsupported_add_request_lora_mode(
         ("continuous_batching", "i32_prompt"),
         ("prompt_lookup", "i32_prompt"),
         ("speculative_decoding", "i32_prompt"),
+        ("eagle3", "rank3_prompt"),
     ],
 )
 def test_cb_generate_discards_its_requests_when_one_is_rejected(
@@ -1975,6 +1976,11 @@ def test_cb_generate_discards_its_requests_when_one_is_rejected(
         properties["prompt_lookup"] = True
     elif backend == "speculative_decoding":
         properties["draft_model"] = draft_model(models_path)
+    elif backend == "eagle3":
+        models_path = download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3-layer10").models_path
+        properties["draft_model"] = draft_model(
+            download_and_convert_model("optimum-intel-internal-testing/tiny-random-qwen3-eagle3").models_path
+        )
 
     def make_config(num_assistant_tokens: int = 3) -> GenerationConfig:
         config = GenerationConfig()
@@ -1999,9 +2005,12 @@ def test_cb_generate_discards_its_requests_when_one_is_rejected(
     elif rejection == "empty_prompt":
         rejected = make_config()
         error = "Prompt length cannot be 0"
-    else:
+    elif rejection == "i32_prompt":
         rejected = make_config()
         error = "input_ids must hold i64 token IDs or f32 input embeddings"
+    else:
+        rejected = make_config()
+        error = "input_ids shape is invalid for creating eagle3 draft input_ids"
     pipe = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties=properties)
     if rejection == "empty_prompt":
         # a tokenizer can add special tokens to an empty string, so the empty prompt goes in as token IDs
@@ -2009,6 +2018,10 @@ def test_cb_generate_discards_its_requests_when_one_is_rejected(
     elif rejection == "i32_prompt":
         token_ids = pipe.get_tokenizer().encode("test prompt").input_ids
         inputs = [token_ids, ov.Tensor(token_ids.data.astype(np.int32))]
+    elif rejection == "rank3_prompt":
+        # the prompt length is the second dimension, but Eagle3 takes the draft prompt along the last one
+        token_ids = pipe.get_tokenizer().encode("test prompt").input_ids
+        inputs = [token_ids, ov.Tensor(token_ids.data.reshape(1, -1, 1))]
 
     with pytest.raises(RuntimeError, match=error):
         pipe.generate(inputs, [make_config(), rejected])

@@ -77,6 +77,13 @@ std::vector<EncodedGenerationResult> generate_common(
     }
 
     std::vector<GenerationHandle> main_generations;
+    // Until the first step, a failure discards the requests of this call: validation cannot foresee every failure.
+    RollbackGuard discard_requests{[self, &input_ids] {
+        std::lock_guard<std::mutex> lock{self->m_draft_generations_mutex};
+        for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+            self->discard_awaiting_request(rid);
+        }
+    }};
     for (size_t rid = 0; rid < input_ids.size(); ++rid) {
         const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
 
@@ -101,6 +108,7 @@ std::vector<EncodedGenerationResult> generate_common(
     GenerationHandle& generation = main_generations.at(0);
 
     streamer_ptr->start();
+    discard_requests.dismiss();
     while (self->has_non_finished_requests()) {
         try {
             self->step();
@@ -205,6 +213,8 @@ protected:
     // main request's, whose draws accept or reject the drafted tokens. A sampled draft requests no log-probs.
     static GenerationConfig make_draft_sampling_params(const GenerationConfig& sampling_params);
     void drop_requests();
+    // Removes a request that add_request() queued from both pipelines. Callers hold m_draft_generations_mutex.
+    void discard_awaiting_request(uint64_t request_id);
     virtual void align_request_pair_processed_prefix(uint64_t) {}
     virtual void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
                                             const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {

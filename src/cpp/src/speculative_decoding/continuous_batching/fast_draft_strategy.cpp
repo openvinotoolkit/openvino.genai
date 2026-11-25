@@ -174,14 +174,20 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
     const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
+    // a request is in both pipelines or in none
+    RollbackGuard discard_request{[this, request_id] {
+        discard_awaiting_request(request_id);
+    }};
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, prompt_ids)});
-    return m_main_pipeline->add_request(request_id,
-                                        input_ids,
-                                        sampling_params,
-                                        prompt_ids,
-                                        lm_extra_inputs);
+    auto main_generation = m_main_pipeline->add_request(request_id,
+                                                        input_ids,
+                                                        sampling_params,
+                                                        prompt_ids,
+                                                        lm_extra_inputs);
+    discard_request.dismiss();
+    return main_generation;
 }
 
 GenerationHandle
@@ -403,6 +409,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::drop_requests() {
     m_main_pipeline->finish_request();
 }
 
+void ContinuousBatchingPipeline::SpeculativeDecodingImpl::discard_awaiting_request(uint64_t request_id) {
+    m_main_pipeline->discard_awaiting_request(request_id);
+    m_draft_pipeline->discard_awaiting_request(request_id);
+    m_draft_generations.erase(request_id);
+}
 
 bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::is_requests_empty() {
     return m_main_pipeline->is_requests_empty() && m_draft_pipeline->is_requests_empty();

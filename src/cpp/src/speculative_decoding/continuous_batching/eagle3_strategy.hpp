@@ -91,12 +91,12 @@ protected:
     void prepare_inputs_embedder(const GenerationConfig& sampling_params) const override;
     std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
         std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const override;
-    ov::Tensor create_draft_input(const ov::Tensor& original_input);
+    ov::Tensor create_draft_input(const ov::Tensor& original_input) const;
     // Creates draft model input by removing the first token from the original input sequence.
-    ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
+    ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids) const;
     // the wrapper for executing kv cache update model in eagle3 pipeline
     std::shared_ptr<KVUpdateWrapper> m_kv_update_wrapper;
-    ov::Tensor create_draft_input_embeddings(const ov::Tensor& original_input_embeddings);
+    ov::Tensor create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) const;
     static ov::Tensor trim_first_token_sequence_tensor(const ov::Tensor& tensor, const char* tensor_name);
 };
 }

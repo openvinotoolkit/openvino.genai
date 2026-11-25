@@ -279,22 +279,19 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
 
     // The draft prompt is the target prompt: draft position t pairs with target hidden state t.
     // insert_or_assign drops a stale handle a finished request may leave under the same request_id.
-    try {
-        if (has_draft_request(main_sampling_params)) {
-            m_draft_generations.insert_or_assign(
-                request_id,
-                m_draft_pipeline->add_request(request_id, input_ids, make_draft_generation_config(main_sampling_params), prompt_ids));
-        }
-        auto main_handle =
-            m_main_pipeline->add_request(request_id, input_ids, main_sampling_params, prompt_ids, lm_extra_inputs);
-        align_request_pair_processed_prefix(request_id);
-        return main_handle;
-    } catch (...) {
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
-        throw;
+    RollbackGuard discard_request{[this, request_id] {
+        discard_awaiting_request(request_id);
+    }};
+    if (has_draft_request(main_sampling_params)) {
+        m_draft_generations.insert_or_assign(
+            request_id,
+            m_draft_pipeline->add_request(request_id, input_ids, make_draft_generation_config(main_sampling_params), prompt_ids));
     }
+    auto main_handle =
+        m_main_pipeline->add_request(request_id, input_ids, main_sampling_params, prompt_ids, lm_extra_inputs);
+    align_request_pair_processed_prefix(request_id);
+    discard_request.dismiss();
+    return main_handle;
 }
 
 GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(

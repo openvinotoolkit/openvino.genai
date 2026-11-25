@@ -466,6 +466,20 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::discard_awaiting_request(uint64_t request_id) {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    for (auto request = m_awaiting_requests.begin(); request != m_awaiting_requests.end(); ++request) {
+        if ((*request)->get_request_id() != request_id) {
+            continue;
+        }
+        for (const auto& sequence : (*request)->get_sequences()) {
+            m_scheduler->free_sequence(sequence->get_id());
+        }
+        m_awaiting_requests.erase(request);
+        return;
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {
     if (!m_scheduler->has_linear_attention_cache()) {
         return;
@@ -1191,6 +1205,13 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     }
 
     std::vector<GenerationHandle> generations;
+    // Validation cannot foresee every failure (a failed allocation, for one), and a request left queued would make
+    // every later generate() fail. Until the first step, a failure discards the requests of this call.
+    RollbackGuard discard_requests{[this, &input_ids] {
+        for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+            discard_awaiting_request(request_id);
+        }
+    }};
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         if (position_ids_list.has_value()) {
             const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
@@ -1225,6 +1246,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
 
     streamer_ptr->start();
     m_sampler->clear_structured_output_compile_times();
+    // from here on, a step that fails releases the requests
+    discard_requests.dismiss();
     while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();

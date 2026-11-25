@@ -141,6 +141,12 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
 
     std::vector<GenerationHandle> generations;
+    // Until the first step, a failure discards the requests of this call: validation cannot foresee every failure.
+    RollbackGuard discard_requests{[this, &input_ids] {
+        for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+            m_pipeline->discard_awaiting_request(request_id);
+        }
+    }};
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
         bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
@@ -158,6 +164,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     streamer_ptr->start();
 
+    discard_requests.dismiss();
     while (has_non_finished_requests()) {
         try {
             step();

@@ -36,6 +36,31 @@ struct PendingOmniStreamerGuard {
     }
 };
 
+/// @brief Runs a rollback when its scope is left before dismiss(), which is how an exception leaves it.
+/// An exception of the rollback itself is dropped: the one that left the scope goes to the caller.
+template <typename Rollback>
+class RollbackGuard {
+public:
+    explicit RollbackGuard(Rollback rollback) : m_rollback(std::move(rollback)) {}
+    RollbackGuard(const RollbackGuard&) = delete;
+    RollbackGuard& operator=(const RollbackGuard&) = delete;
+    ~RollbackGuard() noexcept {
+        if (m_armed) {
+            try {
+                m_rollback();
+            } catch (...) {
+            }
+        }
+    }
+
+    void dismiss() noexcept {
+        m_armed = false;
+    }
+
+private:
+    Rollback m_rollback;
+    bool m_armed = true;
+};
 
 /**
  * Base interface for all continuous batching based pipelines

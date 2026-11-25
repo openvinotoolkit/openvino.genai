@@ -176,26 +176,24 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     if (m_draft_pipeline->has_mrope_position_ids()) {
         main_position_ids = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0).first;
     }
-    try {
-        if (main_position_ids) {
-            m_inputs_embedder->set_position_ids(create_draft_position_ids(main_position_ids));
-        }
-        m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
+    // a request is in both pipelines or in none
+    RollbackGuard discard_request{[&] {
+        discard_awaiting_request(request_id);
         if (main_position_ids) {
             m_inputs_embedder->set_position_ids(main_position_ids);
         }
-        auto main_handle = m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
-        align_request_pair_processed_prefix(request_id);
-        return main_handle;
-    } catch (...) {
-        if (main_position_ids) {
-            m_inputs_embedder->set_position_ids(main_position_ids);
-        }
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
-        throw;
+    }};
+    if (main_position_ids) {
+        m_inputs_embedder->set_position_ids(create_draft_position_ids(main_position_ids));
     }
+    m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
+    if (main_position_ids) {
+        m_inputs_embedder->set_position_ids(main_position_ids);
+    }
+    auto main_handle = m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
+    align_request_pair_processed_prefix(request_id);
+    discard_request.dismiss();
+    return main_handle;
 }
 
 void ContinuousBatchingPipeline::MtpDecodingImpl::validate_request(
