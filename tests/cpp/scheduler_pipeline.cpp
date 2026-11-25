@@ -9,7 +9,6 @@
 #include <future>
 #include <numeric>
 #include <set>
-#include <typeinfo>
 #include "openvino/runtime/core.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/parameter.hpp"
@@ -24,29 +23,6 @@
 #include "utils.hpp"
 
 using namespace ov::genai;
-
-namespace {
-
-void expect_same_exception(const std::exception_ptr& actual, const std::exception_ptr& expected) {
-    ASSERT_NE(actual, nullptr);
-    ASSERT_NE(expected, nullptr);
-    try {
-        std::rethrow_exception(expected);
-    } catch (const std::exception& expected_error) {
-        try {
-            std::rethrow_exception(actual);
-        } catch (const std::exception& actual_error) {
-            EXPECT_EQ(typeid(actual_error), typeid(expected_error));
-            EXPECT_STREQ(actual_error.what(), expected_error.what());
-        } catch (...) {
-            FAIL() << "Actual failure is not a std::exception";
-        }
-    } catch (...) {
-        FAIL() << "Expected failure is not a std::exception";
-    }
-}
-
-}  // namespace
 
 class CBFailureBoundaryTest : public testing::Test, public ContinuousBatchingPipeline {
 protected:

@@ -128,19 +128,28 @@ public:
                                            const StreamerVariant& streamer,
                                            const std::optional<SpeechRequest>& speech_request) override {
         auto start_time = std::chrono::steady_clock::now();
-        const auto run = [&](const GenerationConfig& config, const StreamerVariant& text_streamer) {
-            return m_impl.generate({prompt},
-                                   ov::genai::images_batches({images}),
-                                   ov::genai::videos_batches({videos}),
-                                   ov::genai::videos_metadata_batches({videos_metadata}),
-                                   ov::genai::audios_batches({audios}),
-                                   ov::genai::generation_config_batches(std::vector<GenerationConfig>{config}),
-                                   ov::genai::streamer(text_streamer))[0];
+        const auto run = [&](const GenerationConfig& config,
+                             const StreamerVariant& text_streamer,
+                             const std::shared_ptr<StepRequestPayload>& payload) {
+            std::vector<std::shared_ptr<StepRequestPayload>> step_payloads;
+            if (payload) {
+                step_payloads.push_back(payload);
+            }
+            // ContinuousBatchingPipeline::generate() takes no step payload, so the backend is called directly.
+            return m_impl.m_impl->generate({prompt},
+                                           {images},
+                                           {videos},
+                                           {videos_metadata},
+                                           {audios},
+                                           {config},
+                                           text_streamer,
+                                           nullptr,
+                                           step_payloads)[0];
         };
         if (speech_request) {
             return decode_with_speech(generation_config, streamer, *speech_request, start_time, run);
         }
-        const auto decoded_results = run(generation_config, streamer);
+        const auto decoded_results = run(generation_config, streamer, nullptr);
         auto stop_time = std::chrono::steady_clock::now();
         return finalize_decoded_results(decoded_results, start_time, stop_time);
     }
@@ -209,19 +218,28 @@ public:
                                            const std::optional<SpeechRequest>& speech_request) override {
         auto start_time = std::chrono::steady_clock::now();
         ChatHistoryInternalState::get_or_create(history);
-        const auto run = [&](const GenerationConfig& config, const StreamerVariant& text_streamer) {
-            return m_impl.generate({history},
-                                   ov::genai::images_batches({images}),
-                                   ov::genai::videos_batches({videos}),
-                                   ov::genai::videos_metadata_batches({videos_metadata}),
-                                   ov::genai::audios_batches({audios}),
-                                   ov::genai::generation_config_batches(std::vector<GenerationConfig>{config}),
-                                   ov::genai::streamer(text_streamer))[0];
+        const auto run = [&](const GenerationConfig& config,
+                             const StreamerVariant& text_streamer,
+                             const std::shared_ptr<StepRequestPayload>& payload) {
+            std::vector<std::shared_ptr<StepRequestPayload>> step_payloads;
+            if (payload) {
+                step_payloads.push_back(payload);
+            }
+            // ContinuousBatchingPipeline::generate() takes no step payload, so the backend is called directly.
+            return m_impl.m_impl->generate({history},
+                                           {images},
+                                           {videos},
+                                           {videos_metadata},
+                                           {audios},
+                                           {config},
+                                           text_streamer,
+                                           nullptr,
+                                           step_payloads)[0];
         };
         if (speech_request) {
             return decode_with_speech(generation_config, streamer, *speech_request, start_time, run);
         }
-        const auto decoded_results = run(generation_config, streamer);
+        const auto decoded_results = run(generation_config, streamer, nullptr);
         auto stop_time = std::chrono::steady_clock::now();
         return finalize_decoded_results(decoded_results, start_time, stop_time);
     }
@@ -329,8 +347,8 @@ private:
         GENAI_DEBUG("LFM3-Omni speech output is decoded on continuous batching");
     }
 
-    /// @brief LFM3-Omni speech on continuous batching: the step hook picks every slot, and the pipeline only
-    /// records them, greedily and with the speech-aware stop tokens.
+    /// @brief LFM3-Omni speech on continuous batching: the sampler draws the text slots under the rules the step hook
+    /// sets, the hook makes the speech frames, and only the hook may end the turn on the speech tokens.
     template <typename Generate>
     VLMDecodedResults decode_with_speech(const GenerationConfig& generation_config,
                                          const StreamerVariant& streamer,
@@ -347,23 +365,13 @@ private:
         if (text_config.eos_token_id == -1) {
             text_config.set_eos_token_id(defaults.eos_token_id);
         }
-        // The pipeline only sees the greedy copy below, so the caller's settings are checked here, as on SDPA.
+        // Checked here, as on SDPA: the pipeline validates only the copy below, whose stop ids differ.
         text_config.validate();
         const LFM3SpeechRequest request(speech_request.config, text_config);
 
-        struct ExpectedRequestGuard {
-            LFM3SpeechStepHook& hook;
-            ~ExpectedRequestGuard() {
-                hook.forget_expected_request();
-            }
-        } expected_request_guard{*m_speech_hook};
-        const auto text_streamer = utils::create_streamer(streamer, m_impl.get_tokenizer());
-        m_speech_hook->expect_request(request, speech_request.streamer, text_streamer);
         const LFM3SpeechModelConfig& speech_config = m_speech_hook->config();
 
         GenerationConfig pipeline_config = text_config;
-        pipeline_config.do_sample = false;
-        pipeline_config.repetition_penalty = 1.0f;
         // <|text_end|> starts the speech tail of an interleaved answer and every frame slot forces the audio output
         // token, so only the hook may end the turn on either.
         const std::set<int64_t> hook_token_ids{speech_config.text_end_token_id, speech_config.audio_out_token_id};
@@ -381,29 +389,34 @@ private:
             pipeline_config.set_eos_token_id(*placeholder);
         }
 
+        Tokenizer tokenizer = m_impl.get_tokenizer();
+        auto text_streamer = std::make_shared<ThreadedStreamerWrapper>(streamer, tokenizer);
+        const auto payload =
+            std::make_shared<LFM3SpeechPayload>(request,
+                                                speech_request.streamer,
+                                                text_streamer->has_callback() ? text_streamer : nullptr);
+
         // The hook writes the text streamer itself, so the pipeline streams nothing.
         VLMDecodedResults decoded_results;
+        text_streamer->start();
         try {
-            decoded_results = run(pipeline_config, std::monostate{});
-            m_speech_hook->rethrow_request_error();
+            decoded_results = run(pipeline_config, std::monostate{}, payload);
         } catch (...) {
-            // As in ContinuousBatchingImpl::generate(): a healthy text streamer is ended on failure too, and an end()
+            // As in ContinuousBatchingImpl::generate(): the text streamer is ended on failure too, and an end()
             // failure is dropped so the original error reaches the caller.
-            if (text_streamer && !m_speech_hook->text_streamer_failed()) {
-                try {
-                    text_streamer->end();
-                } catch (...) {
-                }
+            try {
+                text_streamer->end();
+            } catch (...) {
             }
             throw;
         }
-        if (text_streamer) {
-            text_streamer->end();
-        }
-        LFM3SpeechResult speech = m_speech_hook->take_result();
+        // Waits for the queued text and rethrows an error of the callback.
+        text_streamer->end();
+        OPENVINO_ASSERT(payload->result, "LFM3-Omni speech request ended without a result");
+        LFM3SpeechResult speech = std::move(*payload->result);
         const auto stop_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded = finalize_decoded_results(decoded_results, start_time, stop_time);
-        // The pipeline decoded a greedy copy, so the score comes from the text sampling of the hook.
+        // Text tokens only, as on SDPA; a speech frame adds no log-probability.
         decoded.scores = {speech.text_log_prob};
         // Speech and text come from one decode loop, so the speech time is the whole call.
         decoded.speech_result.perf_metrics.generation_time_ms =

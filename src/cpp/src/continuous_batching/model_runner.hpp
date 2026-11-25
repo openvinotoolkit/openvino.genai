@@ -5,6 +5,7 @@
 
 #include <vector>
 #include <cstdlib>
+#include <optional>
 #include <set>
 
 #include <openvino/runtime/infer_request.hpp>
@@ -1220,18 +1221,35 @@ public:
      * @brief Stores a ready-made input embedding [1, 1, hidden_size] for the last generated token of sequence, so
      * append_embeddings() does not embed that token id. Used when the next input is not the embedding of a token,
      * e.g. an LFM3-Omni speech frame.
+     * @param position_ids Optional position ids of the token, copied; computed by the inputs embedder when absent.
      */
     void append_generated_embedding(const SequenceGroup::Ptr& sequence_group,
                                     const Sequence::Ptr& sequence,
-                                    const ov::Tensor& embedding) {
+                                    const ov::Tensor& embedding,
+                                    const std::optional<ov::Tensor>& position_ids = std::nullopt) {
         const size_t token_idx = sequence->get_generated_ids_embeds().size();
         OPENVINO_ASSERT(token_idx + 1 == sequence->get_generated_len(),
                         "A generated embedding can only be set for the last generated token");
         OPENVINO_ASSERT(embedding.get_size() == sequence_group->get_hidden_size(),
                         "A generated embedding must have the hidden size of the prompt embeddings");
-        const size_t position_id = token_idx + sequence_group->get_prompt_len();
-        sequence->append_position_ids(
-            m_inputs_embedder->get_generation_phase_position_ids(1, position_id, sequence->get_rope_delta()).first);
+        if (position_ids) {
+            const auto shape = position_ids->get_shape();
+            OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
+                            "Position ids of a generated embedding must be [1, 1] or [3, 1, 1], got rank ",
+                            shape.size());
+            // The last dimension is the token dimension that append_position_ids() splits on.
+            OPENVINO_ASSERT(shape.back() == 1,
+                            "Position ids of a generated embedding must cover one token, got ",
+                            shape.back());
+            // The caller may reuse its tensor for the next step, while the sequence replays these ids after preemption.
+            ov::Tensor position_ids_copy(position_ids->get_element_type(), shape);
+            position_ids->copy_to(position_ids_copy);
+            sequence->append_position_ids(position_ids_copy);
+        } else {
+            const size_t position_id = token_idx + sequence_group->get_prompt_len();
+            sequence->append_position_ids(
+                m_inputs_embedder->get_generation_phase_position_ids(1, position_id, sequence->get_rope_delta()).first);
+        }
         sequence->append_generated_ids_embeds(embedding);
     }
 

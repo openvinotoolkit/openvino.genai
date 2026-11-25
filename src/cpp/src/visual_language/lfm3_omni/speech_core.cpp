@@ -258,12 +258,18 @@ LFM3SpeechModelConfig LFM3SpeechModelConfig::read(const std::filesystem::path& c
     return config;
 }
 
-// Not the continuous batching Sampler transforms: those keep the penalty history in a map shared across steps, while
-// LFM3-Omni penalizes only the last text_repetition_window text tokens and audio_repetition_window frames of each
-// codebook, with the transformers processor order below.
+SamplingOverrides lfm3_text_sampling_overrides(const LFM3SpeechModelConfig& config) {
+    SamplingOverrides overrides;
+    // Not the pipeline set: a speech request switches modes by sampling <|audio_start|> and <|mixed_start|>.
+    overrides.suppressed_token_ids =
+        std::set<int64_t>(config.placeholder_token_ids.begin(), config.placeholder_token_ids.end());
+    overrides.repetition_window = RepetitionWindow{config.text_repetition_window, {config.audio_out_token_id}};
+    return overrides;
+}
+
+// Penalizes only the audio_repetition_window frames of each codebook, with the transformers processor order below.
 int64_t LFM3SpeechSampling::sample(std::vector<float>& scores,
                                    const std::vector<int64_t>& history,
-                                   const std::vector<int64_t>& suppress,
                                    std::mt19937& rng) const {
     if (repetition_penalty != 1.0f && !history.empty()) {
         std::vector<int64_t> unique_ids(history);
@@ -273,9 +279,6 @@ int64_t LFM3SpeechSampling::sample(std::vector<float>& scores,
             float& score = scores.at(id);
             score = score < 0.0f ? score * repetition_penalty : score / repetition_penalty;
         }
-    }
-    for (int64_t id : suppress) {
-        scores.at(id) = NEG_INF;
     }
     const bool greedy = temperature ? *temperature == 0.0f : !top_k.has_value();
     if (greedy) {
@@ -293,34 +296,6 @@ int64_t LFM3SpeechSampling::sample(std::vector<float>& scores,
         for (float& score : scores) {
             if (score < threshold) {
                 score = NEG_INF;
-            }
-        }
-    }
-    if (top_p < 1.0f) {
-        std::vector<float> probs(scores);
-        softmax(probs);
-        std::vector<size_t> order(scores.size());
-        std::iota(order.begin(), order.end(), 0);
-        std::stable_sort(order.begin(), order.end(), [&scores](size_t a, size_t b) {
-            return scores[a] < scores[b];
-        });
-        // Drop the least likely tokens while their cumulative probability is at most 1 - top_p; keep the top one.
-        double cumulative = 0.0;
-        for (size_t rank = 0; rank + 1 < order.size(); ++rank) {
-            cumulative += probs[order[rank]];
-            if (cumulative > 1.0 - top_p) {
-                break;
-            }
-            scores[order[rank]] = NEG_INF;
-        }
-    }
-    if (min_p > 0.0f) {
-        std::vector<float> probs(scores);
-        softmax(probs);
-        const float threshold = min_p * *std::max_element(probs.begin(), probs.end());
-        for (size_t id = 0; id < scores.size(); ++id) {
-            if (probs[id] < threshold) {
-                scores[id] = NEG_INF;
             }
         }
     }
@@ -403,7 +378,7 @@ std::vector<int64_t> LFM3SpeechModels::sample_frame(const ov::Tensor& hidden_sta
             const size_t codebook = order[rank];
             const float* scores_row = logits.data<const float>() + codebook * codebook_size;
             std::vector<float> scores(scores_row, scores_row + codebook_size);
-            codes[codebook] = state.audio_sampling().sample(scores, history[codebook], {}, state.audio_rng());
+            codes[codebook] = state.audio_sampling().sample(scores, history[codebook], state.audio_rng());
         }
         for (size_t rank = revealed; rank < revealed + pass_size; ++rank) {
             masked.data<bool>()[order[rank]] = false;
@@ -460,20 +435,9 @@ LFM3SpeechState::LFM3SpeechState(const LFM3SpeechModelConfig& config,
       m_audio_chunk_frames(request.audio_chunk_frames),
       m_left_context_frames(request.audio_chunk_left_context_frames),
       m_text_config(request.text_config),
-      m_text_rng(static_cast<std::mt19937::result_type>(request.text_config.rng_seed)),
       m_audio_rng(static_cast<std::mt19937::result_type>(request.audio_rng_seed)),
       m_mode(request.mode == SpeechOutputMode::INTERLEAVED ? Mode::INTERLEAVED : Mode::SPEECH),
       m_slots_left(config.interleaved_n_text) {
-    if (m_text_config.do_sample) {
-        m_text_sampling.temperature = m_text_config.temperature;
-        // As in the continuous batching sampler, 0 and the max value both mean no top-k filter.
-        if (m_text_config.top_k > 0 && m_text_config.top_k != std::numeric_limits<size_t>::max()) {
-            m_text_sampling.top_k = m_text_config.top_k;
-        }
-        m_text_sampling.top_p = m_text_config.top_p;
-        m_text_sampling.min_p = m_text_config.min_p;
-    }
-    m_text_sampling.repetition_penalty = m_text_config.repetition_penalty;
     m_audio_sampling.temperature = request.audio_temperature ? request.audio_temperature : config.audio_temperature;
     m_audio_sampling.top_k = request.audio_top_k ? request.audio_top_k : config.audio_top_k;
     m_audio_sampling.repetition_penalty = request.audio_repetition_penalty.value_or(config.audio_repetition_penalty);
@@ -515,36 +479,12 @@ std::vector<std::vector<int64_t>> LFM3SpeechState::codebook_history() const {
     return history;
 }
 
-int64_t LFM3SpeechState::sample_text(std::vector<float>& logits) {
-    const std::vector<int64_t> history(m_text_history.begin(), m_text_history.end());
-    const int64_t token = m_text_sampling.sample(logits, history, m_config.placeholder_token_ids, m_text_rng);
-    if (m_text_config.do_sample) {
-        // A sampled token leaves logits holding the probabilities it was drawn from.
-        m_result.text_log_prob += std::log(logits.at(token));
-    }
-    return token;
-}
-
-void LFM3SpeechState::accept_text(int64_t token, StreamingStatus stream_status) {
+void LFM3SpeechState::accept_text(int64_t token, float log_prob, StreamingStatus stream_status) {
     const bool interleaving = m_mode == Mode::INTERLEAVED;
-    m_text_history.push_back(token);
-    if (m_text_history.size() > m_config.text_repetition_window) {
-        m_text_history.pop_front();
-    }
     m_result.text_tokens.push_back(token);
     m_result.slot_tokens.push_back(token);
-    if (stream_status == StreamingStatus::STOP) {
-        m_result.status = GenerationStatus::STOP;
-        m_finished = true;
-    } else if (stream_status == StreamingStatus::CANCEL) {
-        m_result.status = GenerationStatus::CANCEL;
-        m_finished = true;
-    } else if (stream_status == StreamingStatus::TOOL_CALL_STOP) {
-        // As in the text pipelines: a tool call parser ends the turn with the TOOL_CALL reason.
-        m_result.status = GenerationStatus::STOP;
-        m_result.finish_reason = GenerationFinishReason::TOOL_CALL;
-        m_finished = true;
-    }
+    m_result.text_log_prob += log_prob;
+    accept_text_stream_status(stream_status);
     if (token == m_config.text_end_token_id) {
         // Inside an interleaved block it ends the text and starts the speech tail; otherwise it ends the turn.
         if (interleaving) {
@@ -594,6 +534,21 @@ std::vector<int64_t> LFM3SpeechState::accept_frame(std::vector<int64_t> codes, L
     }
     end_slot(interleaving);
     return codes;
+}
+
+void LFM3SpeechState::accept_text_stream_status(StreamingStatus stream_status) {
+    if (stream_status == StreamingStatus::STOP) {
+        m_result.status = GenerationStatus::STOP;
+        m_finished = true;
+    } else if (stream_status == StreamingStatus::CANCEL) {
+        m_result.status = GenerationStatus::CANCEL;
+        m_finished = true;
+    } else if (stream_status == StreamingStatus::TOOL_CALL_STOP) {
+        // As in the text pipelines: a tool call parser ends the turn with the TOOL_CALL reason.
+        m_result.status = GenerationStatus::STOP;
+        m_result.finish_reason = GenerationFinishReason::TOOL_CALL;
+        m_finished = true;
+    }
 }
 
 void LFM3SpeechState::end_with(GenerationStatus status) {

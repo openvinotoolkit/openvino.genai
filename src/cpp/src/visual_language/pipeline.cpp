@@ -545,22 +545,48 @@ public:
                 generation_config.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         }
 
-        auto finish_info = prepare_inputs_and_generate(
-            unified_prompt,
-            encoded_images,
-            encoded_videos,
-            encoded_audios,
-            image_sequence,
-            video_sequence,
-            audio_sequence,
-            m_history_vision_count,
-            generation_config,
-            perf_metrics,
-            streamer,
-            speech_request,
-            intermediate_remote_tensor,
-            embeddings_start_time
-        );
+        const auto rollback_turn = [&]() {
+            m_history.pop_back();
+            if (m_use_full_chat_history) {
+                OPENVINO_ASSERT(new_image_count <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
+                m_encoded_images.resize(m_encoded_images.size() - new_image_count);
+                m_history_image_sequence.resize(history_image_sequence_before);
+
+                OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
+                m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
+                m_history_video_sequence.resize(history_video_sequence_before);
+
+                OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
+                m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
+                m_history_audio_sequence.resize(history_audio_sequence_before);
+
+                m_history_vision_count.pop_back();
+            }
+        };
+
+        utils::GenerationFinishInfo finish_info;
+        try {
+            finish_info = prepare_inputs_and_generate(unified_prompt,
+                                                      encoded_images,
+                                                      encoded_videos,
+                                                      encoded_audios,
+                                                      image_sequence,
+                                                      video_sequence,
+                                                      audio_sequence,
+                                                      m_history_vision_count,
+                                                      generation_config,
+                                                      perf_metrics,
+                                                      streamer,
+                                                      speech_request,
+                                                      intermediate_remote_tensor,
+                                                      embeddings_start_time);
+        } catch (...) {
+            if (m_is_chat_conversation) {
+                reset_cache_after_failed_turn();
+                rollback_turn();
+            }
+            throw;
+        }
 
         EncodedResults& encoded_result = finish_info.results;
 
@@ -597,22 +623,7 @@ public:
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
             } else {
-                m_history.pop_back();
-                if (m_use_full_chat_history) {
-                    OPENVINO_ASSERT(new_image_count <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
-                    m_encoded_images.resize(m_encoded_images.size() - new_image_count);
-                    m_history_image_sequence.resize(history_image_sequence_before);
-
-                    OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
-                    m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
-                    m_history_video_sequence.resize(history_video_sequence_before);
-
-                    OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
-                    m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
-                    m_history_audio_sequence.resize(history_audio_sequence_before);
-
-                    m_history_vision_count.pop_back();
-                }
+                rollback_turn();
             }
         } else {
             utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
@@ -833,22 +844,26 @@ public:
 
         vlm_utils::update_image_slice_counts(perf_metrics, images_embeds);
 
-        generation_finish_info = prepare_inputs_and_generate(
-            templated_history,
-            images_embeds,
-            videos_embeds,
-            audios_embeds,
-            image_seq,
-            video_seq,
-            audio_seq,
-            vision_counts,
-            generation_config,
-            perf_metrics,
-            streamer,
-            speech_request,
-            intermediate_remote_tensor,
-            embeddings_start_time
-        );
+        try {
+            generation_finish_info = prepare_inputs_and_generate(templated_history,
+                                                                 images_embeds,
+                                                                 videos_embeds,
+                                                                 audios_embeds,
+                                                                 image_seq,
+                                                                 video_seq,
+                                                                 audio_seq,
+                                                                 vision_counts,
+                                                                 generation_config,
+                                                                 perf_metrics,
+                                                                 streamer,
+                                                                 speech_request,
+                                                                 intermediate_remote_tensor,
+                                                                 embeddings_start_time);
+        } catch (...) {
+            reset_cache_after_failed_turn();
+            chat_context.rollback();
+            throw;
+        }
 
         EncodedResults& encoded_result = generation_finish_info.results;
 
@@ -1005,6 +1020,14 @@ public:
     }
 
 private:
+    void reset_cache_after_failed_turn() {
+        m_inputs_embedder->update_chat_history({}, ov::genai::GenerationStatus::CANCEL);
+        // The KV cache length after a failed turn is unknown, so the next turn encodes the whole history again.
+        auto& cache_state = m_inputs_embedder->get_cache_state();
+        cache_state.reset_state();
+        cache_state.reset_mem_state = true;
+    }
+
     void reset_language_state() {
         if (m_adapter_controller) {
             // Preserve adapter-owned state variables

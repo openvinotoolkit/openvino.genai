@@ -144,6 +144,36 @@ protected:
 
     virtual void drop_requests();
 
+    /// Ends the step state of request once, if it has one.
+    void _end_step_state(const SequenceGroup::Ptr& request, const IStepHook::Terminal& terminal);
+
+    /// Requests with step state that sample in this step, without a stopped or cancelled handle.
+    std::vector<IStepHook::Row> _collect_step_rows() const;
+
+    /// Checks the step hook's outcomes against its rows and applies their next inputs and endings.
+    /// @return Requests failed by rows with an error, kept until the end of the step.
+    std::vector<std::pair<SequenceGroup::Ptr, std::exception_ptr>> _apply_row_outcomes(
+        const std::vector<IStepHook::Row>& rows,
+        const std::vector<std::optional<int64_t>>& forced_tokens,
+        std::vector<IStepHook::RowOutcome> outcomes,
+        SamplerOutput& sampler_output);
+
+    /// Frees and removes the requests a step hook failed in this step; the pipeline stays usable.
+    void _release_failed_requests(const std::vector<std::pair<SequenceGroup::Ptr, std::exception_ptr>>& failed);
+
+    /// Applies a model's ending to request; finished sequences go to sampler_output.m_dropped_sequences.
+    void _apply_model_ending(const SequenceGroup::Ptr& request,
+                             const IStepHook::Ending& ending,
+                             SamplerOutput& sampler_output);
+
+    /// add_request() with the step hook payload of the request; a non-null payload must be taken by the step hook.
+    GenerationHandle _add_request(uint64_t request_id,
+                                  const ov::Tensor& input_ids,
+                                  const GenerationConfig& sampling_params,
+                                  std::optional<ov::Tensor> prompt_ids,
+                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs,
+                                  std::shared_ptr<StepRequestPayload> step_payload);
+
 public:
     ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
                            const Tokenizer& tokenizer,
@@ -226,7 +256,8 @@ public:
         std::shared_ptr<OmniStreamerBase> omni_streamer,
         const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
         const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
-        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt,
+        const std::vector<std::shared_ptr<StepRequestPayload>>& step_payloads = {}) override;
 
     /**
      * Updates LoRA adapters for current generation call

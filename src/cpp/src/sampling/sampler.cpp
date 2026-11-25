@@ -941,7 +941,7 @@ Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t to
     return Logits{logits_data, vocab_size};
 }
 
-Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
+Token greedy_sample(const Logits& logits, size_t top_logprobs) {
     // For greedy sampling we do not expect sorting or shrinking considered tokens.
     // When logprobs > 0, m_vector is initialized (penalties wrote there, m_data is pristine);
     // scan m_vector so penalty effects influence token selection.
@@ -972,7 +972,7 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     if (top_logprobs) {
         OPENVINO_ASSERT(!std::isnan(logits.m_full_vocab_log_sum_exp),
             "Internal error: top_logprobs > 0 but m_full_vocab_log_sum_exp was not computed. "
-            "FullVocabLogSumExpTransform must run before _greedy_sample when logprobs > 0.");
+            "FullVocabLogSumExpTransform must run before greedy_sample when logprobs > 0.");
         // m_data is pristine (FullVocabLogSumExpTransform + CopyLogitsToVectorTransform ran first,
         // so penalties/grammar only wrote to m_vector). Return raw log-probability.
         max_value = logits.m_data[max_index] - logits.m_full_vocab_log_sum_exp;
@@ -1185,7 +1185,7 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, logit_idx);
         logit_processor.update_generated_len(generated_len - num_tokens_to_validate + accepted_steps - 1);
         logit_processor.apply(logit_vector);
-        Token sampled_token = _greedy_sample(logit_vector, 0);
+        Token sampled_token = greedy_sample(logit_vector, 0);
         int64_t pred_token = sampled_token.m_index;
 
         bool matched = false;
@@ -1273,7 +1273,7 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, logit_idx);
         logit_processor.update_generated_len(sequence->get_generated_len());
         logit_processor.apply(logit_vector);
-        bonus_token = _greedy_sample(logit_vector, 0);
+        bonus_token = greedy_sample(logit_vector, 0);
     }
 
     sequence->append_token(bonus_token->m_index, bonus_token->m_log_prob);
@@ -1309,7 +1309,8 @@ void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
                                   const ov::Tensor& sequence_group_logits,
                                   RequestSamplerContext& ctx,
                                   size_t num_tokens_to_process,
-                                  SequenceGroupSamplingInfo& sg_sampling_info) {
+                                  SequenceGroupSamplingInfo& sg_sampling_info,
+                                  const ForcedTokens& forced_tokens) {
     const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
     AssistingPipelineInfo& assisting_pipeline_info = sg_sampling_info.get_assisting_pipeline_info();
     LogitProcessor& logit_processor = ctx.logit_processor;
@@ -1345,14 +1346,21 @@ void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
             std::optional<Logits> logit_vector;
             std::optional<SamplingDistribution> distribution;
             Token sampled_token;
-            if (const auto forced_token = running_sequence->take_forced_next_token()) {
+            std::optional<int64_t> forced_token;
+            if (!forced_tokens.empty()) {
+                const auto it = forced_tokens.find(running_sequence->get_id());
+                if (it != forced_tokens.end()) {
+                    forced_token = it->second;
+                }
+            }
+            if (forced_token) {
                 // A step hook chose the token, so the logits of this row are not needed.
                 sampled_token = Token(0.0f, *forced_token);
             } else {
                 logit_vector.emplace(_get_logit_vector(sequence_group_logits, running_sequence_id, 0));
                 logit_processor.apply(*logit_vector);
                 if (sampling_params.is_greedy_decoding()) {
-                    sampled_token = _greedy_sample(*logit_vector, sampling_params.logprobs);
+                    sampled_token = greedy_sample(*logit_vector, sampling_params.logprobs);
                 } else {
                     distribution.emplace(*logit_vector);
                     sampled_token =
@@ -1389,7 +1397,7 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
     // prompt lookup candidates are verified by exact match.
     const bool is_speculative_sampling = sampling_params.do_sample && !sampling_params.is_prompt_lookup();
     const auto sample_token = [&](const Logits& logits) {
-        return sampling_params.is_greedy_decoding() ? _greedy_sample(logits, sampling_params.logprobs)
+        return sampling_params.is_greedy_decoding() ? greedy_sample(logits, sampling_params.logprobs)
                                                     : SamplingDistribution(logits).sample(ctx.rng_engine);
     };
     size_t num_sampled_rows = 0;
@@ -1423,7 +1431,7 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
             if (logit_token_offset == 0) {
                 const Token sampled_token =
                     sampling_params.is_greedy_decoding()
-                        ? _greedy_sample(logit_vector, sampling_params.logprobs)
+                        ? greedy_sample(logit_vector, sampling_params.logprobs)
                         : _multinomial_sample(sequence_group,
                                               SamplingDistribution(logit_vector),
                                               ctx,
@@ -1534,7 +1542,7 @@ int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
     context.logit_processor.apply(logits);
     BlockToken block_token;
     if (sampling_params.is_greedy_decoding()) {
-        const Token token = _greedy_sample(logits, sampling_params.logprobs);
+        const Token token = greedy_sample(logits, sampling_params.logprobs);
         block_token = {token.m_index, token.m_log_prob, nullptr};
     } else {
         const SamplingDistribution distribution(logits);
@@ -1693,7 +1701,8 @@ std::vector<SequenceGroupSamplingInfo> Sampler::_sample_blocks(const std::vector
 SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits, 
                                                               RequestSamplerContext& ctx,
                                                               bool is_validation_mode_enabled,
-                                                              bool notify_handle) {
+                                                              bool notify_handle,
+                                                              const ForcedTokens& forced_tokens) {
     if (m_block_sampling) {
         return _sample_block_from_sequence_group(sequence_group, sequence_group_logits, ctx);
     }
@@ -1729,7 +1738,12 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         if (is_validation_mode_enabled) {
             _validate_candidates(sequence_group, sequence_group_logits, ctx, num_tokens_to_process, sg_sampling_info);
         } else {
-            _sample_next_tokens(sequence_group, sequence_group_logits, ctx, num_tokens_to_process, sg_sampling_info);
+            _sample_next_tokens(sequence_group,
+                                sequence_group_logits,
+                                ctx,
+                                num_tokens_to_process,
+                                sg_sampling_info,
+                                forced_tokens);
         }
         align_all_sequence_len(sequence_group, assisting_pipeline_info.min_generated_len, logit_processor);
         for (const auto& dropped_seq_id : _try_finish_generation(sequence_group, ctx.stop_strings)) {
@@ -1795,7 +1809,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             Sequence::Ptr& sequence = running_sequences[0];
             auto logit_vector = _get_logit_vector(sequence_group_logits, 0, 0);
             logit_processor.apply(logit_vector);
-            const Token sampled_token = _greedy_sample(logit_vector, sampling_params.logprobs);
+            const Token sampled_token = greedy_sample(logit_vector, sampling_params.logprobs);
             sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
             logit_processor.register_new_generated_token(sampled_token.m_index);
             sg_sampling_info.sampler_output.num_generated_tokens++;
@@ -1844,7 +1858,12 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                               ov::Tensor logits,
                               bool is_validation_mode_enabled,
                               bool notify_handles,
-                              bool defer_sequence_group_updates) {
+                              bool defer_sequence_group_updates,
+                              const ForcedTokens& forced_tokens) {
+    // Forced rows skip the logits, so validation, block sampling and draft proposals have nothing to work from.
+    OPENVINO_ASSERT(forced_tokens.empty() ||
+                        (!is_validation_mode_enabled && !m_block_sampling && !m_collect_draft_proposals),
+                    "Forced tokens apply only to plain greedy or multinomial sampling");
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
@@ -1889,10 +1908,12 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             if (m_tokenizer.m_pimpl != nullptr) {
                 structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller(vocab_size);
             }
+            const SamplingOverrides& overrides = sequence_group->get_sampling_overrides();
             LogitProcessor lp(sampling_params,
                               sequence_group->get_prompt_ids(),
                               structured_output_controller,
-                              m_suppressed_token_ids);
+                              overrides.suppressed_token_ids.value_or(m_suppressed_token_ids),
+                              overrides.repetition_window);
             m_request_contexts.emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(request_id),
@@ -1925,7 +1946,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                                                      sequence_group_logits,
                                                      std::ref(ctx),
                                                      is_validation_mode_enabled,
-                                                     notify_handles);
+                                                     notify_handles,
+                                                     std::cref(forced_tokens));
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }

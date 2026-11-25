@@ -4,6 +4,7 @@
 #include "visual_language/lfm3_omni/speech_step_hook.hpp"
 
 #include <algorithm>
+#include <exception>
 #include <string>
 #include <utility>
 
@@ -13,100 +14,81 @@ namespace ov::genai {
 
 namespace {
 
-// A frame limit hit before the STOP on the final flush keeps LENGTH, like on SDPA.
-GenerationFinishReason stop_reason(GenerationFinishReason reason) {
-    return reason == GenerationFinishReason::TOOL_CALL || reason == GenerationFinishReason::LENGTH
-               ? reason
-               : GenerationFinishReason::STOP;
+/// @brief The message of the exception being handled.
+std::string current_exception_message() {
+    try {
+        throw;
+    } catch (const std::exception& error) {
+        return error.what();
+    } catch (...) {
+        return "unknown exception";
+    }
 }
 
-void set_finish_reason(const std::vector<Sequence::Ptr>& sequences, GenerationFinishReason reason) {
-    for (const Sequence::Ptr& sequence : sequences) {
-        sequence->set_finish_reason(reason);
-    }
+StreamingStatus text_stream_status(const LFM3SpeechPayload& payload) {
+    return payload.text_streamer ? payload.text_streamer->get_status() : StreamingStatus::RUNNING;
+}
+
+/// @brief The hidden state [1, hidden_size] of the last scheduled token, the one the next slot follows; a view that
+/// lives as long as the hidden state of sequence.
+ov::Tensor last_hidden_row(const Sequence& sequence) {
+    const ov::Tensor hidden_state = sequence.get_hidden_state();
+    OPENVINO_ASSERT(hidden_state && hidden_state.is_continuous() && hidden_state.get_element_type() == ov::element::f32,
+                    "LFM3-Omni speech needs the f32 hidden states of the language model");
+    const size_t hidden_size = hidden_state.get_shape().back();
+    return ov::Tensor(ov::element::f32,
+                      {1, hidden_size},
+                      hidden_state.data<float>() + hidden_state.get_size() - hidden_size);
 }
 
 }  // namespace
 
-LFM3SpeechStepHook::ActiveRequest::ActiveRequest(uint64_t id,
-                                                 const LFM3SpeechModelConfig& config,
-                                                 const PendingRequest& pending)
-    : id(id),
-      state(config, pending.request, *pending.speech_streamer),
-      text_streamer(pending.text_streamer) {}
+LFM3SpeechPayload::LFM3SpeechPayload(LFM3SpeechRequest request,
+                                     const OmniSpeechStreamerVariant& speech_streamer,
+                                     std::shared_ptr<ThreadedStreamerWrapper> text_streamer)
+    : request(std::move(request)),
+      speech_streamer(speech_streamer),
+      text_streamer(std::move(text_streamer)) {}
+
+struct LFM3SpeechStepHook::RequestState final : StepRequestState {
+    RequestState(const LFM3SpeechModelConfig& config, std::shared_ptr<LFM3SpeechPayload> payload)
+        : payload(std::move(payload)),
+          speech(config, this->payload->request, this->payload->speech_streamer) {}
+
+    std::shared_ptr<LFM3SpeechPayload> payload;
+    LFM3SpeechState speech;
+    /// @brief Set once the speech decode ended; on_terminal() hands it to the payload.
+    std::optional<LFM3SpeechResult> result;
+};
 
 LFM3SpeechStepHook::LFM3SpeechStepHook(std::unique_ptr<LFM3SpeechModels> models) : m_models(std::move(models)) {}
 
-void LFM3SpeechStepHook::expect_request(const LFM3SpeechRequest& request,
-                                        const OmniSpeechStreamerVariant& speech_streamer,
-                                        std::shared_ptr<StreamerBase> text_streamer) {
-    OPENVINO_ASSERT(!m_pending_request && !m_active, "LFM3-Omni decodes one speech request at a time");
-    m_pending_request = PendingRequest{request, &speech_streamer, std::move(text_streamer)};
-    m_result.reset();
-    m_request_error = nullptr;
-    m_text_streamer_failed = false;
+LFM3SpeechStepHook::RequestState& LFM3SpeechStepHook::as_request_state(StepRequestState& state) {
+    // Only admit() of the hook installed on a pipeline creates the step states of its requests.
+    return static_cast<RequestState&>(state);
 }
 
-void LFM3SpeechStepHook::rethrow_request_error() {
-    if (m_request_error) {
-        std::rethrow_exception(std::exchange(m_request_error, nullptr));
+std::unique_ptr<StepRequestState> LFM3SpeechStepHook::admit(const Admission& admission) {
+    if (!admission.payload) {
+        return nullptr;
     }
-}
-
-void LFM3SpeechStepHook::keep_request_error(const char* source) {
-    std::string message = "unknown exception";
-    try {
-        throw;
-    } catch (const std::exception& error) {
-        message = error.what();
-    } catch (...) {
-        // Not an std::exception: the exception itself is still kept below.
-    }
-    GENAI_WARN("LFM3-Omni speech request ends after a %s failure: %s", source, message.c_str());
-    if (!m_request_error) {
-        m_request_error = std::current_exception();
-    }
-}
-
-void LFM3SpeechStepHook::finish_request() {
-    try {
-        m_result = m_active->state.finish(*m_models);
-    } catch (...) {
-        keep_request_error("final speech decode");
-        m_result = LFM3SpeechResult{};
-        m_result->status = GenerationStatus::CANCEL;
-    }
-    m_active.reset();
-}
-
-LFM3SpeechResult LFM3SpeechStepHook::take_result() {
-    OPENVINO_ASSERT(m_result, "LFM3-Omni speech request has no result");
-    LFM3SpeechResult result = std::move(*m_result);
-    m_result.reset();
-    return result;
-}
-
-bool LFM3SpeechStepHook::on_add_request(uint64_t request_id,
-                                        ov::Tensor& inputs_embeds,
-                                        std::optional<ov::Tensor>& prompt_ids,
-                                        InputsEmbedder& inputs_embedder) {
-    if (!m_pending_request) {
-        return false;
-    }
-    OPENVINO_ASSERT(!m_active, "LFM3-Omni speech request ", m_active->id, " is still running");
-    const PendingRequest pending = std::move(*m_pending_request);
-    m_pending_request.reset();
-    m_active.emplace(request_id, m_models->config(), pending);
-    LFM3SpeechState& state = m_active->state;
+    auto speech_payload = std::dynamic_pointer_cast<LFM3SpeechPayload>(admission.payload);
+    OPENVINO_ASSERT(speech_payload, "The LFM3-Omni speech hook got a step payload that is not LFM3-Omni speech");
+    OPENVINO_ASSERT(admission.inputs_embedder, "LFM3-Omni speech needs a language model with embedding inputs");
+    auto state = std::make_unique<RequestState>(m_models->config(), std::move(speech_payload));
+    auto& speech = state->speech;
+    ov::Tensor& inputs_embeds = admission.inputs;
+    std::optional<ov::Tensor>& prompt_ids = admission.prompt_ids;
 
     int64_t last_prompt_token = -1;
     if (prompt_ids && prompt_ids->get_size() > 0) {
         last_prompt_token = prompt_ids->data<const int64_t>()[prompt_ids->get_size() - 1];
     }
-    const int64_t marker = state.take_prompt_marker(last_prompt_token);
+    const int64_t marker = speech.take_prompt_marker(last_prompt_token);
     if (marker >= 0) {
-        inputs_embeds =
-            append_lfm3_prompt_row(inputs_embeds, embed_lfm3_token(*inputs_embedder.get_embedding_model(), marker));
+        inputs_embeds = append_lfm3_prompt_row(
+            inputs_embeds,
+            embed_lfm3_token(*admission.inputs_embedder->get_embedding_model(), marker));
         if (prompt_ids) {
             // Prompt ids are [1, num_tokens]; the marker joins them as the last token.
             const size_t num_tokens = prompt_ids->get_size();
@@ -116,164 +98,123 @@ bool LFM3SpeechStepHook::on_add_request(uint64_t request_id,
             prompt_ids = extended;
         }
     }
-    state.start(inputs_embeds.get_shape().at(1));
-    return true;
+    speech.start(inputs_embeds.get_shape().at(1));
+    admission.sampling_overrides = lfm3_text_sampling_overrides(m_models->config());
+    return state;
 }
 
-void LFM3SpeechStepHook::before_sampling(const std::vector<SequenceGroup::Ptr>& requests, const ov::Tensor& logits) {
-    if (!m_active) {
+void LFM3SpeechStepHook::on_terminal(StepRequestState& step_state, const Terminal& terminal) {
+    auto& state = as_request_state(step_state);
+    if (terminal.status == GenerationStatus::FAILED || terminal.status == GenerationStatus::IGNORED) {
+        // No speech model or streamer may run for a dropped request, and its caller reads no result.
+        GENAI_DEBUG("LFM3-Omni speech request ends without a result, status %d", static_cast<int>(terminal.status));
         return;
     }
-    OPENVINO_ASSERT(!m_active->frame, "LFM3-Omni speech frame of the previous step was not fed back");
-    // The same row walk as Sampler::sample: each scheduled group owns num_running_seqs * output_seq_len rows.
-    size_t processed_rows = 0;
-    for (const SequenceGroup::Ptr& group : requests) {
-        if (!group->is_scheduled()) {
-            continue;
+    if (!state.result) {
+        // Only a request whose handle was stopped or cancelled from outside is still running: after_sampling() finishes
+        // the others.
+        if (terminal.status == GenerationStatus::STOP || terminal.status == GenerationStatus::CANCEL) {
+            state.speech.end_with(terminal.status);
         }
-        const size_t first_row = processed_rows;
-        processed_rows += group->num_running_seqs() * group->get_output_seq_len();
-        if (group->get_request_id() != m_active->id) {
-            continue;
-        }
-        // A stopped or cancelled handle frees the request at the end of this step: no further slot is streamed.
-        if (!group->requires_sampling() || group->handle_stopped() || group->handle_cancelled()) {
-            return;
-        }
-        const Sequence::Ptr sequence = group->get_running_sequences().front();
-        if (m_active->state.next_is_frame()) {
-            sample_frame_slot(group, sequence);
-        } else {
-            sample_text_slot(sequence, logits, first_row + group->get_output_seq_len() - 1);
-        }
-        return;
+        state.result = state.speech.finish(*m_models);
     }
+    state.payload->result = std::move(state.result);
 }
 
-void LFM3SpeechStepHook::sample_text_slot(const Sequence::Ptr& sequence, const ov::Tensor& logits, size_t row) {
-    OPENVINO_ASSERT(logits.get_shape().size() == 3, "LFM3-Omni expects logits [tokens, 1, vocab]");
-    const size_t vocab_size = logits.get_shape()[2];
-    const float* row_logits = logits.data<const float>() + row * vocab_size;
-    std::vector<float> scores(row_logits, row_logits + vocab_size);
-    LFM3SpeechState& state = m_active->state;
-    const int64_t token = state.sample_text(scores);
-    StreamingStatus status = StreamingStatus::RUNNING;
-    if (m_active->text_streamer) {
-        // An exception of the text streamer ends only this request, as one of the speech streamer does.
-        try {
-            status = m_active->text_streamer->write(token);
-        } catch (...) {
-            keep_request_error("text streamer");
-            m_text_streamer_failed = true;
-            status = StreamingStatus::CANCEL;
-        }
+std::vector<std::optional<int64_t>> LFM3SpeechStepHook::select_tokens(const std::vector<Row>& rows) {
+    std::vector<std::optional<int64_t>> tokens;
+    tokens.reserve(rows.size());
+    for (const Row& row : rows) {
+        const auto& state = as_request_state(row.state);
+        // A request is freed in the step its speech ends, so it never samples again.
+        OPENVINO_ASSERT(!state.result,
+                        "LFM3-Omni speech request ",
+                        row.sequence_group->get_request_id(),
+                        " samples after its speech ended");
+        OPENVINO_ASSERT(state.speech.generated_slots() == row.sequence->get_generated_len(),
+                        "LFM3-Omni speech state is out of step with its sequence: ",
+                        state.speech.generated_slots(),
+                        " slots, ",
+                        row.sequence->get_generated_len(),
+                        " tokens");
+        // A frame slot feeds back <|audio_out|> with the frame embedding instead of a sampled token.
+        tokens.push_back(state.speech.next_is_frame() ? std::optional<int64_t>{m_models->config().audio_out_token_id}
+                                                      : std::nullopt);
     }
-    state.accept_text(token, status);
-    sequence->set_forced_next_token(token);
+    return tokens;
 }
 
-void LFM3SpeechStepHook::sample_frame_slot(const SequenceGroup::Ptr& group, const Sequence::Ptr& sequence) {
-    ov::Tensor hidden_state = sequence->get_hidden_state();
-    OPENVINO_ASSERT(hidden_state && hidden_state.is_continuous() && hidden_state.get_element_type() == ov::element::f32,
-                    "LFM3-Omni speech needs the f32 hidden states of the language model");
-    const size_t hidden_size = hidden_state.get_shape().back();
-    // The last row belongs to the last scheduled token, the one the next slot follows.
-    const ov::Tensor last_row(ov::element::f32,
-                              {1, hidden_size},
-                              hidden_state.data<float>() + hidden_state.get_size() - hidden_size);
-    LFM3SpeechState& state = m_active->state;
-    std::vector<int64_t> codes;
-    // A depth decoder, codec or speech streamer exception ends only this request: it must not leave the step.
+std::vector<IStepHook::RowOutcome> LFM3SpeechStepHook::after_sampling(const std::vector<Row>& rows) {
+    std::vector<RowOutcome> outcomes;
+    outcomes.reserve(rows.size());
+    // One row at a time: each speech model has a single infer request, and a batch > 1 export is unverified.
+    for (const Row& row : rows) {
+        outcomes.push_back(after_slot(row));
+    }
+    return outcomes;
+}
+
+IStepHook::RowOutcome LFM3SpeechStepHook::after_slot(const Row& row) {
+    auto& state = as_request_state(row.state);
+    auto& speech = state.speech;
+    // The sampler already appended the token of this slot.
+    OPENVINO_ASSERT(speech.generated_slots() + 1 == row.sequence->get_generated_len(),
+                    "LFM3-Omni speech state is out of step with its sequence: ",
+                    speech.generated_slots() + 1,
+                    " slots, ",
+                    row.sequence->get_generated_len(),
+                    " tokens");
+    // A depth decoder, codec or streamer exception fails only this request: it must not leave the step.
     try {
-        codes = state.accept_frame(m_models->sample_frame(last_row, state), *m_models);
+        std::optional<std::vector<int64_t>> frame_codes;
+        if (speech.next_is_frame()) {
+            frame_codes = accept_frame_slot(state, *row.sequence);
+        } else {
+            accept_text_slot(state, *row.sequence);
+        }
+        RowOutcome outcome;
+        if (!speech.finished() && !row.sequence->has_finished()) {
+            if (frame_codes) {
+                outcome.next_embedding = m_models->embed_frame(*frame_codes);
+            }
+            return outcome;
+        }
+        // The speech state ends a request on <|text_end|> rules, the frame limit and streamer statuses, the sampler
+        // at max_new_tokens and stop tokens. Either way the result is final here, before the handle is notified.
+        state.result = speech.finish(*m_models);
+        // A request only the sampler ended keeps the sampler's reason, unless the final flush stopped or cancelled it.
+        if (state.result->status != GenerationStatus::FINISHED || speech.finished()) {
+            outcome.ending = Ending{state.result->status, state.result->finish_reason};
+        }
+        return outcome;
     } catch (...) {
-        keep_request_error("speech frame");
-        state.end_with(GenerationStatus::CANCEL);
-    }
-    m_active->frame = PendingFrame{group, sequence, std::move(codes)};
-    sequence->set_forced_next_token(m_models->config().audio_out_token_id);
-}
-
-std::vector<IStepHook::GeneratedEmbedding> LFM3SpeechStepHook::after_sampling(
-    const std::vector<SequenceGroup::Ptr>& requests,
-    SamplerOutput& sampler_output) {
-    std::vector<GeneratedEmbedding> generated;
-    if (!m_active) {
-        return generated;
-    }
-    // Only a request that goes on needs its frame as the next input; one that ended this step is finished below.
-    const std::optional<PendingFrame> frame = std::exchange(m_active->frame, std::nullopt);
-    if (frame && !m_active->state.finished()) {
-        try {
-            generated.push_back({frame->sequence_group, frame->sequence, m_models->embed_frame(frame->codes)});
-        } catch (...) {
-            keep_request_error("audio_out_embeddings");
-            m_active->state.end_with(GenerationStatus::CANCEL);
-        }
-    }
-    // Sampling has already cleared the scheduled flag, so every request is checked.
-    const auto group = std::find_if(requests.begin(), requests.end(), [&](const SequenceGroup::Ptr& request) {
-        return request->get_request_id() == m_active->id;
-    });
-    if (group != requests.end()) {
-        finish_if_ended(*group, sampler_output);
-    }
-    return generated;
-}
-
-void LFM3SpeechStepHook::finish_if_ended(const SequenceGroup::Ptr& group, SamplerOutput& sampler_output) {
-    // The speech state ends a request on <|text_end|> rules, the frame limit and streamer statuses, the sampler at
-    // max_new_tokens and stop tokens. Either way the request is finished here, before its handle is notified, so a
-    // STOP or CANCEL, the final flush included, reaches the handle like on SDPA.
-    const bool sampler_finished = group->has_finished();
-    const bool state_finished = m_active->state.finished();
-    if (!state_finished && !sampler_finished) {
-        return;
-    }
-    finish_request();
-    const LFM3SpeechResult& result = *m_result;
-    if (result.status == GenerationStatus::CANCEL) {
-        group->get_generation_stream()->cancel();
-        // Results read the sequence reason, which is NONE or the sampler's LENGTH here, while SDPA reports the
-        // speech reason.
-        set_finish_reason(group->get_sequences(), result.finish_reason);
-    } else if (result.status == GenerationStatus::STOP) {
-        const GenerationFinishReason reason = stop_reason(result.finish_reason);
-        group->get_generation_stream()->stop(reason);
-        if (sampler_finished) {
-            // A stop on the last allowed token: results read the sequence reason first, so LENGTH must not stay.
-            set_finish_reason(group->get_sequences(), reason);
-        }
-    } else if (!sampler_finished) {
-        for (const Sequence::Ptr& sequence : group->get_running_sequences()) {
-            sequence->set_status(SequenceStatus::FINISHED);
-            sequence->set_finish_reason(result.finish_reason);
-            sampler_output.m_dropped_sequences.push_back(sequence->get_id());
-        }
-    } else if (state_finished) {
-        // <|text_end|> on the last allowed slot: the sampler, which does not stop on it, has set LENGTH.
-        set_finish_reason(group->get_sequences(), result.finish_reason);
+        GENAI_WARN("LFM3-Omni speech request %lu fails: %s",
+                   static_cast<unsigned long>(row.sequence_group->get_request_id()),
+                   current_exception_message().c_str());
+        RowOutcome outcome;
+        outcome.error = std::current_exception();
+        return outcome;
     }
 }
 
-void LFM3SpeechStepHook::on_request_freed(const SequenceGroup::Ptr& request) {
-    if (!m_active || m_active->id != request->get_request_id()) {
-        return;
+std::vector<int64_t> LFM3SpeechStepHook::accept_frame_slot(RequestState& state, const Sequence& sequence) {
+    auto& speech = state.speech;
+    auto codes = speech.accept_frame(m_models->sample_frame(last_hidden_row(sequence), speech), *m_models);
+    const auto status = text_stream_status(*state.payload);
+    // The stop of an asynchronous text streamer may arrive in a frame slot, after its last text token.
+    if (!speech.finished()) {
+        speech.accept_text_stream_status(status);
     }
-    // Only a request whose handle was stopped or cancelled from outside is still here: after_sampling() finishes the
-    // others.
-    if (request->handle_cancelled()) {
-        m_active->state.end_with(GenerationStatus::CANCEL);
-    } else if (request->handle_stopped()) {
-        m_active->state.end_with(GenerationStatus::STOP);
-    }
-    finish_request();
+    return codes;
 }
 
-void LFM3SpeechStepHook::on_request_dropped(uint64_t request_id) {
-    if (m_active && m_active->id == request_id) {
-        m_active.reset();
+void LFM3SpeechStepHook::accept_text_slot(RequestState& state, const Sequence& sequence) {
+    const auto status = text_stream_status(*state.payload);
+    const auto token = sequence.get_generated_ids().back();
+    if (state.payload->text_streamer) {
+        state.payload->text_streamer->write(token);
     }
+    state.speech.accept_text(token, sequence.get_generated_log_probs().back(), status);
 }
 
 }  // namespace ov::genai

@@ -108,8 +108,10 @@ before relying on it.
 Untagged media is prepended in the order images, videos, audio, followed by the text.
 
 LFM3-Omni has no separate talker: its language model emits text and speech in one token stream, which `OmniPipeline`
-decodes on the PA and on the SDPA backend. One speech request runs at a time. The text streamer of a speech request
-is called on the decoding thread, so a slow callback delays the speech. `text_config.max_new_tokens` caps
+decodes on the PA and on the SDPA backend. One speech request runs at a time. On SDPA the text streamer of a speech
+request is called on the decoding thread, so a slow callback delays the speech. On PA it runs on its own thread, as in
+the text pipelines: a stop or cancel takes effect a few slots later, and those slots stay in the answer.
+`text_config.max_new_tokens` caps
 text tokens and speech frames together: each one is a generation step. `OmniTalkerSpeechConfig.output_mode` sets the
 order of text and speech:
 `SpeechOutputMode.INTERLEAVED` (default) alternates short blocks of text and speech, `SpeechOutputMode.SPEECH_ONLY`

@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <chrono>
 
+#include "sampling/logit_processor.hpp"
+#include "sampling/sampler.hpp"
+#include "sampling/sampling_distribution.hpp"
+
 namespace ov::genai {
 
 LFM3OmniSpeechEngine::LFM3OmniSpeechEngine(const std::filesystem::path& models_dir,
@@ -70,6 +74,15 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                                                 const std::shared_ptr<StreamerBase>& streamer,
                                                 const OmniSpeechStreamerVariant& speech_streamer) {
     LFM3SpeechState state(m_models.config(), request, speech_streamer);
+    // The continuous batching sampler with the rules it gets on PA, so both backends draw the same text tokens.
+    const SamplingOverrides text_rules = lfm3_text_sampling_overrides(m_models.config());
+    LogitProcessor text_processor(request.text_config,
+                                  {},
+                                  nullptr,
+                                  text_rules.suppressed_token_ids.value_or(std::set<int64_t>{}),
+                                  text_rules.repetition_window);
+    std::mt19937 text_rng(request.text_config.rng_seed);
+    size_t generated_slots = 0;
 
     ov::Tensor prompt_embeds = inputs_embeds;
     const int64_t marker = state.take_prompt_marker(last_prompt_token);
@@ -107,19 +120,27 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     } text_streamer_guard{streamer};
     while (!state.finished()) {
         ov::Tensor next_embeds;
+        text_processor.update_generated_len(generated_slots++);
         if (state.next_is_frame()) {
             next_embeds =
                 m_models.embed_frame(state.accept_frame(m_models.sample_frame(step.hidden_state, state), m_models));
+            // On PA every frame slot appends <|audio_out|> to the sequence.
+            text_processor.register_new_generated_token(m_models.config().audio_out_token_id);
         } else {
-            const int64_t token = state.sample_text(step.logits);
+            Logits logits(step.logits.data(), step.logits.size());
+            text_processor.apply(logits);
+            const Token token = request.text_config.is_greedy_decoding()
+                                    ? greedy_sample(logits, request.text_config.logprobs)
+                                    : SamplingDistribution(logits).sample(text_rng);
+            text_processor.register_new_generated_token(token.m_index);
             StreamingStatus status = StreamingStatus::RUNNING;
             if (streamer) {
                 text_streamer_guard.done = true;
-                status = streamer->write(token);
+                status = streamer->write(token.m_index);
                 text_streamer_guard.done = false;
             }
-            state.accept_text(token, status);
-            next_embeds = embed_lfm3_token(*m_embedding, token);
+            state.accept_text(token.m_index, token.m_log_prob, status);
+            next_embeds = embed_lfm3_token(*m_embedding, token.m_index);
         }
         raw_perf.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf.m_batch_sizes.emplace_back(1);

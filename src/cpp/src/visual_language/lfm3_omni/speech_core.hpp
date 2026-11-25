@@ -19,6 +19,7 @@
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/runtime/infer_request.hpp"
+#include "sampling/sampling_overrides.hpp"
 #include "utils.hpp"
 #include "visual_language/embedding_model.hpp"
 
@@ -68,7 +69,7 @@ struct LFM3SpeechRequest {
 struct LFM3SpeechResult {
     /// @brief Generated text tokens, without the <|audio_out|> slot of each speech frame.
     std::vector<int64_t> text_tokens;
-    /// @brief Sum of the log-probabilities of the sampled text tokens; 0 for greedy text decode, as in the text pipelines.
+    /// @brief Sum of the log-probabilities the sampler reported for the text tokens; 0 for greedy text decode.
     float text_log_prob = 0.0f;
     /// @brief Every token added to the context after the prompt: the appended mode marker, if any, then each generated
     /// slot, with <|audio_out|> standing for each speech frame.
@@ -112,19 +113,19 @@ struct LFM3SpeechModelConfig {
     static LFM3SpeechModelConfig read(const std::filesystem::path& config_dir_path);
 };
 
+/// @brief Text slots are sampled by the continuous batching sampler with these rules: the media placeholders are
+/// suppressed, and the repetition penalty covers the last text_repetition_window text tokens, never <|audio_out|>.
+SamplingOverrides lfm3_text_sampling_overrides(const LFM3SpeechModelConfig& config);
+
+/// @brief Sampling of the codes of a speech frame.
 struct LFM3SpeechSampling {
     std::optional<float> temperature;  ///< unset or 0: greedy
     std::optional<size_t> top_k;
-    float top_p = 1.0f;
-    float min_p = 0.0f;
     float repetition_penalty = 1.0f;
 
     /// @brief Draws one id from scores, which are changed in place. The order follows the transformers processors:
-    /// penalty over history, suppression, then temperature, top-k, top-p and min-p.
-    int64_t sample(std::vector<float>& scores,
-                   const std::vector<int64_t>& history,
-                   const std::vector<int64_t>& suppress,
-                   std::mt19937& rng) const;
+    /// penalty over history, suppression, then temperature and top-k.
+    int64_t sample(std::vector<float>& scores, const std::vector<int64_t>& history, std::mt19937& rng) const;
 };
 
 class LFM3SpeechState;
@@ -170,8 +171,9 @@ private:
     ov::InferRequest m_audio_decoder;
 };
 
-/// @brief Speech decoding state of one sequence: the text / speech mode machine, repetition histories, both RNGs, the
-/// generated frames and the streamed waveform. The caller runs the language model and feeds back each slot.
+/// @brief Speech decoding state of one sequence: the text / speech mode machine, the speech repetition history and
+/// RNG, the generated frames and the streamed waveform. The caller runs the language model, samples text slots and
+/// feeds back each slot.
 class LFM3SpeechState {
 public:
     /// @param speech_streamer Optional; without it the waveform is decoded once in finish().
@@ -193,15 +195,20 @@ public:
     GenerationFinishReason finish_reason() const {
         return m_result.finish_reason;
     }
+    /// @brief Slots generated so far; stops counting once finished. The appended prompt marker is not a slot.
+    size_t generated_slots() const {
+        return m_generated_slots;
+    }
 
     /// @brief Ends the decode from outside the slot loop, e.g. when the caller stops or cancels the request.
     void end_with(GenerationStatus status);
 
-    /// @brief Samples the next text token from the language model logits, which are changed in place.
-    int64_t sample_text(std::vector<float>& logits);
+    /// @brief Records a sampled text token and its log-probability; stream_status is the text streamer status that
+    /// applies to it.
+    void accept_text(int64_t token, float log_prob, StreamingStatus stream_status);
 
-    /// @brief Records a sampled text token; stream_status is what the text streamer returned for it.
-    void accept_text(int64_t token, StreamingStatus stream_status);
+    /// @brief Ends the decode if the text streamer stopped or cancelled between text slots, e.g. an asynchronous one.
+    void accept_text_stream_status(StreamingStatus stream_status);
 
     /// @brief Records the codes of a sampled frame and streams a chunk when one is due.
     /// @return The codes to feed back: all EOS codes for the end-of-speech frame.
@@ -233,11 +240,9 @@ private:
     size_t m_audio_chunk_frames;
     size_t m_left_context_frames;
     GenerationConfig m_text_config;
-    LFM3SpeechSampling m_text_sampling;
     LFM3SpeechSampling m_audio_sampling;
     std::set<int64_t> m_stop_token_ids;
-    // Text and speech draw from separate generators, seeded by text_config.rng_seed and the speech rng_seed.
-    std::mt19937 m_text_rng;
+    // Seeded by the speech rng_seed; text slots draw from the generator of their sampler.
     std::mt19937 m_audio_rng;
 
     Mode m_mode;
@@ -249,7 +254,6 @@ private:
     bool m_speech_streamer_stopped = false;
     size_t m_max_new_slots = 0;
     size_t m_generated_slots = 0;
-    std::deque<int64_t> m_text_history;
     std::deque<std::vector<int64_t>> m_audio_history;
     std::vector<std::vector<int64_t>> m_frames;
     std::vector<float> m_samples;

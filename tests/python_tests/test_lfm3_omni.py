@@ -24,6 +24,7 @@ import platform
 import shutil
 import sys
 import tempfile
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -444,12 +445,15 @@ def test_max_new_tokens_caps_text_and_speech_slots(speech_pipe: ov_genai.OmniPip
 
 
 @pytest.mark.parametrize("after", [1, INTERLEAVED_TEXT_SLOTS], ids=["first_token", "last_token_of_block"])
-@pytest.mark.parametrize("status", [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.CANCEL])
+@pytest.mark.parametrize(
+    "status",
+    [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.CANCEL, ov_genai.StreamingStatus.TOOL_CALL_STOP],
+)
 def test_text_streamer_ends_speech_generation(
-    speech_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, after: int
+    omni_sdpa_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, after: int
 ) -> None:
-    # The interleaved answer opens with a text block, so no frame may follow the token on which the streamer ends
-    # the turn, not even the frame of the next step.
+    # SDPA writes the text streamer on the decoding thread, and the interleaved answer opens with a text block, so no
+    # frame may follow the token on which the streamer ends the turn. PA streams text asynchronously, as CB does.
     collector = TokenCollector(status, after)
     chunks: list[ov.Tensor] = []
 
@@ -457,7 +461,7 @@ def test_text_streamer_ends_speech_generation(
         chunks.append(chunk)
         return ov_genai.StreamingStatus.RUNNING
 
-    result = speech_pipe.generate(
+    result = omni_sdpa_pipe.generate(
         PROMPT,
         text_config=_text_config(1000),
         talker_speech_config=_speech_config(8, audio_chunk_frames=1),
@@ -467,6 +471,38 @@ def test_text_streamer_ends_speech_generation(
     assert len(collector.tokens) == after
     assert chunks == []
     assert result.speech_result.waveforms == []
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_slow_text_streamer_does_not_stall_speech(omni_pa_pipe: ov_genai.OmniPipeline) -> None:
+    # The first write waits for a speech chunk, which only a decode that goes on without the text streamer can make.
+    chunk_streamed = threading.Event()
+
+    class BlockingStreamer(TokenCollector):
+        unblocked = False
+
+        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+            super().write(token)
+            self.unblocked = chunk_streamed.wait(timeout=60)
+            return ov_genai.StreamingStatus.STOP
+
+    def on_chunk(chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+        chunk_streamed.set()
+        return ov_genai.StreamingStatus.RUNNING
+
+    collector = BlockingStreamer()
+    result = omni_pa_pipe.generate(
+        PROMPT,
+        text_config=_text_config(1000),
+        talker_speech_config=_speech_config(8, audio_chunk_frames=1),
+        streamer=collector,
+        speech_streamer=on_chunk,
+    )
+    assert collector.unblocked
+    # The stop takes effect in a later step: the slots generated meanwhile stay, but no later token is streamed.
+    assert len(collector.tokens) == 1
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.STOP]
+    assert result.speech_result.waveforms
 
 
 @pytest.mark.parametrize("status", [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.CANCEL])
@@ -798,7 +834,6 @@ def test_tool_call_stop_ends_the_turn(speech_pipe: ov_genai.OmniPipeline) -> Non
     )
     assert len(collector.tokens) == 1
     assert result.finish_reasons == [ov_genai.GenerationFinishReason.TOOL_CALL]
-    assert result.speech_result.waveforms == []
 
 
 @pytest.mark.parametrize(
@@ -810,13 +845,30 @@ def test_tool_call_stop_ends_the_turn(speech_pipe: ov_genai.OmniPipeline) -> Non
     ],
 )
 def test_streamer_stop_on_last_allowed_token_keeps_its_reason(
-    speech_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, reason: ov_genai.GenerationFinishReason
+    omni_sdpa_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, reason: ov_genai.GenerationFinishReason
 ) -> None:
     # max_new_tokens ends the request on the same token, but the streamer's reason is reported.
-    result = speech_pipe.generate(
+    result = omni_sdpa_pipe.generate(
         PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=TokenCollector(status)
     )
     assert result.finish_reasons == [reason]
+
+
+@SKIP_PA_ON_MACOS_ARM64
+@pytest.mark.parametrize(
+    "status",
+    [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.TOOL_CALL_STOP, ov_genai.StreamingStatus.CANCEL],
+)
+def test_paged_attention_streamer_stop_on_last_allowed_token_is_late(
+    omni_pa_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus
+) -> None:
+    # As in the continuous batching text pipelines, the request has ended before the asynchronous streamer replies.
+    collector = TokenCollector(status)
+    result = omni_pa_pipe.generate(
+        PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=collector
+    )
+    assert len(collector.tokens) == 1
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.LENGTH]
 
 
 def test_text_streamer_cancel_reports_speech_reason(speech_pipe: ov_genai.OmniPipeline) -> None:
@@ -919,7 +971,7 @@ def test_paged_attention_speech_matches_sdpa(
     speech_fields: dict,
     streamed: bool,
 ) -> None:
-    # Continuous batching runs the same text and frame sampler as the SDPA loop, so the answers are equal.
+    # Both backends sample text with the continuous batching sampler and frames with the same frame sampler.
     def run(pipe: ov_genai.OmniPipeline) -> SpeechRun:
         text_config = _text_config(1000)
         for name, value in text_fields.items():
@@ -1166,6 +1218,53 @@ def test_speech_model_failure_ends_only_its_call(
         streamer=collector,
     )
     assert len(collector.tokens) == TEXT_TOKENS
+
+
+@pytest.mark.parametrize("backend", ["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+@pytest.mark.parametrize("chat_history", [False, True], ids=["prompt", "chat_history"])
+def test_failed_speech_turn_leaves_chat_unchanged(
+    lfm3_omni_model_path: Path, tmp_path: Path, backend: str, chat_history: bool
+) -> None:
+    # A speech-model error must leave the chat as a cancelled turn would: no dangling user turn for the next answer.
+    # OmniPipeline has no start_chat, so VLMPipeline.
+    config = json.loads((lfm3_omni_model_path / "config.json").read_text())
+    row_shape = [config["num_codebooks"], config["codebook_size"]]
+    _write_failing_speech_model(lfm3_omni_model_path, tmp_path, "depth_decoder", "logits", row_shape)
+    pipe = ov_genai.VLMPipeline(tmp_path, "CPU", ATTENTION_BACKEND=backend, **F32)
+    speech_only = _speech_config(4, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
+    # No text cap: the SPEECH_ONLY turn fails on its first frame, in the depth decoder's broken Reshape.
+    uncapped_text = _text_config(1000)
+
+    def new_history() -> ov_genai.ChatHistory:
+        history = ov_genai.ChatHistory()
+        history.append({"role": "user", "content": PROMPT})
+        return history
+
+    def text_turn(prompt: str | ov_genai.ChatHistory) -> str:
+        result = pipe.generate(
+            prompt,
+            generation_config=_text_config(TEXT_TOKENS),
+            talker_speech_config=_speech_config(2, return_audio=False),
+        )
+        return result.texts[0]
+
+    if chat_history:
+        expected = text_turn(new_history())
+        history = new_history()
+        with pytest.raises(RuntimeError, match="Reshape"):
+            pipe.generate(history, generation_config=uncapped_text, talker_speech_config=speech_only)
+        actual = text_turn(history)
+    else:
+        pipe.start_chat()
+        expected = text_turn(PROMPT)
+        pipe.finish_chat()
+        pipe.start_chat()
+        with pytest.raises(RuntimeError, match="Reshape"):
+            pipe.generate(PROMPT, generation_config=uncapped_text, talker_speech_config=speech_only)
+        actual = text_turn(PROMPT)
+        pipe.finish_chat()
+    assert expected
+    assert actual == expected
 
 
 def _add_scaled_last_hidden_state(model: ov.Model) -> ov.Model:

@@ -17,6 +17,8 @@
 
 namespace ov::genai {
 
+class StepRequestPayload;
+
 enum class ModelInputType {
     TOKENS,
     EMBEDDINGS
@@ -192,8 +194,9 @@ public:
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) = 0;
 
-    /// @brief Low-level generation with a thinker -> talker bridge. Backends that do not support
-    ///        bridge streaming reject it; the plain continuous batching implementation overrides it.
+    /// @brief Low-level generation with a thinker -> talker bridge or model-specific step work. Backends that support
+    ///        neither reject them; the plain continuous batching implementation overrides it.
+    /// @param step_payloads Empty, or one step hook payload per request, null for a request the hook must not take.
     virtual std::vector<EncodedGenerationResult> generate_with_omni_streamer(
         const std::vector<ov::Tensor>& input_ids,
         const std::vector<GenerationConfig>& sampling_params,
@@ -201,7 +204,8 @@ public:
         std::shared_ptr<OmniStreamerBase> omni_streamer,
         const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
         const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
-        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt);
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt,
+        const std::vector<std::shared_ptr<StepRequestPayload>>& step_payloads = {});
 
     /**
      * Performs monolithic generation based on text prompts
@@ -244,7 +248,8 @@ public:
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer,
-        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
+        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr,
+        const std::vector<std::shared_ptr<StepRequestPayload>>& step_payloads = {}
     );
 
 
@@ -289,7 +294,8 @@ public:
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer,
-        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
+        std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr,
+        const std::vector<std::shared_ptr<StepRequestPayload>>& step_payloads = {}
     );
 
     /**

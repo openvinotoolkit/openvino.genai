@@ -758,3 +758,46 @@ TEST(LogitProcessorGeneratedHistory, PenalizesOnlyTokensThatRemainAfterRemoval) 
         EXPECT_NEAR(input[4], 1.0f, 1e-6f);
     }
 }
+
+// LFM3-Omni penalizes only its last text tokens: the prompt, the ignored forced placeholder and the tokens that slid
+// out of the window keep their logits.
+TEST(LogitProcessorRepetitionWindow, PenalizesOnlyRecentNotIgnoredTokens) {
+    GenerationConfig config;
+    config.repetition_penalty = 2.0f;
+    const RepetitionWindow window{2, {5}};
+    LogitProcessor processor(config, TokenIds{0}, nullptr, {}, window);
+    for (const int64_t token : {1, 2, 5, 3, 5}) {
+        processor.register_new_generated_token(token);
+    }
+
+    float input[]{1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f};
+    Logits logits(input, 6);
+    processor.apply(logits);
+    EXPECT_FLOAT_EQ(input[0], 1.0f);   // prompt
+    EXPECT_FLOAT_EQ(input[1], 1.0f);   // out of the window
+    EXPECT_FLOAT_EQ(input[2], 0.5f);
+    EXPECT_FLOAT_EQ(input[3], -2.0f);
+    EXPECT_FLOAT_EQ(input[5], 1.0f);   // ignored
+}
+
+TEST(LogitProcessorRepetitionWindow, PenalizesARepeatedTokenOnce) {
+    GenerationConfig config;
+    config.repetition_penalty = 2.0f;
+    LogitProcessor processor(config, {}, nullptr, {}, RepetitionWindow{4, {}});
+    for (const int64_t token : {1, 1, 1}) {
+        processor.register_new_generated_token(token);
+    }
+
+    float input[]{1.0f, 4.0f};
+    Logits logits(input, 2);
+    processor.apply(logits);
+    EXPECT_FLOAT_EQ(input[1], 2.0f);
+}
+
+TEST(LogitProcessorRepetitionWindow, RejectsRollback) {
+    GenerationConfig config;
+    config.repetition_penalty = 2.0f;
+    LogitProcessor processor(config, {}, nullptr, {}, RepetitionWindow{4, {}});
+    processor.register_new_generated_token(1);
+    EXPECT_THROW(processor.decrease_generated_token_occurrence(1), ov::Exception);
+}

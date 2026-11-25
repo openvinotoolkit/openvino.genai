@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
+#include <set>
 
 #include "openvino/genai/generation_config.hpp"
 
@@ -493,6 +495,48 @@ public:
 
 protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = nullptr;
+};
+
+// Penalizes each distinct id among the last window_size accepted tokens, as RepetitionPenaltyTransform does, but
+// without the prompt and without the ignored ids, e.g. a placeholder that a step hook forces.
+class WindowedRepetitionPenaltyTransform : public IStatefulLogitTransformer {
+public:
+    WindowedRepetitionPenaltyTransform(double repetition_penalty, size_t window_size, std::set<int64_t> ignored_token_ids)
+        : m_penalty(repetition_penalty),
+          m_window_size(window_size),
+          m_ignored_token_ids(std::move(ignored_token_ids)) {}
+
+    void apply(Logits& logits) override {
+        auto logit_ref = [&](int64_t id) -> float& {
+            return logits.is_vector_initialized() ? logits.m_vector[id].m_log_prob : logits.m_data[id];
+        };
+        const std::set<int64_t> unique_ids(m_history.begin(), m_history.end());
+        for (const int64_t token_id : unique_ids) {
+            OPENVINO_ASSERT(token_id >= 0 && static_cast<size_t>(token_id) < logits.m_size,
+                            "Repetition window token id is out of vocabulary range: ",
+                            token_id);
+            auto& value = logit_ref(token_id);
+            if (value >= 0) value /= m_penalty; else value *= m_penalty;
+        }
+    }
+
+    void accept_tokens(const TokenIds& input_ids) override {
+        for (const int64_t token_id : input_ids) {
+            if (m_ignored_token_ids.count(token_id)) {
+                continue;
+            }
+            m_history.push_back(token_id);
+            if (m_history.size() > m_window_size) {
+                m_history.pop_front();
+            }
+        }
+    }
+
+private:
+    double m_penalty;
+    size_t m_window_size;
+    std::set<int64_t> m_ignored_token_ids;
+    std::deque<int64_t> m_history;
 };
 
 class EOSPenaltyTransform : public ILogitTransformer {
