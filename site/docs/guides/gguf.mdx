@@ -52,6 +52,8 @@ Replace `model.gguf` with the path to your downloaded model. For a base model wi
 
 The pipeline constructs its tokenizer from the frontend's model metadata. You can also construct `genai.GGUFTokenizer("model.gguf")` independently, without exporting tokenizer IR files. In C++, include `<openvino/genai/gguf.hpp>` and use `ov::genai::GGUFTokenizer`. The existing `Tokenizer("model.gguf")` path also remains supported.
 
+For GGUF BPE tokenizers, `skip_special_tokens=True` removes control tokens but preserves user-defined tokens, such as Qwen reasoning and tool-call delimiters, based on the token type stored in the GGUF file. Unlike llama.cpp, GenAI does not additionally treat known end-of-generation tokens stored as user-defined, such as Gemma 4 `<|tool_response>`, as control tokens. GGUF files do not store the original Hugging Face `special` flags, so the result can differ from a tokenizer exported with Optimum Intel. For identical behavior, pass a tokenizer exported for the same model to the pipeline: `genai.LLMPipeline("model.gguf", genai.Tokenizer("tokenizer_dir"), "CPU", GGUF_READER="FRONTEND")`.
+
 ```python
 import openvino_genai as genai
 
