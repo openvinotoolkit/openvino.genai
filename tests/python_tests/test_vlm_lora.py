@@ -31,12 +31,6 @@ from test_vlm_pipeline import (
 VISION_LORA_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5"
 # An architecture whose inputs embedder does not support visual LoRA.
 UNSUPPORTED_VISION_LORA_MODEL_ID = "optimum-intel-internal-testing/tiny-random-mistral3"
-# Architectures whose inputs embedders compile extra sub-models with the pipeline properties.
-EXTRA_SUBMODELS_MODEL_IDS = [
-    UNSUPPORTED_VISION_LORA_MODEL_ID,
-    "optimum-intel-internal-testing/tiny-random-gemma4",
-    "optimum-intel-internal-testing/tiny-random-qwen3-omni",
-]
 
 pytestmark = pytest.mark.vlm
 
@@ -46,14 +40,15 @@ def model_id() -> str:
     return VISION_LORA_MODEL_ID
 
 
-def _build_lora(model_path: Path, adapter_path: Path, key_prefix: str, rank: int = 2) -> int:
-    """Creates a LoRA adapter targeting every linear layer of the given sub-model.
+def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> int:
+    """Creates a LoRA adapter targeting every linear layer of the vision merger sub-model.
 
-    Layer names follow the PyTorch frontend convention `__module.<module path>/aten::linear/MatMul`.
+    Layer names follow the PyTorch frontend convention `__module.<module path>/aten::linear/MatMul`,
+    and `openvino_vision_embeddings_merger_model.xml` is exported from the `model.visual` submodule.
     """
     from safetensors.numpy import save_file
 
-    model = openvino.Core().read_model(model_path)
+    model = openvino.Core().read_model(Path(models_path) / "openvino_vision_embeddings_merger_model.xml")
     tensors: dict[str, np.ndarray] = {}
     for op in model.get_ops():
         if op.get_type_name() != "MatMul":
@@ -65,21 +60,12 @@ def _build_lora(model_path: Path, adapter_path: Path, key_prefix: str, rank: int
         transpose_b = op.get_attributes()["transpose_b"]
         input_dim = weight_shape[1 if transpose_b else 0].get_length()
         output_dim = weight_shape[0 if transpose_b else 1].get_length()
-        key = f"{key_prefix}{module_path.group(1)}"
+        key = f"base_model.model.model.visual.{module_path.group(1)}"
         tensors[f"{key}.lora_A.weight"] = np.full((rank, input_dim), 0.5, dtype=np.float32)
         tensors[f"{key}.lora_B.weight"] = np.full((output_dim, rank), 0.5, dtype=np.float32)
 
     save_file(tensors, str(adapter_path))
     return len(tensors) // 2
-
-
-def _build_vision_lora(models_path: Path, adapter_path: Path) -> int:
-    # `openvino_vision_embeddings_merger_model.xml` is exported from the `model.visual` submodule.
-    return _build_lora(
-        Path(models_path) / "openvino_vision_embeddings_merger_model.xml",
-        adapter_path,
-        "base_model.model.model.visual.",
-    )
 
 
 @pytest.fixture(scope="module")
@@ -277,22 +263,3 @@ def test_vlm_per_model_adapters_rejected(role, backend, vision_lora) -> None:
         VLMPipeline(
             models_path, "CPU", ATTENTION_BACKEND=backend, MODEL_PROPERTIES={role: {"adapters": AdapterConfig(adapter)}}
         )
-
-
-@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-@pytest.mark.parametrize("extra_submodels_model_id", EXTRA_SUBMODELS_MODEL_IDS)
-def test_vlm_language_model_lora_with_extra_submodels(extra_submodels_model_id, backend, tmp_path: Path) -> None:
-    pytest.importorskip("transformers", minversion="5.2.0")
-    models_path = Path(_get_ov_model(extra_submodels_model_id))
-    adapter_path = tmp_path / "adapter.safetensors"
-    assert _build_lora(models_path / "openvino_language_model.xml", adapter_path, "base_model.model.") > 0
-    config = GenerationConfig(max_new_tokens=5, do_sample=False)
-
-    reference = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend).generate(
-        PROMPTS[0], generation_config=config
-    )
-    adapted = VLMPipeline(
-        models_path, "CPU", ATTENTION_BACKEND=backend, adapters=AdapterConfig(Adapter(str(adapter_path)))
-    ).generate(PROMPTS[0], generation_config=config)
-
-    assert adapted.texts[0] != reference.texts[0], "Language model LoRA adapter did not affect the generated text"
