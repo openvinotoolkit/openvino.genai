@@ -5,13 +5,13 @@
 
 #include <cstring>
 
+#include "openvino/frontend/gguf/adapt_to_genai.hpp"
 #include "openvino/openvino.hpp"
 
-/// \brief Load and convert a .gguf file with the OpenVINO GGUF frontend.
+/// \brief Load a .gguf file with the OpenVINO GGUF frontend and adapt it to GenAI.
 ///
-/// GenAIExtension prepares stateful caches and GenAI IO inside the frontend conversion.
-/// Registration is scoped to this frontend instance.
-std::shared_ptr<ov::Model> convert_gguf_with_frontend(const std::string& model_path);
+/// Returns the named models from ov::frontend::gguf::adapt_to_genai for a decoder GGUF.
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path);
 
 /// \brief Convert a .gguf file into an ov::Model.
 ///
