@@ -78,7 +78,7 @@ Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tok
 
 ## Generate with images, video, or audio
 
-Pass a matching language GGUF and projector GGUF to `VLMPipeline` on CPU. This route uses the
+Pass a matching language GGUF and projector GGUF to `VLMPipeline` on CPU or GPU. This route uses the
 OpenVINO GGUF frontend and reuses the image processing, embedding assembly, and generation code
 used for Optimum Intel exports.
 

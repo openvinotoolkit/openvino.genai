@@ -347,7 +347,6 @@ void validate_gguf_multimodal_dimensions(const std::shared_ptr<ov::Model>& langu
 GGUFMultimodalModels read_gguf_multimodal(const std::filesystem::path& language,
                                           const std::string& device,
                                           ov::AnyMap& properties) {
-    OPENVINO_ASSERT(device == "CPU", "GGUF multimodal generation is currently qualified on CPU only");
     OPENVINO_ASSERT(properties.count(utils::DRAFT_MODEL_ARG_NAME) == 0,
                     "draft_model is not supported for GGUF VLMPipeline");
     const auto it = properties.find(mmproj_path.name());
