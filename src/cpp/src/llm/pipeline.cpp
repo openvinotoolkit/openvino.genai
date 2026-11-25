@@ -43,9 +43,12 @@ std::unique_ptr<ov::genai::LLMPipelineImplBase> create_gguf_mtp_pipeline(
     auto [properties, attention_backend] = ov::genai::utils::extract_attention_backend(user_properties, false);
     OPENVINO_ASSERT(attention_backend == ov::genai::PA_BACKEND,
                     "GGUF MTP requires the paged attention backend (ATTENTION_BACKEND=\"PA\").");
+    // GGUF MTP models keep linear-attention state, for which MTP samples only without prefix caching.
+    // Keep the model's recommended sampling usable unless the caller passes a scheduler config.
+    auto default_scheduler_config = ov::genai::utils::get_latency_oriented_scheduler_config();
+    default_scheduler_config.enable_prefix_caching = false;
     auto [device_properties, scheduler_config] =
-        ov::genai::utils::extract_scheduler_config(properties,
-                                                   ov::genai::utils::get_latency_oriented_scheduler_config());
+        ov::genai::utils::extract_scheduler_config(properties, default_scheduler_config);
     device_properties["sampler_num_threads"] = 1;
     std::unique_ptr<ov::genai::ContinuousBatchingPipeline> pipeline;
     if (tokenizer) {
@@ -232,12 +235,9 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& properties) {
-    return create(ov::genai::utils::read_model(models_path, properties),
-                  tokenizer,
-                  device,
-                  properties,
-                  utils::from_config_json_if_exists(models_path),
-                  models_path);
+    auto model = ov::genai::utils::read_model(models_path, properties);
+    const auto generation_config = utils::from_config_json_or_model(models_path, *model);
+    return create(model, tokenizer, device, properties, generation_config, models_path);
 }
 
 static std::unique_ptr<LLMPipelineImplBase> create(
@@ -336,7 +336,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
-    const auto generation_config = utils::from_config_json_if_exists(models_path);
+    const auto generation_config = utils::from_config_json_or_model(models_path, *model);
     if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
         // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
         auto [device_properties, scheduler_config] =
@@ -416,7 +416,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     // On the from-file path the frontend's metadata is still on the model and no longer read.
     erase_gguf_tokenizer_metadata(model);
 
-    const auto generation_config = utils::from_config_json_if_exists(models_path);
+    const auto generation_config = utils::from_config_json_or_model(models_path, *model);
     if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
         // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
         auto [device_properties, scheduler_config] =

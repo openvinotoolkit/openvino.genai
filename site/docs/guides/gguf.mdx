@@ -74,6 +74,12 @@ history.append({"role": "user", "content": "Now give an example."})
 print(pipe.generate(history, max_new_tokens=64))
 ```
 
+When the file has recommended sampling (`general.sampling.*`), it becomes the default generation config:
+`do_sample`, `top_k`, `top_p`, `min_p`, `temperature` and `repetition_penalty`. Pass a `GenerationConfig`
+or keyword arguments to `generate()` to override it, for example `do_sample=False` for greedy output.
+Template variables such as `enable_thinking` go to `ChatHistory.set_extra_context()`; `generate()` does
+not forward unknown keyword arguments to the chat template.
+
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
 
 ## Multi-token prediction (MTP)
@@ -119,7 +125,8 @@ target token embeddings. A GGUF file without NextN weights raises an error.
 GGUF MTP runs on the paged attention backend and supports greedy or multinomial decoding, one returned
 sequence and a fixed positive `num_assistant_tokens`; an unset value means 3. Confidence-based drafting
 and tree search are not supported. With prefix caching enabled for a model with linear-attention state,
-decoding must be greedy. A one-token prompt runs without drafting because the shifted draft context is
+decoding must be greedy, so `LLMPipeline` keeps prefix caching off for GGUF MTP unless you pass a
+`scheduler_config`. A one-token prompt runs without drafting because the shifted draft context is
 empty. For M-RoPE targets, provide text prompts; pre-tokenized token-ID inputs are not supported.
 Recurrent-state capacity must cover both live requests and MTP verification scratch. With a custom
 `scheduler_config`, set `num_linear_attention_blocks` to at least the number of live requests plus

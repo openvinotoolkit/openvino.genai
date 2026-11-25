@@ -153,6 +153,8 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
                                                                              draft_properties,
                                                                              false);
 
+    m_generation_config = main_model_desc.generation_config;
+
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};

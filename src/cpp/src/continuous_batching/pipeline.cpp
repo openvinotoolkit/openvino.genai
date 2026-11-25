@@ -93,7 +93,7 @@ GGUFMtpParts load_gguf_mtp_parts(const std::filesystem::path& models_path,
     erase_gguf_tokenizer_metadata(models.target);
     auto plugin_config = gguf_properties.rest;
     plugin_config[ov::cache_model_path.name()] = models_path;
-    const auto generation_config = utils::from_config_json_if_exists(models_path);
+    const auto generation_config = utils::from_config_json_or_model(models_path, *models.target);
     auto embedder_config = plugin_config;
     embedder_config.erase("sampler_num_threads");
     auto embedder = std::make_shared<InputsEmbedder>(models.text_embeddings, mtp_tokenizer, device, embedder_config);
@@ -146,7 +146,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
             ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), tokenizer_properties)
             : Tokenizer(models_path, tokenizer_properties);
     erase_gguf_tokenizer_metadata(model);
-    auto generation_config = utils::from_config_json_if_exists(models_path);
+    auto generation_config = utils::from_config_json_or_model(models_path, *model);
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
@@ -290,7 +290,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
-    auto generation_config = utils::from_config_json_if_exists(models_path);
+    auto generation_config = utils::from_config_json_or_model(models_path, *model);
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,

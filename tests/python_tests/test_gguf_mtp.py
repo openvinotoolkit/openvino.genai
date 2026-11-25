@@ -30,6 +30,10 @@ def write_qwen35_gguf(path, mtp=True):
     }.items():
         writer.add_uint32("qwen35." + key, value)
     writer.add_float32("qwen35.attention.layer_norm_rms_epsilon", 1e-5)
+    if mtp:
+        writer.add_int32("general.sampling.top_k", 20)
+        writer.add_float32("general.sampling.top_p", 0.95)
+        writer.add_float32("general.sampling.temp", 0.6)
     writer.add_array("qwen35.rope.dimension_sections", [1, 1, 0, 0])
     tokens = ["<unk>", "<s>", "</s>", "<pad>", "\u2581", "a", "b", "c"]
     tokens += [f"<0x{i:02X}>" for i in range(256)]
@@ -217,3 +221,17 @@ def test_gguf_mtp_accepts_disabled_prompt_lookup(mtp_gguf):
     pipe = genai.LLMPipeline(mtp_gguf, "CPU", prompt_lookup=False, **mtp_properties())
     config = genai.GenerationConfig(max_new_tokens=2, ignore_eos=True, apply_chat_template=False)
     assert pipe.generate("a b c", config)
+
+
+def test_gguf_recommended_sampling_is_the_default_config(mtp_gguf, plain_gguf):
+    reader = dict(GGUF_READER="FRONTEND", **DEVICE_PROPERTIES)
+    configs = [
+        genai.LLMPipeline(mtp_gguf, "CPU", **reader).get_generation_config(),
+        genai.ContinuousBatchingPipeline(mtp_gguf, make_scheduler(), "CPU", reader).get_config(),
+        genai.ContinuousBatchingPipeline(mtp_gguf, make_scheduler(), "CPU", mtp_properties()).get_config(),
+    ]
+    for config in configs:
+        assert config.do_sample
+        assert (config.top_k, config.top_p, config.temperature) == (20, pytest.approx(0.95), pytest.approx(0.6))
+    assert configs[2].num_assistant_tokens is None
+    assert not genai.LLMPipeline(plain_gguf, "CPU", **reader).get_generation_config().do_sample

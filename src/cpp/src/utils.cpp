@@ -502,6 +502,44 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
     }
 }
 
+ov::genai::GenerationConfig from_config_json_or_model(const std::filesystem::path& models_path,
+                                                      const ov::Model& model) {
+    auto config = from_config_json_if_exists(models_path);
+    const auto& rt_info = model.get_rt_info();
+    const auto it = rt_info.find("generation_config");
+    if (std::filesystem::exists(models_path / "generation_config.json") || it == rt_info.end()) {
+        return config;
+    }
+    const auto values = it->second.as<ov::AnyMap>();
+    const auto text = [&](const char* name) -> std::optional<std::string> {
+        const auto value = values.find(name);
+        return value == values.end() ? std::nullopt : std::optional{value->second.as<std::string>()};
+    };
+    try {
+        if (const auto value = text("do_sample")) {
+            config.do_sample = *value == "true";
+        }
+        if (const auto value = text("top_k"); value && std::stol(*value) > 0) {
+            config.top_k = std::stoul(*value);
+        }
+        if (const auto value = text("top_p")) {
+            config.top_p = std::stof(*value);
+        }
+        if (const auto value = text("min_p")) {
+            config.min_p = std::stof(*value);
+        }
+        if (const auto value = text("temperature")) {
+            config.temperature = std::stof(*value);
+        }
+        if (const auto value = text("repetition_penalty")) {
+            config.repetition_penalty = std::stof(*value);
+        }
+    } catch (const std::logic_error& error) {
+        OPENVINO_THROW("Invalid generation_config in the model rt_info: ", error.what());
+    }
+    return config;
+}
+
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
     const auto gguf_props = gguf_utils::extract_gguf_properties(properties);
     const ov::AnyMap& filtered_properties = gguf_props.rest;
