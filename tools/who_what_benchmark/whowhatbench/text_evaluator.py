@@ -48,6 +48,7 @@ class TextEvaluator(BaseEvaluator):
         is_genai=False,
         is_llamacpp=False,
         output_dir=None,
+        batch_size=1,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -71,6 +72,9 @@ class TextEvaluator(BaseEvaluator):
         self.kld_chunk = kld_chunk
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
+        self.batch_size = batch_size
+        if self.batch_size > 1 and self.generation_config is not None:
+            raise ValueError("batch_size > 1 is not supported with generation_config, use seqs_per_request instead.")
         self.empty_adapters = empty_adapters
 
         # Take language from the base model if provided
@@ -203,6 +207,8 @@ class TextEvaluator(BaseEvaluator):
         reference_token_ids_path=None,
         output_dir=None,
     ):
+        if self.batch_size > 1 and gen_answer_fn is not None:
+            raise ValueError("batch_size > 1 is not supported with a custom gen_answer_fn.")
         gen_answer_fn = gen_answer_fn or self.generation_strategy.run_generation
 
         if self.test_data:
@@ -227,7 +233,26 @@ class TextEvaluator(BaseEvaluator):
         artifacts_collector = ArtifactsManager(self.requisted_artifacts, output_dir)
         generated_token_ids = artifacts_collector.collect_metadata_for_generation(reference_token_ids_path)
 
-        if generation_config is None:
+        if generation_config is None and self.batch_size > 1:
+            with tqdm(total=len(prompts), desc="Evaluate pipeline") as progress_bar:
+                for batch_start_idx in range(0, len(prompts), self.batch_size):
+                    batch = list(prompts[batch_start_idx : batch_start_idx + self.batch_size])
+                    outputs = self.generation_strategy.run_batch_generation(
+                        model,
+                        self.tokenizer,
+                        batch,
+                        self.max_new_tokens,
+                        self._crop_question,
+                        self.use_chat_template,
+                        self.empty_adapters,
+                        self.num_assistant_tokens,
+                        self.assistant_confidence_threshold,
+                        generation_config_extra=self.generation_config_extra,
+                    )
+                    for batch_offset, (p, output) in enumerate(zip(batch, outputs, strict=True)):
+                        artifacts_collector.collect(batch_start_idx + batch_offset, p, output)
+                    progress_bar.update(len(batch))
+        elif generation_config is None:
             for sample_idx, p in enumerate(tqdm(prompts, desc="Evaluate pipeline")):
                 reference_tokens = None
                 if generated_token_ids is not None and sample_idx < len(generated_token_ids):
