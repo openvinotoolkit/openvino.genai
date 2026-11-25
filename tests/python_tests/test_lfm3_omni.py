@@ -560,6 +560,27 @@ def test_chat_history_speech(omni_chat_pipe: ov_genai.OmniPipeline, frame_sample
     assert _waveform(result).size == 4 * frame_samples
 
 
+@pytest.mark.parametrize("backend", ["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+def test_chat_history_keeps_a_templated_speech_marker(lfm3_omni_model_path: Path, backend: str) -> None:
+    # A template that already ends with the speech marker gets no second one, on ChatHistory as on a prompt.
+    # A fresh pipeline, since the chat template is changed.
+    config = json.loads((lfm3_omni_model_path / "config.json").read_text())
+    pipe = ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND=backend, **F32)
+    tokenizer = pipe.get_tokenizer()
+    marker = tokenizer.decode([config["audio_start_token_id"]], skip_special_tokens=False)
+    pipe.set_chat_template(tokenizer.chat_template + marker)
+    speech_only = _speech_config(4, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
+
+    def speech(prompt: str | ov_genai.ChatHistory) -> np.ndarray:
+        return _waveform(pipe.generate(prompt, generation_config=_text_config(1000), talker_speech_config=speech_only))
+
+    # A prompt call first: a ChatHistory call leaves the pipeline in chat mode.
+    from_prompt = speech(PROMPT)
+    history = ov_genai.ChatHistory()
+    history.append({"role": "user", "content": PROMPT})
+    np.testing.assert_allclose(speech(history), from_prompt, atol=1e-5)
+
+
 def test_chat_turn_after_speech_matches_text_turn(omni_chat_pipe: ov_genai.OmniPipeline) -> None:
     # The conv layers make every ChatHistory call decode the full history, so state left by speech must not leak.
     history = ov_genai.ChatHistory()
@@ -845,30 +866,44 @@ def test_tool_call_stop_ends_the_turn(speech_pipe: ov_genai.OmniPipeline) -> Non
     ],
 )
 def test_streamer_stop_on_last_allowed_token_keeps_its_reason(
-    omni_sdpa_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, reason: ov_genai.GenerationFinishReason
+    speech_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, reason: ov_genai.GenerationFinishReason
 ) -> None:
-    # max_new_tokens ends the request on the same token, but the streamer's reason is reported.
-    result = omni_sdpa_pipe.generate(
-        PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=TokenCollector(status)
-    )
-    assert result.finish_reasons == [reason]
-
-
-@SKIP_PA_ON_MACOS_ARM64
-@pytest.mark.parametrize(
-    "status",
-    [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.TOOL_CALL_STOP, ov_genai.StreamingStatus.CANCEL],
-)
-def test_paged_attention_streamer_stop_on_last_allowed_token_is_late(
-    omni_pa_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus
-) -> None:
-    # As in the continuous batching text pipelines, the request has ended before the asynchronous streamer replies.
+    # max_new_tokens ends the request on the same token, but the streamer's reason is reported, even when PA streams
+    # text asynchronously and the callback replies after the sampler ended the request.
     collector = TokenCollector(status)
-    result = omni_pa_pipe.generate(
+    result = speech_pipe.generate(
         PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=collector
     )
     assert len(collector.tokens) == 1
-    assert result.finish_reasons == [ov_genai.GenerationFinishReason.LENGTH]
+    assert result.finish_reasons == [reason]
+
+
+@pytest.mark.parametrize("ending", ["cancel", "error"])
+def test_text_streamer_ending_on_last_token_leaves_chat_unchanged(vlm_pipe: ov_genai.VLMPipeline, ending: str) -> None:
+    # The cancel or error of the last token's callback must roll the turn back before the chat history is kept.
+    text_only = _speech_config(2, return_audio=False)
+
+    def text_turn() -> str:
+        return vlm_pipe.generate(
+            PROMPT, generation_config=_text_config(TEXT_TOKENS), talker_speech_config=text_only
+        ).texts[0]
+
+    vlm_pipe.start_chat()
+    expected = text_turn()
+    vlm_pipe.finish_chat()
+    vlm_pipe.start_chat()
+    if ending == "cancel":
+        streamer = TokenCollector(ov_genai.StreamingStatus.CANCEL)
+        vlm_pipe.generate(PROMPT, generation_config=_text_config(1), talker_speech_config=text_only, streamer=streamer)
+    else:
+        with pytest.raises(Exception, match="streamer failure"):
+            vlm_pipe.generate(
+                PROMPT, generation_config=_text_config(1), talker_speech_config=text_only, streamer=FailingStreamer()
+            )
+    actual = text_turn()
+    vlm_pipe.finish_chat()
+    assert expected
+    assert actual == expected
 
 
 def test_text_streamer_cancel_reports_speech_reason(speech_pipe: ov_genai.OmniPipeline) -> None:

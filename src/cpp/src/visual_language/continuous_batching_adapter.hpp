@@ -410,7 +410,7 @@ private:
             }
             throw;
         }
-        // Waits for the queued text and rethrows an error of the callback.
+        // The hook ends the text streamer with the request; this covers a request ended from outside the hook.
         text_streamer->end();
         OPENVINO_ASSERT(payload->result, "LFM3-Omni speech request ended without a result");
         LFM3SpeechResult speech = std::move(*payload->result);

@@ -181,6 +181,13 @@ IStepHook::RowOutcome LFM3SpeechStepHook::after_slot(const Row& row) {
         }
         // The speech state ends a request on <|text_end|> rules, the frame limit and streamer statuses, the sampler
         // at max_new_tokens and stop tokens. Either way the result is final here, before the handle is notified.
+        if (const auto& text_streamer = state.payload->text_streamer) {
+            // Callbacks of queued tokens run before the result is final, so a status or error of the last one counts.
+            text_streamer->end();
+            if (!speech.finished()) {
+                speech.accept_text_stream_status(text_streamer->get_status());
+            }
+        }
         state.result = speech.finish(*m_models);
         // A request only the sampler ended keeps the sampler's reason, unless the final flush stopped or cancelled it.
         if (state.result->status != GenerationStatus::FINISHED || speech.finished()) {

@@ -22,8 +22,8 @@ struct LFM3SpeechPayload final : StepRequestPayload {
     const LFM3SpeechRequest request;
     /// @brief Must outlive the request.
     const OmniSpeechStreamerVariant& speech_streamer;
-    /// @brief Optional, started and ended by the caller. Its callback runs on its own thread, so it never stalls a
-    /// step; a stop or cancel lands a step later and keeps the slots generated meanwhile.
+    /// @brief Optional, started by the caller and ended by the hook in the step the request ends. Its callback runs on
+    /// its own thread, so a mid-answer stop or cancel lands a step later and keeps the slots generated meanwhile.
     const std::shared_ptr<ThreadedStreamerWrapper> text_streamer;
     /// @brief Set once the request finished, stopped or was cancelled.
     std::optional<LFM3SpeechResult> result;

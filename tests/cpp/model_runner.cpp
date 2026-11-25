@@ -379,6 +379,16 @@ std::shared_ptr<ov::Model> create_dummy_hidden_state_export_model() {
 
 }  // namespace
 
+TEST(TestModelRunnerHiddenStateExport, hidden_states_output_is_found_by_alias) {
+    auto model = create_dummy_hidden_state_export_model();
+    // "decoder_output" sorts first, so get_any_name() does not return "hidden_states".
+    model->outputs()[1].get_tensor().set_names({"decoder_output", "hidden_states"});
+    ov::Core core;
+    ModelRunner runner(core.compile_model(model, "CPU").create_infer_request(), /*block_size=*/4,
+                       /*num_decoder_layers=*/1);
+    EXPECT_NO_THROW(runner.use_hidden_states_output());
+}
+
 TEST(TestModelRunnerHiddenStateExport, unscheduled_sequence_keeps_its_rows) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(create_dummy_hidden_state_export_model(), "CPU").create_infer_request();

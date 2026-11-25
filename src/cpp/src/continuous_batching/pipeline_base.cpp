@@ -736,7 +736,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
     // Omni speech needs the exact prompt-token slice the Thinker consumed, but collecting it must
     // not force ChatHistory through the string path (which would misplace multimodal tokens).
-    const bool capture_prompt_ids = omni_streamer ||
+    // A step hook reads the prompt tail too, as LFM3-Omni does to skip a speech marker the template already added.
+    const bool capture_prompt_ids = omni_streamer || !step_payloads.empty() ||
                                     std::any_of(sampling_params.begin(), sampling_params.end(),
                                                 [](const GenerationConfig& params) {
                                                     return params.return_omni_outputs ||

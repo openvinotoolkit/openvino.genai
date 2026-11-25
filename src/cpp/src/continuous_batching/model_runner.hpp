@@ -494,15 +494,12 @@ public:
         }
 
         // Detect model output names for hidden state handling (Qwen3-Omni)
+        // An output may carry aliases, so get_any_name() could hide the one looked for.
         for (const auto& output : compiled_model.outputs()) {
-            const auto& name = output.get_any_name();
-            if (name == "hidden_states") {
-                m_has_hidden_states_output = true;
-            } else if (name == "intermediate_hidden_states") {
-                m_has_intermediate_hidden_states_output = true;
-            } else if (name == "next_hidden_states") {
-                m_has_next_hidden_states_output = true;
-            }
+            const auto& names = output.get_names();
+            m_has_hidden_states_output |= names.count("hidden_states") > 0;
+            m_has_intermediate_hidden_states_output |= names.count("intermediate_hidden_states") > 0;
+            m_has_next_hidden_states_output |= names.count("next_hidden_states") > 0;
         }
 
         // The hidden state input may be wider than the token embeddings (Qwen4Exp MTP: hyper-connection streams).
