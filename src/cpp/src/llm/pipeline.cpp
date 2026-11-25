@@ -33,6 +33,16 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
     return it->second.as<ov::genai::ModelDesc>().model;
 }
 
+// Prefill a long GGUF prompt in bounded chunks: a whole-prompt prefill holds activations for every
+// prompt token at once (34.8k tokens of Bonsai-2-2B: 12.6 GiB peak instead of 2.9 GiB).
+ov::genai::SchedulerConfig latency_scheduler_config(const std::filesystem::path& models_path) {
+    auto config = ov::genai::utils::get_latency_oriented_scheduler_config();
+    if (ov::genai::is_gguf_model(models_path)) {
+        config.max_num_batched_tokens = 2048;
+    }
+    return config;
+}
+
 // A GGUF target with MTP layers runs its embedded draft under continuous batching.
 std::unique_ptr<ov::genai::LLMPipelineImplBase> create_gguf_mtp_pipeline(
     const std::filesystem::path& models_path,
@@ -45,7 +55,7 @@ std::unique_ptr<ov::genai::LLMPipelineImplBase> create_gguf_mtp_pipeline(
                     "GGUF MTP requires the paged attention backend (ATTENTION_BACKEND=\"PA\").");
     // GGUF MTP models keep linear-attention state, for which MTP samples only without prefix caching.
     // Keep the model's recommended sampling usable unless the caller passes a scheduler config.
-    auto default_scheduler_config = ov::genai::utils::get_latency_oriented_scheduler_config();
+    auto default_scheduler_config = latency_scheduler_config(models_path);
     default_scheduler_config.enable_prefix_caching = false;
     auto [device_properties, scheduler_config] =
         ov::genai::utils::extract_scheduler_config(properties, default_scheduler_config);
@@ -354,14 +364,21 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        auto [device_properties, scheduler_config] =
+            utils::extract_scheduler_config(properties, latency_scheduler_config(models_path));
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
+                                                                  tokenizer,
+                                                                  latency_scheduler_config(models_path),
+                                                                  device,
+                                                                  properties,
+                                                                  generation_config,
+                                                                  models_path);
 #endif
         } catch (const ov::Exception& exception) {
             utils::log_paged_attention_fallback(exception);
@@ -434,7 +451,8 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        auto [device_properties, scheduler_config] =
+            utils::extract_scheduler_config(properties, latency_scheduler_config(models_path));
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
@@ -442,7 +460,13 @@ ov::genai::LLMPipeline::LLMPipeline(
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model,
+                                                                  tokenizer,
+                                                                  latency_scheduler_config(models_path),
+                                                                  device,
+                                                                  properties,
+                                                                  generation_config,
+                                                                  models_path);
 #endif
         } catch (const ov::Exception& exception) {
             utils::log_paged_attention_fallback(exception);
