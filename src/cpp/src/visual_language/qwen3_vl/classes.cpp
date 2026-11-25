@@ -433,7 +433,6 @@ std::string InputsEmbedderQwen3VL::get_expanded_video_tag(const EncodedVideo& en
     OPENVINO_ASSERT(timestamps.size() == grid_t, "Timestamps size does not match the number of frames");
 
     std::string expanded_tag;
-    expanded_tag.append(m_vlm_config.vision_start_token);
     for (size_t grid_t_idx = 0; grid_t_idx < grid_t; ++grid_t_idx) {
         std::stringstream timestamp_ss;
         timestamp_ss << std::fixed << std::setprecision(1) << timestamps[grid_t_idx];
@@ -445,7 +444,6 @@ std::string InputsEmbedderQwen3VL::get_expanded_video_tag(const EncodedVideo& en
         }
         expanded_tag.append(m_vlm_config.vision_end_token);
     }
-    expanded_tag.append(m_vlm_config.vision_end_token);
 
     return expanded_tag;
 }
