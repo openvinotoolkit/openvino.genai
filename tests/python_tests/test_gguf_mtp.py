@@ -198,7 +198,9 @@ def test_gguf_mtp_llm_pipeline_greedy_parity(mtp_gguf, property_name):
 def test_gguf_mtp_chat_history_with_prefix_caching(mtp_gguf):
     scheduler = make_scheduler()
     scheduler.enable_prefix_caching = True
-    target = genai.ContinuousBatchingPipeline(mtp_gguf, scheduler, "CPU", dict(GGUF_READER="FRONTEND", **DEVICE_PROPERTIES))
+    target = genai.ContinuousBatchingPipeline(
+        mtp_gguf, scheduler, "CPU", dict(GGUF_READER="FRONTEND", **DEVICE_PROPERTIES)
+    )
     mtp = genai.ContinuousBatchingPipeline(mtp_gguf, scheduler, "CPU", mtp_properties())
     config = genai.GenerationConfig(max_new_tokens=8, ignore_eos=True)
     history = genai.ChatHistory()
