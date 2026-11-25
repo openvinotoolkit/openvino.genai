@@ -80,6 +80,12 @@ or keyword arguments to `generate()` to override it, for example `do_sample=Fals
 Template variables such as `enable_thinking` go to `ChatHistory.set_extra_context()`; `generate()` does
 not forward unknown keyword arguments to the chat template.
 
+By default `LLMPipeline` prefills a prompt in one step, which needs activation memory for every prompt
+token at once. For long prompts on a device with limited memory, pass a `SchedulerConfig` whose
+`max_num_batched_tokens` bounds the prefill chunk, for example
+`genai.LLMPipeline("model.gguf", "GPU", scheduler_config=config)`. A smaller chunk uses less memory and
+prefills more slowly.
+
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
 
 ## Multi-token prediction (MTP)
