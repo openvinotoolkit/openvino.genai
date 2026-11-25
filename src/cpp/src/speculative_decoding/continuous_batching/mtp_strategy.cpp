@@ -59,7 +59,8 @@ ov::Tensor create_draft_position_ids(const ov::Tensor& position_ids) {
 
 ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                             const ov::genai::ModelDesc& draft_model_desc,
-                                                            const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
+                                                            const std::shared_ptr<InputsEmbedder>& inputs_embedder,
+                                                            const utils::mtp::MtpRTInfo& mtp_rt_info) {
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model, "MTP requires both a main and a draft (MTP) model.");
@@ -91,6 +92,7 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
+    utils::mtp::restrict_mtp_draft_vocab(draft_model, mtp_rt_info.draft_vocab);
 
     // Bypass default KV-ratio split: MTP draft needs only a small cache slice.
     auto main_scheduler_config = main_model_desc.scheduler_config;
