@@ -197,14 +197,16 @@ def parse_args():
         "as path,name (for example wikitext,wikitext-2-v1) and must follow Hugging Face datasets semantics. "
         "For text-agent and visual-text-agent, this should be a local .json/.jsonl file with "
         "messages/tools records. For text-reranking, this can be a local .csv file with 'query' and 'passages' "
-        "columns, where 'passages' is a JSON list of strings. If not provided, built-in defaults are used.",
+        "columns, where 'passages' is a JSON list of strings, or a Hugging Face dataset with a 'passages' column "
+        "(see README). If not provided, built-in defaults are used.",
     )
     parser.add_argument(
         "--dataset-field",
         type=str,
         default=None,
         help="Field name used as prompts for non-agent datasets loaded via datasets.load_dataset "
-        "(for example question or context in squad). Defaults to 'text' for prompt-based tasks "
+        "(for example question or context in squad). Defaults to 'text' for prompt-based tasks, "
+        "to 'query' for text-reranking "
         "and to the audio column for speech-recognition. Will be used only if dataset is defined. "
         "Ignored for text-agent/visual-text-agent JSON datasets.",
     )
@@ -615,7 +617,9 @@ def check_args(args):
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
-    if args.dataset_field is None and args.model_type != "speech-recognition":
+    if args.dataset_field is None and args.model_type == "text-reranking":
+        args.dataset_field = "query"
+    elif args.dataset_field is None and args.model_type != "speech-recognition":
         args.dataset_field = "text"
 
     if args.metrics != [Metrics.SIMILARITY.value] and args.model_type != "text":
@@ -648,6 +652,29 @@ def load_reranking_csv(dataset_path):
 
     logger.info("Reranking dataset loaded from %s: count=%d", dataset_path, len(df))
     return {"query": [str(query) for query in df["query"]], "passages": passages}
+
+
+def load_reranking_hf_dataset(data, query_field):
+    # Each record needs a query field (--dataset-field, "query" by default) and a "passages" field
+    # holding either a list of strings or an MS MARCO style dict with a "passage_text" list.
+    missing = {query_field, "passages"} - set(data.column_names)
+    if missing:
+        raise ValueError(
+            f"Dataset for text-reranking must contain '{query_field}' and 'passages' columns, "
+            f"got columns: {data.column_names}."
+        )
+
+    passages = []
+    for row, value in enumerate(data["passages"], start=1):
+        docs = value.get("passage_text") if isinstance(value, dict) else value
+        if not isinstance(docs, list) or not docs or not all(isinstance(doc, str) for doc in docs):
+            raise ValueError(
+                f"Row {row}: 'passages' must be a non-empty list of strings or a dict with a "
+                f"'passage_text' list of strings, got {value!r}."
+            )
+        passages.append(docs)
+
+    return {"query": [str(query) for query in data[query_field]], "passages": passages}
 
 
 def load_prompts(args):
@@ -719,6 +746,11 @@ def load_prompts(args):
     if not separator:
         name = None
     data = load_dataset(path=path, name=name, split=dataset_split)
+
+    if args.model_type == "text-reranking":
+        prompts = load_reranking_hf_dataset(data, args.dataset_field)
+        logger.info("Reranking dataset source path %s name %s split %s: count=%d", path, name, dataset_split, len(data))
+        return prompts
 
     res = data[args.dataset_field]
     prompts = {"prompts": list(res)}

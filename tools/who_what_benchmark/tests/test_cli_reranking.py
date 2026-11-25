@@ -200,3 +200,47 @@ def test_reranking_custom_dataset_invalid_passages(tmp_path):
             ]
         )
     assert "'passages' must be a JSON list of strings" in error.value.output
+
+
+@pytest.mark.parametrize("ms_marco_format", [False, True])
+def test_reranking_hf_dataset(tmp_path, ms_marco_format):
+    rows = [
+        ("How do I bake sourdough bread?", ["Mix flour, water and starter.", "Bake at 230 C for 40 minutes."]),
+        ("What is the boiling point of water?", ["Water boils at 100 C at sea level.", "Ice melts at 0 C."]),
+    ]
+    # A local folder with a parquet file is loaded by datasets.load_dataset like a Hugging Face dataset.
+    dataset_dir = tmp_path / "hf_dataset"
+    dataset_dir.mkdir()
+    pd.DataFrame(
+        {
+            "question": [query for query, _ in rows],
+            "passages": [{"passage_text": passages} if ms_marco_format else passages for _, passages in rows],
+        }
+    ).to_parquet(dataset_dir / "train.parquet")
+    gt_file = tmp_path / "gt.csv"
+
+    run_wwb(
+        [
+            "--base-model",
+            RERANKING_MODEL_ID,
+            "--num-samples",
+            "2",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--hf",
+            "--dataset",
+            dataset_dir,
+            "--split",
+            "train",
+            "--dataset-field",
+            "question",
+        ]
+    )
+
+    gt_data = pd.read_csv(gt_file, keep_default_na=False)
+    assert list(gt_data["query"]) == [query for query, _ in rows]
+    assert [ast.literal_eval(passages) for passages in gt_data["passages"]] == [passages for _, passages in rows]
