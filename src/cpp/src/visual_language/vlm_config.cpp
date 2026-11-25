@@ -45,6 +45,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"lfm3_vl", VLMModelType::LFM3_VL},
         {"lfm3_omni", VLMModelType::LFM3_OMNI},
         {"molmo2", VLMModelType::MOLMO2},
+        {"paddleocr_vl", VLMModelType::PADDLEOCR_VL},
     };
 
     auto it = model_types_map.find(value);
@@ -116,6 +117,14 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
         read_json_param(parsed, "image_low_res_id", molmo2_image_low_res_id);
         read_json_param(parsed, "frame_start_token_id", molmo2_frame_start_token_id);
         read_json_param(parsed, "frame_end_token_id", molmo2_frame_end_token_id);
+    }
+
+    // PaddleOCR-VL reuses the Qwen2-VL vision token handling; its chat template hardcodes these token strings.
+    if (model_type == VLMModelType::PADDLEOCR_VL) {
+        vision_start_token = "<|IMAGE_START|>";
+        image_pad_token = "<|IMAGE_PLACEHOLDER|>";
+        vision_end_token = "<|IMAGE_END|>";
+        read_json_param(parsed, "vision_config.image_size", vision_config_image_size);
     }
 
     // For gemma3 `text_config.use_bidirectional_attention` can be absent or boolean

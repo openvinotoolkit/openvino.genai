@@ -35,6 +35,7 @@
 #include "visual_language/lfm3_omni/classes.hpp"
 #include "visual_language/mistral3/classes.hpp"
 #include "visual_language/lfm3_vl/classes.hpp"
+#include "visual_language/paddleocr_vl/classes.hpp"
 
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
@@ -414,6 +415,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderMistral3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MOLMO2) {
         m_impl = std::make_shared<InputsEmbedderMolmo2>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::PADDLEOCR_VL) {
+        m_impl = std::make_shared<InputsEmbedderPaddleOCRVL>(vlm_config, model_dir, tokenizer, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -483,6 +486,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderMistral3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::MOLMO2) {
         m_impl = std::make_shared<InputsEmbedderMolmo2>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::PADDLEOCR_VL) {
+        m_impl = std::make_shared<InputsEmbedderPaddleOCRVL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }

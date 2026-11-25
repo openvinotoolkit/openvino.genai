@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "openvino/core/except.hpp"
+#include "openvino/core/node.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -153,5 +154,12 @@ void merge_audio_embeddings(ov::Tensor& input_embeds,
                             const std::vector<EncodedAudio>& audios,
                             const std::vector<size_t>& audios_sequence,
                             int64_t audio_token_id);
+
+/// @brief Bicubic resize of an f32 NCHW image over H and W matching Pillow's antialiased bicubic
+/// (kernel a=-0.5, support widened by the downscale factor), i.e. the BICUBIC_PILLOW Interpolate mode.
+/// Plain CUBIC (4-tap, no antialias) diverges on downscale and loses fine detail.
+/// @param target_size i64 [2] node with the target {height, width}.
+std::shared_ptr<ov::Node> create_bicubic_pillow_resize(const std::shared_ptr<ov::Node>& input,
+                                                       const std::shared_ptr<ov::Node>& target_size);
 
 }  // namespace ov::genai::vlm_utils

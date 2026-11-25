@@ -15,6 +15,7 @@ from .muse_glimmer import MuseGlimmerInputsPreprocessor
 from .deepseek_ocr2 import DeepseekOCR2InputsPreprocessor
 from .mistral3 import Mistral3InputsPreprocessor
 from .molmo2 import Molmo2InputsPreprocessor
+from .paddleocr_vl import PaddleOCRVLInputsPreprocessor
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
@@ -48,6 +49,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "internvl_chat": InternVLInputsPreprocessor,
     "deepseek_ocr2": DeepseekOCR2InputsPreprocessor,
     "mistral3": Mistral3InputsPreprocessor,
+    "paddleocr_vl": PaddleOCRVLInputsPreprocessor,
 }
 
 __all__ = ["MODEL_TYPE_TO_CLS_MAPPING", "VLMInputsPreprocessor"]

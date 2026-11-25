@@ -117,7 +117,7 @@ void fill_video_metadata(EncodedVideo& encoded_video,
     }
 }
 
-namespace {
+namespace qwen3_vl_utils {
 
 /**
  * @brief Computes indices and weights for bilinear position embedding interpolation.
@@ -205,6 +205,12 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
 
     return {indices, weights};
 }
+
+}  // namespace qwen3_vl_utils
+
+namespace {
+
+using qwen3_vl_utils::get_position_interpolation_indices_and_weights;
 
 /**
  * @brief Fused permute + in-place addition: permutes position embeddings according to

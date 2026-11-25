@@ -3,6 +3,8 @@
 
 #include "visual_language/vlm_utils.hpp"
 #include "openvino/core/except.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/interpolate.hpp"
 #include "utils.hpp"
 
 #include <algorithm>
@@ -228,6 +230,22 @@ void merge_audio_embeddings(ov::Tensor& input_embeds,
                     audios_sequence.size(),
                     " audios: the prompt has fewer audio placeholder runs than tags resolved. This is an "
                     "internal inconsistency, please report it with the prompt that triggered it.");
+}
+
+std::shared_ptr<ov::Node> create_bicubic_pillow_resize(const std::shared_ptr<ov::Node>& input,
+                                                       const std::shared_ptr<ov::Node>& target_size) {
+    auto axes = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {2, 3});
+    ov::op::v11::Interpolate::InterpolateAttrs attrs;
+    // For PILLOW modes the kernel ignores coordinate_transformation_mode/cube_coeff and is intrinsically antialiased.
+    attrs.mode = ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW;
+    attrs.shape_calculation_mode = ov::op::v11::Interpolate::ShapeCalcMode::SIZES;
+    attrs.coordinate_transformation_mode = ov::op::v11::Interpolate::CoordinateTransformMode::HALF_PIXEL;
+    attrs.cube_coeff = -0.5f;
+    attrs.nearest_mode = ov::op::v11::Interpolate::NearestMode::ROUND_PREFER_FLOOR;
+    attrs.pads_begin = {0, 0};
+    attrs.pads_end = {0, 0};
+    attrs.antialias = true;
+    return std::make_shared<ov::op::v11::Interpolate>(input, target_size, axes, attrs);
 }
 
 }  // namespace ov::genai::vlm_utils

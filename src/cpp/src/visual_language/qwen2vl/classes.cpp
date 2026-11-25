@@ -38,6 +38,10 @@ AdapterConfig to_vision_config(AdapterConfig config) {
     return config;
 }
 
+}  // namespace
+
+namespace qwen2_vl_utils {
+
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::f32);
     auto img_trans = std::make_shared<ov::op::v1::Transpose>(
@@ -94,6 +98,14 @@ std::shared_ptr<ov::Node> create_normalization(std::shared_ptr<ov::Node> input,
 
     return normalized;
 }
+
+}  // namespace qwen2_vl_utils
+
+namespace {
+
+using qwen2_vl_utils::create_bicubic_resize;
+using qwen2_vl_utils::create_f32_nchw_input;
+using qwen2_vl_utils::create_normalization;
 
 /**
  * @brief Creates a node that reshapes and transposes the input tensor to match the
@@ -1026,6 +1038,10 @@ void InputsEmbedderQwen2VL::encode_vision_placeholder_tokens() {
     m_vision_token_ids["video_pad"] = encoded_vision_tokens.input_ids.data<int64_t>()[3];
 }
 
+std::string InputsEmbedderQwen2VL::get_native_image_tag() const {
+    return m_vlm_config.vision_start_token + m_vlm_config.image_pad_token + m_vlm_config.vision_end_token;
+}
+
 size_t InputsEmbedderQwen2VL::calc_tokens_num(size_t grid_t, size_t grid_h, size_t grid_w) const {
     return grid_t * grid_h * grid_w / m_merge_length;
 }
@@ -1079,7 +1095,8 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
                                                          const std::vector<EncodedImage>& images,
                                                          const std::vector<EncodedVideo>& videos) const {
     // Images
-    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, image_base_id, images.size(), ModalityType::IMAGE);
+    const std::string native_tag = get_native_image_tag();
+    auto [unified_prompt, images_sequence] = normalize(prompt, native_tag, native_tag, image_base_id, images.size(), ModalityType::IMAGE);
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
 
@@ -1104,7 +1121,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
         }
         expanded_tag.append(m_vlm_config.vision_end_token);
 
-        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
+        unified_prompt.replace(unified_prompt.find(native_tag), native_tag.length(), expanded_tag);
     }
 
     // Video

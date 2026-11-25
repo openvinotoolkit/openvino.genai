@@ -18,7 +18,6 @@
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
-#include "openvino/op/interpolate.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reshape.hpp"
@@ -73,27 +72,6 @@ std::shared_ptr<ov::Node> append_patch_rearrange(const std::shared_ptr<ov::Node>
     return std::make_shared<ov::op::v1::Reshape>(transposed4d, reshape_shape2d, true);
 }
 
-// Bicubic resize matching the CPU clip bicubic_resize semantics. The CPU path uses Pillow's
-// antialiased bicubic (kernel a=-0.5, support widened by the downscale factor); the matching
-// OpenVINO op mode is BICUBIC_PILLOW, which the GPU plugin implements via resample_kernel_pil_ref
-// with the identical filter/support logic. Plain CUBIC (4-tap, no antialias) diverges on
-// downscale and loses fine detail, so it must not be used here. For PILLOW modes the kernel
-// ignores coordinate_transformation_mode/cube_coeff and is intrinsically antialiased.
-std::shared_ptr<ov::Node> create_bicubic_resize(const std::shared_ptr<ov::Node>& input,
-                                                const std::shared_ptr<ov::Node>& target_size) {
-    auto axes = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {2, 3});
-    ov::op::v11::Interpolate::InterpolateAttrs attrs;
-    attrs.mode = ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW;
-    attrs.shape_calculation_mode = ov::op::v11::Interpolate::ShapeCalcMode::SIZES;
-    attrs.coordinate_transformation_mode = ov::op::v11::Interpolate::CoordinateTransformMode::HALF_PIXEL;
-    attrs.cube_coeff = -0.5f;
-    attrs.nearest_mode = ov::op::v11::Interpolate::NearestMode::ROUND_PREFER_FLOOR;
-    attrs.pads_begin = {0, 0};
-    attrs.pads_end = {0, 0};
-    attrs.antialias = true;
-    return std::make_shared<ov::op::v11::Interpolate>(input, target_size, axes, attrs);
-}
-
 // Resize + normalize a single raw u8 NHWC frame into a normalized f32 NCHW {1,channel,H,W} tensor.
 //   normalize: clamp(0,255) -> (x - mean*255) * 1/(std*255)  ==  (x/255 - mean)/std
 std::shared_ptr<ov::Node> create_resize_normalize(const std::shared_ptr<ov::Node>& raw_frame,
@@ -104,7 +82,7 @@ std::shared_ptr<ov::Node> create_resize_normalize(const std::shared_ptr<ov::Node
     auto nchw = std::make_shared<ov::op::v1::Transpose>(
         f32,
         ov::op::v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int32_t>{0, 3, 1, 2}));
-    auto resized = create_bicubic_resize(nchw, resize_target);
+    auto resized = vlm_utils::create_bicubic_pillow_resize(nchw, resize_target);
     auto clamped = std::make_shared<ov::op::v0::Clamp>(resized, 0.0, 255.0);
     auto centered = std::make_shared<ov::op::v1::Subtract>(clamped, image_mean);
     return std::make_shared<ov::op::v1::Multiply>(centered, image_scale);

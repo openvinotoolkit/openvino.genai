@@ -33,6 +33,7 @@
 #include "visual_language/mistral3/classes.hpp"
 #include "visual_language/lfm3_vl/classes.hpp"
 #include "visual_language/molmo2/classes.hpp"
+#include "visual_language/paddleocr_vl/classes.hpp"
 
 namespace ov::genai {
 
@@ -172,6 +173,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderMistral3>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MOLMO2) {
         return std::make_shared<VisionEncoderMolmo2>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::PADDLEOCR_VL) {
+        return std::make_shared<VisionEncoderPaddleOCRVL>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -235,6 +238,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderMistral3>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MOLMO2) {
         return std::make_shared<VisionEncoderMolmo2>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::PADDLEOCR_VL) {
+        return std::make_shared<VisionEncoderPaddleOCRVL>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
