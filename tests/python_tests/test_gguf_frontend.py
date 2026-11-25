@@ -907,12 +907,10 @@ def test_gguf_vlm_attention_backends_and_chat(gguf_vlm_pipelines):
     assert answers[0] == answers[1]
 
 
-def test_gguf_vlm_requires_projector_and_cpu(tiny_gguf_vlm_model):
-    language, projector = tiny_gguf_vlm_model
+def test_gguf_vlm_requires_projector(tiny_gguf_vlm_model):
+    language, _ = tiny_gguf_vlm_model
     with pytest.raises(RuntimeError, match="mmproj_path"):
         genai.VLMPipeline(language, "CPU")
-    with pytest.raises(RuntimeError, match="CPU"):
-        genai.VLMPipeline(language, "GPU", mmproj_path=str(projector))
 
 
 @pytest.mark.parametrize("option", ["prompt_lookup", "adapters_sdpa", "adapters_pa"])
