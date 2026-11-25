@@ -80,9 +80,6 @@ or keyword arguments to `generate()` to override it, for example `do_sample=Fals
 Template variables such as `enable_thinking` go to `ChatHistory.set_extra_context()`; `generate()` does
 not forward unknown keyword arguments to the chat template.
 
-On the paged attention backend, `LLMPipeline` prefills GGUF prompts in chunks of 2048 tokens to bound
-activation memory on long prompts. Pass a `scheduler_config` to change `max_num_batched_tokens`.
-
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
 
 ## Multi-token prediction (MTP)
