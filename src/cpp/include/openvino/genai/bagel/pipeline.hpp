@@ -124,7 +124,10 @@ public:
      * @brief Predicts the next frames of a video, as a world model. Frame k is generated from a window of the
      * input frames' count: it then replaces the oldest frame of the window. Generated frames join the context as VAE
      * latents only, without a decode / re-encode, and all of them are decoded at the end, in one VAE decoder call
-     * (one call per frame on NPU)
+     * (one call per frame on NPU). As the batch decode of the original OpenVINO BAGEL world model demo, an export
+     * with N-frame models (`vision_embeddings_<N>img`, `vae_encoder_<N>img`, `vae_decoder_<N>img`, e.g. optimum-intel
+     * `--model-kwargs '{"num_frames": 3}'`) encodes N same-size input frames and decodes N generated frames in one call
+     * each, also on NPU
      * @param frames u8 RGB frames, oldest first
      * @param prompt instruction for the next frames, e.g. the task and the action of a robot
      * @param num_frames number of frames to generate

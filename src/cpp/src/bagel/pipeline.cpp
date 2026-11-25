@@ -10,6 +10,7 @@
 #include <deque>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <numeric>
@@ -344,6 +345,8 @@ public:
          const std::filesystem::path& tokenizer_dir,
          const ov::AnyMap& properties)
         : m_npu(device.find("NPU") != std::string::npos),
+          m_models_dir(models_dir),
+          m_device(device),
           m_tokenizer(tokenizer_dir.empty() ? models_dir : tokenizer_dir) {
         const auto cfg = read_bagel_config(models_dir);
         m_hidden = cfg.hidden;
@@ -367,14 +370,9 @@ public:
         if (m_npu) {
             m_npu_variants = bagel::npu::VariantNames(core, device, properties);
         }
-        const auto compile = [&](const std::string& name, const std::string& dev, const ov::AnyMap& config) {
-            const auto t0 = Clock::now();
-            auto compiled = core.compile_model((models_dir / model_file(models_dir, name)).string(), dev, config);
-            add_compile_ms("compile_model " + name.substr(0, name.find("_model.xml")), ms_since(t0));
-            return compiled.create_infer_request();
-        };
         // the text embedding lookup stays on CPU on NPU, like in the GenAI VLMs
-        const auto config = m_npu ? bagel::npu::compile_properties(properties) : properties;
+        m_config = m_npu ? bagel::npu::compile_properties(properties) : properties;
+        const auto& config = m_config;
         m_text_emb = m_npu ? compile("text_embeddings_model.xml", "CPU", {})
                            : compile("text_embeddings_model.xml", device, properties);
         m_vit = compile("vision_embeddings_model.xml", device, config);
@@ -483,18 +481,12 @@ public:
         OPENVINO_ASSERT(!frames.empty(), "generate_frames needs at least one input frame");
         OPENVINO_ASSERT(num_frames > 0, "num_frames must be positive");
         validate(config);
-        // the input frames are encoded once; a generated frame has no ViT block
-        struct Frame {
-            ov::Tensor latent;
-            std::pair<size_t, size_t> hw;
-            std::optional<ov::Tensor> vit;
-        };
-        std::deque<Frame> window;
+        std::vector<clip_image_u8> vae_images;
         for (const auto& frame : frames) {
-            const auto vae_image = m_vae_transform.resize(to_clip_image(frame));
-            auto [latent, hw] = vae_encode(vae_image);
-            window.push_back({std::move(latent), hw, vit_embed(vae_image)});
+            vae_images.push_back(m_vae_transform.resize(to_clip_image(frame)));
         }
+        // the input frames are encoded once; a generated frame has no ViT block
+        auto window = encode_frames(vae_images);
         const auto [h, w] = window.back().hw;
 
         std::optional<Context> cfg_img;
@@ -540,11 +532,83 @@ private:
     // [layer * 2 + {0: key, 1: value}], each [1, kv_heads, len, head_dim]; tensors are never written after creation
     using KVCache = std::vector<ov::Tensor>;
 
+    ov::InferRequest compile(const std::string& name, const std::string& device, const ov::AnyMap& config) {
+        const auto t0 = Clock::now();
+        auto compiled = utils::singleton_core().compile_model(
+            (m_models_dir / model_file(m_models_dir, name)).string(), device, config);
+        add_compile_ms("compile_model " + name.substr(0, name.find("_model.xml")), ms_since(t0));
+        return compiled.create_infer_request();
+    }
+
+    // `<name>_<n>img`: the n-frame models of the original OpenVINO BAGEL export (also exported by optimum-intel with
+    // `num_frames`), one input and output port per frame; compiled on first use, nullptr if the export has none
+    ov::InferRequest* frames_model(const std::string& name, size_t n) {
+        const auto file = name + "_" + std::to_string(n) + "img_model.xml";
+        auto it = m_frames_models.find(file);
+        if (it == m_frames_models.end()) {
+            std::optional<ov::InferRequest> request;
+            if (std::filesystem::exists(m_models_dir / model_file(m_models_dir, file))) {
+                request = compile(file, m_device, m_config);
+            }
+            it = m_frames_models.emplace(file, std::move(request)).first;
+        }
+        return it->second ? &*it->second : nullptr;
+    }
+
     struct Context {
         KVCache kv;
         int64_t rope = 0;
         size_t len = 0;
     };
+
+    struct Frame {
+        ov::Tensor latent;
+        std::pair<size_t, size_t> hw;
+        std::optional<ov::Tensor> vit;
+    };
+
+    // Latent tokens and ViT embeddings of the VAE-resized frames, through the n-frame models if the export has them
+    // and the frames have the same size, as the batch decode of the original OpenVINO BAGEL world model demo
+    std::deque<Frame> encode_frames(const std::vector<clip_image_u8>& images) {
+        const size_t n = images.size();
+        const bool same_size = std::all_of(images.begin(), images.end(), [&](const clip_image_u8& image) {
+            return image.nx == images[0].nx && image.ny == images[0].ny;
+        });
+        auto* vit = n > 1 && same_size ? frames_model("vision_embeddings", n) : nullptr;
+        auto* enc = vit ? frames_model("vae_encoder", n) : nullptr;
+        std::deque<Frame> window;
+        if (!vit || !enc) {
+            for (const auto& image : images) {
+                auto [latent, hw] = vae_encode(image);
+                window.push_back({std::move(latent), hw, vit_embed(image)});
+            }
+            return window;
+        }
+        const auto suffix = "_" + std::to_string(n) + "img ";
+        std::vector<std::pair<ov::Tensor, ov::Tensor>> vit_in;
+        for (const auto& image : images) {
+            vit_in.push_back(vit_inputs(image));
+        }
+        timed("vit", "vision" + suffix + std::to_string(vit_in[0].second.get_size()) + " patches", [&] {
+            for (size_t i = 0; i < n; ++i) {
+                vit->set_tensor("pixel_values_" + std::to_string(i), vit_in[i].first);
+                vit->set_tensor("position_ids_" + std::to_string(i), vit_in[i].second);
+            }
+            vit->infer();
+        });
+        const size_t img_h = images[0].ny, img_w = images[0].nx;
+        timed("vae_enc", "vae_encoder" + suffix + std::to_string(img_h) + "x" + std::to_string(img_w), [&] {
+            for (size_t i = 0; i < n; ++i) {
+                enc->set_tensor("image_" + std::to_string(i), vae_input(images[i]));
+            }
+            enc->infer();
+        });
+        for (size_t i = 0; i < n; ++i) {
+            auto [latent, hw] = latent_tokens(enc->get_tensor("latent_" + std::to_string(i)), img_h, img_w);
+            window.push_back({std::move(latent), hw, copy_tensor(vit->get_tensor("image_embeds_" + std::to_string(i)))});
+        }
+        return window;
+    }
 
     struct LmOutputs {
         ov::Tensor logits;
@@ -740,18 +804,22 @@ private:
 
     // [patches, hidden] ViT embeddings of the image
     ov::Tensor vit_embed(const clip_image_u8& image) {
-        const auto img = to_normalized_tensor(m_vit_transform.resize(image));
-        const size_t h = img.get_shape()[1], w = img.get_shape()[2];
-        const size_t gh = h / m_vit_patch, gw = w / m_vit_patch;
-        const auto patches = patchify(img.data<const float>(), 3, h, w, m_vit_patch, gh, gw);
-        const auto pos = i64_tensor(flat_position_ids(gh, gw, m_vit_max_side));
-
-        timed("vit", "vision " + std::to_string(gh * gw) + " patches", [&] {
+        const auto [patches, pos] = vit_inputs(image);
+        timed("vit", "vision " + std::to_string(pos.get_size()) + " patches", [&] {
             m_vit.set_tensor("pixel_values", patches);
             m_vit.set_tensor("position_ids", pos);
             m_vit.infer();
         });
         return copy_tensor(m_vit.get_output_tensor());
+    }
+
+    // ViT patches and their position ids
+    std::pair<ov::Tensor, ov::Tensor> vit_inputs(const clip_image_u8& image) const {
+        const auto img = to_normalized_tensor(m_vit_transform.resize(image));
+        const size_t h = img.get_shape()[1], w = img.get_shape()[2];
+        const size_t gh = h / m_vit_patch, gw = w / m_vit_patch;
+        return {patchify(img.data<const float>(), 3, h, w, m_vit_patch, gh, gw),
+                i64_tensor(flat_position_ids(gh, gw, m_vit_max_side))};
     }
 
     void prefill_vit_embeds(const ov::Tensor& img_emb) {
@@ -784,14 +852,27 @@ private:
 
     // [h * w, p * p * c] latent tokens of the VAE-resized image, with the latent grid
     std::pair<ov::Tensor, std::pair<size_t, size_t>> vae_encode(const clip_image_u8& vae_image) {
-        const auto img = to_normalized_tensor(vae_image);
-        const size_t img_h = img.get_shape()[1], img_w = img.get_shape()[2];
-        ov::Tensor batched(ov::element::f32, {1, 3, img_h, img_w}, img.data());
+        const auto img = vae_input(vae_image);
+        const size_t img_h = img.get_shape()[2], img_w = img.get_shape()[3];
         timed("vae_enc", "vae_encoder " + std::to_string(img_h) + "x" + std::to_string(img_w), [&] {
-            m_vae_enc.set_input_tensor(batched);
+            m_vae_enc.set_input_tensor(img);
             m_vae_enc.infer();
         });
-        const auto latent = m_vae_enc.get_output_tensor();
+        return latent_tokens(m_vae_enc.get_output_tensor(), img_h, img_w);
+    }
+
+    // [1, 3, H, W] f32 in [-1, 1]
+    static ov::Tensor vae_input(const clip_image_u8& vae_image) {
+        const auto img = to_normalized_tensor(vae_image);
+        const auto& s = img.get_shape();
+        ov::Tensor out(ov::element::f32, {1, s[0], s[1], s[2]});
+        std::memcpy(out.data(), img.data(), img.get_byte_size());
+        return out;
+    }
+
+    std::pair<ov::Tensor, std::pair<size_t, size_t>> latent_tokens(const ov::Tensor& latent,
+                                                                   size_t img_h,
+                                                                   size_t img_w) const {
         const auto& ls = latent.get_shape();
         const size_t h = img_h / m_latent_downsample, w = img_w / m_latent_downsample;
         return {patchify(latent.data<const float>(), m_latent_channel, ls[2], ls[3], m_latent_patch, h, w), {h, w}};
@@ -877,7 +958,8 @@ private:
         return x;
     }
 
-    // N x [h * w, p * p * c] latent tokens -> u8 [N, H, W, 3] images, in one VAE decoder call if its batch is dynamic
+    // N x [h * w, p * p * c] latent tokens -> u8 [N, H, W, 3] images, in one call of the N-frame VAE decoder if the
+    // export has it (also on NPU), else of the VAE decoder if its batch is dynamic
     ov::Tensor decode(const std::vector<ov::Tensor>& xs, size_t h, size_t w) {
         const size_t p = m_latent_patch, c = m_latent_channel;
         const size_t lh = h * p, lw = w * p;
@@ -900,6 +982,37 @@ private:
         }
         const size_t batch = m_batched_decode ? xs.size() : 1;
         std::optional<ov::Tensor> out;
+        // [batch, 3, H, W] in [-1, 1] -> u8 frames from index b
+        const auto write = [&](const ov::Tensor& img, size_t b, size_t count) {
+            const size_t oh = img.get_shape()[2], ow = img.get_shape()[3];
+            if (!out) {
+                out = ov::Tensor(ov::element::u8, {xs.size(), oh, ow, 3});
+            }
+            const float* in = img.data<const float>();
+            uint8_t* o = out->data<uint8_t>() + b * oh * ow * 3;
+            for (size_t i = 0; i < count * oh * ow; ++i) {
+                const size_t plane = i / (oh * ow) * 3 * oh * ow + i % (oh * ow);
+                for (size_t ch = 0; ch < 3; ++ch) {
+                    const float v = std::clamp((in[plane + ch * oh * ow] + 1.0f) / 2.0f, 0.0f, 1.0f);
+                    o[i * 3 + ch] = static_cast<uint8_t>(v * 255.0f);
+                }
+            }
+        };
+        if (auto* dec = xs.size() > 1 ? frames_model("vae_decoder", xs.size()) : nullptr) {
+            const auto variant = "vae_decoder_" + std::to_string(xs.size()) + "img " + std::to_string(lh) + "x" +
+                                 std::to_string(lw);
+            timed("vae_dec", variant, [&] {
+                for (size_t b = 0; b < xs.size(); ++b) {
+                    dec->set_tensor("latent_" + std::to_string(b),
+                                    ov::Tensor(ov::element::f32, {1, c, lh, lw}, lat.data<float>() + b * frame));
+                }
+                dec->infer();
+            });
+            for (size_t b = 0; b < xs.size(); ++b) {
+                write(dec->get_tensor("image_" + std::to_string(b)), b, 1);
+            }
+            return *out;
+        }
         for (size_t b = 0; b < xs.size(); b += batch) {
             ov::Tensor part(ov::element::f32, {batch, c, lh, lw}, lat.data<float>() + b * frame);
             const auto variant =
@@ -908,26 +1021,17 @@ private:
                 m_vae_dec.set_input_tensor(part);
                 m_vae_dec.infer();
             });
-            const auto img = m_vae_dec.get_output_tensor();
-            const size_t oh = img.get_shape()[2], ow = img.get_shape()[3];
-            if (!out) {
-                out = ov::Tensor(ov::element::u8, {xs.size(), oh, ow, 3});
-            }
-            const float* in = img.data<const float>();
-            uint8_t* o = out->data<uint8_t>() + b * oh * ow * 3;
-            for (size_t i = 0; i < batch * oh * ow; ++i) {
-                const size_t plane = i / (oh * ow) * 3 * oh * ow + i % (oh * ow);
-                for (size_t ch = 0; ch < 3; ++ch) {
-                    const float v = std::clamp((in[plane + ch * oh * ow] + 1.0f) / 2.0f, 0.0f, 1.0f);
-                    o[i * 3 + ch] = static_cast<uint8_t>(v * 255.0f);
-                }
-            }
+            write(m_vae_dec.get_output_tensor(), b, batch);
         }
         return *out;
     }
 
     bool m_npu;
     bool m_batched_decode = false;
+    std::filesystem::path m_models_dir;
+    std::string m_device;
+    ov::AnyMap m_config;
+    std::map<std::string, std::optional<ov::InferRequest>> m_frames_models;
     Tokenizer m_tokenizer;
     ov::InferRequest m_text_emb, m_vit, m_lm, m_vae_enc, m_vae_dec;
     std::set<std::string> m_compiled;

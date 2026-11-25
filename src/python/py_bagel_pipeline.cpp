@@ -140,7 +140,7 @@ void init_bagel_pipeline(py::module_& m) {
              py::arg("config") = py::none(),
              "Predicts the next num_frames frames of u8 RGB frames (oldest first) as a world model; returns a u8 "
              "[num_frames, H, W, 3] RGB tensor at the VAE resolution of the last frame, decoded in one call (one "
-             "call per frame on NPU). Each "
+             "call per frame on NPU, unless the export has the N-frame VAE decoder). Each "
              "generated frame replaces the oldest one of the window; frame k uses seed + k. Default config if None.")
         .def("get_perf_metrics", &BagelPipeline::get_perf_metrics, "Snapshot of the timings; safe during generation.")
         .def("reset_perf_metrics", &BagelPipeline::reset_perf_metrics);

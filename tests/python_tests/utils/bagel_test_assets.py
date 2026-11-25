@@ -89,7 +89,7 @@ def generate_tiny_bagel_model(output_dir: Path) -> Path:
     return output_dir
 
 
-def export_bagel_model_to_openvino(local_model_path: Path, output_path: Path) -> Path:
+def export_bagel_model_to_openvino(local_model_path: Path, output_path: Path, model_kwargs: str = "") -> Path:
     """Export a local BAGEL checkpoint to OpenVINO IR via optimum-cli."""
     command = [
         "optimum-cli",
@@ -101,6 +101,8 @@ def export_bagel_model_to_openvino(local_model_path: Path, output_path: Path) ->
         "image-text-to-text",
         str(output_path),
     ]
+    if model_kwargs:
+        command[-1:-1] = ["--model-kwargs", model_kwargs]
     try:
         subprocess.run(command, check=True, capture_output=True, text=True, timeout=BAGEL_EXPORT_TIMEOUT_SECONDS)
     except subprocess.CalledProcessError as error:
@@ -117,6 +119,18 @@ def prepare_tiny_bagel_ov_path(converted_models_dir: Path) -> Path:
     AtomicDownloadManager(model_path).execute(generate_tiny_bagel_model)
     ov_path = Path(converted_models_dir) / "tiny-random-bagel-ov"
     AtomicDownloadManager(ov_path).execute(lambda temp_path: export_bagel_model_to_openvino(model_path, temp_path))
+    return ov_path
+
+
+def prepare_tiny_bagel_ov_frames_path(converted_models_dir: Path, num_frames: int = 3) -> Path:
+    """As prepare_tiny_bagel_ov_path, with the N-frame vision embeddings and VAE encoder / decoder models."""
+    model_path = Path(converted_models_dir) / "tiny-random-bagel"
+    AtomicDownloadManager(model_path).execute(generate_tiny_bagel_model)
+    ov_path = Path(converted_models_dir) / f"tiny-random-bagel-ov-{num_frames}img"
+    model_kwargs = f'{{"num_frames": {num_frames}}}'
+    AtomicDownloadManager(ov_path).execute(
+        lambda temp_path: export_bagel_model_to_openvino(model_path, temp_path, model_kwargs)
+    )
     return ov_path
 
 

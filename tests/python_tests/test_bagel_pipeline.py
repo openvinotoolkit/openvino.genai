@@ -22,7 +22,11 @@ from PIL import Image
 from transformers import AutoProcessor
 
 import openvino_genai as ov_genai
-from utils.bagel_test_assets import prepare_tiny_bagel_genai_cli_path, prepare_tiny_bagel_ov_path
+from utils.bagel_test_assets import (
+    prepare_tiny_bagel_genai_cli_path,
+    prepare_tiny_bagel_ov_frames_path,
+    prepare_tiny_bagel_ov_path,
+)
 from utils.constants import get_ov_cache_converted_models_dir
 
 PROMPT = "What is shown in this image?"
@@ -300,6 +304,36 @@ def test_generate_frames_decodes_per_frame_without_dynamic_batch(genai_pipe, bag
     assert diff.max() <= 1, f"max abs pixel diff {diff.max()}"
     decoder_calls = [stage for stage, _ in static_pipe.get_perf_metrics().infer_ms if stage == "vae_dec"]
     assert len(decoder_calls) == 2
+
+
+def test_generate_frames_with_frames_models(genai_pipe, images):
+    """An export with the 3-frame models encodes the 3 same-size input frames and decodes the 3 generated frames in one
+    call each, with the frames of the single-frame models."""
+    frames_pipe = ov_genai.BagelPipeline(
+        prepare_tiny_bagel_ov_frames_path(get_ov_cache_converted_models_dir()), "CPU", INFERENCE_PRECISION_HINT="f32"
+    )
+    frames = [ov.Tensor(np.ascontiguousarray(i[None, :20, :20])) for i in images]
+    config = ov_genai.BagelImageGenerationConfig()
+    config.num_inference_steps = NUM_STEPS
+    config.seed = 5
+
+    frames_pipe.reset_perf_metrics()
+    batched = frames_pipe.generate_frames(frames, EDIT_PROMPT, 3, config).data
+    perf = frames_pipe.get_perf_metrics()
+    stages = [stage for stage, _ in perf.infer_ms]
+    assert [stages.count(stage) for stage in ("vit", "vae_enc", "vae_dec")] == [1, 1, 1]
+    compiled = {name for name, _ in perf.compile_ms}
+    assert {f"compile_model {name}_3img" for name in ("vision_embeddings", "vae_encoder", "vae_decoder")} <= compiled
+
+    single = genai_pipe.generate_frames(frames, EDIT_PROMPT, 3, config).data
+    assert batched.shape == single.shape
+    diff = np.abs(batched.astype(np.int32) - single.astype(np.int32))
+    assert diff.max() <= 1, f"max abs pixel diff {diff.max()}"
+
+    # 2 generated frames have no 2-frame decoder: one call of the dynamic batch decoder
+    frames_pipe.reset_perf_metrics()
+    frames_pipe.generate_frames(frames, EDIT_PROMPT, 2, config)
+    assert [stage for stage, _ in frames_pipe.get_perf_metrics().infer_ms].count("vae_dec") == 1
 
 
 def test_generate_frames_rejects_invalid_arguments(genai_pipe, image):
