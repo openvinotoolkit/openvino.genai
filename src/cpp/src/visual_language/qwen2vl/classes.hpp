@@ -172,11 +172,6 @@ protected:
 
     virtual ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) const;
 
-    std::vector<size_t> get_vision_start_indices(
-        const ov::Tensor& input_ids, 
-        const int64_t vision_start_token_id
-    ) const;
-
     virtual std::vector<std::array<size_t, 3>> get_vision_grid_thw_for_position_ids(
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
         const std::vector<size_t>& images_sequence,

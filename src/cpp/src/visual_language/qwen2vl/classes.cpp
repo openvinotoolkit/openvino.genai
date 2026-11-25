@@ -1517,24 +1517,6 @@ std::vector<std::array<size_t, 3>> InputsEmbedderQwen2VL::get_vision_grid_thw_fo
     return reordered_vision_grid_thw;
 }
 
-std::vector<size_t> InputsEmbedderQwen2VL::get_vision_start_indices(
-    const ov::Tensor& input_ids_tensor,
-    const int64_t vision_start_token_id
-) const {
-    const int64_t* input_ids = input_ids_tensor.data<const int64_t>();
-    const size_t seq_len = input_ids_tensor.get_shape().at(1);
-    const int64_t image_pad_token_id = m_vision_token_ids.at("image_pad");
-    const int64_t video_pad_token_id = m_vision_token_ids.at("video_pad");
-    std::vector<size_t> vision_start_indices;
-    for (size_t index = 0; index + 1 < seq_len; ++index) {
-        if (input_ids[index] == vision_start_token_id &&
-            (input_ids[index + 1] == image_pad_token_id || input_ids[index + 1] == video_pad_token_id)) {
-            vision_start_indices.push_back(index);
-        }
-    }
-    return vision_start_indices;
-}
-
 std::pair<ov::Tensor, int64_t> InputsEmbedderQwen2VL::create_position_ids(
     const ov::Tensor& input_ids_tensor,
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
@@ -1559,10 +1541,16 @@ std::pair<ov::Tensor, int64_t> InputsEmbedderQwen2VL::create_position_ids(
         history_vision_count
     );
 
+    const int64_t* input_ids = input_ids_tensor.data<int64_t>();
     size_t batch_size = input_ids_tensor.get_shape().at(0);
     size_t seq_len = input_ids_tensor.get_shape().at(1);
 
-    const std::vector<size_t> vision_start_indices = get_vision_start_indices(input_ids_tensor, vision_start_token_id);
+    std::vector<size_t> vision_start_indices;
+    for (size_t i = 0; i < seq_len; ++i) {
+        if (input_ids[i] == vision_start_token_id) {
+            vision_start_indices.push_back(i);
+        }
+    }
 
     ov::Tensor position_ids{ov::element::i64, {3, batch_size, seq_len}};
     int64_t* pos_data = position_ids.data<int64_t>();
