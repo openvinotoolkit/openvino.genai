@@ -54,7 +54,8 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
         ret, frame = cap.read()
         if not ret:
             break
-        frames.append(np.array(frame))
+        # OpenCV decodes to BGR; GenAI video inputs are RGB.
+        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         idx += 1
 
     cap.release()
