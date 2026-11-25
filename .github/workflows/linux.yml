@@ -931,9 +931,11 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pip install transformers==4.57.6 nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz
+          python -m pip install transformers==4.57.6
           # Match the Qwen3-ASR split-export wheel tests.
-          python -m pip install --no-deps qwen-asr==0.0.6 "gradio @ git+https://github.com/gradio-app/gradio.git@d6972ed9d1185634cea083e0263839543d5ceb8d"
+          python -m pip install --no-deps qwen-asr==0.0.6
+          # qwen-asr imports its forced-aligner module, which imports nagisa.
+          python -m pip install nagisa==0.2.11
           python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@d304fb56602d878547c3d416e875c02cfd5e5479"
           python -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_bench_speech_to_text.py
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and llm_bench_qwen3_asr"

@@ -36,7 +36,7 @@ AudioEncoderQwen3ASRNPU::AudioEncoderQwen3ASRNPU(const VLMConfig& config,
     model = preprocessor.build();
     auto model_properties = utils::get_model_properties(properties, "audio_encoder", "NPU");
     m_request = utils::singleton_core()
-                    .compile_model(model, "NPU", qwen3_asr_encoder_properties(model_properties))
+                    .compile_model(model, "NPU", qwen3_asr_input_model_properties(model_properties))
                     .create_infer_request();
 }
 
@@ -87,7 +87,7 @@ std::unique_ptr<AudioEncoderQwen3ASR> create_qwen3_asr_audio_encoder(const VLMCo
                                                                      const std::filesystem::path& config_dir,
                                                                      const std::string& device,
                                                                      const ov::AnyMap& properties) {
-    if (device == "NPU") {
+    if (qwen3_asr_input_device(device, properties) == "NPU") {
         return std::make_unique<AudioEncoderQwen3ASRNPU>(config, audio_model, config_dir, properties);
     }
     return std::make_unique<AudioEncoderQwen3ASR>(config, audio_model, config_dir, device, properties);

@@ -3,24 +3,24 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <regex>
-#include <functional>
 #include <set>
+#include <string>
+#include <vector>
 
-#include "utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
-#include "visual_language/vlm_config.hpp"
+#include "openvino/runtime/tensor.hpp"
+#include "utils.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/vision_token_pruning_processor.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
@@ -46,13 +46,7 @@ struct NormalizedPrompt {
 
 class InputsEmbedder {
 public:
-    // The requested pipeline device can differ from the default device for auxiliary models.
-    struct DeviceContext {
-        std::string primary_device;
-        std::string default_device;
-    };
-
-    struct NpuGenerationPolicy {
+    struct GenerationPolicy {
         bool preserve_finished_at_capacity = false;
         bool capacity_limited = false;
     };
@@ -62,15 +56,8 @@ public:
                    const std::string& device,
                    const ov::AnyMap device_config);
 
-    InputsEmbedder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap device_config);
-
     InputsEmbedder(const std::filesystem::path& model_dir,
-                   const DeviceContext& devices,
-                   const ov::AnyMap device_config);
-
-    InputsEmbedder(const std::filesystem::path& model_dir,
-                   const Tokenizer& tokenizer,
-                   const DeviceContext& devices,
+                   const std::string& device,
                    const ov::AnyMap device_config);
 
     InputsEmbedder(const ModelsMap& models_map,
@@ -102,13 +89,13 @@ public:
     // Token ids the text decode must never sample, for example media placeholders.
     const std::set<int64_t>& get_suppressed_token_ids() const;
 
-    NpuGenerationPolicy prepare_npu_generation(size_t prompt_len,
-                                               GenerationConfig& config,
-                                               size_t max_prompt_len,
-                                               size_t kv_cache_capacity) const;
+    GenerationPolicy prepare_generation(size_t prompt_len,
+                                        GenerationConfig& config,
+                                        size_t max_prompt_len,
+                                        size_t kv_cache_capacity) const;
 
-    void finish_npu_generation(const NpuGenerationPolicy& policy,
-                               const std::vector<GenerationFinishReason>& finish_reasons) const;
+    void finish_generation(const GenerationPolicy& policy,
+                           const std::vector<GenerationFinishReason>& finish_reasons) const;
 
     // returns per-layer embeddings callback, or nullptr if not available
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
@@ -265,12 +252,11 @@ private:
 
         virtual const std::set<int64_t>& get_suppressed_token_ids() const;
 
-        virtual NpuGenerationPolicy prepare_npu_generation(size_t, GenerationConfig&, size_t, size_t) const {
+        virtual GenerationPolicy prepare_generation(size_t, GenerationConfig&, size_t, size_t) const {
             return {};
         }
 
-        virtual void finish_npu_generation(const NpuGenerationPolicy&,
-                                           const std::vector<GenerationFinishReason>&) const {}
+        virtual void finish_generation(const GenerationPolicy&, const std::vector<GenerationFinishReason>&) const {}
 
         virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
             return nullptr;

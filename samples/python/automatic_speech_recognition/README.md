@@ -83,7 +83,6 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav
 ```
 An optional third positional argument selects the device. GPU and NPU runs cache compiled models in `asr_cache`.
-For performance measurements, use the [speech-to-text benchmark](../../../tools/llm_bench/README.md#speech-to-text-models).
 
 Output:
 
@@ -236,12 +235,17 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 ## Qwen3-ASR on NPU
 
 The current Qwen3-ASR split export contains an audio encoder, text embeddings and a language model.
-`ASRPipeline` on NPU runs the audio encoder and language model on NPU, while text embeddings run on CPU.
+`ASRPipeline` on NPU runs all three models on NPU. Text-embedding lookups are processed in fixed-size
+windows and merged, because the NPU compiler does not support the export's dynamic input shape.
 Audio is split into nominal 60-second segments, with up to five additional seconds for boundary selection.
 The audio encoder processes fixed-size windows sequentially; short windows are zero-padded. CPU/GPU retain
 dynamic batched encoder inference. Padding can introduce numerical differences for sub-window audio; check
 transcription accuracy on the intended model and inputs. NPU uses the SDPA backend and supports greedy and
 multinomial decoding, but not beam search.
+
+The model-directory `VLMPipeline` constructor retains its existing default input-model device selection.
+To run both the audio encoder and text embeddings on NPU through that constructor, set
+`DEVICE_PROPERTIES={"AUTO": {"MULTI_DEVICE_PRIORITIES": "NPU"}}` when constructing the pipeline.
 
 On NPU, an explicit output limit must fit the compiled KV cache; adjust `MAX_PROMPT_LEN` or `MIN_RESPONSE_LEN`
 if needed. For a weightless decoder blob imported with `BLOB_PATH`, set `WEIGHTS_PATH` to the original

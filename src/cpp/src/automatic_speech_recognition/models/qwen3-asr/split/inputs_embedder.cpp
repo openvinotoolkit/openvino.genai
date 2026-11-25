@@ -7,6 +7,7 @@
 #include <cstring>
 #include <numeric>
 
+#include "npu/embedding_model.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 
 namespace ov::genai {
@@ -69,14 +70,14 @@ void expand_audio_tags_in_prompt(std::string& prompt,
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const std::filesystem::path& model_dir,
                                                const Tokenizer& tokenizer,
-                                               const InputsEmbedder::DeviceContext& devices,
+                                               const std::string& device,
                                                const ov::AnyMap& properties)
     : InputsEmbedderQwen3ASR(config,
                              tokenizer,
-                             EmbeddingsModel::create(model_dir, config.scale_emb, devices.default_device, properties),
+                             create_qwen3_asr_embeddings(model_dir, config.scale_emb, device, properties),
                              utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
                              model_dir,
-                             devices.primary_device,
+                             device,
                              properties) {}
 
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
@@ -88,11 +89,11 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
     : InputsEmbedderQwen3ASR(
           config,
           tokenizer,
-          EmbeddingsModel::create(utils::get_model_weights_pair(models_map, "text_embeddings").first,
-                                  utils::get_model_weights_pair(models_map, "text_embeddings").second,
-                                  config.scale_emb,
-                                  device,
-                                  properties),
+          create_qwen3_asr_embeddings(utils::get_model_weights_pair(models_map, "text_embeddings").first,
+                                      utils::get_model_weights_pair(models_map, "text_embeddings").second,
+                                      config.scale_emb,
+                                      device,
+                                      properties),
           utils::singleton_core().read_model(utils::get_model_weights_pair(models_map, "audio_encoder").first,
                                              utils::get_model_weights_pair(models_map, "audio_encoder").second),
           config_dir,

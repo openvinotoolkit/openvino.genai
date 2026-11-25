@@ -19,10 +19,10 @@
 #include "utils.hpp"
 #include "visual_language/continuous_batching_adapter.hpp"
 #include "visual_language/embedding_model.hpp"
-#include "visual_language/embeddings_registry.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/lfm3_omni/speech_engine.hpp"
 #include "visual_language/pipeline_base.hpp"
+#include "visual_language/embeddings_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -228,9 +228,7 @@ private:
         if (!device_properties.empty()) {
             properties_copy[ov::device::properties.name()] = device_properties;
         }
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir,
-                                                             InputsEmbedder::DeviceContext{device, embedder_device},
-                                                             properties_copy);
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
 
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
@@ -1134,13 +1132,13 @@ private:
         perf_metrics.num_input_tokens = prompt_ids.get_size();
 
         size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
-        InputsEmbedder::NpuGenerationPolicy npu_policy;
+        InputsEmbedder::GenerationPolicy generation_policy;
         if (m_is_npu) {
             max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
-            npu_policy = m_inputs_embedder->prepare_npu_generation(prompt_ids.get_size(),
-                                                                   generation_config,
-                                                                   m_max_prompt_len,
-                                                                   max_kv_cache_size);
+            generation_policy = m_inputs_embedder->prepare_generation(prompt_ids.get_size(),
+                                                                      generation_config,
+                                                                      m_max_prompt_len,
+                                                                      max_kv_cache_size);
         }
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config);
         requests.push_back(std::move(sequence_group));
@@ -1196,9 +1194,9 @@ private:
             lm_extra_inputs,
             std::move(per_layer_callback),
             std::move(ngram_embeddings_callback),
-            npu_policy.preserve_finished_at_capacity);
+            generation_policy.preserve_finished_at_capacity);
         if (m_is_npu) {
-            m_inputs_embedder->finish_npu_generation(npu_policy, result.results.finish_reasons);
+            m_inputs_embedder->finish_generation(generation_policy, result.results.finish_reasons);
         }
         return result;
     }

@@ -13,7 +13,7 @@ public:
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const std::filesystem::path& model_dir,
                            const Tokenizer& tokenizer,
-                           const InputsEmbedder::DeviceContext& devices,
+                           const std::string& device,
                            const ov::AnyMap& properties);
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const ModelsMap& models_map,
@@ -56,12 +56,12 @@ public:
                                                                    size_t history_size) override;
     void start_chat(const std::string& system_message) override;
 
-    InputsEmbedder::NpuGenerationPolicy prepare_npu_generation(size_t prompt_len,
-                                                               GenerationConfig& config,
-                                                               size_t max_prompt_len,
-                                                               size_t kv_cache_capacity) const override;
-    void finish_npu_generation(const InputsEmbedder::NpuGenerationPolicy& policy,
-                               const std::vector<GenerationFinishReason>& finish_reasons) const override;
+    InputsEmbedder::GenerationPolicy prepare_generation(size_t prompt_len,
+                                                        GenerationConfig& config,
+                                                        size_t max_prompt_len,
+                                                        size_t kv_cache_capacity) const override;
+    void finish_generation(const InputsEmbedder::GenerationPolicy& policy,
+                           const std::vector<GenerationFinishReason>& finish_reasons) const override;
 
 private:
     InputsEmbedderQwen3ASR(const VLMConfig& config,

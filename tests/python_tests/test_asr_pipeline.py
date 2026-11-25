@@ -692,13 +692,17 @@ def test_qwen3_asr_direct_vlm_npu_generation_and_capacity(pipelines_fixture, cap
     )
     properties = {
         "DEVICE_PROPERTIES": {"NPU": NPUW_CPU_PROPERTIES},
-        "MODEL_PROPERTIES": {"text_embeddings": {"CPU_DENORMALS_OPTIMIZATION": True}},
+        "MODEL_PROPERTIES": {"text_embeddings": {"NPU_COMPILER_TYPE": "PLUGIN"}},
         "ATTENTION_BACKEND": "SDPA",
         "MAX_PROMPT_LEN": 64,
         "MIN_RESPONSE_LEN": 16,
     }
     asr_pipe = ov_genai.ASRPipeline(model_path, "NPU", **properties)
-    vlm_pipe = ov_genai.VLMPipeline(model_path, "NPU", **properties)
+    vlm_properties = {
+        **properties,
+        "DEVICE_PROPERTIES": {"NPU": NPUW_CPU_PROPERTIES, "AUTO": {"MULTI_DEVICE_PRIORITIES": "NPU"}},
+    }
+    vlm_pipe = ov_genai.VLMPipeline(model_path, "NPU", **vlm_properties)
     with open(model_path / "preprocessor_config.json", encoding="utf-8") as file:
         sample_rate = json.load(file)["sampling_rate"]
     audio = np.zeros(int(audio_seconds * sample_rate), dtype=np.float32)
@@ -745,8 +749,9 @@ def test_qwen3_asr_direct_vlm_npu_generation_and_capacity(pipelines_fixture, cap
 
 
 @pytest.mark.parametrize("pipeline_cls", [ov_genai.ASRPipeline, ov_genai.VLMPipeline], ids=["ASR", "VLM"])
+@pytest.mark.parametrize("role", ["audio_encoder", "text_embeddings"])
 @pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
-def test_qwen3_asr_npu_routes_split_components(pipelines_fixture, pipeline_cls, tmp_path):
+def test_qwen3_asr_npu_routes_split_components(pipelines_fixture, pipeline_cls, role, tmp_path):
     from openvino import opset13 as ops
 
     _, _, model_id, _ = pipelines_fixture
@@ -756,27 +761,74 @@ def test_qwen3_asr_npu_routes_split_components(pipelines_fixture, pipeline_cls, 
     )
     copied_model = tmp_path / "model"
     shutil.copytree(model_path, copied_model)
-    encoder_path = copied_model / "openvino_audio_encoder_model.xml"
-    encoder = openvino.Core().read_model(model_path / "openvino_audio_encoder_model.xml")
-    lengths = encoder.input("aftercnn_lens")
-    assert not lengths.get_target_inputs()
-    length_sum = ops.reduce_sum(
-        ops.convert(lengths, openvino.Type.f32), ops.constant(np.array([0], dtype=np.int64)), False
-    )
-    zero = ops.multiply(length_sum, ops.constant(np.float32(0)))
-    output = encoder.get_results()[0]
+    model_name = "openvino_audio_encoder_model.xml" if role == "audio_encoder" else "openvino_text_embeddings_model.xml"
+    component = openvino.Core().read_model(model_path / model_name)
+    output = component.get_results()[0]
+    if role == "audio_encoder":
+        lengths = component.input("aftercnn_lens")
+        assert not lengths.get_target_inputs()
+        length_sum = ops.reduce_sum(
+            ops.convert(lengths, openvino.Type.f32), ops.constant(np.array([0], dtype=np.int64)), False
+        )
+        zero = ops.multiply(length_sum, ops.constant(np.float32(0)))
+        error = "requires independent windows; input 'aftercnn_lens' is used"
+    else:
+        zero = ops.constant(np.float32(0))
+        error = "require a token-wise vocabulary lookup"
     output.input(0).replace_source_output(ops.add(output.input_value(0), zero).output(0))
-    encoder.validate_nodes_and_infer_types()
-    openvino.save_model(encoder, encoder_path, compress_to_fp16=False)
+    component.validate_nodes_and_infer_types()
+    openvino.save_model(component, copied_model / model_name, compress_to_fp16=False)
 
-    with pytest.raises(RuntimeError, match="requires independent windows; input 'aftercnn_lens' is used"):
+    device_properties = {"NPU": NPUW_CPU_PROPERTIES}
+    if pipeline_cls is ov_genai.VLMPipeline:
+        device_properties["AUTO"] = {"MULTI_DEVICE_PRIORITIES": "NPU"}
+    with pytest.raises(RuntimeError, match=error):
         pipeline_cls(
             copied_model,
             "NPU",
-            DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES},
+            DEVICE_PROPERTIES=device_properties,
             ATTENTION_BACKEND="SDPA",
-            MODEL_PROPERTIES={"text_embeddings": {"CPU_DENORMALS_OPTIMIZATION": True}},
+            MODEL_PROPERTIES={"text_embeddings": {"NPU_COMPILER_TYPE": "PLUGIN"}},
         )
+
+
+@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
+def test_qwen3_asr_npu_rejects_cpu_input_device(pipelines_fixture):
+    _, _, model_id, _ = pipelines_fixture
+    model_path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
+    _, model_path, _, _ = read_asr_model(
+        (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
+    )
+    with pytest.raises(RuntimeError, match="requires AUTO input models to use MULTI_DEVICE_PRIORITIES=NPU"):
+        ov_genai.ASRPipeline(
+            model_path,
+            "NPU",
+            DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES, "AUTO": {"MULTI_DEVICE_PRIORITIES": "CPU"}},
+            ATTENTION_BACKEND="SDPA",
+        )
+
+
+@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
+def test_qwen3_asr_direct_vlm_keeps_default_auxiliary_device(pipelines_fixture):
+    _, _, model_id, _ = pipelines_fixture
+    model_path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
+    _, model_path, _, _ = read_asr_model(
+        (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
+    )
+    vlm = ov_genai.VLMPipeline(
+        model_path,
+        "NPU",
+        DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES},
+        MODEL_PROPERTIES={"text_embeddings": {"CPU_DENORMALS_OPTIMIZATION": True}},
+        ATTENTION_BACKEND="SDPA",
+    )
+    audio = openvino.Tensor(np.zeros(8000, dtype=np.float32))
+    prompt = (
+        "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n<|audio_start|><|audio_pad|>"
+        "<|audio_end|><|im_end|>\n<|im_start|>assistant\nlanguage English<asr_text>"
+    )
+    config = ov_genai.GenerationConfig(max_new_tokens=8, do_sample=False, apply_chat_template=False)
+    assert len(vlm.generate(prompt, audios=[audio], generation_config=config).texts) == 1
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")

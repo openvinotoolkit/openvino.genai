@@ -7,10 +7,32 @@
 #include <string>
 
 #include "openvino/core/any.hpp"
+#include "openvino/runtime/properties.hpp"
 
 namespace ov::genai {
 
-inline ov::AnyMap qwen3_asr_encoder_properties(const ov::AnyMap& properties) {
+inline std::string qwen3_asr_input_device(const std::string& device, const ov::AnyMap& properties) {
+    if (device != "AUTO") {
+        return device;
+    }
+    const auto devices = properties.find(ov::device::properties.name());
+    if (devices == properties.end()) {
+        return device;
+    }
+    const auto& device_map = devices->second.as<ov::AnyMap>();
+    const auto auto_device = device_map.find("AUTO");
+    if (auto_device == device_map.end()) {
+        return device;
+    }
+    const auto& auto_properties = auto_device->second.as<ov::AnyMap>();
+    const auto priority = auto_properties.find(ov::device::priorities.name());
+    if (priority != auto_properties.end() && priority->second.as<std::string>() == "NPU") {
+        return "NPU";
+    }
+    return device;
+}
+
+inline ov::AnyMap qwen3_asr_input_model_properties(const ov::AnyMap& properties) {
     static const std::set<std::string> decoder_options{
         "MAX_PROMPT_LEN",
         "MIN_RESPONSE_LEN",

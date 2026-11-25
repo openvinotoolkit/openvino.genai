@@ -45,6 +45,7 @@ public:
                     const ov::AnyMap& properties);
 
     EmbeddingsModel() = default;
+    virtual ~EmbeddingsModel() = default;
 
     static Ptr create(const std::filesystem::path& model_dir,
                       const float scale_emb,
@@ -63,11 +64,13 @@ public:
 
     // We have getter for the request queue, so we can reserve request outside of infer scope
     // Tensor produced by infer is stored in the request and used further in the pipeline, so we can't free it right after infer call
-    std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& get_request_queue();
-    ov::Tensor infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor=false);
-private:
+    virtual std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& get_request_queue();
+    virtual ov::Tensor infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor = false);
+
+protected:
     void merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const;
 
+private:
     std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>> m_embeddings_requests_queue;
 };
 

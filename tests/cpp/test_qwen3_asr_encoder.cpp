@@ -7,12 +7,15 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
+#include <numeric>
 #include <string>
 #include <vector>
 
 #include "automatic_speech_recognition/models/qwen3-asr/audio_chunk.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/split/audio_encoder.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/npu/embedding_model.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/split/npu/generation.hpp"
 #include "openvino/op/ops.hpp"
 #include "openvino/openvino.hpp"
@@ -75,24 +78,48 @@ protected:
         lengths->output(0).set_names({"aftercnn_lens"});
         auto offsets = std::make_shared<ov::op::v0::Parameter>(ov::element::i32, ov::PartialShape{-1});
         offsets->output(0).set_names({"cu_seqlens"});
-        auto mean = std::make_shared<ov::op::v1::ReduceMean>(
-            features, ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1}), false);
-        auto first = std::make_shared<ov::op::v8::Gather>(
-            mean,
-            ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {0}),
-            ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {1}));
-        auto masked = std::make_shared<ov::op::v1::Multiply>(first, std::make_shared<ov::op::v0::Convert>(
-                                                                       mask, ov::element::f32));
+        auto mean =
+            std::make_shared<ov::op::v1::ReduceMean>(features,
+                                                     ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1}),
+                                                     false);
+        auto first =
+            std::make_shared<ov::op::v8::Gather>(mean,
+                                                 ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {0}),
+                                                 ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {1}));
+        auto masked =
+            std::make_shared<ov::op::v1::Multiply>(first,
+                                                   std::make_shared<ov::op::v0::Convert>(mask, ov::element::f32));
         ov::Output<ov::Node> values = masked;
         if (use_length) {
-            values = std::make_shared<ov::op::v1::Add>(values, std::make_shared<ov::op::v0::Convert>(
-                                                                  lengths, ov::element::f32));
+            values =
+                std::make_shared<ov::op::v1::Add>(values,
+                                                  std::make_shared<ov::op::v0::Convert>(lengths, ov::element::f32));
         }
-        auto output = std::make_shared<ov::op::v0::Unsqueeze>(
-            values, ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {2}));
+        auto output =
+            std::make_shared<ov::op::v0::Unsqueeze>(values,
+                                                    ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {2}));
         output->output(0).set_names({"audio_features"});
         return std::make_shared<ov::Model>(ov::OutputVector{output},
                                            ov::ParameterVector{features, mask, lengths, offsets});
+    }
+
+    void save_embeddings(bool contextual = false) {
+        auto ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1, -1});
+        ids->output(0).set_names({"input"});
+        std::vector<float> values(32 * 4);
+        std::iota(values.begin(), values.end(), 0.0f);
+        auto vocabulary = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{32, 4}, values);
+        auto axis = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {0});
+        ov::Output<ov::Node> output = std::make_shared<ov::op::v8::Gather>(vocabulary, ids, axis);
+        if (contextual) {
+            output =
+                std::make_shared<ov::op::v1::Add>(output,
+                                                  ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {1.0f}));
+        }
+        output.get_tensor().set_names({"inputs_embeds"});
+        ov::save_model(std::make_shared<ov::Model>(ov::OutputVector{output}, ov::ParameterVector{ids}),
+                       m_model_dir / "openvino_text_embeddings_model.xml",
+                       false);
     }
 };
 
@@ -167,6 +194,80 @@ TEST_F(Qwen3ASRStaticEncoderTest, SharedDecoderOptionsDoNotEnableLLMModeForEncod
     EXPECT_THROW(
         ov::genai::create_qwen3_asr_audio_encoder(split_config(), split_model(true), m_model_dir, "NPU", properties),
         ov::Exception);
+}
+
+TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsMatchCPUAcrossChunkBoundaries) {
+    save_embeddings();
+    auto cpu = ov::genai::create_qwen3_asr_embeddings(m_model_dir, 0.5f, "CPU", {});
+    auto npu = ov::genai::create_qwen3_asr_embeddings(m_model_dir, 0.5f, "NPU", cpu_fallback());
+    ov::genai::CircularBufferQueueElementGuard<ov::genai::EmbeddingsRequest> cpu_request(
+        cpu->get_request_queue().get());
+    ov::genai::CircularBufferQueueElementGuard<ov::genai::EmbeddingsRequest> npu_request(
+        npu->get_request_queue().get());
+    for (const size_t length : {1u, 63u, 64u, 65u, 129u, 1u}) {
+        ov::Tensor ids{ov::element::i64, {1, length}};
+        for (size_t index = 0; index < length; ++index) {
+            ids.data<int64_t>()[index] = static_cast<int64_t>((index * 7) % 32);
+        }
+        const auto expected = cpu->infer(cpu_request.get(), ids);
+        const auto actual = npu->infer(npu_request.get(), ids);
+        ASSERT_EQ(actual.get_shape(), (ov::Shape{1, length, 4}));
+        ASSERT_EQ(actual.get_element_type(), ov::element::f32);
+        for (size_t index = 0; index < actual.get_size(); ++index) {
+            EXPECT_FLOAT_EQ(actual.data<const float>()[index], expected.data<const float>()[index]);
+        }
+    }
+
+    ov::Tensor invalid{ov::element::i64, {1, 1}};
+    invalid.data<int64_t>()[0] = 32;
+    EXPECT_THROW(npu->infer(npu_request.get(), invalid), ov::Exception);
+    invalid.data<int64_t>()[0] = -1;
+    EXPECT_THROW(npu->infer(npu_request.get(), invalid), ov::Exception);
+    EXPECT_THROW(npu->infer(npu_request.get(), ov::Tensor(ov::element::i32, {1, 1})), ov::Exception);
+    EXPECT_THROW(npu->infer(npu_request.get(), ov::Tensor(ov::element::i64, {2, 1})), ov::Exception);
+    EXPECT_THROW(npu->infer(npu_request.get(), ov::Tensor(ov::element::i64, {1, 0})), ov::Exception);
+    invalid.data<int64_t>()[0] = 1;
+    EXPECT_THROW(npu->infer(npu_request.get(), invalid, true), ov::Exception);
+    EXPECT_EQ(npu->infer(npu_request.get(), invalid).get_shape(), (ov::Shape{1, 1, 4}));
+
+    std::vector<int64_t> interleaved{1, -1, 2, -1, 3, -1};
+    ov::Tensor strided{ov::element::i64, {1, 3}, interleaved.data(), ov::Strides{48, 16}};
+    const auto strided_result = npu->infer(npu_request.get(), strided);
+    ASSERT_EQ(strided_result.get_shape(), (ov::Shape{1, 3, 4}));
+    EXPECT_FLOAT_EQ(strided_result.data<const float>()[0], 2.0f);
+    EXPECT_FLOAT_EQ(strided_result.data<const float>()[4], 4.0f);
+    EXPECT_FLOAT_EQ(strided_result.data<const float>()[8], 6.0f);
+}
+
+TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsAcceptInMemoryModels) {
+    save_embeddings();
+    const auto xml_path = m_model_dir / "openvino_text_embeddings_model.xml";
+    const auto bin_path = m_model_dir / "openvino_text_embeddings_model.bin";
+    std::ifstream xml_file(xml_path, std::ios::binary);
+    ASSERT_TRUE(xml_file.is_open());
+    const std::string xml{std::istreambuf_iterator<char>{xml_file}, std::istreambuf_iterator<char>{}};
+    std::ifstream bin_file(bin_path, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(bin_file.is_open());
+    const std::streamsize size = bin_file.tellg();
+    ASSERT_GT(size, 0);
+    ov::Tensor weights{ov::element::u8, {static_cast<size_t>(size)}};
+    bin_file.seekg(0);
+    ASSERT_TRUE(bin_file.read(reinterpret_cast<char*>(weights.data()), size));
+
+    auto npu = ov::genai::create_qwen3_asr_embeddings(xml, weights, 1.0f, "NPU", cpu_fallback());
+    ov::genai::CircularBufferQueueElementGuard<ov::genai::EmbeddingsRequest> request(npu->get_request_queue().get());
+    ov::Tensor ids{ov::element::i64, {1, 2}};
+    ids.data<int64_t>()[0] = 1;
+    ids.data<int64_t>()[1] = 31;
+    const auto result = npu->infer(request.get(), ids);
+    ASSERT_EQ(result.get_shape(), (ov::Shape{1, 2, 4}));
+    EXPECT_FLOAT_EQ(result.data<const float>()[0], 4.0f);
+    EXPECT_FLOAT_EQ(result.data<const float>()[4], 124.0f);
+}
+
+TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsRejectNonLookupModels) {
+    save_embeddings(true);
+    EXPECT_THROW(ov::genai::create_qwen3_asr_embeddings(m_model_dir, 1.0f, "NPU", cpu_fallback()), ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(ChunkLengths, Qwen3ASRStaticEncoderTest, ::testing::Values(1u, 4u, 6u, 8u));
