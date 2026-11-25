@@ -81,11 +81,12 @@
 
 - name: Image generation (Qwen-Image 2.1)
   cmd: |-
-    # Qwen-Image 2.1 export requires optimum-intel master, transformers 5.15.1, and diffusers 0.41.0
+    # Qwen-Image 2.1 export requires transformers 5.15.1, diffusers 0.41.0, and the prefix KV cache export from
+    # huggingface/optimum-intel#2125, which is not merged yet. Re-pin when it is.
     python -m pip install --no-deps diffusers==0.41.0 transformers==5.15.1
     # diffusers 0.41.0 needs huggingface_hub>=1.32.0, which --no-deps does not pull in.
     python -m pip install huggingface_hub==1.33.0
-    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel"
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@8406f323e63ce11116df8aaca4fb41ef4ca47f15"
     python -m pytest -v ./tests/python_tests/test_image_generation.py -k "qwen-image-2.1" --override-ini cache_dir=/mount/caches/pytest/
   timeout: 45
   components:

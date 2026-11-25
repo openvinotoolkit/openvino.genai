@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -433,13 +434,38 @@ public:
             joint_row = joint_input.get_shape()[1] * joint_input.get_shape()[2];
         }
 
-        // The joint-sequence inputs do not depend on the timestep, so they are bound once. Only CFG has to swap
-        // them between the two passes of a step.
-        set_transformer_inputs(m_positive_prompt_embeds, positive_inputs);
+        // With the prefix KV cache every CFG pass has its own cache context. The first step runs the whole joint
+        // sequence, which fills the cache with the text and condition-image keys/values, and the later steps process
+        // only the target image's tokens. Without it, every step runs the whole joint sequence.
+        const bool prefix_cache = m_transformer->has_prefix_cache();
+        const size_t num_passes = true_cfg ? 2 : 1;
+        const auto bind_pass_inputs = [&](const bool target_only) {
+            for (size_t pass = 0; pass < num_passes; ++pass) {
+                m_transformer->set_cache_context(pass);
+                const JointSequenceInputs& inputs = pass == 0 ? positive_inputs : negative_inputs;
+                set_transformer_inputs(pass == 0 ? m_positive_prompt_embeds : m_negative_prompt_embeds,
+                                       target_only ? target_token_inputs(inputs) : inputs);
+                if (!target_only) {
+                    m_transformer->reset_prefix_cache();
+                }
+            }
+        };
+
+        // The joint-sequence inputs do not depend on the timestep, so they are bound once (twice with the prefix KV
+        // cache). Only CFG without the prefix KV cache has to swap them between the two passes of a step.
+        if (prefix_cache) {
+            bind_pass_inputs(false);
+        } else {
+            set_transformer_inputs(m_positive_prompt_embeds, positive_inputs);
+        }
         const float true_cfg_scale = m_custom_generation_config.guidance_scale;
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             const auto step_start = std::chrono::steady_clock::now();
+
+            if (prefix_cache && inference_step == 1) {
+                bind_pass_inputs(true);
+            }
 
             std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timesteps[inference_step] / 1000.0f);
 
@@ -452,12 +478,21 @@ public:
             }
             const ov::Tensor model_input = joint_input ? joint_input : latents;
 
+            if (prefix_cache) {
+                m_transformer->set_cache_context(0);
+            }
             ov::Tensor noise_pred = infer_transformer(model_input, timestep_tensor, image_seq_len);
 
             if (true_cfg) {
-                set_transformer_inputs(m_negative_prompt_embeds, negative_inputs);
+                if (prefix_cache) {
+                    m_transformer->set_cache_context(1);
+                } else {
+                    set_transformer_inputs(m_negative_prompt_embeds, negative_inputs);
+                }
                 const ov::Tensor negative_noise_pred = infer_transformer(model_input, timestep_tensor, image_seq_len);
-                set_transformer_inputs(m_positive_prompt_embeds, positive_inputs);
+                if (!prefix_cache) {
+                    set_transformer_inputs(m_positive_prompt_embeds, positive_inputs);
+                }
 
                 float* positive_data = noise_pred.data<float>();
                 const float* negative_data = negative_noise_pred.data<const float>();
@@ -800,6 +835,36 @@ private:
         return {cos, sin};
     }
 
+    // The target image is the trailing block of the joint sequence, so the prefix is a leading slice. A call that
+    // reads the prefix from the cache processes only the target rows, whose keys are the cached prefix followed by
+    // the target, i.e. every column of the full mask: the target rows of the full inputs are exactly its inputs.
+    static JointSequenceInputs target_token_inputs(const JointSequenceInputs& inputs) {
+        const bool* modulation_data = inputs.modulation_mask.data<const bool>();
+        const size_t seq_len = inputs.modulation_mask.get_size();
+        const size_t prefix_len = std::find(modulation_data, modulation_data + seq_len, true) - modulation_data;
+        OPENVINO_ASSERT(std::find(modulation_data + prefix_len, modulation_data + seq_len, false) ==
+                            modulation_data + seq_len,
+                        "The prefix KV cache requires the target image to be the last block of the joint sequence");
+
+        const auto slice = [prefix_len](const ov::Tensor& tensor, const size_t axis) {
+            ov::Shape shape = tensor.get_shape();
+            ov::Coordinate start(shape.size(), 0), end(shape);
+            start[axis] = prefix_len;
+            shape[axis] -= prefix_len;
+            ov::Tensor rows(tensor.get_element_type(), shape);
+            ov::Tensor(tensor, start, end).copy_to(rows);
+            return rows;
+        };
+
+        JointSequenceInputs target_inputs;
+        target_inputs.cos = slice(inputs.cos, 1);
+        target_inputs.sin = slice(inputs.sin, 1);
+        target_inputs.gather_idx = slice(inputs.gather_idx, 0);
+        target_inputs.attn_mask = slice(inputs.attn_mask, 2);
+        target_inputs.modulation_mask = slice(inputs.modulation_mask, 0);
+        return target_inputs;
+    }
+
     void set_transformer_inputs(const ov::Tensor prompt_embeds, const JointSequenceInputs& inputs) {
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("cos", inputs.cos);
@@ -809,7 +874,8 @@ private:
         m_transformer->set_hidden_states("modulation_mask", inputs.modulation_mask);
     }
 
-    // The transformer returns the whole joint sequence; only the trailing image tokens are the noise prediction.
+    // The transformer returns every token it processed (the whole joint sequence, or the target image's tokens only
+    // with the prefix KV cache); only the trailing image tokens are the noise prediction.
     ov::Tensor infer_transformer(const ov::Tensor& latents, const ov::Tensor& timestep, const size_t image_seq_len) {
         const auto infer_start = std::chrono::steady_clock::now();
         const ov::Tensor joint_output = m_transformer->infer(latents, timestep);
