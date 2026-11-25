@@ -264,6 +264,16 @@ def test_vlm_visual_lora_requires_constructor_config(backend, vision_lora) -> No
 
 
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+@pytest.mark.parametrize("role", ["language_model", "vision_embeddings_merger"])
+def test_vlm_per_model_adapters_rejected(role, backend, vision_lora) -> None:
+    models_path, adapter = vision_lora
+    with pytest.raises(RuntimeError, match=f"LoRA adapters can't be set for a single model role \\('{role}'\\)"):
+        VLMPipeline(
+            models_path, "CPU", ATTENTION_BACKEND=backend, MODEL_PROPERTIES={role: {"adapters": AdapterConfig(adapter)}}
+        )
+
+
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 @pytest.mark.parametrize("extra_submodels_model_id", EXTRA_SUBMODELS_MODEL_IDS)
 def test_vlm_language_model_lora_with_extra_submodels(extra_submodels_model_id, backend, tmp_path: Path) -> None:
     pytest.importorskip("transformers", minversion="5.2.0")

@@ -362,6 +362,7 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const Tokenizer& tokenizer,
                                const std::string& device,
                                const ov::AnyMap device_config) {
+    validate_no_per_model_adapters(device_config);
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -435,6 +436,7 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                const std::filesystem::path& config_dir_path,
                                const std::string& device,
                                const ov::AnyMap device_config) {
+    validate_no_per_model_adapters(device_config);
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {

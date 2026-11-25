@@ -212,8 +212,6 @@ private:
         //     MODEL_PROPERTIES: { "language_model": {...}, "vision_embeddings": {...} }
         // }
         auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
-        // Adapters addressed to the language model role, resolved the same way continuous batching does.
-        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
         lm_properties.erase(AdaptersProperty::name());
 
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
@@ -294,7 +292,6 @@ private:
         }
 
         auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
-        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
         lm_properties.erase(AdaptersProperty::name());
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);

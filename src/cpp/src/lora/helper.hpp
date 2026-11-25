@@ -20,6 +20,9 @@ utils::SharedOptional<const AnyMap> extract_adapters_from_properties (const AnyM
 // If `adapters` property is not found, do nothing and return false.
 bool update_adapters_from_properties (const AnyMap& properties, std::optional<AdapterConfig>& adapter_config);
 
+// Throws if `adapters` property is set for a single model role in MODEL_PROPERTIES instead of the whole pipeline.
+void validate_no_per_model_adapters(const AnyMap& properties);
+
 using AdapterConfigAction = std::function<std::optional<AdapterConfig>(const AdapterConfig&)>;
 using AdapterAction = std::function<Adapter(const Adapter&)>;
 
