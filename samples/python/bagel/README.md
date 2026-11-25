@@ -72,13 +72,16 @@ python bagel.py BAGEL-7B-MoT-ov-int4 CPU frames "Generate the next frame of this
 step: `--cfg-text` (default 4) is the text guidance scale and `--cfg-img` (default 2) the image guidance scale of
 `edit` and `frames`, on top of the text guidance. A scale of 1 disables that guidance: `--cfg-text 1` runs one pass
 per step and keeps one KV cache, the fastest and least memory-hungry setting, `--cfg-img 1` keeps the text guidance
-only. `--num-frames` (default 3) sets the number of generated frames and `--seed` the initial noise:
+only. `--num-frames` (default 3) sets the number of generated frames and `--seed` the initial noise.
+
+Keep the guidance on for `frames`: each generated frame conditions the next one, so without guidance the first frame
+is already ghosted and the following ones blur out. The prompt should state the task and the next action, as above:
 
 ```sh
-# 20 steps without guidance
-python bagel.py BAGEL-7B-MoT-ov-int4 NPU frames "..." frame_0.png frame_1.png frame_2.png --steps 20 --cfg-text 1 --cfg-img 1
-# 20 steps with text and image guidance
-python bagel.py BAGEL-7B-MoT-ov-int4 NPU frames "..." frame_0.png frame_1.png frame_2.png --steps 20 --cfg-text 4 --cfg-img 2
+# 20 steps with text and image guidance (recommended)
+python bagel.py BAGEL-7B-MoT-ov-int4 NPU frames "Generate the next frame of this robot video. The task of the robot is: put the white mug on the left plate. In the next frame the robot arm lifts the white mug. Keep the camera viewpoint, the scene and all other objects unchanged." frame_0.png frame_1.png frame_2.png --steps 20 --cfg-text 4 --cfg-img 2
+# 20 steps without guidance: about 3x faster and less memory, but blurry frames
+python bagel.py BAGEL-7B-MoT-ov-int4 NPU frames "Generate the next frame of this robot video. The task of the robot is: put the white mug on the left plate. In the next frame the robot arm lifts the white mug. Keep the camera viewpoint, the scene and all other objects unchanged." frame_0.png frame_1.png frame_2.png --steps 20 --cfg-text 1 --cfg-img 1
 ```
 
 On NPU the language, vision and VAE models run through NPUW (`NPUW_BAGEL`), which compiles a static variant of a model
