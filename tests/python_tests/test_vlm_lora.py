@@ -76,7 +76,9 @@ def _build_lora(model_path: Path, adapter_path: Path, key_prefix: str, rank: int
 def _build_vision_lora(models_path: Path, adapter_path: Path) -> int:
     # `openvino_vision_embeddings_merger_model.xml` is exported from the `model.visual` submodule.
     return _build_lora(
-        Path(models_path) / "openvino_vision_embeddings_merger_model.xml", adapter_path, "base_model.model.model.visual."
+        Path(models_path) / "openvino_vision_embeddings_merger_model.xml",
+        adapter_path,
+        "base_model.model.model.visual.",
     )
 
 
@@ -213,19 +215,20 @@ def _create_unsupported_visual_lora_pipeline(
 
 
 # The adapter check does not depend on the attention backend, so one backend covers the names.
-@pytest.mark.parametrize("target_modules, unsupported_visual_lora", [
-    pytest.param(["model.visual.blocks.0.attn.q_proj"], True, id="qwen-vision"),
-    pytest.param(["vision_tower.vision_model.encoder.layers.0.self_attn.q_proj"], False, id="other-vision"),
-    pytest.param(
-        ["model.layers.0.self_attn.q_proj", "model.visual.blocks.0.attn.q_proj"], True, id="mixed"
-    ),
-    pytest.param(["model.layers.0.self_attn.q_proj"], False, id="lm-only"),
-    pytest.param(["model.layers.0.mlp1"], False, id="lm-mlp1"),
-    pytest.param(["model.visual_extra.blocks.0.attn.q_proj"], False, id="similar-prefix"),
-    pytest.param(["other.visual.blocks.0.attn.q_proj"], False, id="different-prefix"),
-    pytest.param([], False, id="empty"),
-    pytest.param(None, False, id="omitted"),
-])
+@pytest.mark.parametrize(
+    "target_modules, unsupported_visual_lora",
+    [
+        pytest.param(["model.visual.blocks.0.attn.q_proj"], True, id="qwen-vision"),
+        pytest.param(["vision_tower.vision_model.encoder.layers.0.self_attn.q_proj"], False, id="other-vision"),
+        pytest.param(["model.layers.0.self_attn.q_proj", "model.visual.blocks.0.attn.q_proj"], True, id="mixed"),
+        pytest.param(["model.layers.0.self_attn.q_proj"], False, id="lm-only"),
+        pytest.param(["model.layers.0.mlp1"], False, id="lm-mlp1"),
+        pytest.param(["model.visual_extra.blocks.0.attn.q_proj"], False, id="similar-prefix"),
+        pytest.param(["other.visual.blocks.0.attn.q_proj"], False, id="different-prefix"),
+        pytest.param([], False, id="empty"),
+        pytest.param(None, False, id="omitted"),
+    ],
+)
 def test_vlm_unsupported_visual_lora_constructor(
     target_modules, unsupported_visual_lora, unsupported_vision_lora_model: Path, tmp_path: Path
 ) -> None:
@@ -235,10 +238,13 @@ def test_vlm_unsupported_visual_lora_constructor(
 
 
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-@pytest.mark.parametrize("target_modules, unsupported_visual_lora", [
-    pytest.param(["model.visual.blocks.0.attn.q_proj"], True, id="qwen-vision"),
-    pytest.param(["model.layers.0.self_attn.q_proj"], False, id="lm-only"),
-])
+@pytest.mark.parametrize(
+    "target_modules, unsupported_visual_lora",
+    [
+        pytest.param(["model.visual.blocks.0.attn.q_proj"], True, id="qwen-vision"),
+        pytest.param(["model.layers.0.self_attn.q_proj"], False, id="lm-only"),
+    ],
+)
 def test_vlm_unsupported_visual_lora_constructor_backends(
     backend, target_modules, unsupported_visual_lora, unsupported_vision_lora_model: Path, tmp_path: Path
 ) -> None:
