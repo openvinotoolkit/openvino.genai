@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include "model_desc.hpp"
 #include "openvino/genai/speculative_decoding/drafter.hpp"
@@ -56,35 +57,40 @@ bool attends_to_all_tokens(const ov::Tensor& attention_mask, const ov::Shape& in
 
 /// Greedy acceptance walk. `greedy_token(row)` returns the main model's token after verifier row `row`. Fills
 /// `accepted_rows` with the root row 0 followed by the accepted nodes' rows and returns the generated tokens (the
-/// accepted nodes' tokens plus the main model's next token); stops early after a token `is_stop` accepts.
+/// accepted nodes' tokens plus the main model's next token); a path ends after a token `is_stop` accepts. Siblings may
+/// share a token, so every matching node is followed and the longest path is kept.
 template <typename GreedyToken, typename IsStop>
 std::vector<int64_t> accept_greedy(const DraftTree& tree,
                                    GreedyToken&& greedy_token,
                                    IsStop&& is_stop,
                                    std::vector<size_t>& accepted_rows) {
-    accepted_rows.assign(1, 0);
-    std::vector<int64_t> generated;
-    size_t row = 0;
-    while (true) {
-        const int64_t token = greedy_token(row);
-        generated.push_back(token);
-        if (is_stop(token)) {
-            break;
+    const size_t rows = tree.tokens.size() + 1;
+    // The main model's token after every row an accepted path reaches; the other rows aren't evaluated.
+    std::vector<std::optional<int64_t>> greedy(rows);
+    std::vector<size_t> depth(rows, 0);
+    greedy[0] = greedy_token(0);
+    size_t last = 0;  // the last row of the longest path
+    // Row i + 1 holds node i, whose parent comes before it, so one pass in row order follows every accepted path.
+    for (size_t row = 1; row < rows; ++row) {
+        const auto parent = static_cast<size_t>(tree.parents[row - 1] + 1);
+        if (!greedy[parent] || is_stop(*greedy[parent]) || tree.tokens[row - 1] != *greedy[parent]) {
+            continue;
         }
-        // Children of `row`: nodes whose parent is that row's node (row 0 = root = parent -1).
-        const int64_t parent = static_cast<int64_t>(row) - 1;
-        size_t next = 0;
-        for (size_t node = row; node < tree.tokens.size(); ++node) {
-            if (tree.parents[node] == parent && tree.tokens[node] == token) {
-                next = node + 1;
-                break;
-            }
+        greedy[row] = greedy_token(row);
+        depth[row] = depth[parent] + 1;
+        if (depth[row] > depth[last]) {
+            last = row;
         }
-        if (next == 0) {
-            break;
+    }
+    const size_t length = depth[last] + 1;
+    accepted_rows.resize(length);
+    std::vector<int64_t> generated(length);
+    for (size_t i = length, row = last; i-- > 0;) {
+        accepted_rows[i] = row;
+        generated[i] = *greedy[row];
+        if (row > 0) {
+            row = static_cast<size_t>(tree.parents[row - 1] + 1);
         }
-        accepted_rows.push_back(next);
-        row = next;
     }
     return generated;
 }

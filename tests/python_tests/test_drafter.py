@@ -1,6 +1,9 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import shutil
+
+import numpy as np
 import pytest
 
 import openvino as ov
@@ -46,6 +49,7 @@ class ScriptedDrafter(ov_genai.Drafter):
         self.prompt_len = 0
         self.started = []
         self.accepted = []
+        self.features = []
         self.proposals = 0
         self.finished = 0
 
@@ -78,6 +82,8 @@ class ScriptedDrafter(ov_genai.Drafter):
 
     def accept(self, tokens, positions, features):
         self.accepted.append((list(tokens), list(positions), features.size))
+        # The tensor is valid only during the call.
+        self.features.append(np.array(features.data, dtype=np.float32))
 
     def finish(self):
         self.finished += 1
@@ -105,6 +111,35 @@ def drafter_pipe(model_path):
     drafter = ScriptedDrafter()
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **get_npu_llm_properties_for_test(), drafter=drafter)
     return pipe, drafter
+
+
+@pytest.fixture(scope="module")
+def features_model_path(model_path, tmp_path_factory):
+    """The model with a last_hidden_state output (the input of its LM head), with its tokenizers and configs."""
+    model = ov.Core().read_model(model_path / "openvino_model.xml")
+    lm_head = model.output("logits").get_node().input_value(0).get_node()
+    model.add_outputs(lm_head.input_value(0))[0].get_tensor().set_names({"last_hidden_state"})
+    path = tmp_path_factory.mktemp("features_model")
+    ov.save_model(model, path / "openvino_model.xml")
+    for file in model_path.iterdir():
+        if file.is_file() and not file.name.startswith("openvino_model."):
+            shutil.copy(file, path)
+    return path
+
+
+def full_forward_features(models_path, tokens):
+    """last_hidden_state rows of one CPU inference over all the tokens."""
+    compiled = ov.Core().compile_model(models_path / "openvino_model.xml", "CPU", get_default_llm_properties())
+    request = compiled.create_infer_request()
+    request.infer(
+        {
+            "input_ids": np.array([tokens], dtype=np.int64),
+            "attention_mask": np.ones((1, len(tokens)), dtype=np.int64),
+            "position_ids": np.arange(len(tokens), dtype=np.int64)[None],
+            "beam_idx": np.zeros(1, dtype=np.int32),
+        }
+    )
+    return np.array(request.get_tensor("last_hidden_state").data[0], dtype=np.float32)
 
 
 @pytest.mark.parametrize("mode", ["chain", "branch", "empty"])
@@ -167,6 +202,30 @@ def test_drafter_receives_only_output_tokens(drafter_pipe, reference, max_new_to
     # Near the limit the steps verify fewer nodes: the drafter gets every output token but the last (the next root).
     accepted = [token for step in drafter.accepted[1:] for token in step[0]]
     assert accepted == output[:-1]
+
+
+def test_drafter_receives_features_of_accepted_tokens(features_model_path):
+    drafter = ScriptedDrafter()
+    pipe = ov_genai.LLMPipeline(features_model_path, "NPU", **get_npu_llm_properties_for_test(), drafter=drafter)
+    inputs = pipe.get_tokenizer().encode(PROMPT)
+    drafter.reset("empty", [])
+    reference_tokens = list(pipe.generate(inputs, greedy_config()).tokens[0])
+    # Every step proposes a wrong first child of the root, so it accepts the verifier rows 0, 2, 3, ...
+    drafter.reset("branch", reference_tokens)
+
+    assert list(pipe.generate(inputs, greedy_config()).tokens[0]) == reference_tokens
+
+    # The prompt, then the tokens of every step.
+    tokens = [token for step in drafter.accepted for token in step[0]]
+    positions = [position for step in drafter.accepted for position in step[1]]
+    assert positions == list(range(len(tokens)))
+    features = np.concatenate(drafter.features)
+    expected = full_forward_features(features_model_path, tokens)
+    assert features.shape == expected.shape
+    # Every row belongs to its token: the closest reference row is the one at its position, and it's a close match.
+    distances = np.linalg.norm(features[:, None] - expected[None], axis=-1)
+    assert list(distances.argmin(axis=1)) == positions
+    assert (np.diag(distances) < 0.02 * np.linalg.norm(expected, axis=1)).all()
 
 
 def test_stop_token_ends_generation(drafter_pipe, reference):
@@ -293,14 +352,32 @@ def test_max_length_limits_generation(drafter_pipe, reference):
     assert list(result.tokens[0]) == reference_tokens[: MAX_NEW_TOKENS // 2]
 
 
-def test_kv_cache_limit_ends_generation(model_path):
-    kv_config = {"MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64}
+@pytest.mark.parametrize(
+    "npuw_config,kv_cache_size",
+    [
+        ({"MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64}, 64 + 64),
+        # NPUW rounds both lengths up to 64,
+        ({"MAX_PROMPT_LEN": 65, "MIN_RESPONSE_LEN": 64}, 128 + 64),
+        # and the prompt length also up to the chunk size when it prefills in chunks.
+        ({"MAX_PROMPT_LEN": 130, "MIN_RESPONSE_LEN": 64, "NPUW_LLM_PREFILL_CHUNK_SIZE": 128}, 256 + 64),
+        (
+            {
+                "MAX_PROMPT_LEN": 130,
+                "MIN_RESPONSE_LEN": 64,
+                "NPUW_LLM_PREFILL_CHUNK_SIZE": 128,
+                "NPUW_LLM_PREFILL_HINT": "STATIC",
+            },
+            192 + 64,
+        ),
+    ],
+    ids=["aligned", "unaligned", "chunked_prefill", "static_prefill"],
+)
+def test_kv_cache_limit_ends_generation(model_path, npuw_config, kv_cache_size):
     drafter = ScriptedDrafter()
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", **get_npu_llm_properties_for_test(), **kv_config, drafter=drafter)
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **get_npu_llm_properties_for_test(), **npuw_config, drafter=drafter)
     inputs = pipe.get_tokenizer().encode(PROMPT)
     # NPUW stores past tokens outside the generate window (MAX_DRAFT_TOKENS + 1 rows, aligned to 8).
-    kv_cache_size = kv_config["MAX_PROMPT_LEN"] + kv_config["MIN_RESPONSE_LEN"] - 8
-    expected_len = kv_cache_size - inputs.input_ids.get_shape()[1] + 1
+    expected_len = kv_cache_size - 8 - inputs.input_ids.get_shape()[1] + 1
 
     drafter.reset("empty", [])
     one_token_steps = pipe.generate(inputs, greedy_config(max_new_tokens=1000))

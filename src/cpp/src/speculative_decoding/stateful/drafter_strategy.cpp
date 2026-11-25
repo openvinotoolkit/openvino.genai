@@ -105,6 +105,19 @@ size_t align_to(size_t value, size_t alignment) {
     return (value + alignment - 1) / alignment * alignment;
 }
 
+/// KV size of an NPUW LLM: MAX_PROMPT_LEN and MIN_RESPONSE_LEN rounded up to 64, the prompt part also to the prefill
+/// chunk when NPUW prefills in chunks, as in NPUW's LLMCompiledModel.
+size_t npuw_kv_size(const ov::CompiledModel& compiled) {
+    size_t prompt_len = align_to(compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>(), 64);
+    const size_t response_len = align_to(compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>(), 64);
+    const auto chunk = static_cast<size_t>(compiled.get_property("NPUW_LLM_PREFILL_CHUNK_SIZE").as<uint64_t>());
+    if (compiled.get_property("NPUW_LLM_PREFILL_HINT").as<std::string>() == "DYNAMIC" && chunk > 0 &&
+        chunk < prompt_len) {
+        prompt_len = align_to(prompt_len, chunk);
+    }
+    return prompt_len + response_len;
+}
+
 ov::genai::StreamingStatus stream_tokens(const std::shared_ptr<ov::genai::StreamerBase>& streamer,
                                          const std::vector<int64_t>& tokens) {
     if (streamer && !tokens.empty()) {
@@ -279,7 +292,7 @@ StatefulDrafterLLMPipeline::StatefulDrafterLLMPipeline(const ModelDesc& main_mod
     properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = window;
     properties["NPUW_SLICE_OUT"] = "NO";
     const auto kv_pos = utils::get_kv_axes_pos(model);
-    auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model, properties, kv_pos);
+    ov::CompiledModel compiled = utils::compile_decoder_for_npu(model, properties, kv_pos).first;
     impl.target = compiled.create_infer_request();
     impl.tree_mask_type = compiled.input("eagle_tree_mask").get_element_type();
     OPENVINO_ASSERT(impl.tree_mask_type == ov::element::f32 || impl.tree_mask_type == ov::element::f16,
@@ -290,7 +303,7 @@ StatefulDrafterLLMPipeline::StatefulDrafterLLMPipeline(const ModelDesc& main_mod
     // NPUW stores past tokens in a KV tensor of the KV size minus the generate window (a multi-token window is aligned
     // to 8 rows) and copies every step's rows into it after the step, so a whole step must fit into kv_capacity.
     const size_t generate_rows = window == 1 ? 1 : align_to(window, 8);
-    const size_t kv_size = static_cast<size_t>(kv_desc.max_prompt_len) + kv_desc.min_response_len;
+    const size_t kv_size = npuw_kv_size(compiled);
     impl.kv_capacity = kv_size > generate_rows ? kv_size - generate_rows : 0;
 }
 

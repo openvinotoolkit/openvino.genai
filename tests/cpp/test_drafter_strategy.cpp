@@ -92,6 +92,22 @@ TEST(DrafterUtils, AcceptGreedyFollowsTheMatchingBranch) {
     EXPECT_EQ(rows, (std::vector<size_t>{0, 2, 4}));
 }
 
+TEST(DrafterUtils, AcceptGreedyKeepsTheLongestPathAcrossSiblingsWithTheSameToken) {
+    // root -> 5 (row 1); root -> 5 (row 2) -> 7 (row 3) -> 8 (row 4)
+    const DraftTree tree{{5, 5, 7, 8}, {-1, -1, 1, 2}};
+    const std::map<size_t, int64_t> greedy = {{0, 5}, {1, 7}, {2, 7}, {3, 8}, {4, 9}};
+    std::vector<size_t> rows;
+    const auto generated = drafter_utils::accept_greedy(
+        tree,
+        [&](size_t row) {
+            return greedy.at(row);
+        },
+        never_stop,
+        rows);
+    EXPECT_EQ(generated, (std::vector<int64_t>{5, 7, 8, 9}));
+    EXPECT_EQ(rows, (std::vector<size_t>{0, 2, 3, 4}));
+}
+
 TEST(DrafterUtils, AcceptGreedyRejectsAMismatch) {
     const DraftTree tree{{5, 7}, {-1, 0}};
     std::vector<size_t> rows;
