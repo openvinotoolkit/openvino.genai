@@ -25,6 +25,8 @@ struct GeneratedSequence {
     // where hidden states are required to efficiently validate and extend speculative tokens.
     // If not using eagle speculative decoding, this field may remain empty.
     ov::Tensor hidden_states;
+    // Token position of the first row of hidden_states.
+    size_t hidden_states_first_position = 0;
     std::shared_ptr<const TreeMetaData> tree_metadata;
     // Optional proposal distributions aligned 1:1 with token_ids; null for tokens without one.
     std::vector<DraftProposalPtr> draft_proposals;

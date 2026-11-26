@@ -284,7 +284,7 @@ def preprocess_fn(example):
 
 
 def prepare_default_data_image(num_samples=None):
-    DATASET_NAME = "lmms-lab/VQAv2"
+    DATASET_NAME = "lmms-lab-encoder/VQAv2"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
     default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)

@@ -39,6 +39,8 @@ protected:
 
     // for perf metrics
     size_t m_batch_size = 0; // stored number of processed tokens on last step
+    // the validation windows that the last step validated, by request id
+    std::unordered_map<uint64_t, SamplerOutput::ValidatedWindow> m_validated_windows;
 
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
@@ -92,7 +94,7 @@ protected:
     void _fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits);
 
     /**
-     * Performs KV cache eviction is enabled / requireed
+     * Performs KV cache eviction is enabled / required
      */
     void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const ContinuousBatchingScheduler::Output& scheduler_output);
 
@@ -170,6 +172,9 @@ public:
 
     bool has_non_finished_requests() override;
 
+    // Removes a request that add_request() queued and no step has pulled yet.
+    void discard_awaiting_request(uint64_t request_id);
+
     virtual void generate_candidates_for_prompt_lookup();
 
     virtual bool supports_embedding_prefix_verification() const {
@@ -205,6 +210,15 @@ public:
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
              const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
+
+    std::vector<EncodedGenerationResult> generate_with_omni_streamer(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        std::shared_ptr<OmniStreamerBase> omni_streamer,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
 
     /**
      * Updates LoRA adapters for current generation call

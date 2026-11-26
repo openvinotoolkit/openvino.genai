@@ -263,17 +263,14 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, gguf_reader, model_ids):
     ov_generation_config.apply_chat_template = True
     ov_generation_config.set_eos_token_id(151645)
 
-    # Original GGUF model output (run with transformers >= 4.54.0):
-    # <think>\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color.
-    # Prompt after applying chat template is identical between HF and GenAI, so the issue is not in chat template.
-    # TODO: Investigate output difference for GGUF models. Ticket: TBD
-    res_string_input_1 = "\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
+    # GGUF marks <think> as user-defined, so it remains visible in generated text.
+    expected_output = "<think>\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
 
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, gguf_reader=gguf_reader)
-    res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
+    result = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
-    assert res_string_input_1 == res_string_input_2
+    assert result == expected_output
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segmentation fault")
@@ -414,6 +411,21 @@ def test_gguf_default_reader_failure_hint(tmp_path, reader, with_tokenizer):
         assert 'ov::genai::gguf_reader("FRONTEND")' in message
         assert "better model quality" in message
         assert "preview" in message
+
+
+def test_gguf_frontend_rejects_mmproj_as_language_model(tmp_path):
+    gguf_path = tmp_path / "audio_mmproj.gguf"
+    writer = GGUFWriter(gguf_path, "clip")
+    writer.add_bool("clip.has_audio_encoder", True)
+    writer.add_string("clip.projector_type", "gemma4ua")
+    writer.add_tensor("mm.a.input_projection.weight", np.ones((12, 640), dtype=np.float32))
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+
+    with pytest.raises(RuntimeError, match="is an mmproj and cannot be loaded as a language model"):
+        ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER="FRONTEND")
 
 
 @pytest.fixture

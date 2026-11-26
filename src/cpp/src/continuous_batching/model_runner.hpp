@@ -409,6 +409,8 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
+    // Speculative decoding reads the hidden state of a sequence after a forward that did not run it.
+    bool m_preserve_unscheduled_hidden_states = false;
     bool m_mtp_draft_positions = false;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
@@ -497,6 +499,20 @@ public:
                 m_has_hidden_states_output = true;
             } else if (name == "intermediate_hidden_states") {
                 m_has_intermediate_hidden_states_output = true;
+            } else if (name == "next_hidden_states") {
+                m_has_next_hidden_states_output = true;
+            }
+        }
+
+        // The hidden state input may be wider than the token embeddings (Qwen4Exp MTP: hyper-connection streams).
+        // M-RoPE position_ids are [N, total_num_tokens] after the PA conversion.
+        for (const auto& input : compiled_model.inputs()) {
+            const auto& names = input.get_names();
+            const auto& shape = input.get_partial_shape();
+            if (names.count("hidden_states") && shape.rank().is_static() && shape[shape.size() - 1].is_static()) {
+                m_hidden_state_input_size = shape[shape.size() - 1].get_length();
+            } else if (names.count("position_ids") && shape.rank().is_static()) {
+                m_has_mrope_position_ids = shape.size() == 2;
             }
         }
     }
@@ -511,9 +527,12 @@ public:
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
+    void enable_unscheduled_hidden_state_preservation(bool on) { m_preserve_unscheduled_hidden_states = on; }
 
     // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
-    void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on; }
+    void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on && !m_has_mrope_position_ids; }
+
+    bool has_mrope_position_ids() const { return m_has_mrope_position_ids; }
 
     // DFlash draft: each scheduled request forwards [target hidden-state rows ; seed + mask block]. The target
     // rows come from set_initial_hidden_state() and get token type 0; the remaining scheduled rows are the block
@@ -573,6 +592,7 @@ public:
      * @return An ov::Tensor with next-token logit scores for each sequence processed during this `forward` call.
      */
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const ContinuousBatchingScheduler::Output& scheduler_output) {
+        _preserve_hidden_states_of_unscheduled_sequences(sequence_groups, scheduler_output);
         m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
@@ -646,9 +666,12 @@ public:
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
 
+        size_t hidden_state_size = m_has_next_hidden_states_output && m_hidden_state_input_size ? m_hidden_state_input_size
+                                                                                                : hidden_size;
         ov::Tensor hidden_state_input = m_dflash_draft
                                             ? _make_zeroed_hidden_state_input(total_num_tokens, m_dflash_hidden_state_size)
-                                            : _prepare_hidden_state_input(total_num_tokens, hidden_size);
+                                            : _prepare_hidden_state_input(total_num_tokens, hidden_state_size);
+
         float* hidden_state_data = nullptr;
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
@@ -833,12 +856,12 @@ public:
                     size_t stored_seq_len = stored_shape[0];
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
-                    OPENVINO_ASSERT(stored_hidden_size == hidden_size,
+                    OPENVINO_ASSERT(stored_hidden_size == hidden_state_size,
                                     "Hidden-state import: hidden size mismatch. request_id=",
                                     sequence_group->get_request_id(),
                                     ", grouped_id=", sequence->get_grouped_id(),
                                     ", stored_hidden_size=", stored_hidden_size,
-                                    ", expected_hidden_size=", hidden_size);
+                                    ", expected_hidden_size=", hidden_state_size);
                     OPENVINO_ASSERT(stored_seq_len == num_scheduled_tokens,
                                     "Hidden-state import: seq len mismatch. request_id=",
                                     sequence_group->get_request_id(),
@@ -853,19 +876,19 @@ public:
                     if (hidden_state_data) {
                         OPENVINO_ASSERT(num_scheduled_tokens == 1,
                                         "Unexpected num_scheduled_tokens in speculative hidden-state drafting stage.");
-                        std::memset(hidden_state_data + current_token_idx * hidden_size,
+                        std::memset(hidden_state_data + current_token_idx * hidden_state_size,
                                     0,
-                                    num_scheduled_tokens * hidden_size * sizeof(float));
+                                    num_scheduled_tokens * hidden_state_size * sizeof(float));
                         auto hidden_state = running_sequences[seq_idx]->get_hidden_state();
                         if (hidden_state && hidden_state.get_size() > 0) {
                             auto shape = hidden_state.get_shape();
-                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
+                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_state_size) {
                                 size_t seq_len = shape[0];
                                 size_t copy_length = std::min(seq_len, num_scheduled_tokens);
 
                                 size_t src_start_idx = seq_len >= copy_length ? seq_len - copy_length : 0;
-                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size};
-                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size);
+                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_state_size};
+                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_state_size);
                                 _copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
                             }
                         }
@@ -1132,9 +1155,11 @@ public:
             // Use "hidden_states" output only when the model also exports "intermediate_hidden_states"
             // (Qwen3-Omni pattern). Otherwise prefer "last_hidden_state" to preserve existing behavior
             // for speculative decoding and other models.
+            // Use "next_hidden_states" for model which has it, e.g., Qwen4Exp MTP draft use it between draft model iterations.
             m_hidden_states = (m_has_hidden_states_output && m_has_intermediate_hidden_states_output)
                 ? m_request.get_tensor("hidden_states")
-                : m_request.get_tensor("last_hidden_state");
+                : m_has_next_hidden_states_output ? m_request.get_tensor("next_hidden_states")
+                                                  : m_request.get_tensor("last_hidden_state");
 
             // Capture intermediate hidden states if available (Qwen3-Omni talker support)
             if (m_has_intermediate_hidden_states_output) {
@@ -1148,7 +1173,8 @@ public:
                 for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                     Sequence::Ptr sequence = running_sequences[seq_idx];
                     sequence->update_hidden_state(
-                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()),
+                        sequence_group->get_num_processed_tokens());
                     if (m_has_intermediate_hidden_states_output) {
                         auto ihs = _get_intermediate_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id());
                         if (ihs.get_size() == 0) {
@@ -1259,6 +1285,12 @@ private:
     bool m_has_hidden_states_output = false;
     // Whether model has intermediate_hidden_states output (e.g., Qwen3-Omni)
     bool m_has_intermediate_hidden_states_output = false;
+    // Whether model has next_hidden_states output (e.g., Qwen4Exp MTP draft)
+    bool m_has_next_hidden_states_output = false;
+    // Width of the hidden_states input, used instead of the token embeddings width with next_hidden_states
+    size_t m_hidden_state_input_size = 0;
+    // Whether position_ids input takes M-RoPE positions [N, total_num_tokens]
+    bool m_has_mrope_position_ids = false;
     // Whether model has the Eagle3 "qq_bias_begins" input (tree-decoding query-to-query bias).
     // Guards _set_query_to_query_tensors so the HS_EXPORT flag, which Qwen3-Omni also reuses to
     // collect thinker hidden states, does not trigger an Eagle3-only tensor bind on Omni models.
@@ -1423,6 +1455,36 @@ private:
 
     ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
         return _get_hidden_state_slice(m_hidden_states, request_id, seq_grouped_id);
+    }
+
+    /// @brief A sequence's hidden state is a view of the output of the forward that ran it, and the next inference
+    /// writes that output again. A sequence that this forward does not schedule keeps a copy of its rows instead.
+    void _preserve_hidden_states_of_unscheduled_sequences(
+        const std::vector<SequenceGroup::Ptr>& sequence_groups,
+        const ContinuousBatchingScheduler::Output& scheduler_output) const {
+        if (!m_preserve_unscheduled_hidden_states || m_sequence_hidden_state_mapping.empty()) {
+            return;
+        }
+        std::vector<bool> is_scheduled(sequence_groups.size(), false);
+        for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+            is_scheduled[seq_group_id] = true;
+        }
+        for (size_t seq_group_id = 0; seq_group_id < sequence_groups.size(); ++seq_group_id) {
+            if (is_scheduled[seq_group_id]) {
+                continue;
+            }
+            const SequenceGroup::Ptr& sequence_group = sequence_groups[seq_group_id];
+            for (const auto& sequence : sequence_group->get_running_sequences()) {
+                const SequenceKey key{sequence_group->get_request_id(), sequence->get_grouped_id()};
+                const ov::Tensor view = sequence->get_hidden_state();
+                if (!m_sequence_hidden_state_mapping.count(key) || !view) {
+                    continue;
+                }
+                ov::Tensor rows(view.get_element_type(), view.get_shape());
+                view.copy_to(rows);
+                sequence->update_hidden_state(rows, sequence->get_hidden_state_first_position());
+            }
+        }
     }
 
     ov::Tensor _get_intermediate_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
