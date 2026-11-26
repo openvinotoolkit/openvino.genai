@@ -286,6 +286,15 @@ def get_argparser():
     )
     parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
     parser.add_argument(
+        "--les_predictor",
+        required=False,
+        default=None,
+        help="Path to the LES (lookahead expert scheduling) predictor file (.safetensors) of a Mixture-of-Experts model "
+        "for OpenVINO GenAI text generation. The GPU uses it with MoE offloading "
+        '(e.g. --load_config with {"OFFLOAD_RATIO": 50, "WEIGHTS_PATH": "<model_dir>/openvino_model.bin"}) '
+        "to prefetch the experts of the next MoE layer; devices without LES support ignore it.",
+    )
+    parser.add_argument(
         "--taylorseer_config",
         required=False,
         default=None,

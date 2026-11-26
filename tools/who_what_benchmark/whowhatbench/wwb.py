@@ -389,6 +389,15 @@ def parse_args():
         "If the base/target model is a HuggingFace model ID, gguf-file should be a relative path.",
     )
     parser.add_argument(
+        "--les-predictor",
+        type=str,
+        default=None,
+        help="Path to the LES (lookahead expert scheduling) predictor file (.safetensors) of a Mixture-of-Experts "
+        "model. GenAI text models only (--genai, model types text, text-agent, text-chat). The GPU uses it with MoE "
+        "offloading (e.g. --ov-config with OFFLOAD_RATIO and WEIGHTS_PATH) to prefetch the experts of the next MoE "
+        "layer; it does not change the generated text, and devices without LES support ignore it.",
+    )
+    parser.add_argument(
         "--draft-model",
         default=None,
         help="Path to draft model folder including IR files for Speculative decoding generation.",
@@ -591,6 +600,11 @@ def check_args(args):
         )
     if args.hf and args.empty_adapters:
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
+    if args.les_predictor is not None:
+        if not args.genai or args.model_type not in ("text", "text-agent", "text-chat"):
+            raise ValueError("--les-predictor requires --genai and model type text, text-agent or text-chat")
+        if not os.path.isfile(args.les_predictor):
+            raise ValueError(f"LES predictor file does not exist: {args.les_predictor}")
     if args.torch_dtype is not None and not args.hf:
         raise ValueError("--torch-dtype requires --hf")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
@@ -1792,6 +1806,8 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
+    if args.les_predictor is not None:
+        kwargs["les_predictor"] = args.les_predictor
     if args.model_type in ("text-embedding", "image-embedding", "video-embedding"):
         kwargs["embeds_pooling"] = args.embeds_pooling_type
         kwargs["embeds_normalize"] = args.embeds_normalize

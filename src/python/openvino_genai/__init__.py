@@ -70,7 +70,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import Adapter, AdapterConfig
 
 # Lookahead expert scheduling for MoE models
-from .py_openvino_genai import ExpertPredictor
+from .py_openvino_genai import LESPredictor
 
 # Generation config
 from .py_openvino_genai import (

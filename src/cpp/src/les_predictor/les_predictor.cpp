@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "expert_predictor/expert_predictor.hpp"
+#include "les_predictor/les_predictor.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -48,7 +48,7 @@ ov::element::Type to_ov_type(int dtype) {
     case SAFETENSORS_I32:
         return ov::element::i32;
     default:
-        OPENVINO_THROW("Expert predictor: unsupported safetensors dtype ", dtype);
+        OPENVINO_THROW("LES predictor: unsupported safetensors dtype ", dtype);
     }
 }
 
@@ -58,7 +58,7 @@ std::map<std::string, std::shared_ptr<v0::Constant>> read_safetensors(const std:
     // safetensors_file_init only reads the buffer, it needs a non-const pointer
     auto* data = const_cast<char*>(file.data<const char>());
     const char* error = safetensors_file_init(data, file.get_byte_size(), &st);
-    OPENVINO_ASSERT(error == nullptr, "Expert predictor: cannot parse ", path, " as a safetensors file: ", error);
+    OPENVINO_ASSERT(error == nullptr, "LES predictor: cannot parse ", path, " as a safetensors file: ", error);
 
     std::map<std::string, std::shared_ptr<v0::Constant>> tensors;
     for (int i = 0; i < st.num_tensors; ++i) {
@@ -153,7 +153,7 @@ std::shared_ptr<ov::op::util::TopKBase> find_router_topk(const NodeOutput& route
 
 // top_k(sigmoid(W cur + W' prev) + b): the indices of the predicted experts, i32. The device plugin reads the weights
 // of this exact form: MatMul(input, weight), Add, Sigmoid, Add(bias), TopK.
-NodeOutput build_head(const ExpertPredictorImpl::Head& head, const NodeOutput& cur, const NodeOutput& prev, size_t top_k) {
+NodeOutput build_head(const LESPredictorImpl::Head& head, const NodeOutput& cur, const NodeOutput& prev, size_t top_k) {
     auto logits = std::make_shared<v1::Add>(std::make_shared<v0::MatMul>(cur, as_f32(head.weight), false, true),
                                             std::make_shared<v0::MatMul>(prev, as_f32(head.previous_weight), false, true));
     auto scores = std::make_shared<v0::Sigmoid>(logits);
@@ -176,8 +176,8 @@ NodeOutput build_head(const ExpertPredictorImpl::Head& head, const NodeOutput& c
 
 }  // namespace
 
-ExpertPredictorImpl::ExpertPredictorImpl(const std::filesystem::path& path) {
-    OPENVINO_ASSERT(path.extension() == ".safetensors", "Expert predictor: expected a .safetensors file, got ", path);
+LESPredictorImpl::LESPredictorImpl(const std::filesystem::path& path) {
+    OPENVINO_ASSERT(path.extension() == ".safetensors", "LES predictor: expected a .safetensors file, got ", path);
     static const std::regex tensor_name(R"(expert_predictors\.(\d+)\.(weight|previous_weight|selection_bias|input_mode_code))");
     std::map<size_t, std::map<std::string, std::shared_ptr<v0::Constant>>> parts;
     for (const auto& [name, constant] : read_safetensors(path)) {
@@ -186,68 +186,68 @@ ExpertPredictorImpl::ExpertPredictorImpl(const std::filesystem::path& path) {
             parts[std::stoul(match[1].str())][match[2].str()] = constant;
         }
     }
-    OPENVINO_ASSERT(!parts.empty(), "Expert predictor: no expert_predictors.<i>.* tensors in ", path);
+    OPENVINO_ASSERT(!parts.empty(), "LES predictor: no expert_predictors.<i>.* tensors in ", path);
 
     for (auto& [index, p] : parts) {
-        OPENVINO_ASSERT(index >= 1, "Expert predictor: expert_predictors.<i> uses 1-based layer numbers, got ", index);
-        OPENVINO_ASSERT(p.count("weight") && p.count("selection_bias"),
-                        "Expert predictor: expert_predictors.", index, " needs weight and selection_bias");
+        OPENVINO_ASSERT(index >= 1, "LES predictor: expert_predictors.<i> uses 1-based layer numbers, got ", index);
+        OPENVINO_ASSERT(p.count("weight") && p.count("previous_weight") && p.count("selection_bias"),
+                        "LES predictor: expert_predictors.", index,
+                        " needs weight, previous_weight and selection_bias");
         Head head;
         head.weight = p["weight"];
+        head.previous_weight = p["previous_weight"];
         head.selection_bias = p["selection_bias"];
-        if (p.count("previous_weight")) {
-            head.previous_weight = p["previous_weight"];
-        }
         head.input_mode = p.count("input_mode_code") ? p["input_mode_code"]->cast_vector<int64_t>().at(0)
                                                      : INPUT_MODE_CURRENT_PREVIOUS;
         OPENVINO_ASSERT(head.input_mode == INPUT_MODE_CURRENT_PREVIOUS,
-                        "Expert predictor: expert_predictors.", index, " has input_mode_code ", head.input_mode,
+                        "LES predictor: expert_predictors.", index, " has input_mode_code ", head.input_mode,
                         ", only ", INPUT_MODE_CURRENT_PREVIOUS, " (current + previous token) is supported");
 
         const auto& w_shape = head.weight->get_shape();
-        OPENVINO_ASSERT(w_shape.size() == 2, "Expert predictor: weight must be [num_experts, hidden_size]");
+        OPENVINO_ASSERT(w_shape.size() == 2, "LES predictor: weight must be [num_experts, hidden_size]");
         if (num_experts == 0) {
             num_experts = w_shape[0];
             hidden_size = w_shape[1];
         }
         OPENVINO_ASSERT(w_shape[0] == num_experts && w_shape[1] == hidden_size,
-                        "Expert predictor: all heads must have the same shape, expert_predictors.", index, " has ",
+                        "LES predictor: all heads must have the same shape, expert_predictors.", index, " has ",
                         w_shape);
-        OPENVINO_ASSERT(!head.previous_weight || head.previous_weight->get_shape() == w_shape,
-                        "Expert predictor: previous_weight must have the shape of weight");
+        OPENVINO_ASSERT(head.previous_weight->get_shape() == w_shape,
+                        "LES predictor: previous_weight must have the shape of weight");
         OPENVINO_ASSERT(head.selection_bias->get_shape() == ov::Shape{num_experts},
-                        "Expert predictor: selection_bias must be [num_experts]");
+                        "LES predictor: selection_bias must be [num_experts]");
         heads[index - 1] = std::move(head);
     }
 }
 
-ExpertPredictor::ExpertPredictor(const std::filesystem::path& path, size_t top_k, bool use_previous_token)
-    : m_pimpl(std::make_shared<ExpertPredictorImpl>(path)),
-      m_top_k(top_k),
-      m_use_previous_token(use_previous_token) {}
+LESPredictor::LESPredictor(const std::filesystem::path& path) : m_pimpl(std::make_shared<LESPredictorImpl>(path)) {}
 
 namespace les {
 
 bool extract_from_properties(utils::SharedOptional<const ov::AnyMap>& properties,
-                             std::optional<ExpertPredictor>& predictor) {
-    const std::string name = ov::genai::expert_predictor.name();
+                             std::optional<LESPredictor>& predictor) {
+    const std::string name = ov::genai::les_predictor.name();
     auto it = properties->find(name);
     if (it == properties->end()) {
         return false;
     }
-    if (it->second.is<ExpertPredictor>()) {
-        predictor = it->second.as<ExpertPredictor>();
+    // a path: std::filesystem::path from Python pathlib.Path, std::string from Python str or a JSON config
+    if (it->second.is<LESPredictor>()) {
+        predictor = it->second.as<LESPredictor>();
+    } else if (it->second.is<std::filesystem::path>()) {
+        predictor = LESPredictor(it->second.as<std::filesystem::path>());
     } else {
-        // a path, e.g. from a JSON config of a benchmarking tool
-        predictor = ExpertPredictor(it->second.as<std::string>());
+        OPENVINO_ASSERT(it->second.is<std::string>(), "LES predictor: the ", name,
+                        " property must be a LESPredictor or the path to the predictor file");
+        predictor = LESPredictor(it->second.as<std::string>());
     }
     properties.fork().erase(name);
     return true;
 }
 
-PredictorInfo analyze(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor) {
-    OPENVINO_ASSERT(predictor, "Expert predictor: the predictor is empty");
-    const ExpertPredictorImpl& impl = *predictor.get_impl();
+PredictorInfo analyze(const std::shared_ptr<ov::Model>& model, const LESPredictor& predictor) {
+    OPENVINO_ASSERT(predictor, "LES predictor: the predictor is empty");
+    const LESPredictorImpl& impl = *predictor.get_impl();
     const auto router_inputs = find_router_inputs(model);
     const auto hidden = static_cast<int64_t>(impl.hidden_size);
 
@@ -255,30 +255,27 @@ PredictorInfo analyze(const std::shared_ptr<ov::Model>& model, const ExpertPredi
     info.hidden_size = impl.hidden_size;
     for (const auto& [layer, head] : impl.heads) {
         OPENVINO_ASSERT(router_inputs.count(layer - 1) && router_inputs.count(layer),
-                        "Expert predictor: cannot find the post_attention_layernorm outputs of decoder layers ",
+                        "LES predictor: cannot find the post_attention_layernorm outputs of decoder layers ",
                         layer - 1, " and ", layer, " in the model");
         const auto& shape = router_inputs.at(layer).get_partial_shape();
-        OPENVINO_ASSERT(shape[2].compatible(hidden), "Expert predictor: the model hidden size ", shape[2],
+        OPENVINO_ASSERT(shape[2].compatible(hidden), "LES predictor: the model hidden size ", shape[2],
                         " differs from the predictor hidden size ", hidden);
         auto topk = find_router_topk(router_inputs.at(layer));
-        OPENVINO_ASSERT(topk, "Expert predictor: decoder layer ", layer, " has no MoE router (TopK) in the model");
+        OPENVINO_ASSERT(topk, "LES predictor: decoder layer ", layer, " has no MoE router (TopK) in the model");
         const size_t router_k = topk->get_k();
-        OPENVINO_ASSERT(router_k > 0, "Expert predictor: the router TopK of layer ", layer, " has no constant k");
-        OPENVINO_ASSERT(info.router_top_k == 0 || info.router_top_k == router_k,
-                        "Expert predictor: the routers select different numbers of experts");
-        info.router_top_k = router_k;
-        OPENVINO_ASSERT(head.previous_weight, "Expert predictor: expert_predictors.", layer + 1,
-                        " has no previous_weight, the previous token input is required");
+        OPENVINO_ASSERT(router_k > 0, "LES predictor: the router TopK of layer ", layer, " has no constant k");
+        OPENVINO_ASSERT(info.top_k == 0 || info.top_k == router_k,
+                        "LES predictor: the routers select different numbers of experts");
+        info.top_k = router_k;
         info.layers.push_back(layer);
     }
-    info.top_k = predictor.get_top_k() ? predictor.get_top_k() : info.router_top_k;
-    OPENVINO_ASSERT(info.top_k <= impl.num_experts, "Expert predictor: top_k ", info.top_k, " exceeds the ",
-                    impl.num_experts, " experts");
+    OPENVINO_ASSERT(info.top_k <= impl.num_experts, "LES predictor: the router selects ", info.top_k,
+                    " experts, the predictor has ", impl.num_experts);
     return info;
 }
 
-std::shared_ptr<ov::Model> build_predictor_model(const ExpertPredictor& predictor, const PredictorInfo& info) {
-    const ExpertPredictorImpl& impl = *predictor.get_impl();
+std::shared_ptr<ov::Model> build_predictor_model(const LESPredictor& predictor, const PredictorInfo& info) {
+    const LESPredictorImpl& impl = *predictor.get_impl();
     const auto hidden = static_cast<int64_t>(impl.hidden_size);
     auto make_input = [&](const std::string& name) {
         auto input = std::make_shared<v0::Parameter>(ov::element::f32, ov::PartialShape{-1, hidden});
@@ -305,7 +302,7 @@ std::shared_ptr<ov::Model> build_predictor_model(const ExpertPredictor& predicto
 bool add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties,
                            const std::string& device,
                            const std::shared_ptr<ov::Model>& model,
-                           const ExpertPredictor& predictor) {
+                           const LESPredictor& predictor) {
     if (properties->count(PLUGIN_PREDICTOR_PROPERTY)) {
         return true;  // set by the user
     }
@@ -316,13 +313,8 @@ bool add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties,
         return false;
     }
     if (std::find(supported.begin(), supported.end(), PLUGIN_PREDICTOR_PROPERTY) == supported.end()) {
-        GENAI_WARN("Expert predictor: device %s does not support %s, the predictor is not used", device.c_str(),
+        GENAI_WARN("LES predictor: device %s does not support %s, the predictor is not used", device.c_str(),
                    PLUGIN_PREDICTOR_PROPERTY);
-        return false;
-    }
-    if (!predictor.get_use_previous_token()) {
-        GENAI_WARN("Expert predictor: device %s needs the previous token input of the heads (use_previous_token), "
-                   "the predictor is not used", device.c_str());
         return false;
     }
     const PredictorInfo info = analyze(model, predictor);
@@ -334,7 +326,7 @@ bool add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties,
     auto cache_dir = forked.find(ov::cache_dir.name());
     if (cache_dir != forked.end()) {
         if (!cache_dir->second.as<std::string>().empty()) {
-            GENAI_WARN("Expert predictor: the model cache (%s) is disabled, it does not keep the predictor model",
+            GENAI_WARN("LES predictor: the model cache (%s) is disabled, it does not keep the predictor model",
                        ov::cache_dir.name());
         }
         forked.erase(cache_dir);

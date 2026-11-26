@@ -73,6 +73,7 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 > **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-n-ctx` to set context window size; if omitted, WWB uses 8192.<br>
+> **NOTE**: for Mixture-of-Experts models with MoE offloading on GPU, use `--les-predictor predictor.safetensors` (with `--genai`) to enable lookahead expert scheduling, e.g. `--ov-config '{"OFFLOAD_RATIO": 50, "WEIGHTS_PATH": "<model_dir>/openvino_model.bin"}'`. It speeds up decoding without changing the outputs.<br>
 
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh

@@ -11,7 +11,7 @@ from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
 
 from test_cli_image import get_similarity
-from conftest import convert_text_model, run_wwb
+from conftest import convert_text_model, run_wwb, write_les_predictor
 
 
 logging.basicConfig(level=logging.INFO)
@@ -200,7 +200,12 @@ def test_text_hf_model(model_id, tmp_path):
     assert len(data["prompts"].values) == 1
 
 
-def test_text_genai_model():
+@pytest.mark.parametrize("les_predictor", [False, True], ids=["default", "les_predictor"])
+def test_text_genai_model(les_predictor, tmp_path):
+    extra_args = []
+    if les_predictor:
+        # CPU ignores the LES predictor after reading it: checks that --les-predictor reaches the pipeline
+        extra_args = ["--les-predictor", write_les_predictor(tmp_path / "les_predictor.safetensors")]
     output = run_wwb(
         [
             "--base-model",
@@ -214,9 +219,12 @@ def test_text_genai_model():
             "--genai",
             "--short-prompt",
         ]
+        + extra_args
     )
     assert "Metrics for model" in output
     assert "## Reference text" not in output
+    if les_predictor:
+        assert f"LES predictor: {extra_args[1]}" in output
 
 
 def test_text_genai_cb_model(tmp_path):

@@ -12,7 +12,7 @@
 #include <random>
 #include <set>
 
-#include "expert_predictor/expert_predictor.hpp"
+#include "les_predictor/les_predictor.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/matmul.hpp"
@@ -46,7 +46,9 @@ std::vector<float> random_vector(size_t size, std::mt19937& rng, float offset = 
     return v;
 }
 
-void write_safetensors(const std::filesystem::path& path, const std::map<size_t, HeadData>& heads) {
+void write_safetensors(const std::filesystem::path& path,
+                       const std::map<size_t, HeadData>& heads,
+                       bool previous_weight = true) {
     std::string header = "{";
     std::string data;
     auto add = [&](const std::string& name, const std::string& dtype, const std::vector<size_t>& shape, const void* ptr,
@@ -63,7 +65,9 @@ void write_safetensors(const std::filesystem::path& path, const std::map<size_t,
     for (const auto& [layer, h] : heads) {
         const std::string prefix = "expert_predictors." + std::to_string(layer + 1) + ".";
         add(prefix + "weight", "F32", {EXPERTS, HIDDEN}, h.weight.data(), h.weight.size() * sizeof(float));
-        add(prefix + "previous_weight", "F32", {EXPERTS, HIDDEN}, h.previous_weight.data(), h.previous_weight.size() * sizeof(float));
+        if (previous_weight) {
+            add(prefix + "previous_weight", "F32", {EXPERTS, HIDDEN}, h.previous_weight.data(), h.previous_weight.size() * sizeof(float));
+        }
         add(prefix + "selection_bias", "F32", {EXPERTS}, h.bias.data(), h.bias.size() * sizeof(float));
         add(prefix + "input_mode_code", "I64", {}, &mode, sizeof(mode));
     }
@@ -140,7 +144,7 @@ std::set<int32_t> row_set(const ov::Tensor& t, size_t row, size_t k) {
     return {d, d + k};
 }
 
-class ExpertPredictorTest : public ::testing::Test {
+class LESPredictorTest : public ::testing::Test {
 protected:
     void SetUp() override {
         std::mt19937 rng(7);
@@ -152,7 +156,7 @@ protected:
             heads[layer] = {random_vector(EXPERTS * HIDDEN, rng), random_vector(EXPERTS * HIDDEN, rng),
                             random_vector(EXPERTS, rng, 200.0f)};
         }
-        path = std::filesystem::temp_directory_path() / ("expert_predictor_test_" + std::to_string(::getpid()) + ".safetensors");
+        path = std::filesystem::temp_directory_path() / ("les_predictor_test_" + std::to_string(::getpid()) + ".safetensors");
         write_safetensors(path, heads);
         model_rng.seed(11);
     }
@@ -168,8 +172,8 @@ protected:
 
 }  // namespace
 
-TEST_F(ExpertPredictorTest, ReadsPredictorFile) {
-    ov::genai::ExpertPredictor predictor(path);
+TEST_F(LESPredictorTest, ReadsPredictorFile) {
+    ov::genai::LESPredictor predictor(path);
     ASSERT_TRUE(predictor);
     const auto& impl = *predictor.get_impl();
     EXPECT_EQ(impl.hidden_size, HIDDEN);
@@ -178,23 +182,22 @@ TEST_F(ExpertPredictorTest, ReadsPredictorFile) {
     EXPECT_TRUE(impl.heads.count(1) && impl.heads.count(2));  // expert_predictors.2 / .3 -> MoE layers 1 / 2
 }
 
-TEST_F(ExpertPredictorTest, AnalyzeKeepsModel) {
+TEST_F(LESPredictorTest, AnalyzeKeepsModel) {
     auto model = make_model(false, gammas, model_rng);
     const size_t num_ops = model->get_ops().size();
-    const ov::genai::ExpertPredictor predictor(path);
+    const ov::genai::LESPredictor predictor(path);
     const auto info = ov::genai::les::analyze(model, predictor);
     EXPECT_EQ(info.layers, (std::vector<size_t>{1, 2}));
     EXPECT_EQ(info.top_k, ROUTER_K);
-    EXPECT_EQ(info.router_top_k, ROUTER_K);
     EXPECT_EQ(model->get_ops().size(), num_ops);
     EXPECT_EQ(model->get_results().size(), NUM_LAYERS);
 }
 
-TEST_F(ExpertPredictorTest, PredictorModelMatchesReference) {
+TEST_F(LESPredictorTest, PredictorModelMatchesReference) {
     auto model = make_model(true, gammas, model_rng);
-    const ov::genai::ExpertPredictor predictor(path, /*top_k=*/3);
+    const ov::genai::LESPredictor predictor(path);
     const auto info = ov::genai::les::analyze(model, predictor);
-    EXPECT_EQ(info.top_k, 3u);
+    ASSERT_EQ(info.top_k, ROUTER_K);  // the heads predict as many experts as the router selects
     auto predictor_model = ov::genai::les::build_predictor_model(predictor, info);
     ASSERT_EQ(predictor_model->get_parameters().size(), 4u);
     ASSERT_EQ(predictor_model->get_results().size(), 2u);
@@ -213,32 +216,63 @@ TEST_F(ExpertPredictorTest, PredictorModelMatchesReference) {
     request.infer();
     for (size_t layer : info.layers) {
         auto predicted = request.get_tensor(ov::genai::les::MODEL_OUTPUT_PREFIX + std::to_string(layer));
-        ASSERT_EQ(predicted.get_shape(), (ov::Shape{tokens, 3}));
+        ASSERT_EQ(predicted.get_shape(), (ov::Shape{tokens, ROUTER_K}));
         for (size_t t = 0; t < tokens; ++t) {
-            EXPECT_EQ(row_set(predicted, t, 3), reference_experts(heads[layer], cur[layer].data() + t * HIDDEN, prev[layer], 3))
+            EXPECT_EQ(row_set(predicted, t, ROUTER_K),
+                      reference_experts(heads[layer], cur[layer].data() + t * HIDDEN, prev[layer], ROUTER_K))
                 << "layer " << layer << " token " << t;
         }
     }
 }
 
-TEST_F(ExpertPredictorTest, ExtractsPropertyFromPath) {
-    ov::AnyMap properties{{"expert_predictor", path.string()}, {"CACHE_DIR", ""}};
+TEST_F(LESPredictorTest, ExtractsPropertyFromPath) {
+    ov::AnyMap properties{{"les_predictor", path.string()}, {"CACHE_DIR", ""}};
     ov::genai::utils::SharedOptional<const ov::AnyMap> props(&properties);
-    std::optional<ov::genai::ExpertPredictor> predictor;
+    std::optional<ov::genai::LESPredictor> predictor;
     ASSERT_TRUE(ov::genai::les::extract_from_properties(props, predictor));
     ASSERT_TRUE(predictor && *predictor);
-    EXPECT_EQ(predictor->get_top_k(), 0u);
-    EXPECT_TRUE(predictor->get_use_previous_token());
-    EXPECT_EQ(props->count("expert_predictor"), 0u);
+    EXPECT_EQ(props->count("les_predictor"), 0u);
     EXPECT_EQ(props->count("CACHE_DIR"), 1u);
 }
 
-TEST_F(ExpertPredictorTest, ExtractsPropertyFromObject) {
-    ov::AnyMap properties{ov::genai::expert_predictor(ov::genai::ExpertPredictor(path, 5, false))};
+TEST_F(LESPredictorTest, ExtractsPropertyFromObject) {
+    const ov::genai::LESPredictor original(path);
+    ov::AnyMap properties{ov::genai::les_predictor(original)};
     ov::genai::utils::SharedOptional<const ov::AnyMap> props(&properties);
-    std::optional<ov::genai::ExpertPredictor> predictor;
+    std::optional<ov::genai::LESPredictor> predictor;
     ASSERT_TRUE(ov::genai::les::extract_from_properties(props, predictor));
-    EXPECT_EQ(predictor->get_top_k(), 5u);
-    EXPECT_FALSE(predictor->get_use_previous_token());
+    ASSERT_TRUE(predictor && *predictor);
+    EXPECT_EQ(predictor->get_impl(), original.get_impl());
     EXPECT_TRUE(props->empty());
+}
+
+TEST_F(LESPredictorTest, PropertyFromPathReadsFile) {
+    ov::AnyMap properties{ov::genai::les_predictor(path)};
+    ASSERT_TRUE(properties.at("les_predictor").is<ov::genai::LESPredictor>());
+    ov::genai::utils::SharedOptional<const ov::AnyMap> props(&properties);
+    std::optional<ov::genai::LESPredictor> predictor;
+    ASSERT_TRUE(ov::genai::les::extract_from_properties(props, predictor));
+    ASSERT_TRUE(predictor && *predictor);
+    EXPECT_EQ(predictor->get_impl()->heads.size(), 2u);
+}
+
+TEST_F(LESPredictorTest, ExtractsPropertyFromFilesystemPath) {
+    ov::AnyMap properties{{"les_predictor", path}};  // as Python passes pathlib.Path
+    ov::genai::utils::SharedOptional<const ov::AnyMap> props(&properties);
+    std::optional<ov::genai::LESPredictor> predictor;
+    ASSERT_TRUE(ov::genai::les::extract_from_properties(props, predictor));
+    ASSERT_TRUE(predictor && *predictor);
+    EXPECT_TRUE(props->empty());
+}
+
+TEST_F(LESPredictorTest, RejectsOtherPropertyTypes) {
+    ov::AnyMap properties{{"les_predictor", 5}};
+    ov::genai::utils::SharedOptional<const ov::AnyMap> props(&properties);
+    std::optional<ov::genai::LESPredictor> predictor;
+    EXPECT_THROW(ov::genai::les::extract_from_properties(props, predictor), ov::Exception);
+}
+
+TEST_F(LESPredictorTest, RequiresPreviousWeight) {
+    write_safetensors(path, heads, /*previous_weight=*/false);
+    EXPECT_THROW(ov::genai::LESPredictor{path}, ov::Exception);
 }

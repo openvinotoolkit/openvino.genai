@@ -4,7 +4,7 @@
 
 #include "llm/pipeline_stateful.hpp"
 
-#include "expert_predictor/expert_predictor.hpp"
+#include "les_predictor/les_predictor.hpp"
 #include "lora/helper.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -71,11 +71,11 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
-    // lookahead expert scheduling: the expert predictor heads run in the device plugin, apart from the model
-    std::optional<ExpertPredictor> expert_predictor;
-    if (les::extract_from_properties(filtered_properties, expert_predictor)) {
-        OPENVINO_ASSERT(!m_is_npu, "The expert predictor is not supported on NPU");
-        les::add_plugin_properties(filtered_properties, device, model, *expert_predictor);
+    // lookahead expert scheduling: the LES predictor heads run in the device plugin, apart from the model
+    std::optional<LESPredictor> les_predictor;
+    if (les::extract_from_properties(filtered_properties, les_predictor)) {
+        OPENVINO_ASSERT(!m_is_npu, "The LES predictor is not supported on NPU");
+        les::add_plugin_properties(filtered_properties, device, model, *les_predictor);
     }
     ov::CompiledModel compiled_model;
     if (m_is_npu) {

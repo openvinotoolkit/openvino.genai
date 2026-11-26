@@ -296,6 +296,17 @@ Recommended models: `meta-llama/Llama-3.2-1B-Instruct`, `meta-llama/Llama-3.2-8B
 **Note:**
 Structured output enforcement ensures valid JSON formatting, but does not guarantee factual accuracy or meaningfulness. The model may generate plausible-looking JSON with incorrect or nonsensical data (e.g., `{"explanation": "John", "output": 200000}` or `{"final_answer": "AbrakaKadabra9999######4242"}`). For best results, use the latest or fine-tuned models to improve output quality and relevance.
 
+### 11. LES Greedy Causal LM (`les_greedy_causal_lm`)
+- **Description:**
+This sample demonstrates lookahead expert scheduling (LES) for Mixture-of-Experts models with MoE offloading on GPU. With `OFFLOAD_RATIO` > 0, that share (%) of the routed experts stays in host memory and is uploaded to the GPU on demand. A LES predictor (`LESPredictor`, a safetensors file with one small head per MoE layer) predicts, one layer ahead, which experts the router of the next MoE layer selects, so the GPU plugin can upload them in advance. The generated text does not change; only the decode speed does.
+- **Main Feature:** Faster decoding of MoE models with offloaded experts
+- **Run Command:**
+  ```bash
+  les_greedy_causal_lm <MODEL_DIR> <PREDICTOR_SAFETENSORS_FILE> "<PROMPT>" [OFFLOAD_RATIO]
+  ```
+  The predictor must be trained for the model. It predicts as many experts per token as the model router selects, from the current and the previous token.
+  The predictor can also be given by its path, without creating `LESPredictor`: `ov::genai::les_predictor(predictor_path)`.
+
 ## Troubleshooting
 
 ### Unicode characters encoding error on Windows

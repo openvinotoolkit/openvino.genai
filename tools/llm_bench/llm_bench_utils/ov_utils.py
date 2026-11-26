@@ -295,6 +295,14 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
     if adapter_config:
         config['adapters'] = adapter_config
 
+    les_predictor_path = kwargs.get("les_predictor")
+    if les_predictor_path:
+        if not Path(les_predictor_path).is_file():
+            raise RuntimeError(f"==Failure ==: LES predictor file {les_predictor_path} does not exist")
+        log.info(f"LES predictor: {les_predictor_path}")
+        # a pipeline property, passed with the properties of both LLMPipeline and ContinuousBatchingPipeline
+        ov_config = {**ov_config, "les_predictor": str(les_predictor_path)}
+
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()

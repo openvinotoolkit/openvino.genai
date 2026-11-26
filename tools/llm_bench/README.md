@@ -265,6 +265,18 @@ python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "curly-haired unico
 - `--lora_mode`: LoRA adapters loading mode: auto, fuse, static, static_rank, dynamic.
 - `--empty_lora`: Inference with empty lora config.
 
+### Mixture-of-Experts models with LES predictor
+Lookahead expert scheduling (LES) speeds up decoding of MoE models with offloaded experts on GPU: a predictor tells the
+GPU plugin which experts the next MoE layer is likely to select, so it can upload them in advance.
+```sh
+python benchmark.py -m models/moe_model/INT4 -d GPU -p "What is OpenVINO?" -n 2 \
+    --les_predictor predictor.safetensors \
+    --load_config '{"OFFLOAD_RATIO": 50, "WEIGHTS_PATH": "models/moe_model/INT4/openvino_model.bin"}'
+```
+- `--les_predictor`: Path to the LES predictor file (.safetensors) trained for the model. It is used only with MoE
+  offloading (`OFFLOAD_RATIO` > 0) on devices that support LES; other devices ignore it (GenAI logs a warning with
+  `OPENVINO_LOG_LEVEL=1` or higher).
+
 ### Text to Speech models
 ```sh
 # convert model to OpenVINO IR format

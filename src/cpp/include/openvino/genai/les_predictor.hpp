@@ -14,7 +14,7 @@
 namespace ov {
 namespace genai {
 
-class ExpertPredictorImpl;
+class LESPredictorImpl;
 
 /**
  * @brief Expert predictor for lookahead expert scheduling (LES) of Mixture-of-Experts models.
@@ -26,6 +26,8 @@ class ExpertPredictorImpl;
  *     prev = router input of layer L for the previous token of the same sequence
  *     experts(L) = top_k(sigmoid(W_L * cur + W'_L * prev) + b_L)
  *
+ * where top_k is the number of experts the router of the model selects per token.
+ *
  * It is read from a safetensors file with the tensors `expert_predictors.<i>.{weight, previous_weight,
  * selection_bias, input_mode_code}`, where `<i>` is the 1-based number of the decoder layer, so MoE layer L
  * (0-based) uses `expert_predictors.<L+1>`.
@@ -36,48 +38,54 @@ class ExpertPredictorImpl;
  * next MoE layer in decode steps and keeps the previous token input of every head: the predictions tell it which
  * offloaded experts it can start loading early, the model still computes with its own router.
  */
-class OPENVINO_GENAI_EXPORTS ExpertPredictor {
+class OPENVINO_GENAI_EXPORTS LESPredictor {
 public:
-    ExpertPredictor() = default;
+    LESPredictor() = default;
 
     /**
      * @param path Path to the predictor file in safetensors format.
-     * @param top_k Number of experts predicted per MoE layer and token. 0 means the number of experts the router
-     *     selects. A larger value covers more of the router choices at the cost of loading more experts.
-     * @param use_previous_token Use the previous token input of the heads (`previous_weight`). The GPU plugin needs
-     *     it: without it, the predictor is not used.
      */
-    explicit ExpertPredictor(const std::filesystem::path& path, size_t top_k = 0, bool use_previous_token = true);
+    explicit LESPredictor(const std::filesystem::path& path);
 
     explicit operator bool() const {
         return static_cast<bool>(m_pimpl);
     }
 
-    size_t get_top_k() const {
-        return m_top_k;
-    }
-
-    bool get_use_previous_token() const {
-        return m_use_previous_token;
-    }
-
-    const std::shared_ptr<ExpertPredictorImpl>& get_impl() const {
+    const std::shared_ptr<LESPredictorImpl>& get_impl() const {
         return m_pimpl;
     }
 
 private:
-    std::shared_ptr<ExpertPredictorImpl> m_pimpl;
-    size_t m_top_k = 0;
-    bool m_use_previous_token = true;
+    std::shared_ptr<LESPredictorImpl> m_pimpl;
 };
 
 /**
- * @brief Pipeline property that attaches an expert predictor to the language model, e.g.
- *     ov::genai::LLMPipeline pipe(models_path, "GPU", ov::genai::expert_predictor(ov::genai::ExpertPredictor(path)));
- * The property also accepts the path to the predictor file as a string. Supported by LLMPipeline with the stateful
- * (SDPA) and the continuous batching (PA) backends.
+ * @brief Pipeline property that attaches a LES predictor to the language model, given as a LESPredictor or as the
+ * path to the predictor file:
+ *     ov::genai::LLMPipeline pipe(models_path, "GPU", ov::genai::les_predictor(ov::genai::LESPredictor(path)));
+ *     ov::genai::LLMPipeline pipe(models_path, "GPU", ov::genai::les_predictor(path));
+ * In an ov::AnyMap (e.g. from Python or a JSON config), the value can also be a std::string or std::filesystem::path.
+ * Supported by LLMPipeline with the stateful (SDPA) and the continuous batching (PA) backends.
  */
-static constexpr ov::Property<ExpertPredictor> expert_predictor{"expert_predictor"};
+class LESPredictorProperty : public ov::Property<LESPredictor> {
+public:
+    inline constexpr static const char* name() {
+        return "les_predictor";
+    }
+
+    constexpr LESPredictorProperty() : ov::Property<LESPredictor>(name()) {}
+
+    inline std::pair<std::string, ov::Any> operator()(const LESPredictor& predictor) const {
+        return ov::Property<LESPredictor>::operator()(predictor);
+    }
+
+    // Reads the predictor file.
+    inline std::pair<std::string, ov::Any> operator()(const std::filesystem::path& path) const {
+        return operator()(LESPredictor(path));
+    }
+};
+
+static constexpr LESPredictorProperty les_predictor;
 
 }  // namespace genai
 }  // namespace ov
