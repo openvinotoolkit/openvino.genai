@@ -1969,7 +1969,7 @@ def test_cb_generate_allows_unsupported_add_request_lora_mode(
 def test_cb_generate_discards_its_requests_when_one_is_rejected(
     model_facebook_opt_125m: OVConvertedModelSchema, backend: str, rejection: str
 ):
-    """A request that add_request() rejects must not leave the requests generate() added before it queued."""
+    """A request that generate() rejects must not leave a request of the call queued for the next generate()."""
     models_path = model_facebook_opt_125m.models_path
     properties = {}
     if backend == "prompt_lookup":
