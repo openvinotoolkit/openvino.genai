@@ -2267,12 +2267,16 @@ TEST(DFlashCBCandidateSelection, SamplerDrawsFromTheScaledAndSoftCappedBackboneL
 TEST(DFlashCBCandidateSelection, BlockEndsWhereTheLogitProcessorsMaskTheWholePrunedDraftVocabulary) {
     // A pruned draft vocabulary of the stop tokens 1 and 2 alone, which min_new_tokens masks: no row has a token left
     // to draft, with any row source or none, so the block drafts nothing and the target generates on its own.
-    ov::Tensor logits(ov::element::f32, {2, 1, SELECTOR_VOCAB_SIZE});
-    std::fill_n(logits.data<float>(), logits.get_size(), -std::numeric_limits<float>::infinity());
-    for (size_t row = 0; row < 2; ++row) {
-        logits.data<float>()[row * SELECTOR_VOCAB_SIZE + 1] = 1.0f;
-        logits.data<float>()[row * SELECTOR_VOCAB_SIZE + 2] = 2.0f;
-    }
+    // Without a row source the logit processors mask the rows in place, so every case drafts from rows of its own.
+    const auto make_logits = [] {
+        ov::Tensor logits(ov::element::f32, {2, 1, SELECTOR_VOCAB_SIZE});
+        std::fill_n(logits.data<float>(), logits.get_size(), -std::numeric_limits<float>::infinity());
+        for (size_t row = 0; row < 2; ++row) {
+            logits.data<float>()[row * SELECTOR_VOCAB_SIZE + 1] = 1.0f;
+            logits.data<float>()[row * SELECTOR_VOCAB_SIZE + 2] = 2.0f;
+        }
+        return logits;
+    };
     auto greedy = block_config();
     greedy.stop_token_ids = {1, 2};
     greedy.min_new_tokens = 10;
@@ -2290,7 +2294,7 @@ TEST(DFlashCBCandidateSelection, BlockEndsWhereTheLogitProcessorsMaskTheWholePru
     for (const auto& config : {greedy, sampled}) {
         for (const auto& source : sources) {
             auto request = make_block_request(0, 7, 2, config);
-            draft_blocks(source, {request}, logits);
+            draft_blocks(source, {request}, make_logits());
             EXPECT_TRUE(drafted(request).empty());
         }
     }
