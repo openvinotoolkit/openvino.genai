@@ -65,7 +65,8 @@ private:
  *     ov::genai::LLMPipeline pipe(models_path, "GPU", ov::genai::les_predictor(ov::genai::LESPredictor(path)));
  *     ov::genai::LLMPipeline pipe(models_path, "GPU", ov::genai::les_predictor(path));
  * In an ov::AnyMap (e.g. from Python or a JSON config), the value can also be a std::string or std::filesystem::path.
- * Supported by LLMPipeline with the stateful (SDPA) and the continuous batching (PA) backends.
+ * Supported by LLMPipeline with the stateful (SDPA) and the continuous batching (PA) backends. The predictor does not
+ * change the results, so devices without LES support (e.g. CPU, NPU) ignore it and log a warning.
  */
 class LESPredictorProperty : public ov::Property<LESPredictor> {
 public:

@@ -7,6 +7,7 @@
 #include "les_predictor/les_predictor.hpp"
 #include "lora/helper.hpp"
 #include "lm_encoding.hpp"
+#include "logger.hpp"
 #include "openvino/genai/text_streamer.hpp"
 
 #include "utils.hpp"
@@ -74,8 +75,12 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     // lookahead expert scheduling: the LES predictor heads run in the device plugin, apart from the model
     std::optional<LESPredictor> les_predictor;
     if (les::extract_from_properties(filtered_properties, les_predictor)) {
-        OPENVINO_ASSERT(!m_is_npu, "The LES predictor is not supported on NPU");
-        les::add_plugin_properties(filtered_properties, device, model, *les_predictor);
+        if (m_is_npu) {
+            // a performance hint that does not change the results: ignored like on other devices without LES support
+            GENAI_WARN("LES predictor: device %s does not support LES, the predictor is not used", device.c_str());
+        } else {
+            les::add_plugin_properties(filtered_properties, device, model, *les_predictor);
+        }
     }
     ov::CompiledModel compiled_model;
     if (m_is_npu) {
