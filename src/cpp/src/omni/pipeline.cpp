@@ -8,6 +8,7 @@
 #include "omni/pipeline_impl.hpp"
 #include "omni/talker_speech_config_utils.hpp"
 #include "utils.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
@@ -26,8 +27,15 @@ std::pair<std::string, Any> speech_streamer(OmniSpeechStreamerVariant func) {
 OmniPipeline::OmniPipeline(const std::filesystem::path& models_path,
                            const std::string& device,
                            const ov::AnyMap& properties)
-    : OmniPipeline(std::make_shared<VLMPipeline>(models_path, device, properties),
-                   std::make_shared<Talker>(models_path, device, properties)) {}
+    : m_pimpl([&] {
+          auto vlm = std::make_shared<VLMPipeline>(models_path, device, properties);
+          // LFM3-Omni speaks in the language model stream and has no separate talker.
+          const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_path, "config.json");
+          if (vlm_config.model_type == VLMModelType::LFM3_OMNI) {
+              return std::make_unique<OmniPipelineImpl>(vlm);
+          }
+          return std::make_unique<OmniPipelineImpl>(vlm, std::make_shared<Talker>(models_path, device, properties));
+      }()) {}
 
 OmniPipeline::OmniPipeline(const std::shared_ptr<VLMPipelineBase>& vlm,
                            const std::shared_ptr<TalkerBase>& talker)

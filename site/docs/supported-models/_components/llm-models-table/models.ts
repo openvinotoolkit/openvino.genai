@@ -127,6 +127,15 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Cohere2ForCausalLM',
+    models: [
+      {
+        name: 'Tiny Aya',
+        links: ['https://huggingface.co/CohereLabs/tiny-aya-global'],
+      },
+    ],
+  },
+  {
     architecture: 'DbrxForCausalLM',
     models: [
       {
@@ -986,6 +995,19 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/xverse/XVERSE-13B-Chat',
           'https://huggingface.co/xverse/XVERSE-65B',
           'https://huggingface.co/xverse/XVERSE-65B-Chat',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'NemotronHForCausalLM',
+    models: [
+      {
+        name: 'NemotronH',
+        links: [
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16',
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+          'https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16',
         ],
       },
     ],

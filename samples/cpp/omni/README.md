@@ -2,15 +2,15 @@
 
 > **Preview:** The Qwen3-Omni API (`OmniPipeline` and related types) is a preview feature and is subject to change in future releases.
 
-Interactive multimodal chat with Qwen3-Omni models supporting text, image, audio, and video input, and text/speech output.
+Interactive multimodal chat with Qwen3-Omni and LFM3-Omni models supporting text, image, audio, and video input, and text/speech output.
 
 ## Description
 
-Demonstrates `ov::genai::OmniPipeline` for end-to-end multimodal conversations. Qwen3-Omni models accept text, images, audio, and video inputs, generating text and optionally synthesized speech responses.
+Demonstrates `ov::genai::OmniPipeline` for end-to-end multimodal conversations. Qwen3-Omni and LFM3-Omni models accept text, images, audio, and video inputs, generating text and optionally synthesized speech responses.
 
 **Key features:**
 - Multi-turn conversations with image and video context
-- Optional speech synthesis (talker mode)
+- Optional speech synthesis
 - Separate generation configs for text decoding and speech output
 - Interactive CLI interface
 
@@ -39,7 +39,7 @@ omni_chat <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> <VIDEO_FILE>
 ```
 
 **Parameters:**
-- `<MODEL_DIR>` — Path to exported Qwen3-Omni OpenVINO model directory
+- `<MODEL_DIR>` — Path to exported Qwen3-Omni or LFM3-Omni OpenVINO model directory
 - `<IMAGE_FILE_OR_DIR>` — Path to input image(s) for visual context
 - `<AUDIO_FILE>` — Path to input audio file (16kHz mono WAV)
 - `<VIDEO_FILE>` — Path to an input video file
@@ -55,13 +55,14 @@ This sample takes exactly one audio file. The [Python sample](../../python/omni/
 **Interactive usage:**
 1. Images, video and audio are loaded once at startup and sent with the first question
 2. Type questions and press Enter
-3. Model responds with streaming text; when speech output is enabled, each turn's audio is saved to `output_audio_<turn>.wav`
+3. Model responds with streaming text; when speech output is enabled, each turn's audio is written chunk by chunk to `output_audio_<turn>.wav` while the text is still being generated
 4. Continue the conversation across multiple turns
 5. Press Ctrl+D to exit
 
 ## Model Support
 
-Compatible with Qwen3-Omni models exported to OpenVINO format.
+Compatible with Qwen3-Omni and LFM3-Omni models exported to OpenVINO format. LFM3-Omni export notes are in
+[Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#lfm3-omni-notes).
 
 To convert a model, install [../../export-requirements.txt](../../export-requirements.txt):
 
@@ -75,26 +76,29 @@ Export using [Optimum Intel](https://github.com/huggingface/optimum-intel) CLI o
 
 ### Text Generation
 
-`GenerationConfig` controls text decoding (the "thinker" phase):
+`GenerationConfig` controls text decoding:
 
 ```cpp
 ov::genai::GenerationConfig text_config;
 text_config.max_new_tokens = 256;
+text_config.stream_text2speech = true;  // Start speech before the text is complete
 ```
 
 ### Speech Synthesis
 
-`OmniTalkerSpeechConfig` controls talker and speech output:
+`OmniTalkerSpeechConfig` controls speech output:
 
 ```cpp
 ov::genai::OmniTalkerSpeechConfig talker_speech_config(models_path);
 talker_speech_config.return_audio = true;  // Enable speech synthesis
-talker_speech_config.speaker = "Cherry";   // Select voice (optional)
+talker_speech_config.speaker = "Cherry";   // Select a Qwen3-Omni voice (optional)
 ```
 
-**Available voices** vary by checkpoint. MoE models typically expose: `"Ethan"`, `"Chelsie"`, `"Aiden"`, `"Cherry"`. Check `talker_config.speaker_id` in the model's `config.json` for the full list. Leaving `speaker` empty selects the default voice.
+**Available voices** vary by checkpoint. MoE models typically expose: `"Ethan"`, `"Chelsie"`, `"Aiden"`, `"Cherry"`. Check `talker_config.speaker_id` in the model's `config.json` for the full list. Leaving `speaker` empty selects the default voice. LFM3-Omni has no speaker selection: describe the voice in the system prompt.
 
-**Speech output:** 24kHz mono PCM samples returned in `OmniDecodedResults.speech_result.waveforms` and saved to `output_audio_<turn>.wav` for each turn.
+**Speech output:** 24kHz mono PCM samples. The sample passes a speech streamer to `generate()`, which receives each audio chunk as soon as it is produced and appends it to `output_audio_<turn>.wav`. With `text_config.stream_text2speech = true` the first Qwen3-Omni chunk arrives while the text is still being generated; LFM3-Omni decodes speech together with the text, so the flag changes nothing for it. The whole waveform is also returned in `OmniDecodedResults.speech_result.waveforms`.
+
+For text-only responses set `talker_speech_config.return_audio = false` and `text_config.stream_text2speech = false`.
 
 ## GPU Inference
 
@@ -105,15 +109,6 @@ ov::genai::OmniPipeline pipe(models_path, "GPU");
 ```
 
 **MoE models** (30B-A3B) may exceed available GPU memory. Use CPU for MoE inference.
-
-## Speaker API Features
-
-The main sample demonstrates speaker enumeration and voice blending at startup:
-
-1. **List speakers** — shows all named voices in the model
-2. **Voice blending** — when 2+ speakers are available, creates a 50/50 blend and uses it for generation
-
-**Custom blending:** Retrieve speaker embeddings via `pipe.get_talker()->get_speaker_embedding(name)`, mix with custom ratios (e.g., 0.75A + 0.25B), and pass via `OmniTalkerSpeechConfig::speaker`.
 
 ## See Also
 

@@ -59,7 +59,8 @@ Tags let you place media anywhere, including between spans of text:
 20. DeepSeek-OCR-2: `<image>`
 21. Mistral3: `[IMG]`
 22. LFM3-VL: `<|vision_start|><|image|><|vision_end|>`
-23. Molmo2: `<|image|>`
+23. LFM3-Omni: `<|vision_start|><|image|><|vision_end|>`
+24. Molmo2: `<|image|>`
 
 #### Video Tags
 
@@ -72,6 +73,7 @@ Tags let you place media anywhere, including between spans of text:
 7. Muse Glimmer: `<|video|>`
 8. MiniCPM-V-4.7: `<video>./</video>\n`
 9. LFM3-VL: `<|vision_start|><|video|><|vision_end|>`
+10. LFM3-Omni: `<|vision_start|><|video|><|vision_end|>`
 11. MiniCPM-V-4_5: `<image>./</image>\n`
 12. Molmo2: `<|video|>`
 
@@ -81,6 +83,7 @@ tags (`<ov_genai_image_i>` and `<ov_genai_video_i>`) to distinguish media in mix
 #### Audio Tags
 
 1. Qwen3-Omni: `<|audio_start|><|audio_pad|><|audio_end|>`
+2. LFM3-Omni: `<|vision_start|><|audio|><|vision_end|>`
 
 #### Qwen3-Omni Notes
 
@@ -99,6 +102,50 @@ accounting is correct and nothing raises, but generation quality may differ from
 implementation. If you need that combination, compare against `transformers` on your own data
 before relying on it.
 :::
+
+#### LFM3-Omni Notes {#lfm3-omni-notes}
+
+Untagged media is prepended in the order images, videos, audio, followed by the text.
+
+LFM3-Omni has no separate talker: its language model emits text and speech in one token stream. `OmniPipeline` decodes
+that stream with the SDPA backend. `VLMPipeline` and `OmniPipeline` select SDPA for LFM3-Omni unless
+`ATTENTION_BACKEND` is set. With `ATTENTION_BACKEND="PA"`
+it supports text output only: `generate()` throws if `return_audio` is true. `text_config.max_new_tokens` caps
+text tokens and speech frames together: each one is a generation step. `OmniTalkerSpeechConfig.output_mode` sets the
+order of text and speech:
+`SpeechOutputMode.INTERLEAVED` (default) alternates short blocks of text and speech, `SpeechOutputMode.SPEECH_ONLY`
+answers with speech only. The voice and the language are set in the system prompt, as the model card describes, for
+example `Perform TTS in American English using a female voice.` The `cp_temperature`, `cp_top_k` and
+`cp_repetition_penalty` fields control speech sampling; `speaker` and the `talker_*` fields are rejected.
+`VLMPipeline` returns the same speech: pass `talker_speech_config` to `generate()` and read
+`VLMDecodedResults.speech_result`. A speech streamer is optional for both pipelines.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = openvino_genai.OmniPipeline(models_path, "CPU")
+        history = openvino_genai.ChatHistory()
+        history.append({"role": "system", "content": "Perform TTS in American English using a female voice."})
+        history.append({"role": "user", "content": "OpenVINO GenAI runs LFM3-Omni."})
+        speech_config = openvino_genai.OmniTalkerSpeechConfig()
+        speech_config.output_mode = openvino_genai.SpeechOutputMode.SPEECH_ONLY
+        result = pipe.generate(history, text_config=openvino_genai.GenerationConfig(), talker_speech_config=speech_config)
+        waveform = result.speech_result.waveforms[0]  # [1, 1, num_samples], 24 kHz
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        ov::genai::OmniPipeline pipe(models_path, "CPU");
+        ov::genai::ChatHistory history;
+        history.push_back({{"role", "system"}, {"content", "Perform TTS in American English using a female voice."}});
+        history.push_back({{"role", "user"}, {"content", "OpenVINO GenAI runs LFM3-Omni."}});
+        ov::genai::OmniTalkerSpeechConfig speech_config;
+        speech_config.output_mode = ov::genai::SpeechOutputMode::SPEECH_ONLY;
+        auto result = pipe.generate(history, {}, {}, {}, {}, ov::genai::GenerationConfig{}, speech_config);
+        ov::Tensor waveform = result.speech_result.waveforms[0];  // [1, 1, num_samples], 24 kHz
+        ```
+    </TabItemCpp>
+</LanguageTabs>
 
 ### Use Different Generation Parameters
 
@@ -189,7 +236,7 @@ For models with audio output, such as Qwen3-Omni, `OmniPipeline` returns speech 
 Two `OmniTalkerSpeechConfig` fields control the chunks:
 
 - `audio_chunk_frames` - the number of codec frames in each chunk. The default is 4. For Qwen3-Omni, one frame is 80 ms of audio, so the first chunk is about 297 ms and later chunks are 320 ms. The first chunk is shorter because the vocoder trims its warmup once per utterance. Smaller values lower the time to first audio, but cost more vocoder time per second of audio and can fall behind real time.
-- `audio_chunk_left_context_frames` - the number of earlier frames the vocoder decodes together with each chunk, so the chunk starts with the same history as a non-streamed decode. The default is 25. Larger values give smoother seams between chunks, but cost more vocoder time. 0 decodes every chunk on its own: each chunk then loses the warmup samples, so the streamed audio is shorter than the non-streamed audio.
+- `audio_chunk_left_context_frames` - the number of earlier frames the vocoder decodes together with each chunk, so the chunk starts with the same history as a non-streamed decode. The default is 25. Larger values give smoother seams between chunks, but cost more vocoder time. 0 decodes every chunk on its own: each chunk then loses the warmup samples, so the streamed audio is shorter than the non-streamed audio. For LFM3-Omni, the streamed chunks joined together always have the same length as the waveform decoded without a speech streamer. They also have the same samples when the value covers the codec decoder's receptive field (20 frames for LFM3-Omni-2B). Smaller values change the first samples of each chunk.
 
 Without a speech streamer, both fields have no effect and the whole audio is returned in `speech_result.waveforms`.
 
@@ -257,6 +304,81 @@ Without a speech streamer, both fields have no effect and the whole audio is ret
         ```
     </TabItemJS>
 </LanguageTabs>
+
+### Starting Speech Before Text Generation Finishes
+
+By default, `OmniPipeline` runs the talker after the thinker has produced the whole response. Set `GenerationConfig.stream_text2speech` on the text config to start the talker as soon as the first thinker token is available: the talker then runs on its own thread and consumes the thinker's tokens and hidden states one decode step at a time, so the first audio chunk arrives while text is still being generated. The generated text is unchanged, and with the same `OmniTalkerSpeechConfig.rng_seed` the waveform is the same as without the flag, as long as the thinker does not generate an `<|im_start|>` token.
+
+The flag requires `return_audio` and works with the continuous batching backend that `OmniPipeline` uses by default. It is not compatible with speculative decoding, prompt lookup, beam search, or `num_return_sequences > 1`. With `stop_strings` the talker gets a token only once no stop string can remove it, so speech lags the text by the token length of the longest stop string.
+
+When streaming, the speech streamer is called from the talker's thread and can run concurrently with the text streamer.
+
+The flag has no effect on LFM3-Omni: it has no talker and decodes speech together with the text.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        vlm = ov_genai.VLMPipeline(model_path, "GPU")
+        talker = ov_genai.Talker(model_path, "CPU")
+        pipe = ov_genai.OmniPipeline(vlm, talker)
+
+        text_config = ov_genai.GenerationConfig()
+        text_config.max_new_tokens = 100
+        text_config.stream_text2speech = True
+
+        speech_config = ov_genai.OmniTalkerSpeechConfig(model_path)
+
+        def speech_streamer(chunk):
+            # Called from the talker's thread while the thinker is still generating
+            return ov_genai.StreamingStatus.RUNNING
+
+        result = pipe.generate(prompt, images=images, text_config=text_config,
+                               talker_speech_config=speech_config, speech_streamer=speech_streamer)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            auto vlm = std::make_shared<ov::genai::VLMPipeline>(model_path, "GPU");
+            auto talker = std::make_shared<ov::genai::Talker>(model_path, "CPU");
+            ov::genai::OmniPipeline pipe(vlm, talker);
+
+            ov::genai::GenerationConfig text_config;
+            text_config.max_new_tokens = 100;
+            text_config.stream_text2speech = true;
+
+            ov::genai::OmniTalkerSpeechConfig speech_config(model_path);
+
+            auto speech_streamer = [](const ov::Tensor& chunk) {
+                // Called from the talker's thread while the thinker is still generating
+                return ov::genai::StreamingStatus::RUNNING;
+            };
+
+            auto result = pipe.generate(prompt, images, text_config, speech_config, std::monostate{}, speech_streamer);
+        }
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        import { OmniPipeline, StreamingStatus } from 'openvino-genai-node';
+
+        const pipe = await OmniPipeline(modelPath, "CPU");
+
+        const result = await pipe.generate(prompt, {
+            images: images,
+            textConfig: { max_new_tokens: 100, stream_text2speech: true },
+            speechStreamer: (chunk) => {
+                // Called from the talker's thread while the thinker is still generating
+                return StreamingStatus.RUNNING;
+            }
+        });
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+To drive the two stages yourself, implement the bridge between them. An `OmniStreamerBase` passed as `omni_streamer` to `VLMPipeline::generate()` on one thread receives the tokens and hidden states of every decode step, and an `OmniTextSourceBase` passed to `Talker::generate()` on another thread hands them to the talker. A custom VLM or talker takes part in streaming by accepting the same two interfaces.
 
 ### Working with LoRA Adapters
 

@@ -439,6 +439,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::LESPredictor>(py_obj);
     } else if (py::isinstance<ov::genai::OmniTalkerSpeechConfig>(py_obj)) {
         return py::cast<ov::genai::OmniTalkerSpeechConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::SpeechOutputMode>(py_obj)) {
+        return py::cast<ov::genai::SpeechOutputMode>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagItem>(py_obj)) {
         return py::cast<ov::genai::StructuralTagItem>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {
@@ -762,6 +764,12 @@ py::object any_to_py_object(const ov::Any& any) {
     }
     if (any.is<std::vector<float>>()) {
         return py::cast(any.as<std::vector<float>>());
+    }
+    if (any.is<ov::Tensor>()) {
+        return py::cast(any.as<ov::Tensor>());
+    }
+    if (any.is<std::vector<ov::Tensor>>()) {
+        return py::cast(any.as<std::vector<ov::Tensor>>());
     }
     if (any.is<std::vector<ov::Any>>()) {
         py::list items;
