@@ -26,7 +26,6 @@ env:
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   BASE_PRODUCT_TYPE: public_macos_arm64
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: ~/.cache/hf
   OV_CACHE: ~/.cache/ov_cache/mac/
   CLEANUP_CACHE: 1
   OPENVINO_LOG_LEVEL: 1
@@ -77,7 +76,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -487,9 +486,11 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HOME: ${{ github.workspace }}/hf_cache
 
     steps:
+      - name: Setup Variables
+        run: echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -551,6 +552,9 @@ jobs:
       OPENVINO_LOG_LEVEL: 1
 
     steps:
+      - name: Setup Variables
+        run: echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -636,6 +640,9 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Setup Variables
+        run: echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -714,6 +721,9 @@ jobs:
       NODE_VERSION: ${{ matrix.nodejs-version }}
 
     steps:
+      - name: Setup Variables
+        run: echo "HF_HOME=$RUNNER_TEMP/hf-home" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
