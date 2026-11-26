@@ -17,10 +17,10 @@ namespace ov::genai {
 /**
  * @brief Composes several key-addressed stores into one, fastest first (for example DRAM, then SSD).
  *
- * The tiers see the same writes, so each of them evicts by its own policy and the smaller, faster ones simply hold
- * fewer of the blocks. A read takes a block from the first tier that has it and copies it into the faster tiers that
- * lost it, so the next restore of the prefix is served from the fast tier. A probe reports a block when any tier has it.
- * All tiers must use the same block size.
+ * Inclusive policy: every tier gets every write, so each evicts by its own policy and the smaller, faster ones simply
+ * hold fewer of the blocks, while the last tier keeps the most. A probe asks the fastest tier first and only the blocks
+ * it misses are asked of the next tier; a read works the same way. A block a faster tier lost is not copied back into
+ * it. All tiers must use the same block size.
  */
 class TieredKVCacheStore final : public IKVCacheStore {
 public:
@@ -35,6 +35,13 @@ public:
     std::vector<bool> has_blocks(const std::vector<PrefixKey>& chain) const override {
         std::vector<bool> present(chain.size(), false);
         for (const auto& tier : m_tiers) {
+            // A chain is probed from block 0, so the deeper tier gets the whole chain, but a block an earlier tier
+            // has is already decided.
+            if (std::all_of(present.begin(), present.end(), [](bool found) {
+                    return found;
+                })) {
+                break;
+            }
             const std::vector<bool> in_tier = tier->has_blocks(chain);
             for (size_t i = 0; i < chain.size(); ++i) {
                 present[i] = present[i] || in_tier[i];
@@ -67,7 +74,6 @@ public:
                     data[missing_positions[i]] = std::move(tier_data[i]);
                 }
             }
-            promote(tier_index, keys, found, data, missing_positions, in_tier);
         }
         return found;
     }
@@ -145,32 +151,6 @@ public:
     }
 
 private:
-    /// Copies the blocks tier @p source_tier just served into the faster tiers.
-    void promote(size_t source_tier,
-                 const std::vector<PrefixKey>& keys,
-                 const std::vector<bool>& found,
-                 const std::vector<std::vector<uint8_t>>& data,
-                 const std::vector<size_t>& positions,
-                 const std::vector<bool>& served) const {
-        if (source_tier == 0) {
-            return;
-        }
-        std::vector<PrefixKey> promoted_keys;
-        std::vector<const std::vector<uint8_t>*> promoted_data;
-        for (size_t i = 0; i < positions.size(); ++i) {
-            if (served[i] && found[positions[i]]) {
-                promoted_keys.push_back(keys[positions[i]]);
-                promoted_data.push_back(&data[positions[i]]);
-            }
-        }
-        if (promoted_keys.empty()) {
-            return;
-        }
-        for (size_t faster = 0; faster < source_tier; ++faster) {
-            m_tiers[faster]->write_blocks(promoted_keys, promoted_data);
-        }
-    }
-
     std::vector<std::unique_ptr<IKVCacheStore>> m_tiers;
 };
 

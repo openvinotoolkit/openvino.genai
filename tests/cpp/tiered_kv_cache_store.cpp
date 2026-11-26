@@ -124,7 +124,7 @@ TEST(TestTieredKVCacheStore, ReadsFromTheFastTierFirst) {
     EXPECT_EQ(tiers.slow->num_reads, 0u);
 }
 
-TEST(TestTieredKVCacheStore, ServesABlockTheFastTierLostFromTheSlowTierAndPromotesIt) {
+TEST(TestTieredKVCacheStore, ServesABlockTheFastTierLostFromTheSlowTierWithoutCopyingItBack) {
     auto tiers = make_two_tiers(/*fast=*/1, /*slow=*/4);
     const auto a = payload(1);
     const auto b = payload(2);
@@ -135,8 +135,9 @@ TEST(TestTieredKVCacheStore, ServesABlockTheFastTierLostFromTheSlowTierAndPromot
     EXPECT_EQ(tiers.store->read_blocks({key(1), key(2)}, data), (std::vector<bool>{true, true}));
     EXPECT_EQ(data[0], a);
     EXPECT_EQ(data[1], b);
-    EXPECT_EQ(tiers.slow->num_reads, 1u);
-    EXPECT_TRUE(tiers.fast->has_block(1));  // promoted by the read
+    EXPECT_EQ(tiers.fast->num_reads, 1u);
+    EXPECT_EQ(tiers.slow->num_reads, 1u);  // only the block the fast tier missed
+    EXPECT_FALSE(tiers.fast->has_block(1));
 }
 
 TEST(TestTieredKVCacheStore, ReportsABlockWhenAnyTierHasIt) {
@@ -193,12 +194,13 @@ TEST(TestTieredKVCacheStore, RejectsTiersOfDifferentBlockSizes) {
     EXPECT_THROW(TieredKVCacheStore(std::move(list)), ov::Exception);
 }
 
-TEST(TestTieredKVCacheStore, ThreeTiersPromoteFromTheDeepestToAllFasterOnes) {
+TEST(TestTieredKVCacheStore, ThreeTiersAskTheDeeperTierOnlyForWhatTheFasterOnesMiss) {
     auto first = std::make_unique<FifoMemoryStore>(1);
-    auto second = std::make_unique<FifoMemoryStore>(1);
+    auto second = std::make_unique<FifoMemoryStore>(2);
     auto third = std::make_unique<FifoMemoryStore>(8);
     FifoMemoryStore* first_ptr = first.get();
     FifoMemoryStore* second_ptr = second.get();
+    FifoMemoryStore* third_ptr = third.get();
     std::vector<std::unique_ptr<IKVCacheStore>> list;
     list.push_back(std::move(first));
     list.push_back(std::move(second));
@@ -207,13 +209,17 @@ TEST(TestTieredKVCacheStore, ThreeTiersPromoteFromTheDeepestToAllFasterOnes) {
 
     const auto a = payload(1);
     const auto b = payload(2);
-    store.write_blocks({key(1), key(2)}, {&a, &b});
-    ASSERT_FALSE(first_ptr->has_block(1));
+    const auto c = payload(3);
+    store.write_blocks({key(1), key(2), key(3)}, {&a, &b, &c});
+    ASSERT_FALSE(first_ptr->has_block(2));
     ASSERT_FALSE(second_ptr->has_block(1));
 
     std::vector<std::vector<uint8_t>> data;
-    EXPECT_EQ(store.read_blocks({key(1)}, data), std::vector<bool>({true}));
+    EXPECT_EQ(store.read_blocks({key(1), key(2), key(3)}, data), (std::vector<bool>{true, true, true}));
     EXPECT_EQ(data[0], a);
-    EXPECT_TRUE(first_ptr->has_block(1));
-    EXPECT_TRUE(second_ptr->has_block(1));
+    EXPECT_EQ(data[1], b);
+    EXPECT_EQ(data[2], c);
+    EXPECT_EQ(first_ptr->num_reads, 1u);   // block 3
+    EXPECT_EQ(second_ptr->num_reads, 1u);  // block 2
+    EXPECT_EQ(third_ptr->num_reads, 1u);   // block 1
 }
