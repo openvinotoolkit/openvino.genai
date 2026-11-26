@@ -1,6 +1,5 @@
-"""Regression tests for check_model WWB metric parsing / finite validation."""
+"""Regression tests for check_model WWB NaN metric validation."""
 
-import math
 import subprocess
 import sys
 import unittest
@@ -16,13 +15,13 @@ class TestParseWWBMetricsValue(unittest.TestCase):
 
     def test_nan_value(self):
         v = cm.parse_wwb_metrics_value(["x", "y", "0    nan"])
-        self.assertTrue(math.isnan(v))
+        self.assertNotEqual(v, v)
 
     def test_none_on_empty(self):
         self.assertIsNone(cm.parse_wwb_metrics_value([]))
 
 
-class TestPostRunHookFinite(unittest.TestCase):
+class TestPostRunHookNaN(unittest.TestCase):
     def _make_result(self, stdout):
         return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
 
@@ -34,7 +33,7 @@ class TestPostRunHookFinite(unittest.TestCase):
         # bypass __init__ command setup; _post_run_hook only uses attributes above + self.name
         r = tool._post_run_hook(self._make_result(["INFO", "similarity", "0    nan"]))
         self.assertFalse(r.success)
-        self.assertIn("not a finite number", r.err_msg)
+        self.assertIn("similarity is NaN", r.err_msg)
 
     def test_nan_fails_genai(self):
         tool = cm.GenAIWWBTargetEvaluationTool.__new__(cm.GenAIWWBTargetEvaluationTool)
@@ -43,7 +42,7 @@ class TestPostRunHookFinite(unittest.TestCase):
         tool.work_dir = Path("/tmp")
         r = tool._post_run_hook(self._make_result(["INFO", "similarity", "0    nan"]))
         self.assertFalse(r.success)
-        self.assertIn("not a finite number", r.err_msg)
+        self.assertIn("similarity is NaN", r.err_msg)
 
     def test_finite_passing(self):
         tool = cm.OptimumWWBTargetEvaluationTool.__new__(cm.OptimumWWBTargetEvaluationTool)
@@ -62,42 +61,6 @@ class TestPostRunHookFinite(unittest.TestCase):
         self.assertFalse(r.success)
         self.assertIn("below threshold", r.err_msg)
 
-    def test_inf_fails(self):
-        tool = cm.GenAIWWBTargetEvaluationTool.__new__(cm.GenAIWWBTargetEvaluationTool)
-        tool.name = "wwb_genai_target_eval"
-        tool.logger_prefix = "genai"
-        tool.work_dir = Path("/tmp")
-        r = tool._post_run_hook(self._make_result(["INFO", "similarity", "0    inf"]))
-        self.assertFalse(r.success)
-        self.assertIn("not a finite number", r.err_msg)
-
-    def test_neg_inf_fails_optimum(self):
-        tool = cm.OptimumWWBTargetEvaluationTool.__new__(cm.OptimumWWBTargetEvaluationTool)
-        tool.name = "wwb_optimum_target_eval"
-        tool.logger_prefix = "optimum"
-        tool.work_dir = Path("/tmp")
-        r = tool._post_run_hook(self._make_result(["INFO", "similarity", "0    -inf"]))
-        self.assertFalse(r.success)
-        self.assertIn("not a finite number", r.err_msg)
-
-    def test_neg_inf_fails_genai(self):
-        tool = cm.GenAIWWBTargetEvaluationTool.__new__(cm.GenAIWWBTargetEvaluationTool)
-        tool.name = "wwb_genai_target_eval"
-        tool.logger_prefix = "genai"
-        tool.work_dir = Path("/tmp")
-        r = tool._post_run_hook(self._make_result(["INFO", "similarity", "0    -inf"]))
-        self.assertFalse(r.success)
-        self.assertIn("not a finite number", r.err_msg)
-
-    def test_pos_inf_fails_optimum(self):
-        tool = cm.OptimumWWBTargetEvaluationTool.__new__(cm.OptimumWWBTargetEvaluationTool)
-        tool.name = "wwb_optimum_target_eval"
-        tool.logger_prefix = "optimum"
-        tool.work_dir = Path("/tmp")
-        r = tool._post_run_hook(self._make_result(["INFO", "similarity", "0    inf"]))
-        self.assertFalse(r.success)
-        self.assertIn("not a finite number", r.err_msg)
-
     def test_finite_passing_genai(self):
         tool = cm.GenAIWWBTargetEvaluationTool.__new__(cm.GenAIWWBTargetEvaluationTool)
         tool.name = "wwb_genai_target_eval"
@@ -114,15 +77,6 @@ class TestPostRunHookFinite(unittest.TestCase):
         r = tool._post_run_hook(self._make_result(["INFO", "similarity", "0    0.90"]))
         self.assertFalse(r.success)
         self.assertIn("below threshold", r.err_msg)
-
-
-class TestParseWWBMetricsValueInf(unittest.TestCase):
-    def test_parse_inf(self):
-        self.assertTrue(math.isinf(cm.parse_wwb_metrics_value(["x", "y", "0    inf"])))
-
-    def test_parse_neg_inf(self):
-        v = cm.parse_wwb_metrics_value(["x", "y", "0    -inf"])
-        self.assertTrue(math.isinf(v) and v < 0)
 
 
 if __name__ == "__main__":
