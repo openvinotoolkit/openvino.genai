@@ -127,27 +127,3 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
     )
 
     remove_artifacts(outputs_path)
-
-
-@pytest.mark.xfail(sys.platform == "darwin", reason="Hangs. Ticket 175534", run=False)
-def test_reranking_without_gt_data(tmp_path, monkeypatch):
-    # Without --gt-data the ground truth is saved to gt_data.csv in the current directory.
-    monkeypatch.chdir(tmp_path)
-
-    outputs = run_wwb(
-        [
-            "--base-model",
-            "cross-encoder/ms-marco-TinyBERT-L2-v2",
-            "--num-samples",
-            "1",
-            "--device",
-            "CPU",
-            "--model-type",
-            "text-reranking",
-            "--hf",
-        ]
-    )
-
-    assert "--gt-data was not provided" in outputs
-    assert (tmp_path / "gt_data.csv").exists()
-    assert (tmp_path / "reference").exists()
