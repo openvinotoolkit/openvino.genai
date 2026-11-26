@@ -92,6 +92,8 @@ Output:
 
 ### Standalone Forced-aligner word timestamps
 
+The optional device argument applies to both ASR and the forced aligner. Forced-aligner NPU execution has not been validated.
+
 ```sh
 python forced_aligner_timestamps_generation.py fun-asr-nano-ov qwen3-forced-aligner-ov zh_sample.wav --language Chinese
 ```
