@@ -121,6 +121,8 @@ jobs:
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
       CCACHE_DIR: ${{ github.workspace }}\ccache
+      # The Release cache outgrows 500Mi, which evicts entries and lowers the hit rate.
+      CCACHE_MAXSIZE: ${{ matrix.build-type == 'Release' && '1Gi' || '500Mi' }}
       MANIFEST_PATH: ${{ github.workspace }}\manifest.yml
 
     steps:
@@ -595,8 +597,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    # Release samples gate genai_samples_tests, so they get the faster runner; Debug samples are not on the critical path.
-    runs-on: ${{ matrix.build-type == 'Release' && 'aks-win-8-cores-16gb-build' || 'aks-win-4-cores-8gb-build' }}
+    runs-on: aks-win-4-cores-8gb-build
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
       SRC_DIR: ${{ github.workspace }}/src
