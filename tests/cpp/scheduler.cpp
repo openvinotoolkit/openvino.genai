@@ -3969,12 +3969,21 @@ TEST_P(ValidationWindowSchedulerTest, recompute_runs_its_validation_window_after
 
 INSTANTIATE_TEST_SUITE_P(WithAndWithoutDynamicSplitFuse, ValidationWindowSchedulerTest, ::testing::Bool());
 
-class ContinuousBatchingImplTestHelper : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+class ContinuousBatchingPipelineTestHelper : public ContinuousBatchingPipeline {
 public:
-    ContinuousBatchingImplTestHelper(std::shared_ptr<ContinuousBatchingScheduler> scheduler) {
-        m_scheduler = scheduler;
+    class ImplTestHelper : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+    public:
+        explicit ImplTestHelper(std::shared_ptr<ContinuousBatchingScheduler> scheduler) {
+            m_scheduler = scheduler;
+        }
+    };
+
+    explicit ContinuousBatchingPipelineTestHelper(std::shared_ptr<ContinuousBatchingScheduler> scheduler) {
+        m_impl = std::make_shared<ImplTestHelper>(scheduler);
     }
 };
+
+using ContinuousBatchingImplTestHelper = ContinuousBatchingPipelineTestHelper;
 
 TEST(TestScheduler, SchedulerExposesMaxRequestTokens) {
     SchedulerConfig scheduler_config;
@@ -4009,7 +4018,7 @@ TEST(TestScheduler, PromptLengthAtCapacityBoundary) {
     auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
     auto scheduler = std::make_shared<ContinuousBatchingScheduler>(orchestrator, scheduler_config);
 
-    ContinuousBatchingImplTestHelper pipeline(scheduler);
+    ContinuousBatchingPipelineTestHelper pipeline(scheduler);
 
     const auto max_tokens = pipeline.get_max_request_tokens();
     ASSERT_TRUE(max_tokens.has_value());
@@ -4057,7 +4066,7 @@ TEST(TestScheduler, PromptLengthAtCapacityBoundary) {
     auto dynamic_orchestrator = init_cache_orchestrator(dynamic_config, TEST_BLOCK_SIZE);
     auto dynamic_scheduler = std::make_shared<ContinuousBatchingScheduler>(dynamic_orchestrator, dynamic_config);
 
-    ContinuousBatchingImplTestHelper dynamic_pipeline(dynamic_scheduler);
+    ContinuousBatchingPipelineTestHelper dynamic_pipeline(dynamic_scheduler);
     EXPECT_FALSE(dynamic_pipeline.get_max_request_tokens().has_value());
 
     std::vector<int64_t> long_tokens(capacity + 10, 1);
@@ -4074,7 +4083,7 @@ TEST(TestScheduler, BatchedGenerateExceedingCapacityLeavesPipelineClean) {
     auto orchestrator = init_cache_orchestrator(scheduler_config, TEST_BLOCK_SIZE);
     auto scheduler = std::make_shared<ContinuousBatchingScheduler>(orchestrator, scheduler_config);
 
-    ContinuousBatchingImplTestHelper pipeline(scheduler);
+    ContinuousBatchingPipelineTestHelper pipeline(scheduler);
     const auto max_tokens = pipeline.get_max_request_tokens();
     ASSERT_TRUE(max_tokens.has_value());
     const size_t capacity = *max_tokens;
