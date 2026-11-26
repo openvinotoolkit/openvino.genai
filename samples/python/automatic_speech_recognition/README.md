@@ -173,8 +173,8 @@ for chunk in result.chunks[0]:
 
 Qwen3-ASR can produce word-level timestamps if integrated with its forced aligner into ASRPipeline:
 
-The forced aligner is a separate pipeline with its own device. Qwen3-ASR's NPUW input-model
-optimizations do not apply to the forced aligner; its NPU execution has not been validated by
+The forced aligner is a separate pipeline with its own device. Qwen3-ASR's NPU-specific input-model
+handling does not apply to the forced aligner; its NPU execution has not been validated by
 this change. For example, an NPU ASR pipeline can use a CPU forced aligner.
 
 ```python
@@ -241,10 +241,10 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 ## Qwen3-ASR on NPU
 
 The current Qwen3-ASR split export contains an audio encoder, text embeddings and a language model.
-`ASRPipeline` on NPU runs all three models on NPU. Text-embedding lookups use NPUW to process dynamic
-token sequences in fixed-size windows. This requires an OpenVINO build with `NPUW_TOKEN_LOOKUP` and
-`NPUW_QWEN3_ASR_AUDIO_ENCODER` support;
-setting `NPU_USE_NPUW=NO` for either the audio encoder or text-embedding model is not supported.
+`ASRPipeline` on NPU runs all three models on NPU. GenAI splits text-embedding lookups into fixed-size
+windows and runs them through NPUW. Setting `NPU_USE_NPUW=NO` for either the audio encoder or
+text-embedding model is not supported. Both input models default to `NPUW_ONLINE_PIPELINE=NONE`;
+an explicitly supplied partitioning policy is respected.
 Audio is split into nominal 60-second segments, with up to five additional seconds for boundary selection.
 The audio encoder processes fixed-size windows sequentially; short windows are zero-padded. CPU/GPU retain
 dynamic batched encoder inference. Padding can introduce numerical differences for sub-window audio; check

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -56,6 +57,22 @@ TEST(Qwen3ASRInputPropertiesTest, DoesNotForwardAutoPriorityToNPU) {
     EXPECT_EQ(resolved.count(ov::device::properties.name()), 0u);
     EXPECT_EQ(resolved.count("MODEL_PROPERTIES"), 0u);
     EXPECT_EQ(resolved.at("NPUW_DEVICES").as<std::string>(), "CPU");
+}
+
+TEST(Qwen3ASRInputPropertiesTest, DefaultsToUnpartitionedNPUWWithoutOverridingUserOptions) {
+    for (const auto& role : {"audio_encoder", "text_embeddings"}) {
+        const auto defaults = ov::genai::qwen3_asr_npu_input_model_properties({}, role, "NPU");
+        EXPECT_EQ(defaults.at("NPU_USE_NPUW").as<std::string>(), "YES");
+        EXPECT_EQ(defaults.at("NPUW_DEVICES").as<std::string>(), "NPU");
+        EXPECT_EQ(defaults.at("NPUW_ONLINE_PIPELINE").as<std::string>(), "NONE");
+
+        const auto custom = ov::genai::qwen3_asr_npu_input_model_properties(
+            {{"NPUW_DEVICES", "CPU"}, {"NPUW_ONLINE_PIPELINE", "DYNAMIC"}},
+            role,
+            "NPU");
+        EXPECT_EQ(custom.at("NPUW_DEVICES").as<std::string>(), "CPU");
+        EXPECT_EQ(custom.at("NPUW_ONLINE_PIPELINE").as<std::string>(), "DYNAMIC");
+    }
 }
 
 class Qwen3ASRStaticEncoderTest : public ::testing::TestWithParam<size_t> {
@@ -244,9 +261,21 @@ TEST_F(Qwen3ASRStaticEncoderTest, NPUAudioEncoderRequiresNPUW) {
     auto disabled_npuw = cpu_fallback();
     disabled_npuw["NPU_USE_NPUW"] = "NO";
     expect_error(disabled_npuw, "audio encoder requires NPU_USE_NPUW=YES");
-    auto disabled_audio = cpu_fallback();
-    disabled_audio["NPUW_QWEN3_ASR_AUDIO_ENCODER"] = "NO";
-    expect_error(disabled_audio, "audio encoder requires NPUW_QWEN3_ASR_AUDIO_ENCODER=YES");
+}
+
+TEST_F(Qwen3ASRStaticEncoderTest, RejectsInvalidStaticEncoderShapes) {
+    auto invalid_hidden = split_config();
+    invalid_hidden.hidden_size = 2;
+    EXPECT_THROW(
+        ov::genai::create_qwen3_asr_audio_encoder(invalid_hidden, split_model(), m_model_dir, "NPU", cpu_fallback()),
+        ov::Exception);
+
+    auto invalid_window = split_config();
+    invalid_window.audio_config_n_window = static_cast<size_t>(std::numeric_limits<int32_t>::max()) * 4 + 1;
+    invalid_window.audio_config_n_window_infer = invalid_window.audio_config_n_window * 2;
+    EXPECT_THROW(
+        ov::genai::create_qwen3_asr_audio_encoder(invalid_window, split_model(), m_model_dir, "NPU", cpu_fallback()),
+        ov::Exception);
 }
 
 TEST_F(Qwen3ASRStaticEncoderTest, RoleSpecificAutoNPUUsesNPUWForBothInputModels) {
@@ -368,7 +397,7 @@ TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsRejectNonLookupModels) {
     EXPECT_THROW(ov::genai::create_qwen3_asr_embeddings(m_model_dir, 1.0f, "NPU", cpu_fallback()), ov::Exception);
 }
 
-TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsRequireNPUWTokenLookup) {
+TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsRequireNPUW) {
     save_embeddings();
     const auto expect_error = [&](const ov::AnyMap& properties, const std::string& expected) {
         try {
@@ -381,9 +410,6 @@ TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsRequireNPUWTokenLookup) {
     auto disabled_npuw = cpu_fallback();
     disabled_npuw["NPU_USE_NPUW"] = "NO";
     expect_error(disabled_npuw, "text embeddings require NPU_USE_NPUW=YES");
-    auto disabled_lookup = cpu_fallback();
-    disabled_lookup["NPUW_TOKEN_LOOKUP"] = "NO";
-    expect_error(disabled_lookup, "text embeddings require NPUW_TOKEN_LOOKUP=YES");
 }
 
 INSTANTIATE_TEST_SUITE_P(ChunkLengths, Qwen3ASRStaticEncoderTest, ::testing::Values(1u, 4u, 6u, 8u));

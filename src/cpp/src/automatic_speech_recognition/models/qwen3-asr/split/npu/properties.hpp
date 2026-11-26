@@ -58,4 +58,15 @@ inline ov::AnyMap qwen3_asr_input_model_properties(const ov::AnyMap& properties,
     return result;
 }
 
+inline ov::AnyMap qwen3_asr_npu_input_model_properties(const ov::AnyMap& properties,
+                                                       const std::string& model_role,
+                                                       const std::string& device) {
+    auto result = qwen3_asr_input_model_properties(properties, model_role, device);
+    utils::set_config_default(result, "NPU_USE_NPUW", std::string{"YES"});
+    utils::set_config_default(result, "NPUW_DEVICES", std::string{"NPU"});
+    // Keep the static input graphs intact unless the caller selects another partitioning policy.
+    utils::set_config_default(result, "NPUW_ONLINE_PIPELINE", std::string{"NONE"});
+    return result;
+}
+
 }  // namespace ov::genai
