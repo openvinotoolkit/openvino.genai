@@ -179,6 +179,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
 
     // Structured output
     read_anymap_param(properties, "structured_output_config", structured_output_config);
+    read_anymap_param(properties, "reasoning_config", reasoning_config);
     read_anymap_param(properties, "parsers", parsers);
 
     // CDPruner
@@ -432,6 +433,19 @@ void GenerationConfig::validate() const {
 
     if(is_structured_output_generation()) {
         (*structured_output_config).validate();
+    }
+
+    // reasoning budget
+    if (is_reasoning_budget_enabled()) {
+        OPENVINO_ASSERT(reasoning_config->end_token_id >= 0,
+                        "'reasoning_config.end_token_id' must be a non-negative token id, but got ",
+                        reasoning_config->end_token_id);
+        OPENVINO_ASSERT(reasoning_config->budget <= max_new_tokens,
+                        "'reasoning_config.budget' must not exceed 'max_new_tokens' (", max_new_tokens,
+                        "), but got ", reasoning_config->budget);
+        OPENVINO_ASSERT(!is_beam_search(), "reasoning_config is not supported by beam search");
+        OPENVINO_ASSERT(!is_tree_search(), "reasoning_config is not supported by tree search (EAGLE)");
+        OPENVINO_ASSERT(!is_assisting_generation(), "reasoning_config is not supported by assistant generation");
     }
 }
 

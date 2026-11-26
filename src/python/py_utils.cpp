@@ -470,6 +470,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py_obj_to_structural_tag(py_obj);
     } else if (py::isinstance<ov::genai::GenerationConfig>(py_obj)) {
         return py::cast<ov::genai::GenerationConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::ReasoningConfig>(py_obj)) {
+        return py::cast<ov::genai::ReasoningConfig>(py_obj);
     } else if (py::isinstance<ov::genai::ImageGenerationConfig>(py_obj)) {
         return py::cast<ov::genai::ImageGenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::TaylorSeerCacheConfig>(py_obj)) {
@@ -541,6 +543,8 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             params.insert(map.begin(), map.end());
         } else if (py::isinstance<ov::genai::StructuredOutputConfig>(value)) {
             params[key] = py::cast<ov::genai::StructuredOutputConfig>(value);
+        } else if (py::isinstance<ov::genai::ReasoningConfig>(value)) {
+            params[key] = py::cast<ov::genai::ReasoningConfig>(value);
         } else if (value.is_none() && key == "taylorseer_config") {
             params[key] = ov::Any{};
         } else {
