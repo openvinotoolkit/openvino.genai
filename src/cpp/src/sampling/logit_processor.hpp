@@ -18,6 +18,8 @@ protected:
 
     std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
+    // Greedy and multinomial no_repeat_ngram_size; beam search applies its own
+    std::shared_ptr<LogitTransformers::NextTokensBanTransform> m_next_tokens_ban;
     size_t m_generated_tokens = 0;
 
     // speculative decoding parameters
@@ -43,6 +45,13 @@ public:
         if ((sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) && sampling_params.logprobs > 0) {
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::FullVocabLogSumExpTransform>());
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::CopyLogitsToVectorTransform>());
+        }
+
+        // After the snapshot above, so returned log-probabilities stay those of the raw model output
+        if (!sampling_params.is_beam_search() && sampling_params.no_repeat_ngram_size != 0 &&
+            sampling_params.no_repeat_ngram_size != std::numeric_limits<size_t>::max()) {
+            m_next_tokens_ban = std::make_shared<LogitTransformers::NextTokensBanTransform>();
+            m_logit_transformers.push_back(m_next_tokens_ban);
         }
 
         if (!suppressed_token_ids.empty()) {
@@ -126,6 +135,13 @@ public:
             if (transformer->is_applicable(m_generated_tokens)) {
                 transformer->apply(logits);
             }
+        }
+    }
+
+    /// Bans tokens for the next apply() only
+    void ban_next_tokens(const std::vector<int64_t>& token_ids) {
+        if (m_next_tokens_ban) {
+            m_next_tokens_ban->set_token_ids(token_ids);
         }
     }
 

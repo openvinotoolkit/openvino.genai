@@ -15,6 +15,14 @@ void validate_generation_config(const VideoGenerationConfig& config) {
     if (!requests_classifier_free_guidance(config) && config.negative_prompt != std::nullopt) {
         GENAI_WARN("Guidance scale <= 1.0 ignores negative prompt");
     }
+    if (config.sigmas) {
+        const std::vector<float>& sigmas = *config.sigmas;
+        OPENVINO_ASSERT(!sigmas.empty(), "'sigmas' must not be empty");
+        for (size_t i = 0; i < sigmas.size(); ++i) {
+            OPENVINO_ASSERT(sigmas[i] > 0.0f && sigmas[i] <= 1.0f, "'sigmas' must be in (0, 1], got ", sigmas[i]);
+            OPENVINO_ASSERT(i == 0 || sigmas[i] < sigmas[i - 1], "'sigmas' must be strictly decreasing");
+        }
+    }
 }
 
 void resolve_negative_prompt(VideoGenerationConfig& config) {
@@ -39,6 +47,9 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "audio_modality_scale", config.audio_modality_scale);
     read_anymap_param(properties, "audio_guidance_rescale", config.audio_guidance_rescale);
     read_anymap_param(properties, "spatio_temporal_guidance_blocks", config.spatio_temporal_guidance_blocks);
+    read_anymap_param(properties, "sigmas", config.sigmas);
+    read_anymap_param(properties, "enable_prompt_enhancement", config.enable_prompt_enhancement);
+    read_anymap_param(properties, "system_prompt", config.system_prompt);
     read_anymap_param(properties, "num_videos_per_prompt", config.num_videos_per_prompt);
 
     read_anymap_param(properties, "negative_prompt", config.negative_prompt);

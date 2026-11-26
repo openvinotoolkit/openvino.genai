@@ -20,9 +20,11 @@
 #include "openvino/genai/image_generation/gemma3_text_encoder.hpp"
 #include "openvino/genai/video_generation/autoencoder_kl_ltx2_audio.hpp"
 #include "openvino/genai/video_generation/autoencoder_kl_ltx2_video.hpp"
+#include "openvino/genai/video_generation/ltx2_duration_head.hpp"
 #include "openvino/genai/video_generation/ltx2_text_connectors.hpp"
 #include "openvino/genai/video_generation/ltx2_video_transformer_3d_model.hpp"
 #include "openvino/genai/video_generation/ltx2_vocoder.hpp"
+#include "video_generation/ltx2_prompt_enhancer.hpp"
 #include "video_generation/video_generation_utils.hpp"
 #include "video_generation/video_pipeline.hpp"
 
@@ -70,6 +72,39 @@ const VideoGenerationConfig LTX2_3_DEFAULT_CONFIG = VideoGenerationConfig{
     0.7f,                    // audio_guidance_rescale
     std::vector<int64_t>{28} // spatio_temporal_guidance_blocks
 };
+
+// LTX-2.5 ships its distilled transformer, which runs a fixed 8-sigma schedule with every guidance term off
+// (diffusers' DISTILLED_SIGMA_VALUES). num_frames 0 lets the duration head pick the length.
+const VideoGenerationConfig LTX2_5_DEFAULT_CONFIG = VideoGenerationConfig{
+    std::nullopt,              // negative_prompt
+    1,                         // num_videos_per_prompt
+    nullptr,                   // generator
+    1.0f,                      // guidance_scale
+    512,                       // height
+    768,                       // width
+    8,                         // num_inference_steps
+    1024,                      // max_sequence_length
+    0.0f,                      // guidance_rescale
+    0,                         // num_frames
+    24.0f,                     // frame_rate
+    std::nullopt,              // taylorseer_config
+    std::nullopt,              // adapters
+    1.0f,                      // audio_guidance_scale
+    0.0f,                      // stg_scale
+    0.0f,                      // audio_stg_scale
+    1.0f,                      // modality_scale
+    1.0f,                      // audio_modality_scale
+    0.0f,                      // audio_guidance_rescale
+    std::vector<int64_t>{28},  // spatio_temporal_guidance_blocks
+    std::vector<float>{1.0f, 0.99375f, 0.9875f, 0.98125f, 0.975f, 0.909375f, 0.725f, 0.421875f}  // sigmas
+};
+
+// LTX-2.5 with its full (non-distilled) transformer: LTX-2.3's guidance defaults, and the duration head
+const VideoGenerationConfig LTX2_5_FULL_DEFAULT_CONFIG = [] {
+    VideoGenerationConfig config = LTX2_3_DEFAULT_CONFIG;
+    config.num_frames = 0;
+    return config;
+}();
 
 // Repeats each batch entry of a [halves, ...] tensor num_videos times: [neg, pos] -> [neg x n, pos x n],
 // matching the [uncond videos, cond videos] latent layout
@@ -155,6 +190,13 @@ class LTX2Pipeline : public VideoPipeline {
     std::shared_ptr<AutoencoderKLLTX2Video> m_vae;
     std::shared_ptr<AutoencoderKLLTX2Audio> m_audio_vae;
     std::shared_ptr<LTX2Vocoder> m_vocoder;
+    // LTX-2.5 onwards: picks num_frames when the caller leaves it 0
+    std::shared_ptr<LTX2DurationHead> m_duration_head;
+    // LTX-2.5 onwards: rewrites prompts on request. Created on first use, on the text encoding device; its
+    // tokenizer is loaded with the pipeline.
+    std::shared_ptr<Tokenizer> m_prompt_enhancer_tokenizer;
+    std::shared_ptr<LTX2PromptEnhancer> m_prompt_enhancer;
+    std::string m_text_encode_device = "CPU";
     std::string m_deferred_text_encode_device;
     std::string m_deferred_denoise_device;
     std::string m_deferred_vae_device;
@@ -226,6 +268,81 @@ class LTX2Pipeline : public VideoPipeline {
         m_perf_metrics.encoder_inference_duration["connectors"] = Ms{infer_end - infer_start}.count();
 
         return connected;
+    }
+
+    // Lightricks/LTX-2.5-Diffusers ships the distilled transformer in 'transformer/' and the full one in
+    // 'transformer_full/'. Their configs are identical, but the export keeps the folder it was loaded from.
+    static bool is_full_transformer_export(const std::filesystem::path& transformer_dir) {
+        std::ifstream file(transformer_dir / "config.json");
+        if (!file.is_open()) {
+            return false;
+        }
+        const nlohmann::json config = nlohmann::json::parse(file);
+        const auto name_or_path = config.find("_name_or_path");
+        if (name_or_path == config.end() || !name_or_path->is_string()) {
+            return false;
+        }
+        std::string source = name_or_path->get<std::string>();
+        std::replace(source.begin(), source.end(), '\\', '/');
+        while (!source.empty() && source.back() == '/') {
+            source.pop_back();
+        }
+        const std::string suffix = "transformer_full";
+        return source.size() >= suffix.size() &&
+               source.compare(source.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+
+    // diffusers' enhance_prompt
+    std::string enhance_prompt(const std::string& prompt, const VideoGenerationConfig& generation_config) {
+        OPENVINO_ASSERT(m_prompt_enhancer_tokenizer,
+                        "Prompt enhancement needs an LTX-2.5 export with its 'prompt_enhancer' and 'processor'");
+
+        // A GPU text encoding device holds its models only for the stage, so does the enhancer
+        std::shared_ptr<LTX2PromptEnhancer> enhancer = m_prompt_enhancer;
+        if (!enhancer) {
+            enhancer = std::make_shared<LTX2PromptEnhancer>(m_models_dir,
+                                                            *m_prompt_enhancer_tokenizer,
+                                                            m_text_encode_device,
+                                                            m_deferred_properties);
+            if (m_deferred_text_encode_device.empty()) {
+                m_prompt_enhancer = enhancer;
+            }
+        }
+        const auto enhance_start = std::chrono::steady_clock::now();
+        const std::string enhanced = enhancer->enhance(prompt, generation_config.system_prompt);
+        m_perf_metrics.encoder_inference_duration["prompt_enhancer"] =
+            Ms{std::chrono::steady_clock::now() - enhance_start}.count();
+        GENAI_INFO("Enhanced prompt: %s", enhanced.c_str());
+        return enhanced;
+    }
+
+    // The duration head reads the positive prompt's connector outputs, first video only, like diffusers
+    size_t predict_num_frames(const LTX2TextConnectors::Output& connected,
+                              const VideoGenerationConfig& generation_config,
+                              bool do_classifier_free_guidance) {
+        auto duration_head = m_duration_head;
+        if (!m_deferred_text_encode_device.empty()) {
+            duration_head = std::make_shared<LTX2DurationHead>(m_duration_head->clone());
+            duration_head->compile(m_deferred_text_encode_device, m_deferred_properties);
+        }
+        const size_t positive_row = do_classifier_free_guidance ? generation_config.num_videos_per_prompt : 0;
+        auto first_positive = [&](const ov::Tensor& tokens) {
+            ov::Shape shape = tokens.get_shape();
+            shape[0] = 1;
+            ov::Tensor row(tokens.get_element_type(), shape);
+            numpy_utils::batch_copy(tokens, row, positive_row, 0, 1);
+            return row;
+        };
+        const auto infer_start = std::chrono::steady_clock::now();
+        const float seconds = duration_head->infer(first_positive(connected.video_text_embedding),
+                                                   first_positive(connected.audio_text_embedding));
+        m_perf_metrics.encoder_inference_duration["duration_head"] =
+            Ms{std::chrono::steady_clock::now() - infer_start}.count();
+
+        const float frame_rate = generation_config.frame_rate.value_or(m_default_config->frame_rate.value());
+        return LTX2DurationHead::duration_to_num_frames(seconds,
+                                                        frame_rate,
+                                                        m_vae->get_config().temporal_compression_ratio);
     }
 
     ov::Tensor decode_video(const ov::Tensor& latent) {
@@ -379,7 +496,9 @@ public:
         m_audio_scheduler = std::make_shared<FlowMatchEulerDiscreteScheduler>(m_scheduler_config);
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
-        if (text_encoder == "Gemma3ForConditionalGeneration") {
+        // LTX-2.5's Gemma 4 text encoder is exported with the same interface: packed hidden states of all layers
+        if (text_encoder == "Gemma3ForConditionalGeneration" ||
+            text_encoder == "Gemma4UnifiedForConditionalGeneration") {
             m_text_encoder = std::make_shared<Gemma3TextEncoder>(root_dir / "text_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
@@ -421,8 +540,25 @@ public:
             OPENVINO_THROW("Unsupported '", vocoder, "' vocoder type");
         }
 
-        // 'perturbed_attn' is set on LTX-2.3 and absent on LTX-2.0
-        m_default_config = m_transformer->get_config().perturbed_attn ? &LTX2_3_DEFAULT_CONFIG : &LTX2_DEFAULT_CONFIG;
+        // LTX-2.5 onwards; LTX-2.3 exports made with newer diffusers list it as [null, null]
+        const auto duration_head_entry = data.find("duration_head");
+        if (duration_head_entry != data.end() && duration_head_entry->is_array() && duration_head_entry->size() == 2 &&
+            (*duration_head_entry)[1].is_string() && std::filesystem::exists(root_dir / "duration_head")) {
+            m_duration_head = std::make_shared<LTX2DurationHead>(root_dir / "duration_head");
+        }
+
+        if (LTX2PromptEnhancer::is_available(root_dir)) {
+            m_prompt_enhancer_tokenizer = std::make_shared<Tokenizer>(root_dir / "processor");
+        }
+
+        if (m_duration_head) {
+            m_default_config = is_full_transformer_export(root_dir / "transformer") ? &LTX2_5_FULL_DEFAULT_CONFIG
+                                                                                    : &LTX2_5_DEFAULT_CONFIG;
+        } else {
+            // 'perturbed_attn' is set on LTX-2.3 and absent on LTX-2.0
+            m_default_config =
+                m_transformer->get_config().perturbed_attn ? &LTX2_3_DEFAULT_CONFIG : &LTX2_DEFAULT_CONFIG;
+        }
         m_generation_config = *m_default_config;
         m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
@@ -448,6 +584,10 @@ public:
         cloned->m_vae = std::make_shared<AutoencoderKLLTX2Video>(m_vae->clone());
         cloned->m_audio_vae = std::make_shared<AutoencoderKLLTX2Audio>(m_audio_vae->clone());
         cloned->m_vocoder = std::make_shared<LTX2Vocoder>(m_vocoder->clone());
+        if (m_duration_head) {
+            cloned->m_duration_head = std::make_shared<LTX2DurationHead>(m_duration_head->clone());
+        }
+        cloned->m_prompt_enhancer.reset();
         return cloned;
     }
 
@@ -467,6 +607,8 @@ public:
     }
 
     void reshape_models(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) override {
+        OPENVINO_ASSERT(generation_config.num_frames > 0,
+                        "Static shapes need 'num_frames': the duration head cannot choose it after a reshape");
         m_reshape_batch_size_multiplier = batch_size_multiplier;
         const size_t audio_num_frames = audio_num_frames_for(generation_config);
         m_text_encoder->reshape(batch_size_multiplier, generation_config.max_sequence_length);
@@ -482,6 +624,10 @@ public:
                        generation_config.width);
         m_audio_vae->reshape(generation_config.num_videos_per_prompt, audio_num_frames);
         m_vocoder->reshape(generation_config.num_videos_per_prompt);
+        if (m_duration_head) {
+            // It predicts for the first video only
+            m_duration_head->reshape(1);
+        }
     }
 
     VideoGenerationResult generate(const std::string& positive_prompt, const ov::AnyMap& properties) override {
@@ -489,6 +635,17 @@ public:
         m_perf_metrics.clean_up();
 
         VideoGenerationConfig merged_generation_config = merge_generation_config(properties);
+        // A step count passed to this call asks for the scheduler's own schedule instead of the model's default
+        // sigmas. Sigmas the caller set in the generation config define the steps themselves and are kept.
+        if (properties.count(ov::genai::num_inference_steps.name()) && !properties.count(ov::genai::sigmas.name())) {
+            if (merged_generation_config.sigmas == m_default_config->sigmas) {
+                merged_generation_config.sigmas.reset();
+            } else if (merged_generation_config.sigmas) {
+                GENAI_WARN("'num_inference_steps' is ignored: the generation config sets 'sigmas', which define %zu "
+                           "steps",
+                           merged_generation_config.sigmas->size());
+            }
+        }
         const float audio_guidance_scale =
             merged_generation_config.audio_guidance_scale.value_or(merged_generation_config.guidance_scale);
 
@@ -505,6 +662,21 @@ public:
         const float frame_rate =
             merged_generation_config.frame_rate.value_or(m_default_config->frame_rate.value());
 
+        const std::string prompt = merged_generation_config.enable_prompt_enhancement
+                                       ? enhance_prompt(positive_prompt, merged_generation_config)
+                                       : positive_prompt;
+        LTX2TextConnectors::Output connected =
+            compute_hidden_states(prompt,
+                                  merged_generation_config.negative_prompt.value_or(""),
+                                  merged_generation_config,
+                                  use_classifier_free_guidance);
+
+        if (merged_generation_config.num_frames == 0) {
+            OPENVINO_ASSERT(m_duration_head, "'num_frames' must be set: this model has no duration head to choose it");
+            merged_generation_config.num_frames =
+                predict_num_frames(connected, merged_generation_config, use_classifier_free_guidance);
+        }
+
         m_latent_num_frames =
             (merged_generation_config.num_frames - 1) / m_vae->get_config().temporal_compression_ratio + 1;
         m_latent_height = merged_generation_config.height / m_vae->get_config().spatial_compression_ratio;
@@ -513,11 +685,6 @@ public:
         const size_t audio_num_frames = audio_num_frames_for(merged_generation_config);
         const size_t latent_mel_bins =
             m_audio_vae->get_config().mel_bins / m_audio_vae->get_config().mel_compression_ratio;
-
-        LTX2TextConnectors::Output connected = compute_hidden_states(positive_prompt,
-                                                                     merged_generation_config.negative_prompt.value_or(""),
-                                                                     merged_generation_config,
-                                                                     use_classifier_free_guidance);
 
         auto transformer = m_transformer;
         if (!m_deferred_denoise_device.empty()) {
@@ -619,9 +786,14 @@ public:
 
         // mu from the packed video sequence length, as in the reference; audio reuses it
         const double mu = m_video_scheduler->calculate_shift(latent.get_shape().at(1));
-        m_video_scheduler->set_timesteps_with_mu(mu, merged_generation_config.num_inference_steps, 1.0f);
         // Separate scheduler instance for audio: step() tracks per-modality state
-        m_audio_scheduler->set_timesteps_with_mu(mu, merged_generation_config.num_inference_steps, 1.0f);
+        if (merged_generation_config.sigmas) {
+            m_video_scheduler->set_timesteps_from_sigmas(*merged_generation_config.sigmas, mu);
+            m_audio_scheduler->set_timesteps_from_sigmas(*merged_generation_config.sigmas, mu);
+        } else {
+            m_video_scheduler->set_timesteps_with_mu(mu, merged_generation_config.num_inference_steps, 1.0f);
+            m_audio_scheduler->set_timesteps_with_mu(mu, merged_generation_config.num_inference_steps, 1.0f);
+        }
         std::vector<float> timesteps = m_video_scheduler->get_float_timesteps();
 
         // x0-space guidance, as in diffusers' LTX2Pipeline. Each term is 'scale * sigma * (v_other - v_cond)':
@@ -878,6 +1050,9 @@ public:
         } else {
             m_text_encoder->compile(text_encode_device, *filtered_properties);
             m_connectors->compile(text_encode_device, *filtered_properties);
+            if (m_duration_head) {
+                m_duration_head->compile(text_encode_device, *filtered_properties);
+            }
         }
         if (is_gpu(denoise_device)) {
             m_deferred_denoise_device = denoise_device;
@@ -892,6 +1067,7 @@ public:
             m_vocoder->compile(vae_device, *filtered_properties);
         }
         m_deferred_properties = *filtered_properties;
+        m_text_encode_device = text_encode_device;
         m_is_compiled = true;
         m_compiled_batch_size_multiplier = m_reshape_batch_size_multiplier;
     }
@@ -903,6 +1079,10 @@ public:
 protected:
     void replace_defaults(VideoGenerationConfig& config) const override {
         const VideoGenerationConfig& defaults = *m_default_config;
+        // The default schedule only stands in when the caller chose neither a schedule nor a step count
+        if (!config.sigmas.has_value() && -1 == config.num_inference_steps) {
+            config.sigmas = defaults.sigmas;
+        }
         if (-1 == config.height) {
             config.height = defaults.height;
         }
