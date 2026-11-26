@@ -831,9 +831,7 @@ def test_qwen3_asr_npu_accepts_role_npu_priorities(pipelines_fixture):
     assert len(pipe.generate(np.zeros(8000, dtype=np.float32), language="English", max_new_tokens=2).texts) == 1
 
 
-@pytest.mark.parametrize(
-    "auto_priority,role_priority", [("CPU", "NPU"), ("NPU", "CPU")], ids=["role-npu", "role-cpu"]
-)
+@pytest.mark.parametrize("auto_priority,role_priority", [("CPU", "NPU"), ("NPU", "CPU")], ids=["role-npu", "role-cpu"])
 @pytest.mark.parametrize("role", ["audio_encoder", "text_embeddings"], ids=["audio", "text"])
 @pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
 def test_qwen3_asr_direct_vlm_resolves_role_priorities(pipelines_fixture, role, auto_priority, role_priority):
