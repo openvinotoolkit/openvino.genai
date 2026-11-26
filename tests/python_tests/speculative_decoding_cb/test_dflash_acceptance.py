@@ -7,7 +7,7 @@ The tiny random drafts of the shared speculative decoding scenarios reject almos
 embedding carries a large channel 0 that only token 0 reads out, so the target and all drafts predict token 0: greedy
 speculative decoding must reproduce the target and accept every candidate, also when requests are drafted together,
 split or preempted. The pruned DSpark draft predicts a random subset of the target vocabulary, which holds token 0,
-with its own lm_head.
+with its own lm_head; its sampled requests must accept candidates as well.
 """
 
 import functools

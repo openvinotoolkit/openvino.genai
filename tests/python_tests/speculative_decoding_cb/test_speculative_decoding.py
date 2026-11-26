@@ -90,10 +90,10 @@ PRUNED_VOCABULARY_EXPORT = _exports_pruned_draft_vocabulary()
 PRUNED_VOCABULARY_EXPORT_SKIP_REASON = (
     "This optimum-intel version cannot export drafts with a pruned vocabulary (huggingface/optimum-intel#2099)."
 )
-# The MiniCPM-OCR DSpark draft predicts 48 of the target's tokens through its own LM head.
 PRUNED_VOCABULARY_EXPORT_SKIP = pytest.mark.skipif(
     not PRUNED_VOCABULARY_EXPORT, reason=PRUNED_VOCABULARY_EXPORT_SKIP_REASON
 )
+# The MiniCPM-OCR DSpark draft predicts 48 of the target's tokens through its own LM head.
 MINICPM_OCR_DSPARK = pytest.param(
     (MINICPM_OCR, "optimum-intel-internal-testing/tiny-random-minicpm-ocr-dspark", {}),
     id="minicpm-ocr-dspark",
