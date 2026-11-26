@@ -3,6 +3,7 @@
 
 #include <string_view>
 #include "sequence_group.hpp"
+#include "lora/helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -25,6 +26,11 @@ size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
     OPENVINO_ASSERT(filled_blocks_count <= prefix_hashes.size());
     if (filled_blocks_count > 0) {
         content.emplace_back(prefix_hashes[filled_blocks_count - 1]);
+    } else if (const size_t lora_namespace = get_prefix_cache_namespace(sequence_group->get_sampling_parameters().adapters);
+               lora_namespace != 0) {
+        // KV depends on the LoRA adapters, so the first block starts with their namespace and later blocks inherit it
+        // through the prefix hash. Requests without adapters use namespace 0 and keep the original hashes.
+        content.emplace_back(static_cast<int64_t>(lora_namespace));
     }
 
     // get tokens corresponding to current block

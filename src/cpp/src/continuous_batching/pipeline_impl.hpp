@@ -22,6 +22,9 @@ protected:
     // Only for models exporting intermediate hidden states, with prefix caching on.
     std::unique_ptr<HiddenStateCache> m_hidden_state_cache;
     std::optional<AdapterController> m_adapter_controller;
+    // Adapters the controller currently applies. A request without adapters runs with them, so its prefix cache
+    // namespace must be derived from them too.
+    std::optional<AdapterConfig> m_applied_adapters;
     std::shared_ptr<Sampler> m_sampler;
 
     // current requests to process

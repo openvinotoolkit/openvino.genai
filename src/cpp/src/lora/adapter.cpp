@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <atomic>
+#include <cstring>
 #include <set>
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <fstream>
 #include <optional>
@@ -42,6 +45,7 @@
 
 #include "utils.hpp"
 #include "lora/common.hpp"
+#include "lora/helper.hpp"
 #include "lora/names_mapping.hpp"
 
 #ifdef ENABLE_GGUF
@@ -1090,6 +1094,19 @@ public:
     virtual const LoRAConstantTensors& get_constant_tensors() const = 0;
     virtual const LoRATensors& get_tensors() const = 0;
     virtual bool eq(const AdapterImpl* other) const = 0;
+
+    // Unique within the process. Unlike the object address, it is not reused after the adapter is destroyed.
+    uint64_t get_id() const {
+        return id;
+    }
+
+private:
+    static uint64_t next_id() {
+        static std::atomic<uint64_t> counter{1};
+        return counter.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    uint64_t id = next_id();
 };
 
 class SafetensorsAdapterImpl : public AdapterImpl {
@@ -1541,6 +1558,10 @@ private:
 
 
 struct AdapterControllerImpl {
+    static uint64_t get_adapter_id(const Adapter& adapter) {
+        return adapter.m_pimpl->get_id();
+    }
+
     LoRAVarMap variable_ids;
     std::map<std::string, ov::op::util::VariableInfo> constant_variable_ids;
     std::unordered_set<std::string> variable_names;
@@ -2288,6 +2309,36 @@ struct AdapterControllerImpl {
         return new_tensors;
     }
 };
+
+
+size_t get_prefix_cache_namespace(const std::optional<AdapterConfig>& config) {
+    if (!config) {
+        return 0;
+    }
+    std::vector<std::pair<uint64_t, uint32_t>> applied;
+    for (const auto& [adapter, alpha] : config->get_adapters_and_alphas()) {
+        if (alpha == 0.0f) {
+            continue;
+        }
+        uint32_t alpha_bits;
+        std::memcpy(&alpha_bits, &alpha, sizeof(alpha_bits));
+        applied.emplace_back(AdapterControllerImpl::get_adapter_id(adapter), alpha_bits);
+    }
+    if (applied.empty()) {
+        return 0;
+    }
+    std::sort(applied.begin(), applied.end());
+    std::vector<uint64_t> content;
+    content.reserve(applied.size() * 2);
+    for (const auto& [id, alpha_bits] : applied) {
+        content.push_back(id);
+        content.push_back(alpha_bits);
+    }
+    const size_t result = std::hash<std::string_view>{}(
+        std::string_view(reinterpret_cast<const char*>(content.data()), content.size() * sizeof(content[0])));
+    // 0 is reserved for requests without adapters.
+    return result == 0 ? 1 : result;
+}
 
 
 AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device)

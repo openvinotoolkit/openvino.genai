@@ -192,6 +192,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
         set_foreign_tensor_name_prefix(*m_generation_config.adapters,
                                       m_inputs_embedder ? m_inputs_embedder->get_lora_tensor_prefix() : std::nullopt);
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);
+        m_applied_adapters = m_generation_config.adapters;
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
@@ -349,6 +350,10 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     // If eos_token_id was not provided, take value from default m_generation_config
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
+    // A request without adapters runs with the applied ones; record them so the prefix cache keys match the KV.
+    if (!sampling_params_copy.adapters && m_adapter_controller) {
+        sampling_params_copy.adapters = m_applied_adapters;
+    }
     sampling_params_copy.validate();
     // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
     OPENVINO_ASSERT(!sampling_params_copy.is_beam_search() || !m_inputs_embedder ||
@@ -946,6 +951,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std::optional<AdapterConfig>& adapters) {
     if (m_adapter_controller) {
         m_adapter_controller->apply(m_model_runner->get_infer_request(), adapters);
+        if (adapters) {
+            // Mirrors AdapterController::apply, which keeps the applied adapters when none are passed.
+            m_applied_adapters->update(*adapters);
+        }
     }
 }
 
