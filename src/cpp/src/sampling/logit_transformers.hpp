@@ -567,15 +567,8 @@ public:
         if (logits.is_vector_initialized()) {
             // The candidate set was truncated by upstream filters (top_k/top_p), so replace
             // it: the end token must be drawable even if the filters would have dropped it.
-            std::vector<Token> forced;
-            forced.emplace_back(1.0f, m_end_token_id);
-            if (logits.m_vector.size() >= forced.size()) {
-                std::copy(forced.begin(), forced.end(), logits.m_vector.begin());
-                logits.resize(forced.size());
-            } else {
-                logits.m_vector = std::move(forced);
-                logits.m_size = logits.m_vector.size();
-            }
+            logits.m_vector[0] = Token(1.0f, m_end_token_id);
+            logits.resize(1);
         } else {
             const float minus_inf = -std::numeric_limits<float>::infinity();
             for (size_t i = 0; i < logits.m_size; ++i) {
