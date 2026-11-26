@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -22,6 +23,7 @@ constexpr size_t NUM_BLOCKS = 4;
 
 OffloadSettings make_config() {
     OffloadSettings config;
+    config.kv_cache_dir = std::filesystem::temp_directory_path().string();
     config.capacity_bytes = BLOCK_SIZE * NUM_BLOCKS;
     return config;
 }
@@ -362,4 +364,185 @@ TEST(TestStoreRegistry, StorePropertiesNamingAHostOwnedSettingAreRejected) {
         config.store_properties = {{key, "x"}};
         EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv"), ov::Exception) << key;
     }
+}
+
+namespace {
+
+PrefixKey digest_key(uint64_t number) {
+    return PrefixKey{static_cast<size_t>(number), ContentHash{number, number * 7 + 1}};
+}
+
+std::filesystem::path fresh_directory(const std::string& name) {
+    const auto directory = std::filesystem::temp_directory_path() / name;
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    return directory;
+}
+
+OffloadSettings make_default_store_config(const std::filesystem::path& directory) {
+    OffloadSettings config = make_config();
+    config.kv_cache_dir = directory.string();
+    return config;
+}
+
+bool write_one(IKVCacheStore& store, const PrefixKey& key, const std::vector<uint8_t>& data) {
+    return store.write_blocks_by_key({key}, {&data})[0];
+}
+
+bool has_one(const IKVCacheStore& store, const PrefixKey& key) {
+    return store.has_blocks_by_key({key})[0];
+}
+
+std::filesystem::path find_slots_file(const std::filesystem::path& directory) {
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+        if (entry.path().extension() == ".slots") {
+            return entry.path();
+        }
+    }
+    return {};
+}
+
+}  // namespace
+
+// A namespace with a model identity (it contains ':') is kept in kv_cache_dir for the next run.
+TEST(TestStoreRegistry, DefaultStoreKeepsBlocksOfAModelAcrossReopening) {
+    const auto directory = fresh_directory("openvino_genai_default_store_reopen");
+    const OffloadSettings config = make_default_store_config(directory);
+    {
+        auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+        ASSERT_TRUE(store->is_persistent());
+        ASSERT_TRUE(write_one(*store, digest_key(1), make_block(1)));
+        ASSERT_TRUE(write_one(*store, digest_key(2), make_block(2)));
+    }
+
+    auto reopened = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+    EXPECT_TRUE(has_one(*reopened, digest_key(1)));
+    EXPECT_EQ(reopened->get_num_free_blocks(), NUM_BLOCKS - 2);
+    std::vector<std::vector<uint8_t>> data;
+    ASSERT_TRUE(reopened->read_blocks_by_key({digest_key(2)}, data)[0]);
+    EXPECT_EQ(data[0], make_block(2));
+
+    auto other_model = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_b");
+    EXPECT_FALSE(has_one(*other_model, digest_key(1)));
+    reopened.reset();
+    other_model.reset();
+    std::filesystem::remove_all(directory);
+}
+
+TEST(TestStoreRegistry, DefaultStoreDropsTheCacheOfAnEarlierRunWhenNotReused) {
+    const auto directory = fresh_directory("openvino_genai_default_store_purge");
+    OffloadSettings config = make_default_store_config(directory);
+    {
+        auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+        ASSERT_TRUE(write_one(*store, digest_key(1), make_block(1)));
+    }
+
+    config.reuse_ssd_cache = false;
+    auto purged = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+    EXPECT_FALSE(has_one(*purged, digest_key(1)));
+    EXPECT_EQ(purged->get_num_free_blocks(), NUM_BLOCKS);
+    purged.reset();
+    std::filesystem::remove_all(directory);
+}
+
+TEST(TestStoreRegistry, DefaultStoreEvictsTheLeastRecentlyUsedBlock) {
+    const auto directory = fresh_directory("openvino_genai_default_store_lru");
+    auto store = open_kv_cache_store(make_layout(), make_default_store_config(directory), "CPU", "kv:model_a");
+    ASSERT_TRUE(store->evicts_itself());
+    for (uint64_t number = 1; number <= NUM_BLOCKS; ++number) {
+        ASSERT_TRUE(write_one(*store, digest_key(number), make_block(static_cast<uint8_t>(number))));
+    }
+
+    std::vector<std::vector<uint8_t>> data;
+    ASSERT_TRUE(store->read_blocks_by_key({digest_key(1)}, data)[0]);  // a hit makes block 1 the most recent
+    ASSERT_TRUE(write_one(*store, digest_key(5), make_block(5)));      // never fails for lack of capacity
+
+    EXPECT_TRUE(has_one(*store, digest_key(1)));
+    EXPECT_FALSE(has_one(*store, digest_key(2)));
+    EXPECT_TRUE(has_one(*store, digest_key(5)));
+    store.reset();
+    std::filesystem::remove_all(directory);
+}
+
+TEST(TestStoreRegistry, DefaultStoreRestoresTheEvictionOrderAfterReopening) {
+    const auto directory = fresh_directory("openvino_genai_default_store_order");
+    const OffloadSettings config = make_default_store_config(directory);
+    {
+        auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+        for (uint64_t number = 1; number <= NUM_BLOCKS; ++number) {
+            ASSERT_TRUE(write_one(*store, digest_key(number), make_block(static_cast<uint8_t>(number))));
+        }
+    }
+
+    auto reopened = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+    ASSERT_TRUE(write_one(*reopened, digest_key(5), make_block(5)));
+    EXPECT_FALSE(has_one(*reopened, digest_key(1)));  // written first, so least recent
+    EXPECT_TRUE(has_one(*reopened, digest_key(2)));
+    reopened.reset();
+    std::filesystem::remove_all(directory);
+}
+
+TEST(TestStoreRegistry, DefaultStoreTreatsADamagedBlockAsMissing) {
+    const auto directory = fresh_directory("openvino_genai_default_store_damage");
+    const OffloadSettings config = make_default_store_config(directory);
+    {
+        auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+        ASSERT_TRUE(write_one(*store, digest_key(1), make_block(1)));
+    }
+    {
+        const auto slots = find_slots_file(directory);
+        ASSERT_FALSE(slots.empty());
+        std::fstream file(slots, std::ios::in | std::ios::out | std::ios::binary);
+        file.seekp(64 + 3);  // inside the payload of the first slot, behind its 64 byte header
+        const char flipped = 0x5A;
+        file.write(&flipped, 1);
+    }
+
+    auto reopened = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+    ASSERT_TRUE(has_one(*reopened, digest_key(1)));
+    std::vector<std::vector<uint8_t>> data;
+    EXPECT_FALSE(reopened->read_blocks_by_key({digest_key(1)}, data)[0]);
+    EXPECT_FALSE(has_one(*reopened, digest_key(1)));
+    EXPECT_EQ(reopened->get_num_free_blocks(), NUM_BLOCKS);
+    reopened.reset();
+    std::filesystem::remove_all(directory);
+}
+
+TEST(TestStoreRegistry, DefaultStoreRefusesToOpenADirectoryInUse) {
+    const auto directory = fresh_directory("openvino_genai_default_store_lock");
+    const OffloadSettings config = make_default_store_config(directory);
+    auto first = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
+    EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a"), ov::Exception);
+    EXPECT_NO_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv:model_b"));
+    first.reset();
+    EXPECT_NO_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a"));
+    std::filesystem::remove_all(directory);
+}
+
+TEST(TestStoreRegistry, PersistentDefaultStoreSkipsABlockWithoutADigest) {
+    const auto directory = fresh_directory("openvino_genai_default_store_no_digest");
+    auto store = open_kv_cache_store(make_layout(), make_default_store_config(directory), "CPU", "kv:model_a");
+    EXPECT_FALSE(write_one(*store, PrefixKey{5, std::nullopt}, make_block(5)));
+    EXPECT_FALSE(has_one(*store, PrefixKey{5, std::nullopt}));
+    store.reset();
+    std::filesystem::remove_all(directory);
+}
+
+TEST(TestStoreRegistry, DefaultStoreWithoutAModelIdentityLeavesNothingBehind) {
+    const auto directory = fresh_directory("openvino_genai_default_store_private");
+    {
+        auto store = open_kv_cache_store(make_layout(), make_default_store_config(directory), "CPU", "kv");
+        EXPECT_FALSE(store->is_persistent());
+        ASSERT_TRUE(write_one(*store, PrefixKey{5, std::nullopt}, make_block(5)));
+    }
+    EXPECT_TRUE(find_slots_file(directory).empty());
+    std::filesystem::remove_all(directory);
+}
+
+TEST(TestStoreRegistry, DefaultStoreRequiresAnExistingKvCacheDirectory) {
+    OffloadSettings config = make_config();
+    config.kv_cache_dir.clear();
+    EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a"), ov::Exception);
+    config.kv_cache_dir = (std::filesystem::temp_directory_path() / "openvino_genai_default_store_missing").string();
+    EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a"), ov::Exception);
 }

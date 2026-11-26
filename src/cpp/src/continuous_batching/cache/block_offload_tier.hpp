@@ -124,8 +124,8 @@ public:
         OPENVINO_ASSERT(m_max_queued_stores > 0, Traits::kKind, " needs at least one staging buffer");
         OPENVINO_ASSERT(m_store->get_block_size() == m_cache_manager.get_block_layout().get_slot_size(),
                         Traits::kKind, " store block size does not match the cache block layout");
-        m_track_chains = m_store->is_plugin_backed();
-        if (m_track_chains) {
+        m_track_chains = m_store->wants_chain_context();
+        if (m_store->is_persistent()) {
             // A store that outlives this process is keyed by the 128-bit digest, which Sequence records on request.
             m_digest_lease.emplace();
         }

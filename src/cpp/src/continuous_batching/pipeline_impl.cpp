@@ -183,11 +183,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     SchedulerConfig normalized_config = scheduler_config;
     normalized_config.validate();
 
-    // A store plugin may keep blocks across pipelines, so its namespaces need to tell models apart. The in-tree
-    // file store lives and dies with this pipeline and needs no identity.
+    // Offloaded blocks stay in the SSD tier after this pipeline (a plugin or the in-tree store), so the namespaces
+    // they are stored under need to tell models apart.
     std::string model_identity;
-    const bool plugin_backed_offload_requested = normalized_config.cache_offload.has_value() &&
-                                                 normalized_config.cache_offload->plugin.has_value();
+    const bool offload_requested = normalized_config.cache_offload.has_value();
 
     // Resolve per-role MODEL_PROPERTIES overlay for the language model and
     // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
@@ -200,12 +199,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     // LoRA adapter would therefore share that namespace with the same base model under a different adapter (or
     // none), silently reusing KV blocks computed under the wrong weights. Until adapters are folded into cache
     // identity, reject the combination instead of risking that.
-    OPENVINO_ASSERT(!plugin_backed_offload_requested || !m_generation_config.adapters,
-                    "KV cache offload through a store plugin is not supported together with LoRA adapters yet, "
-                    "since the store namespace does not distinguish adapters from the base model. Remove "
-                    "the plugin from cache_offload or the adapters to proceed.");
+    OPENVINO_ASSERT(!offload_requested || !m_generation_config.adapters,
+                    "KV cache offload is not supported together with LoRA adapters yet, since the store namespace "
+                    "does not distinguish adapters from the base model. Remove cache_offload or the adapters to proceed.");
 
-    if (plugin_backed_offload_requested) {
+    if (offload_requested) {
         const auto identity_start = std::chrono::steady_clock::now();
         model_identity = compute_model_identity(model);
         GENAI_INFO("[KV_TRACE] model_identity=%s computed_in_ms=%lld",

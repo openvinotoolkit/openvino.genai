@@ -174,6 +174,16 @@ public:
         return false;
     }
 
+    /// Whether blocks stay in the store after this pipeline, so that they are keyed by the 128-bit digest.
+    virtual bool is_persistent() const {
+        return is_plugin_backed();
+    }
+
+    /// Whether the store wants a block written only after the chain of blocks before it was probed (see has_blocks()).
+    virtual bool wants_chain_context() const {
+        return is_plugin_backed();
+    }
+
     /**
      * @brief Tells the store what a prefix restore found, once per request after the restore is decided.
      * @return Whether the store took the report and so reports the reuse metrics itself; when false the caller

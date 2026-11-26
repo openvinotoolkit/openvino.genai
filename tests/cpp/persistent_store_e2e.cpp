@@ -113,8 +113,9 @@ SchedulerConfig make_restart_scheduler_config() {
     return config;
 }
 
-/// Offload through the sample plugin's persistent provider, which keeps one file per block in `store_dir`, with every
-/// completed block stored right after the forward pass that completed it.
+/// Offload with every completed block stored right after the forward pass that completed it, through the sample
+/// plugin's persistent provider, which keeps one file per block in `store_dir`; an empty @p plugin_path selects the
+/// in-tree store, which keeps its slots in `store_dir` as well.
 SchedulerConfig make_persistent_store_config(const std::string& plugin_path, const std::string& store_dir, bool hybrid) {
     auto config = make_restart_scheduler_config();
     CacheOffloadConfig offload;
@@ -122,9 +123,11 @@ SchedulerConfig make_persistent_store_config(const std::string& plugin_path, con
     // A linear-attention checkpoint is large, so a hybrid model's store holds only a few of them.
     offload.ssd_cache_capacity_gb = hybrid ? 6.0 : 2.0;
     offload.write_policy = CacheOffloadWritePolicy::WRITE_THROUGH;
-    offload.plugin = CacheStorePluginConfig{};
-    offload.plugin->library_path = plugin_path;
-    offload.plugin->provider_name = "sample-persistent-file";
+    if (!plugin_path.empty()) {
+        offload.plugin = CacheStorePluginConfig{};
+        offload.plugin->library_path = plugin_path;
+        offload.plugin->provider_name = "sample-persistent-file";
+    }
     config.cache_offload = offload;
     return config;
 }
@@ -224,4 +227,20 @@ TEST(TestPersistentStoreEndToEnd, HybridModelNewPipelineReusesBlocksStoredByAnEa
         GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
     }
     run_restart_reuses_stored_blocks(model_path, *plugin_path, /*hybrid=*/true);
+}
+
+TEST(TestPersistentStoreEndToEnd, NewPipelineReusesBlocksOfTheInTreeStore) {
+    const char* model_path = std::getenv(MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << MODEL_PATH_ENV << " is not set, skipping persistent store end-to-end test.";
+    }
+    run_restart_reuses_stored_blocks(model_path, /*plugin_path=*/"", /*hybrid=*/false);
+}
+
+TEST(TestPersistentStoreEndToEnd, HybridModelNewPipelineReusesBlocksOfTheInTreeStore) {
+    const char* model_path = std::getenv(VLM_MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0') {
+        GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid persistent store end-to-end test.";
+    }
+    run_restart_reuses_stored_blocks(model_path, /*plugin_path=*/"", /*hybrid=*/true);
 }

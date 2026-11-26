@@ -3,6 +3,8 @@
 
 #include "continuous_batching/cache/store_registry.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -23,7 +25,7 @@
 
 #include "continuous_batching/cache/abi_kv_cache_store.hpp"
 #include "continuous_batching/cache/abi_sdk_fingerprint.hpp"
-#include "continuous_batching/cache/file_kv_cache_store.hpp"
+#include "continuous_batching/cache/default_file_store.hpp"
 #include "continuous_batching/cache/kv_cache_offload_manager.hpp"
 #include "content_hash.hpp"
 #include "logger.hpp"
@@ -109,11 +111,26 @@ const OvKVCacheStoreProviderDescriptor* find_provider(const OvKVCacheStoreModule
     return nullptr;
 }
 
-std::unique_ptr<IKVCacheStore> make_default_store(const KVCacheDiskLayout& layout,
-                                                  const OffloadSettings& config,
-                                                  const std::string& device) {
-    auto backend = std::make_unique<KVCacheOffloadManager>(layout, config, device);
-    return std::make_unique<FileKVCacheStore>(std::move(backend));
+std::string file_stem_of(const std::string& group) {
+    std::string stem = group.substr(0, group.find(':'));
+    std::replace_if(stem.begin(), stem.end(), [](char c) { return !std::isalnum(static_cast<unsigned char>(c)) && c != '_'; }, '_');
+    return stem.empty() ? "group" : stem;
+}
+
+/// The in-tree store of @p groups in the directory of @p name_space; see DefaultFileGroupStore.
+std::unique_ptr<IGroupedKVCacheStore> open_default_store(const std::vector<StoreGroupSpec>& groups,
+                                                         const OffloadSettings& config,
+                                                         const std::string& device,
+                                                         const std::string& name_space) {
+    OPENVINO_ASSERT(KVCacheOffloadManager::is_supported_device(device),
+                    "KV cache offload is implemented for CPU and GPU, but the inference device is '", device, "'");
+    std::vector<DefaultFileStore::Group> files;
+    for (const StoreGroupSpec& group : groups) {
+        const size_t block_bytes = group.layout.get_slot_size();
+        OPENVINO_ASSERT(block_bytes > 0, "KV cache offload slot size must be greater than 0");
+        files.push_back({file_stem_of(group.name), block_bytes, static_cast<size_t>(group.capacity_bytes / block_bytes)});
+    }
+    return std::make_unique<DefaultFileStore>(config.kv_cache_dir, name_space, files, config.reuse_ssd_cache);
 }
 
 /// The provider of the configured plugin. Throws, naming the library, the provider and the stage, when the plugin cannot
@@ -293,7 +310,7 @@ std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layo
     if (!config.store_library_path.empty()) {
         return open_plugin_store(load_plugin_provider(config), layout, config, device, group, block_tokens, config.capacity_bytes);
     }
-    return make_default_store(layout, config, device);
+    return open_default_store({StoreGroupSpec{group, group, layout, block_tokens, config.capacity_bytes}}, config, device, group)->group(0);
 }
 
 std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vector<StoreGroupSpec>& groups,
@@ -301,10 +318,12 @@ std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vec
                                                                   const std::string& device,
                                                                   const std::string& shared_namespace) {
     OPENVINO_ASSERT(!groups.empty(), "A grouped KV cache store needs at least one group");
-    const OvKVCacheStoreProviderDescriptor* provider =
-        config.store_library_path.empty() ? nullptr : load_plugin_provider(config);
+    if (config.store_library_path.empty()) {
+        return open_default_store(groups, config, device, shared_namespace);
+    }
+    const OvKVCacheStoreProviderDescriptor* provider = load_plugin_provider(config);
 
-    if (provider != nullptr && (provider->capabilities & OV_KVCACHE_CAP_MULTI_GROUP) != 0) {
+    if ((provider->capabilities & OV_KVCACHE_CAP_MULTI_GROUP) != 0) {
         if ((provider->capabilities & OV_KVCACHE_CAP_SELF_EVICT) == 0) {
             GENAI_WARN("KV cache store plugin '%s' serves all groups from one instance but does not evict by itself, "
                        "which the host cannot count per group; opening one instance per group instead",
@@ -332,14 +351,13 @@ std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vec
     std::vector<std::unique_ptr<IKVCacheStore>> views;
     for (const StoreGroupSpec& group : groups) {
         const OffloadSettings group_config = config_with_capacity(config, group.capacity_bytes);
-        views.push_back(provider != nullptr ? open_plugin_store(provider,
-                                                                 group.layout,
-                                                                 group_config,
-                                                                 device,
-                                                                 group.own_namespace,
-                                                                 group.block_tokens,
-                                                                 group.capacity_bytes)
-                                            : make_default_store(group.layout, group_config, device));
+        views.push_back(open_plugin_store(provider,
+                                          group.layout,
+                                          group_config,
+                                          device,
+                                          group.own_namespace,
+                                          group.block_tokens,
+                                          group.capacity_bytes));
     }
     return std::make_unique<ViewSetKVCacheStore>(std::move(views));
 }
