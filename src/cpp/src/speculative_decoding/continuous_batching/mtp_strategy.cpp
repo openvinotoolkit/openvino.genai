@@ -200,9 +200,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
         if (main_position_ids) {
             m_inputs_embedder->set_position_ids(main_position_ids);
         }
-        m_main_pipeline->discard_awaiting_request(request_id);
-        m_draft_pipeline->discard_awaiting_request(request_id);
-        m_draft_generations.erase(request_id);
+        discard_awaiting_request(request_id);
         throw;
     }
 }
