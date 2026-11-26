@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -156,7 +157,9 @@ protected:
             heads[layer] = {random_vector(EXPERTS * HIDDEN, rng), random_vector(EXPERTS * HIDDEN, rng),
                             random_vector(EXPERTS, rng, 200.0f)};
         }
-        path = std::filesystem::temp_directory_path() / ("les_predictor_test_" + std::to_string(::getpid()) + ".safetensors");
+        path = std::filesystem::temp_directory_path() /
+               ("les_predictor_test_" +
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".safetensors");
         write_safetensors(path, heads);
         model_rng.seed(11);
     }
