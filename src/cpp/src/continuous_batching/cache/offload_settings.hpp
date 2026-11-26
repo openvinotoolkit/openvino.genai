@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <sstream>
 #include <string>
 
 namespace ov::genai {
@@ -45,6 +46,16 @@ struct OffloadSettings {
 
     /// Also store every block right after the forward pass that completed it.
     bool store_completed_blocks = false;
+
+    /// What was resolved, for the log; the user's own values are printed by CacheOffloadConfig::to_string().
+    std::string to_string() const {
+        std::ostringstream oss;
+        oss << "owner=" << (store_library_path.empty() ? "default_ssd" : "plugin") << " kv_cache_dir=" << kv_cache_dir
+            << " kv_capacity_bytes=" << capacity_bytes << " la_capacity_bytes=" << linear_attention_capacity_bytes
+            << " write_policy=" << (store_completed_blocks ? "WRITE_THROUGH" : "ON_EVICT")
+            << " reuse_ssd_cache=" << (reuse_ssd_cache ? "true" : "false");
+        return oss.str();
+    }
 };
 
 }  // namespace ov::genai

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -24,6 +25,7 @@
 #include "openvino/core/model.hpp"
 #include "openvino/core/node.hpp"
 #include "openvino/core/version.hpp"
+#include "openvino/genai/version.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/loop.hpp"
 #include "openvino/op/util/multi_subgraph_base.hpp"
@@ -103,9 +105,21 @@ public:
             thread.join();
         }
 
+        std::string described;
         for (size_t i = 0; i < constants.size(); ++i) {
-            m_digests.emplace(key_of(*constants[i]), combine_shard_digests(digests[i], constants[i]->get_byte_size()));
+            const ContentHash digest = combine_shard_digests(digests[i], constants[i]->get_byte_size());
+            m_digests.emplace(key_of(*constants[i]), digest);
+            std::ostringstream description;
+            description << constants[i]->get_element_type() << ' ' << constants[i]->get_shape() << ';';
+            described += description.str();
+            described.append(reinterpret_cast<const char*>(&digest), sizeof(digest));
         }
+        m_combined = compute_content_hash(described.data(), described.size());
+    }
+
+    /// One digest of every constant, in graph order, with its element type and shape.
+    const ContentHash& combined() const {
+        return m_combined;
     }
 
     ContentHash digest_of(const ov::op::v0::Constant& constant) const {
@@ -139,7 +153,24 @@ private:
     }
 
     std::map<Key, ContentHash> m_digests;
+    ContentHash m_combined;
 };
+
+/// Constants up to this size are covered by their bytes in the structure digest; of a larger one only its type, shape
+/// and the first and last 4 KiB, since its full bytes belong to the weights digest.
+constexpr size_t STRUCTURE_FULL_CONSTANT_BYTES = 64ull * 1024;
+constexpr size_t STRUCTURE_EDGE_BYTES = 4ull * 1024;
+
+inline ContentHash structure_digest_of(const ov::op::v0::Constant& constant) {
+    const size_t size = constant.get_byte_size();
+    const auto* data = static_cast<const uint8_t*>(constant.get_data_ptr());
+    if (size <= STRUCTURE_FULL_CONSTANT_BYTES) {
+        return digest_of_bytes(data, size);
+    }
+    const ContentHash edges[] = {compute_content_hash(data, STRUCTURE_EDGE_BYTES),
+                                 compute_content_hash(data + size - STRUCTURE_EDGE_BYTES, STRUCTURE_EDGE_BYTES)};
+    return compute_content_hash(edges, sizeof(edges), size);
+}
 
 /**
  * @brief Feeds a graph into a ContentHash: every constant, and every operator's type, attributes and connectivity.
@@ -152,9 +183,10 @@ private:
  */
 class ModelHasher final : public ov::AttributeVisitor {
 public:
-    ModelHasher(ContentHash& state, const ConstantDigests& constant_digests)
+    /// @param constant_digest What a numeric constant contributes besides its type and shape.
+    ModelHasher(ContentHash& state, std::function<ContentHash(const ov::op::v0::Constant&)> constant_digest)
         : m_state(state),
-          m_constant_digests(constant_digests) {}
+          m_constant_digest(std::move(constant_digest)) {}
 
     void hash_model(const ov::Model& model) {
         const auto ordered_ops = model.get_ordered_ops();
@@ -178,7 +210,7 @@ public:
                         mix_bytes(item.data(), size);
                     }
                 } else {
-                    const ContentHash digest = m_constant_digests.digest_of(*constant);
+                    const ContentHash digest = m_constant_digest(*constant);
                     mix_bytes(&digest, sizeof(digest));
                 }
                 // Constant has no other attributes worth visiting; its identity is the bytes above.
@@ -387,33 +419,64 @@ private:
     }
 
     ContentHash& m_state;
-    const ConstantDigests& m_constant_digests;
+    std::function<ContentHash(const ov::op::v0::Constant&)> m_constant_digest;
     std::string m_current_op_type;
 };
 
 }  // namespace model_identity_detail
 
+namespace model_identity_detail {
+
+inline std::string to_hex(const ContentHash& hash) {
+    char hex[33];
+    std::snprintf(hex, sizeof(hex), "%016llx%016llx", static_cast<unsigned long long>(hash.hi),
+                  static_cast<unsigned long long>(hash.lo));
+    return hex;
+}
+
+/// Bumped when the way the digests are computed changes, so identities of an older format are never matched.
+constexpr uint32_t IDENTITY_FORMAT_VERSION = 2;
+
+}  // namespace model_identity_detail
+
+/**
+ * @brief Digest of a model's graph structure, as 32 hex characters, cheap enough to compute before the model is compiled.
+ *
+ * Covers every operator's type, attributes and connectivity (by position in topological order, never by name - see
+ * ModelHasher) and the element type and shape of every constant. A constant of up to 64 KiB (scales, RoPE tables) is
+ * covered by its bytes, a larger one only by its first and last 4 KiB: its full bytes belong to the weights digest.
+ * @throws ov::Exception if an operator has an attribute of a type the digest cannot cover.
+ */
+inline std::string compute_structure_digest(const std::shared_ptr<const ov::Model>& model) {
+    ContentHash state{0x9E3779B97F4A7C15ULL, 0xC2B2AE3D27D4EB4FULL};
+    model_identity_detail::ModelHasher hasher(state, &model_identity_detail::structure_digest_of);
+    hasher.hash_model(*model);
+    return model_identity_detail::to_hex(state);
+}
+
+/// Digest of the bytes of every numeric constant (tied weights hashed once), computed on all cores. Slow for a large model.
+inline std::string compute_weights_digest(const std::shared_ptr<const ov::Model>& model) {
+    return model_identity_detail::to_hex(model_identity_detail::ConstantDigests(*model).combined());
+}
+
+/// The identity of a model from its two digests; see compute_model_identity().
+inline std::string combine_model_identity(const std::string& structure_digest, const std::string& weights_digest) {
+    const std::string text = structure_digest + '|' + weights_digest + '|' +
+                             std::to_string(model_identity_detail::IDENTITY_FORMAT_VERSION);
+    return model_identity_detail::to_hex(compute_content_hash(text.data(), text.size()));
+}
+
 /**
  * @brief Digest of a model's weights and graph structure, as 32 hex characters.
  *
  * Block hashes of the prefix cache depend only on tokens, so a store that outlives the pipeline needs
- * something that tells two models apart. The digest covers every constant's element type, shape and bytes
- * (in graph order), plus every operator's type, attributes and connectivity (by position in topological
- * order, never by name - see ModelHasher), so the same weights and graph give the same value
- * across processes and builds, and two graphs that happen to share constants but differ in operators,
- * attributes, wiring or sub-graph bodies do not collide.
+ * something that tells two models apart. The digest covers the structure digest and the weights digest, so the same
+ * weights and graph give the same value across processes and builds, and two graphs that happen to share constants
+ * but differ in operators, attributes, wiring or sub-graph bodies do not collide.
  * @throws ov::Exception if an operator has an attribute of a type the digest cannot cover.
  */
 inline std::string compute_model_identity(const std::shared_ptr<const ov::Model>& model) {
-    ContentHash state{0x9E3779B97F4A7C15ULL, 0xC2B2AE3D27D4EB4FULL};
-    const model_identity_detail::ConstantDigests constant_digests(*model);
-    model_identity_detail::ModelHasher hasher(state, constant_digests);
-    hasher.hash_model(*model);
-
-    char hex[33];
-    std::snprintf(hex, sizeof(hex), "%016llx%016llx", static_cast<unsigned long long>(state.hi),
-                  static_cast<unsigned long long>(state.lo));
-    return hex;
+    return combine_model_identity(compute_structure_digest(model), compute_weights_digest(model));
 }
 
 /**
@@ -425,7 +488,7 @@ inline std::string compute_model_identity(const std::shared_ptr<const ov::Model>
  */
 inline std::string compute_numerics_fingerprint(const ov::CompiledModel& compiled_model, ov::Core& core) {
     std::ostringstream fingerprint;
-    fingerprint << ov::get_openvino_version().buildNumber;
+    fingerprint << ov::get_openvino_version().buildNumber << "|genai=" << ov::genai::get_version().buildNumber;
     for (const char* name : {"INFERENCE_PRECISION_HINT",
                              "KV_CACHE_PRECISION",
                              "KEY_CACHE_PRECISION",

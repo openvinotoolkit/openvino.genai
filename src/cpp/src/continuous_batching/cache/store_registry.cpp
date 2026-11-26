@@ -148,6 +148,11 @@ const OvKVCacheStoreProviderDescriptor* load_plugin_provider(const OffloadSettin
     const OvKVCacheStoreModuleInfo* module_info = reinterpret_cast<QueryProvidersFn>(symbol)();
     OPENVINO_ASSERT(module_info != nullptr && handshake_ok(library, *module_info),
                     "KV cache store plugin '", library, "' failed the ABI handshake");
+    if (!config.debug_log_path.empty() && module_info->abi_minor < 3) {
+        GENAI_WARN("KV cache store plugin '%s' was built against ABI 1.%u, which has no debug_log_path, so it is ignored",
+                   library.c_str(),
+                   module_info->abi_minor);
+    }
 
     const OvKVCacheStoreProviderDescriptor* provider = find_provider(*module_info, config.store_provider_name);
     // struct_bytes bounds what the host may read; open() is a tail entry, so check it covers the pointer.

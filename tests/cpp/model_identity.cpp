@@ -196,6 +196,25 @@ TEST(TestModelIdentity, ALargeConstantIsCoveredInEveryShard) {
     EXPECT_NE(base, compute_model_identity(make_model(weights, shape)));
 }
 
+// The structure digest is what is known before the model is compiled; the bytes of a large constant are the weights digest's.
+TEST(TestModelIdentity, StructureDigestSkipsTheMiddleOfALargeConstantAndTheWeightsDigestDoesNot) {
+    const ov::Shape shape{6 * 1024 * 1024};
+    std::vector<float> weights(shape[0], 1.f);
+    const std::shared_ptr<const ov::Model> base = make_model(weights, shape);
+    weights[shape[0] / 2] = 2.f;
+    const std::shared_ptr<const ov::Model> changed = make_model(weights, shape);
+
+    EXPECT_EQ(compute_structure_digest(base), compute_structure_digest(changed));
+    EXPECT_NE(compute_weights_digest(base), compute_weights_digest(changed));
+    EXPECT_NE(compute_model_identity(base), compute_model_identity(changed));
+}
+
+TEST(TestModelIdentity, StructureDigestCoversASmallConstantAndTheGraph) {
+    const std::shared_ptr<const ov::Model> base = make_model({1.f, 2.f, 3.f, 4.f}, {2, 2});
+    EXPECT_NE(compute_structure_digest(base), compute_structure_digest(make_model({1.f, 2.f, 3.f, 5.f}, {2, 2})));
+    EXPECT_NE(compute_structure_digest(base), compute_structure_digest(make_model_with_subtract({1.f, 2.f, 3.f, 4.f}, {2, 2})));
+}
+
 TEST(TestModelIdentity, ATiedConstantIsHashedLikeTwoConstantsOfTheSameBytes) {
     auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{4});
     auto shared = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{4}, std::vector<float>{1.f, 2.f, 3.f, 4.f});

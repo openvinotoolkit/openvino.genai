@@ -371,7 +371,7 @@ typedef struct OvKVCacheProperty {
 
 /// Describes one cache group the host will use. Strings are borrowed for the `open` call.
 typedef struct OvKVCacheGroupInfo {
-    const char* group;       ///< group name used in `OvKVCacheBlockKey::group`; equals the namespace passed to `open` unless the provider advertises `OV_KVCACHE_CAP_MULTI_GROUP`
+    const char* group;       ///< group tag used in `OvKVCacheBlockKey::group`; not the namespace, which only identifies the model and cache layout
     uint32_t group_len;
     uint32_t block_tokens;   ///< tokens one block covers (for a state group: the checkpoint interval); 0 if not token-addressed
     uint64_t block_bytes;    ///< exact byte size of every read and write of this group

@@ -89,11 +89,19 @@ public:
                 offload_config.linear_attention_capacity_bytes});
         }
 
+        GENAI_INFO("KV cache offload plan: %s", offload_config.to_string().c_str());
         auto stores = open_grouped_kv_cache_store(specs, offload_config, device, shared_namespace(specs));
         auto kv_store = stores->group(0);
         GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
                    kv_store->get_block_size(),
                    kv_store->get_capacity_blocks());
+        const size_t device_blocks = kv_block_manager.get_total_block_count();
+        if (offload_config.store_completed_blocks && device_blocks > 0 && kv_store->get_capacity_blocks() <= device_blocks) {
+            GENAI_WARN("KV cache offload with WRITE_THROUGH holds %zu blocks, no more than the %zu blocks of the device cache: "
+                       "within one run it adds nothing, only a later run profits from what it stores",
+                       kv_store->get_capacity_blocks(),
+                       device_blocks);
+        }
         m_kv = std::make_unique<KVCacheOffloadCache>(kv_manager, std::move(kv_store), offload_config.buffer_slots);
         kv_block_manager.set_overwritten_block_observer(m_kv.get());
         m_kv_block_manager = &kv_block_manager;

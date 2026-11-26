@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -52,6 +53,7 @@ struct SlotHeader {
     ContentHash key;
     ContentHash payload_hash;
     uint64_t payload_bytes = 0;
+    uint32_t flags = 0;  ///< none defined yet; a reader of this format version ignores it
 };
 
 // Field offsets inside the 64 byte header; the bytes in between are zero.
@@ -61,6 +63,7 @@ constexpr size_t OFFSET_SEQ = 8;
 constexpr size_t OFFSET_KEY = 16;
 constexpr size_t OFFSET_PAYLOAD_HASH = 32;
 constexpr size_t OFFSET_PAYLOAD_BYTES = 48;
+constexpr size_t OFFSET_FLAGS = 56;
 
 inline void encode_header(const SlotHeader& header, uint8_t (&bytes)[HEADER_BYTES]) {
     std::memset(bytes, 0, HEADER_BYTES);
@@ -74,6 +77,7 @@ inline void encode_header(const SlotHeader& header, uint8_t (&bytes)[HEADER_BYTE
     std::memcpy(bytes + OFFSET_PAYLOAD_HASH, &header.payload_hash.lo, sizeof(uint64_t));
     std::memcpy(bytes + OFFSET_PAYLOAD_HASH + sizeof(uint64_t), &header.payload_hash.hi, sizeof(uint64_t));
     std::memcpy(bytes + OFFSET_PAYLOAD_BYTES, &header.payload_bytes, sizeof(header.payload_bytes));
+    std::memcpy(bytes + OFFSET_FLAGS, &header.flags, sizeof(header.flags));
 }
 
 /// @return false when the bytes are not a header of this format.
@@ -91,7 +95,25 @@ inline bool decode_header(const uint8_t (&bytes)[HEADER_BYTES], SlotHeader& head
     std::memcpy(&header.payload_hash.lo, bytes + OFFSET_PAYLOAD_HASH, sizeof(uint64_t));
     std::memcpy(&header.payload_hash.hi, bytes + OFFSET_PAYLOAD_HASH + sizeof(uint64_t), sizeof(uint64_t));
     std::memcpy(&header.payload_bytes, bytes + OFFSET_PAYLOAD_BYTES, sizeof(header.payload_bytes));
+    std::memcpy(&header.flags, bytes + OFFSET_FLAGS, sizeof(header.flags));
     return true;
+}
+
+/// Reserves @p size bytes of disk for the file, so that a full disk is found when the store opens and not by a failed write.
+/// A file system without the call (e.g. tmpfs) is left sparse.
+inline void reserve_file_space(const std::filesystem::path& path, size_t size) {
+    std::error_code error;
+    std::filesystem::resize_file(path, size, error);
+    OPENVINO_ASSERT(!error, "Failed to reserve ", size, " bytes in '", path.string(), "': ", error.message());
+#ifndef _WIN32
+    const int fd = ::open(path.c_str(), O_RDWR);
+    if (fd >= 0) {
+        const int result = ::posix_fallocate(fd, 0, static_cast<off_t>(size));
+        ::close(fd);
+        OPENVINO_ASSERT(result == 0 || result == EOPNOTSUPP || result == EINVAL,
+                        "Failed to reserve ", size, " bytes in '", path.string(), "': ", std::strerror(result));
+    }
+#endif
 }
 
 struct ContentHashHasher {
@@ -235,9 +257,7 @@ public:
         if (!keep_content) {
             std::ofstream(path, std::ios::binary | std::ios::trunc);
         }
-        std::error_code error;
-        std::filesystem::resize_file(path, m_capacity_blocks * m_stride, error);
-        OPENVINO_ASSERT(!error, "Failed to reserve ", m_capacity_blocks * m_stride, " bytes in '", path.string(), "': ", error.message());
+        reserve_file_space(path, m_capacity_blocks * m_stride);
         m_file.open(path, std::ios::in | std::ios::out | std::ios::binary);
         OPENVINO_ASSERT(m_file.is_open(), "Failed to open '", path.string(), "'");
 
