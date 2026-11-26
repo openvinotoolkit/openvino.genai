@@ -226,11 +226,14 @@ class CBStepHookTest : public testing::Test, public ContinuousBatchingPipeline {
 protected:
     class PipelineTestInstance : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
     public:
-        explicit PipelineTestInstance(const std::shared_ptr<IStepHook>& step_hook, size_t max_num_batched_tokens = 16) {
+        explicit PipelineTestInstance(const std::shared_ptr<IStepHook>& step_hook,
+                                      size_t max_num_batched_tokens = 16,
+                                      bool enable_prefix_caching = false) {
             SchedulerConfig scheduler_config;
             scheduler_config.num_kv_blocks = 16;
             scheduler_config.max_num_batched_tokens = max_num_batched_tokens;
             scheduler_config.max_num_seqs = 4;
+            scheduler_config.enable_prefix_caching = enable_prefix_caching;
             m_scheduler = std::make_shared<ContinuousBatchingScheduler>(init_cache_orchestrator(scheduler_config, 4, 1),
                                                                         scheduler_config);
             m_sampler = std::make_shared<Sampler>();
@@ -559,6 +562,23 @@ TEST_F(CBStepHookTerminalTest, dropped_awaiting_request_is_never_pulled) {
     EXPECT_TRUE(pipeline.requests().empty());
     EXPECT_TRUE(hook->select_calls.empty());
     EXPECT_EQ(hook->terminal_count(1), 1);
+}
+
+TEST_F(CBStepHookTerminalTest, drop_frees_blocks_restored_for_awaiting_request) {
+    PipelineTestInstance pipeline(hook, 16, /*enable_prefix_caching=*/true);
+    const std::vector<int64_t> prompt{1, 2, 3, 4, 5, 6, 7, 8, 9};
+    pipeline.add(0, prompt, make_config(1));
+    pipeline.step();
+    ASSERT_TRUE(pipeline.requests().empty());
+
+    pipeline.add(1, prompt, make_config(1));
+    ASSERT_EQ(pipeline.awaiting().size(), 1);
+    const auto sequence_id = pipeline.awaiting().front()->get_sequences().front()->get_id();
+    ASSERT_TRUE(pipeline.has_block_table(sequence_id));
+
+    pipeline.drop_requests();
+
+    EXPECT_FALSE(pipeline.has_block_table(sequence_id));
 }
 
 TEST_F(CBStepHookTerminalTest, pipeline_failure_carries_its_error) {

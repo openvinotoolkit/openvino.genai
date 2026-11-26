@@ -1558,6 +1558,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
     // A dropped request still waiting to be pulled would otherwise run on the next step without its state.
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     for (const auto& request : m_awaiting_requests) {
+        // Prefix caching restores blocks when a request is added, before it is pulled.
+        for (const auto& sequence : request->get_sequences()) {
+            if (m_scheduler->has_block_table(sequence->get_id())) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+        }
         _end_step_state(request, {GenerationStatus::FAILED, nullptr});
     }
     m_awaiting_requests.clear();
