@@ -263,6 +263,10 @@ public:
     void remove_last_tokens(int n) {
         OPENVINO_ASSERT(n >= 0, "Number of tokens to remove must be greater than or equal to 0");
         OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
+        if (m_type == SequenceGroupType::EMBEDDINGS) {
+            OPENVINO_ASSERT(m_generated_ids_embeds.size() <= m_generated_ids.size(),
+                            "Generated embeddings count exceeds generated ids count");
+        }
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
@@ -272,11 +276,14 @@ public:
             }
         }
         if (m_type == SequenceGroupType::EMBEDDINGS) {
-            const size_t tokens_to_remove = static_cast<size_t>(n);
-            const size_t embeds_to_remove = tokens_to_remove;
-            const size_t position_ids_to_remove = tokens_to_remove;
-            OPENVINO_ASSERT(embeds_to_remove <= m_generated_ids_embeds.size(), "Cannot remove more embeds than has been generated in embeddings");
-            OPENVINO_ASSERT(position_ids_to_remove <= m_position_ids_list.size(), "Cannot remove more position ids than has been generated in position_ids");
+            const size_t remaining_generated_tokens = m_generated_ids.size();
+            const size_t remaining_embeds = std::min(m_generated_ids_embeds.size(), remaining_generated_tokens);
+            const size_t embeds_to_remove = m_generated_ids_embeds.size() - remaining_embeds;
+            OPENVINO_ASSERT(embeds_to_remove <= m_generated_ids_embeds.size(),
+                            "Cannot remove more embeds than has been generated");
+            OPENVINO_ASSERT(embeds_to_remove <= m_position_ids_list.size(),
+                            "Cannot remove more position ids than has been generated");
+            const size_t position_ids_to_remove = embeds_to_remove;
 
             truncate_generated_ids_embeds(embeds_to_remove);
             truncate_position_ids(position_ids_to_remove);
