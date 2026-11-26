@@ -18,7 +18,7 @@ class TestChatSample:
             ['What is 2 + 2?', 'What is the previous answer?', 'Add 1 to it.', 'Subtract 5 from it.', 'Why is the sun yellow?', 'What was my first question?'],
         ],
     )
-    def test_chat_sample_refs(self, request, convert_model, prompts):
+    def test_chat_sample_refs(self, request, convert_model, prompts, download_reference_model):
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
         # C++ test
@@ -48,8 +48,9 @@ class TestChatSample:
         
         from transformers import AutoTokenizer, AutoModelForCausalLM
 
-        tokenizer = AutoTokenizer.from_pretrained(model["name"], local_files_only=True)
-        model = AutoModelForCausalLM.from_pretrained(model["name"], local_files_only=True)
+        reference_path = download_reference_model(model["name"])
+        tokenizer = AutoTokenizer.from_pretrained(reference_path, local_files_only=True)
+        model = AutoModelForCausalLM.from_pretrained(reference_path, local_files_only=True)
 
         def gen_prompt(prompt):
             return {'role': 'user', 'content': prompt}

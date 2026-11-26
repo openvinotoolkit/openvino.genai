@@ -13,6 +13,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from huggingface_hub import snapshot_download
+
 from utils.network import retry_request
 from utils.export import export_command
 from utils.constants import (
@@ -419,6 +421,18 @@ def _prepare_model_for_tests(model_id: str):
     logger.info(f"Preparing model: {model_name}")
     optimum_cli_convert(model, str(model_path))
     return str(model_path), model_cache
+
+
+@pytest.fixture(scope="session")
+def download_reference_model():
+    snapshots = {}
+
+    def download(model_name):
+        if model_name not in snapshots:
+            snapshots[model_name] = retry_request(lambda: snapshot_download(model_name))
+        return snapshots[model_name]
+
+    return download
 
 
 @pytest.fixture(scope="session")

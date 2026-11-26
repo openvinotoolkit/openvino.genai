@@ -87,7 +87,7 @@ class TestBeamSearchCausalLM:
             pytest.param(["Why is the Sun yellow?", "return 0", "你好！ 你好嗎？"], marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
         ],
     )
-    def test_sample_beam_search_causal_lm_refs(self, request, convert_model, sample_args):
+    def test_sample_beam_search_causal_lm_refs(self, request, convert_model, sample_args, download_reference_model):
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
         # C++ test
@@ -121,7 +121,8 @@ class TestBeamSearchCausalLM:
         
         import transformers
 
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model["name"], local_files_only=True)
+        reference_path = download_reference_model(model["name"])
+        tokenizer = transformers.AutoTokenizer.from_pretrained(reference_path, local_files_only=True)
         for prompt in sample_args:
             if tokenizer.chat_template:
                 prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
@@ -140,7 +141,7 @@ class TestBeamSearchCausalLM:
             }
             if is_transformers_version(">=", "4.51"):
                 generate_args.update(group_beam_search_generate_kwargs())
-            for beam in transformers.LlamaForCausalLM.from_pretrained(model["name"], local_files_only=True).generate(
+            for beam in transformers.LlamaForCausalLM.from_pretrained(reference_path, local_files_only=True).generate(
                 **tokenized, **generate_args
             ):
                 ref = ": " + tokenizer.decode(beam[tokenized["input_ids"].numel() :], skip_special_tokens=True)

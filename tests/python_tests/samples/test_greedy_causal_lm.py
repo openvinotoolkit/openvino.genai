@@ -39,7 +39,7 @@ class TestGreedyCausalLM:
         GREEDY_MODEL_LIST,
         indirect=["convert_model"],
     )
-    def test_sample_greedy_causal_lm(self, request, convert_model, sample_args):
+    def test_sample_greedy_causal_lm(self, request, convert_model, sample_args, download_reference_model):
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
         prompt = sample_args
@@ -80,13 +80,14 @@ class TestGreedyCausalLM:
 
         import transformers
 
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model["name"], local_files_only=True)
+        reference_path = download_reference_model(model["name"])
+        tokenizer = transformers.AutoTokenizer.from_pretrained(reference_path, local_files_only=True)
 
         if tokenizer.chat_template:
             prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
 
-        for output in transformers.AutoModelForCausalLM.from_pretrained(model["name"], local_files_only=True).generate(
+        for output in transformers.AutoModelForCausalLM.from_pretrained(reference_path, local_files_only=True).generate(
             **tokenized, max_length=100, do_sample=False
         ):
             ref = tokenizer.decode(output[tokenized["input_ids"].numel() :], skip_special_tokens=True)
