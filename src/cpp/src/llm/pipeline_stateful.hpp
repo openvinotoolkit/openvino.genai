@@ -6,7 +6,6 @@
 
 #include <limits>
 
-#include "expert_predictor/expert_predictor.hpp"
 #include "llm/pipeline_base.hpp"
 #include "lm_encoding.hpp"
 #include "sampling/sampler.hpp"
@@ -31,8 +30,6 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     bool m_is_npu = false;
     // include reflection of tokens contained in the kv cache and amount of tokens, which are needed to trim from kv cache on the next step of chat
     utils::CacheState m_cache_state;
-    // lookahead expert scheduling: recall statistics of the expert predictor, OPENVINO_GENAI_EXPERT_PREDICTOR_STATS=1
-    std::unique_ptr<les::Stats> m_expert_predictor_stats;
 
     void reset_state();
 public:

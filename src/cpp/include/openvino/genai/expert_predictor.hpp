@@ -30,10 +30,11 @@ class ExpertPredictorImpl;
  * selection_bias, input_mode_code}`, where `<i>` is the 1-based number of the decoder layer, so MoE layer L
  * (0-based) uses `expert_predictors.<L+1>`.
  *
- * GenAI builds every head as a separate small ov::Model and passes them to the device plugin that supports it
- * (GPU property MOE_LES_PREDICTORS); the language model itself is not changed. The plugin runs the heads only if
- * MoE experts are offloaded (OFFLOAD_RATIO > 0): the predictions tell it which offloaded experts it can start
- * loading early, the model still computes with its own router.
+ * GenAI builds the heads of all MoE layers in one separate ov::Model, as independent subgraphs, and passes it in
+ * memory to the device plugin that supports it (GPU properties GPU_LES_PREDICTOR and GPU_MOE_LOOKAHEAD_PREFETCH);
+ * the language model itself is not changed. With MoE offloading (OFFLOAD_RATIO > 0), the plugin runs the head of the
+ * next MoE layer in decode steps and keeps the previous token input of every head: the predictions tell it which
+ * offloaded experts it can start loading early, the model still computes with its own router.
  */
 class OPENVINO_GENAI_EXPORTS ExpertPredictor {
 public:
@@ -43,8 +44,8 @@ public:
      * @param path Path to the predictor file in safetensors format.
      * @param top_k Number of experts predicted per MoE layer and token. 0 means the number of experts the router
      *     selects. A larger value covers more of the router choices at the cost of loading more experts.
-     * @param use_previous_token Use the previous token input of the heads (`previous_weight`). Without it, the heads
-     *     use the current token only: the prediction is a bit less accurate, but no per-sequence state is kept.
+     * @param use_previous_token Use the previous token input of the heads (`previous_weight`). The GPU plugin needs
+     *     it: without it, the predictor is not used.
      */
     explicit ExpertPredictor(const std::filesystem::path& path, size_t top_k = 0, bool use_previous_token = true);
 

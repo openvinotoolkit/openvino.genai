@@ -6,6 +6,7 @@
 #include <optional>
 #include <thread>
 
+#include "expert_predictor/expert_predictor.hpp"
 #include "openvino/genai/cache_eviction.hpp"
 
 #ifdef __APPLE__
@@ -193,14 +194,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     }
     // lookahead expert scheduling: the expert predictor heads run in the device plugin, apart from the model
     std::optional<ExpertPredictor> expert_predictor;
-    std::optional<les::GraphInfo> expert_predictor_info;
     if (les::extract_from_properties(filtered_properties, expert_predictor)) {
-        if (les::stats_enabled()) {
-            // recall measurement: the heads and the router choices as outputs of the PA model
-            expert_predictor_info = les::apply(model, *expert_predictor, les::GraphMode::PAGED);
-        } else {
-            les::add_plugin_properties(filtered_properties, device, model, *expert_predictor);
-        }
+        les::add_plugin_properties(filtered_properties, device, model, *expert_predictor);
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
@@ -289,10 +284,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                                        /* is_aggregate_attention_scores = */ false,
                                                        is_use_xattention,
                                                        /* is_use_adaptive_rkv = */ false);
-    }
-
-    if (expert_predictor_info) {
-        m_model_runner->set_expert_predictor(std::make_shared<les::PagedState>(*expert_predictor_info));
     }
 
     if (hidden_state_bytes_per_token > 0) {

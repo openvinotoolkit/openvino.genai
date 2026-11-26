@@ -16,8 +16,8 @@ void init_expert_predictor(py::module_& m) {
         Expert predictor for lookahead expert scheduling (LES) of Mixture-of-Experts models.
 
         One small head per MoE layer predicts, one layer ahead, which routed experts the router of that layer
-        selects. GenAI builds the heads inside the language model and exposes the predicted expert indices as
-        model outputs `les_predicted_experts.<layer>`, so that a device plugin can prefetch offloaded experts.
+        selects. GenAI builds the heads in a separate model and passes it to the device plugin (GPU), which runs
+        them with MoE offloading to prefetch the offloaded experts the next MoE layer is likely to use.
         The model results do not change. Pass it to the pipeline as the `expert_predictor` property, e.g.
         LLMPipeline(models_path, "GPU", expert_predictor=ExpertPredictor(path)).
     )")

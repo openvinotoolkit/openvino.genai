@@ -6,18 +6,13 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <ostream>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "openvino/core/model.hpp"
 #include "openvino/genai/expert_predictor.hpp"
 #include "openvino/op/constant.hpp"
-#include "openvino/runtime/infer_request.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -41,109 +36,46 @@ public:
 
 namespace les {
 
-// Names of the tensors of the predictor models passed to the device plugin (PLUGIN_PROPERTY)
-inline constexpr const char* MODEL_LAYER_KEY = "les_moe_layer";            // rt_info: 0-based MoE layer of the head
-inline constexpr const char* MODEL_HIDDEN_INPUT = "les_hidden";            // [?, hidden]: router input of layer L-1
-inline constexpr const char* MODEL_PREV_HIDDEN_INPUT = "les_prev_hidden";  // [1, hidden]: router input of layer L, previous token
-inline constexpr const char* MODEL_OUTPUT = "les_predicted_experts";       // [?, top_k] i32
+// GPU plugin properties (the same in the openvino branches les_support and PR 40237): the predictor model (value:
+// std::shared_ptr<ov::Model>, see build_predictor_model) that predicts the experts of the next MoE layer, and the
+// lookahead prefetch of MoE offloading (OFFLOAD_RATIO) that uses the predictions. PR 40237 also needs the previous
+// token input of the heads and top_k equal to the router top-k; les_support accepts any top_k.
+inline constexpr const char* PLUGIN_PREDICTOR_PROPERTY = "GPU_LES_PREDICTOR";
+inline constexpr const char* PLUGIN_LOOKAHEAD_PROPERTY = "GPU_MOE_LOOKAHEAD_PREFETCH";
 
-// Names of the tensors GenAI adds to the language model when it builds the heads in it (stats_enabled())
-inline constexpr const char* STATE_NAME = "les_prev_hidden";             // stateful model: [batch, num_heads, hidden]
-inline constexpr const char* PREV_HIDDEN_INPUT = "les_prev_hidden";      // PA model: [num_heads, num_sequences, hidden]
-inline constexpr const char* LAST_HIDDEN_OUTPUT = "les_last_hidden";     // PA model: [num_heads, num_sequences, hidden]
-inline constexpr const char* PREDICTED_EXPERTS_PREFIX = "les_predicted_experts.";  // + 0-based MoE layer index
-inline constexpr const char* ROUTER_EXPERTS_PREFIX = "les_router_experts.";        // debug outputs, see stats_enabled()
+// Names in the predictor model of the head of MoE layer L, + the 0-based MoE layer index L. The plugin tells the
+// previous token input by "prev" in the input name.
+inline constexpr const char* MODEL_HIDDEN_PREFIX = "les_hidden.";            // [?, hidden]: router input of layer L-1
+inline constexpr const char* MODEL_PREV_HIDDEN_PREFIX = "les_prev_hidden.";  // [?, hidden]: router input of layer L, previous token
+inline constexpr const char* MODEL_OUTPUT_PREFIX = "les_experts.";           // [?, top_k] i32: predicted experts
 
-inline bool is_state_name(const std::string& name) {
-    return name == STATE_NAME;
-}
-
-// OPENVINO_GENAI_EXPERT_PREDICTOR_STATS=1 adds the router choices as model outputs and prints the recall of the
-// predictions at the end of the pipeline lifetime.
-bool stats_enabled();
-
-enum class GraphMode {
-    STATEFUL,  // SDPA model with ReadValue / Assign states, [batch, seq_len, hidden] hidden states
-    PAGED      // model after SDPAToPagedAttention, [total_tokens, 1, hidden] hidden states
-};
-
-struct GraphInfo {
+struct PredictorInfo {
     std::vector<size_t> layers;  // MoE layers with a head, ascending
     size_t hidden_size = 0;
     size_t top_k = 0;         // predicted experts per token
     size_t router_top_k = 0;  // experts the router selects per token
-    bool use_previous_token = false;
-    bool router_outputs = false;
 };
 
 // Removes the expert_predictor property from `properties`; returns true and fills `predictor` if it was set.
 bool extract_from_properties(utils::SharedOptional<const ov::AnyMap>& properties,
                              std::optional<ExpertPredictor>& predictor);
 
-// GPU plugin property with the predictor heads as separate models, one per MoE layer (value:
-// std::vector<std::shared_ptr<ov::Model>>, see build_predictor_models). The plugin runs them apart from the language
-// model, only if MoE experts are offloaded (OFFLOAD_RATIO > 0), and prefetches the predicted experts.
-inline constexpr const char* PLUGIN_PROPERTY = "MOE_LES_PREDICTORS";
-
 // Checks the predictor against the MoE layers of `model`, which it does not change.
-GraphInfo analyze(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor);
+PredictorInfo analyze(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor);
 
-// The head of every layer of `info` as a model: input MODEL_HIDDEN_INPUT and, with use_previous_token,
-// MODEL_PREV_HIDDEN_INPUT, output MODEL_OUTPUT, the MoE layer in rt_info MODEL_LAYER_KEY.
-std::vector<std::shared_ptr<ov::Model>> build_predictor_models(const ExpertPredictor& predictor, const GraphInfo& info);
+// The heads of the layers of `info` in one model, as independent subgraphs with their own weights: for layer L,
+// inputs MODEL_HIDDEN_PREFIX<L> and MODEL_PREV_HIDDEN_PREFIX<L>, output MODEL_OUTPUT_PREFIX<L> =
+// top_k(sigmoid(W cur + W' prev) + b).
+std::shared_ptr<ov::Model> build_predictor_model(const ExpertPredictor& predictor, const PredictorInfo& info);
 
-// Adds PLUGIN_PROPERTY with the predictor models of `model` to `properties` if `device` supports it; returns whether
-// it did. The predictor models are not part of a compiled model blob, so the model cache (CACHE_DIR) is disabled then.
+// Passes the predictor model of `model` to `device` (PLUGIN_PREDICTOR_PROPERTY, and PLUGIN_LOOKAHEAD_PROPERTY unless
+// set by the user) if the device supports it; returns whether it did. The plugin keeps the previous token input of
+// every head itself. The predictor model is not part of a compiled model blob, so the model cache (CACHE_DIR) is
+// disabled then.
 bool add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties,
                            const std::string& device,
                            const std::shared_ptr<ov::Model>& model,
                            const ExpertPredictor& predictor);
-
-// Builds the predictor heads inside `model` and connects them to the router inputs of the MoE layers, with the router
-// choices as additional outputs if stats_enabled(): it is used to measure the recall of the predictor, the device
-// plugin does not use these heads.
-GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor, GraphMode mode);
-
-// Recall of the predicted experts against the router choices, needs GraphInfo::router_outputs.
-class Stats {
-public:
-    explicit Stats(GraphInfo info);
-    ~Stats();
-    // Counts the given rows (tokens) of the outputs of the last inference, all rows if `rows` is empty.
-    void accumulate(ov::InferRequest& request, const std::vector<size_t>& rows = {});
-    // Stateful model: counts the last inference only if it was a decode step (one token per sequence).
-    void accumulate_stateful_decode(ov::InferRequest& request);
-    void print(std::ostream& os) const;
-
-private:
-    GraphInfo m_info;
-    mutable std::mutex m_mutex;
-    std::vector<uint64_t> m_hits, m_total;
-    uint64_t m_tokens = 0;
-};
-
-struct ScheduledSequence {
-    uint64_t id;        // Sequence::get_id()
-    size_t num_tokens;  // tokens of the sequence in this inference
-};
-
-// Keeps the router inputs of the last processed token of every sequence for the PA model: GenAI passes them as
-// `les_prev_hidden` and reads the new ones from `les_last_hidden`. Only one token per sequence is kept, so a rollback
-// (e.g. rejected speculative tokens) leaves the state of a later token: it only makes the next prediction less
-// accurate, never changes the model results.
-class PagedState {
-public:
-    explicit PagedState(GraphInfo info);
-    void set_inputs(ov::InferRequest& request, const std::vector<ScheduledSequence>& sequences);
-    void update(ov::InferRequest& request,
-                const std::vector<ScheduledSequence>& sequences,
-                const std::unordered_set<uint64_t>& alive_sequence_ids);
-
-private:
-    GraphInfo m_info;
-    std::unordered_map<uint64_t, std::vector<float>> m_prev;  // [num_heads * hidden_size] per sequence
-    std::unique_ptr<Stats> m_stats;
-};
 
 }  // namespace les
 }  // namespace genai

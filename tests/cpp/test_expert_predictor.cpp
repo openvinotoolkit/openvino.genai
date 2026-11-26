@@ -140,14 +140,6 @@ std::set<int32_t> row_set(const ov::Tensor& t, size_t row, size_t k) {
     return {d, d + k};
 }
 
-std::vector<float> norm_row(const std::vector<float>& x, size_t token, const std::vector<float>& gamma) {
-    std::vector<float> r(HIDDEN);
-    for (size_t j = 0; j < HIDDEN; ++j) {
-        r[j] = x[token * HIDDEN + j] * gamma[j];
-    }
-    return r;
-}
-
 class ExpertPredictorTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -186,92 +178,45 @@ TEST_F(ExpertPredictorTest, ReadsPredictorFile) {
     EXPECT_TRUE(impl.heads.count(1) && impl.heads.count(2));  // expert_predictors.2 / .3 -> MoE layers 1 / 2
 }
 
-TEST_F(ExpertPredictorTest, StatefulUsesPreviousInferenceState) {
+TEST_F(ExpertPredictorTest, AnalyzeKeepsModel) {
     auto model = make_model(false, gammas, model_rng);
+    const size_t num_ops = model->get_ops().size();
     const ov::genai::ExpertPredictor predictor(path);
-    const auto info = ov::genai::les::apply(model, predictor, ov::genai::les::GraphMode::STATEFUL);
-    ASSERT_EQ(info.layers, (std::vector<size_t>{1, 2}));
-    // one state for all heads: [batch, num_heads, hidden]
-    ASSERT_EQ(model->get_variables().size(), 1u);
-    EXPECT_EQ(model->get_variables()[0]->get_info().data_shape, (ov::PartialShape{-1, 2, int64_t(HIDDEN)}));
+    const auto info = ov::genai::les::analyze(model, predictor);
+    EXPECT_EQ(info.layers, (std::vector<size_t>{1, 2}));
     EXPECT_EQ(info.top_k, ROUTER_K);
-
-    auto request = ov::Core().compile_model(model, "CPU").create_infer_request();
-    std::mt19937 rng(3);
-    std::vector<float> prev_last[NUM_LAYERS];
-    for (auto& p : prev_last) {
-        p.assign(HIDDEN, 0.0f);  // reset state
-    }
-    for (size_t seq_len : {3, 1, 1}) {  // prefill, then two decode steps
-        auto x = random_vector(seq_len * HIDDEN, rng);
-        request.set_tensor("x", ov::Tensor(ov::element::f32, {1, seq_len, HIDDEN}, x.data()));
-        request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {1}, std::vector<int32_t>{0}.data()));
-        request.infer();
-        for (size_t layer : info.layers) {
-            auto predicted = request.get_tensor(ov::genai::les::PREDICTED_EXPERTS_PREFIX + std::to_string(layer));
-            ASSERT_EQ(predicted.get_shape(), (ov::Shape{1, seq_len, ROUTER_K}));
-            for (size_t t = 0; t < seq_len; ++t) {
-                auto cur = norm_row(x, t, gammas[layer - 1]);
-                // every token of an inference uses the router input saved at the last token of the previous one
-                const auto& prev = prev_last[layer];
-                EXPECT_EQ(row_set(predicted, t, ROUTER_K), reference_experts(heads[layer], cur.data(), prev, ROUTER_K))
-                    << "layer " << layer << " token " << t << " seq_len " << seq_len;
-            }
-            prev_last[layer] = norm_row(x, seq_len - 1, gammas[layer]);
-        }
-    }
+    EXPECT_EQ(info.router_top_k, ROUTER_K);
+    EXPECT_EQ(model->get_ops().size(), num_ops);
+    EXPECT_EQ(model->get_results().size(), NUM_LAYERS);
 }
 
-TEST_F(ExpertPredictorTest, PagedKeepsPreviousTokenPerSequence) {
+TEST_F(ExpertPredictorTest, PredictorModelMatchesReference) {
     auto model = make_model(true, gammas, model_rng);
     const ov::genai::ExpertPredictor predictor(path, /*top_k=*/3);
-    const auto info = ov::genai::les::apply(model, predictor, ov::genai::les::GraphMode::PAGED);
+    const auto info = ov::genai::les::analyze(model, predictor);
     EXPECT_EQ(info.top_k, 3u);
-    auto request = ov::Core().compile_model(model, "CPU").create_infer_request();
-    ov::genai::les::PagedState state(info);
+    auto predictor_model = ov::genai::les::build_predictor_model(predictor, info);
+    ASSERT_EQ(predictor_model->get_parameters().size(), 4u);
+    ASSERT_EQ(predictor_model->get_results().size(), 2u);
 
+    auto request = ov::Core().compile_model(predictor_model, "CPU").create_infer_request();
     std::mt19937 rng(5);
-    std::map<uint64_t, std::map<size_t, std::vector<float>>> last;  // sequence -> layer -> router input of last token
-    // step 1: sequence 10 prefills 3 tokens, sequence 20 prefills 2 tokens; step 2: both decode, in swapped order;
-    // step 3: sequence 20 finished, sequence 30 is new
-    const std::vector<std::vector<ov::genai::les::ScheduledSequence>> steps = {
-        {{10, 3}, {20, 2}}, {{20, 1}, {10, 1}}, {{10, 1}, {30, 2}}};
-    for (const auto& sequences : steps) {
-        size_t total = 0;
-        std::vector<int32_t> begins{0};
-        std::unordered_set<uint64_t> alive;
-        for (const auto& s : sequences) {
-            total += s.num_tokens;
-            begins.push_back(static_cast<int32_t>(total));
-            alive.insert(s.id);
-        }
-        auto x = random_vector(total * HIDDEN, rng);
-        request.set_tensor("x", ov::Tensor(ov::element::f32, {total, 1, HIDDEN}, x.data()));
-        request.set_tensor("subsequence_begins", ov::Tensor(ov::element::i32, {begins.size()}, begins.data()));
-        state.set_inputs(request, sequences);
-        request.infer();
-
-        for (size_t layer : info.layers) {
-            auto predicted = request.get_tensor(ov::genai::les::PREDICTED_EXPERTS_PREFIX + std::to_string(layer));
-            ASSERT_EQ(predicted.get_shape(), (ov::Shape{total, 3}));
-            for (size_t s = 0; s < sequences.size(); ++s) {
-                for (size_t t = begins[s]; t < size_t(begins[s + 1]); ++t) {
-                    auto cur = norm_row(x, t, gammas[layer - 1]);
-                    // every token of a sequence uses the router input cached at its last token of the previous step
-                    std::vector<float> prev(HIDDEN, 0.0f);
-                    if (last.count(sequences[s].id)) {
-                        prev = last[sequences[s].id][layer];
-                    }
-                    EXPECT_EQ(row_set(predicted, t, 3), reference_experts(heads[layer], cur.data(), prev, 3))
-                        << "layer " << layer << " sequence " << sequences[s].id << " row " << t;
-                }
-            }
-        }
-        state.update(request, sequences, alive);
-        for (size_t s = 0; s < sequences.size(); ++s) {
-            for (size_t layer : info.layers) {
-                last[sequences[s].id][layer] = norm_row(x, begins[s + 1] - 1, gammas[layer]);
-            }
+    constexpr size_t tokens = 3;
+    std::map<size_t, std::vector<float>> cur, prev;
+    for (size_t layer : info.layers) {
+        cur[layer] = random_vector(tokens * HIDDEN, rng);
+        prev[layer] = random_vector(HIDDEN, rng);
+        const std::string suffix = std::to_string(layer);
+        request.set_tensor(ov::genai::les::MODEL_HIDDEN_PREFIX + suffix, ov::Tensor(ov::element::f32, {tokens, HIDDEN}, cur[layer].data()));
+        request.set_tensor(ov::genai::les::MODEL_PREV_HIDDEN_PREFIX + suffix, ov::Tensor(ov::element::f32, {1, HIDDEN}, prev[layer].data()));
+    }
+    request.infer();
+    for (size_t layer : info.layers) {
+        auto predicted = request.get_tensor(ov::genai::les::MODEL_OUTPUT_PREFIX + std::to_string(layer));
+        ASSERT_EQ(predicted.get_shape(), (ov::Shape{tokens, 3}));
+        for (size_t t = 0; t < tokens; ++t) {
+            EXPECT_EQ(row_set(predicted, t, 3), reference_experts(heads[layer], cur[layer].data() + t * HIDDEN, prev[layer], 3))
+                << "layer " << layer << " token " << t;
         }
     }
 }

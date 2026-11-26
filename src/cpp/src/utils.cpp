@@ -23,7 +23,6 @@
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "gguf_utils/gguf_utils.hpp"
-#include "expert_predictor/expert_predictor.hpp"
 
 
 #include "sampling/sampler.hpp"
@@ -641,10 +640,6 @@ void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optio
 
     for (auto& state : states) {
         if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
-            continue;
-        // the expert predictor state holds one token per sequence, not a KV cache: an older token only makes the
-        // next prediction less accurate
-        if (les::is_state_name(state.get_name()))
             continue;
 
         ov::Tensor old_tensor = state.get_state();
