@@ -9,23 +9,21 @@
 namespace {
 
 ov::AnyMap configure_npu_input_models(const ov::AnyMap& properties) {
+    for (const auto& role : {"audio_encoder", "text_embeddings"}) {
+        const auto model_properties = ov::genai::utils::get_model_properties(properties, role, "AUTO");
+        const auto priority = model_properties.find(ov::device::priorities.name());
+        OPENVINO_ASSERT(priority == model_properties.end() || priority->second.as<std::string>() == "NPU",
+                        "Qwen3-ASR on NPU requires MULTI_DEVICE_PRIORITIES=NPU for ",
+                        role,
+                        ".");
+    }
     ov::AnyMap result = properties;
     auto devices = ov::genai::utils::pop_or_default<ov::AnyMap>(result, ov::device::properties.name(), {});
     auto automatic = ov::genai::utils::pop_or_default<ov::AnyMap>(devices, "AUTO", {});
-    const auto priority = automatic.find(ov::device::priorities.name());
-    OPENVINO_ASSERT(priority == automatic.end() || priority->second.as<std::string>() == "NPU",
-                    "Qwen3-ASR on NPU requires AUTO input models to use MULTI_DEVICE_PRIORITIES=NPU.");
     automatic[ov::device::priorities.name()] = std::string{"NPU"};
     devices["AUTO"] = automatic;
     result[ov::device::properties.name()] = devices;
 
-    for (const auto& role : {"audio_encoder", "text_embeddings"}) {
-        const auto model_properties = ov::genai::utils::get_model_properties(result, role, "NPU");
-        OPENVINO_ASSERT(!model_properties.count(ov::device::priorities.name()),
-                        "Qwen3-ASR on NPU does not support MULTI_DEVICE_PRIORITIES in MODEL_PROPERTIES for ",
-                        role,
-                        ". Configure DEVICE_PROPERTIES for AUTO instead.");
-    }
     return result;
 }
 

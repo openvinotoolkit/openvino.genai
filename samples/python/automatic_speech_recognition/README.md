@@ -171,6 +171,10 @@ for chunk in result.chunks[0]:
 
 Qwen3-ASR can produce word-level timestamps if integrated with its forced aligner into ASRPipeline:
 
+The forced aligner is a separate pipeline with its own device. Qwen3-ASR's NPUW input-model
+optimizations do not apply to the forced aligner; its NPU execution has not been validated by
+this change. For example, an NPU ASR pipeline can use a CPU forced aligner.
+
 ```python
 aligner = openvino_genai.ASRForcedAligner(forced_aligner_model_dir, "CPU")
 pipe = openvino_genai.ASRPipeline(qwen3_asr_model_dir, "CPU", forced_aligner=aligner)

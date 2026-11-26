@@ -792,20 +792,72 @@ def test_qwen3_asr_npu_routes_split_components(pipelines_fixture, pipeline_cls, 
         )
 
 
+@pytest.mark.parametrize("role", [None, "audio_encoder", "text_embeddings"], ids=["global", "audio", "text"])
 @pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
-def test_qwen3_asr_npu_rejects_cpu_input_device(pipelines_fixture):
+def test_qwen3_asr_npu_rejects_cpu_input_device(pipelines_fixture, role):
     _, _, model_id, _ = pipelines_fixture
     model_path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
     _, model_path, _, _ = read_asr_model(
         (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
     )
-    with pytest.raises(RuntimeError, match="requires AUTO input models to use MULTI_DEVICE_PRIORITIES=NPU"):
+    auto_priority = "CPU" if role is None else "NPU"
+    model_properties = {} if role is None else {role: {"MULTI_DEVICE_PRIORITIES": "CPU"}}
+    with pytest.raises(RuntimeError, match="requires MULTI_DEVICE_PRIORITIES=NPU for"):
         ov_genai.ASRPipeline(
             model_path,
             "NPU",
-            DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES, "AUTO": {"MULTI_DEVICE_PRIORITIES": "CPU"}},
+            DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES, "AUTO": {"MULTI_DEVICE_PRIORITIES": auto_priority}},
+            MODEL_PROPERTIES=model_properties,
             ATTENTION_BACKEND="SDPA",
         )
+
+
+@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
+def test_qwen3_asr_npu_accepts_role_npu_priorities(pipelines_fixture):
+    _, _, model_id, _ = pipelines_fixture
+    model_path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
+    _, model_path, _, _ = read_asr_model(
+        (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
+    )
+    pipe = ov_genai.ASRPipeline(
+        model_path,
+        "NPU",
+        DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES, "AUTO": {"MULTI_DEVICE_PRIORITIES": "CPU"}},
+        MODEL_PROPERTIES={role: {"MULTI_DEVICE_PRIORITIES": "NPU"} for role in ("audio_encoder", "text_embeddings")},
+        ATTENTION_BACKEND="SDPA",
+        MAX_PROMPT_LEN=64,
+        MIN_RESPONSE_LEN=16,
+    )
+    assert len(pipe.generate(np.zeros(8000, dtype=np.float32), language="English", max_new_tokens=2).texts) == 1
+
+
+@pytest.mark.parametrize(
+    "auto_priority,role_priority", [("CPU", "NPU"), ("NPU", "CPU")], ids=["role-npu", "role-cpu"]
+)
+@pytest.mark.parametrize("role", ["audio_encoder", "text_embeddings"], ids=["audio", "text"])
+@pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)
+def test_qwen3_asr_direct_vlm_resolves_role_priorities(pipelines_fixture, role, auto_priority, role_priority):
+    _, _, model_id, _ = pipelines_fixture
+    model_path = get_ov_cache_converted_models_dir() / (model_id.split("/")[-1] + QWEN3_ASR_SPLIT_EXPORT_SUFFIX)
+    _, model_path, _, _ = read_asr_model(
+        (model_id, model_path), pipeline_type=PipelineType.ASR, device="NPU", attention_backend="SDPA"
+    )
+    pipe = ov_genai.VLMPipeline(
+        model_path,
+        "NPU",
+        DEVICE_PROPERTIES={"NPU": NPUW_CPU_PROPERTIES, "AUTO": {"MULTI_DEVICE_PRIORITIES": auto_priority}},
+        MODEL_PROPERTIES={role: {"MULTI_DEVICE_PRIORITIES": role_priority}},
+        ATTENTION_BACKEND="SDPA",
+        MAX_PROMPT_LEN=64,
+        MIN_RESPONSE_LEN=16,
+    )
+    prompt = (
+        "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n<|audio_start|><|audio_pad|>"
+        "<|audio_end|><|im_end|>\n<|im_start|>assistant\nlanguage English<asr_text>"
+    )
+    audio = openvino.Tensor(np.zeros(8000, dtype=np.float32))
+    config = ov_genai.GenerationConfig(max_new_tokens=2, do_sample=False, apply_chat_template=False)
+    assert len(pipe.generate(prompt, audios=[audio], generation_config=config).texts) == 1
 
 
 @pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_NPU_PARAMS, indirect=True)

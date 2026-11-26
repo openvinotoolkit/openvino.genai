@@ -16,11 +16,10 @@ std::unique_ptr<AudioEncoderQwen3ASR> create_qwen3_asr_audio_encoder(const VLMCo
                                                                      const std::filesystem::path& config_dir,
                                                                      const std::string& device,
                                                                      const ov::AnyMap& properties) {
-    if (qwen3_asr_input_device(device, properties) != "NPU") {
+    if (qwen3_asr_input_device(device, properties, "audio_encoder") != "NPU") {
         return std::make_unique<AudioEncoderQwen3ASR>(config, audio_model, config_dir, device, properties);
     }
-    auto model_properties =
-        qwen3_asr_input_model_properties(utils::get_model_properties(properties, "audio_encoder", "NPU"));
+    auto model_properties = qwen3_asr_input_model_properties(properties, "audio_encoder", device);
     utils::set_config_default(model_properties, "NPU_USE_NPUW", std::string{"YES"});
     OPENVINO_ASSERT(utils::is_npuw_enabled(model_properties), "Qwen3-ASR NPU audio encoder requires NPU_USE_NPUW=YES.");
     utils::set_config_default(model_properties, "NPUW_QWEN3_ASR_AUDIO_ENCODER", std::string{"YES"});

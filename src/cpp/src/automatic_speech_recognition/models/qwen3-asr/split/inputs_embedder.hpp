@@ -8,13 +8,16 @@
 
 namespace ov::genai {
 
+enum class Qwen3ASRInputModelMode { NPUW, Standard };
+
 class InputsEmbedderQwen3ASR : public InputsEmbedder::IInputsEmbedder {
 public:
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const std::filesystem::path& model_dir,
                            const Tokenizer& tokenizer,
                            const std::string& device,
-                           const ov::AnyMap& properties);
+                           const ov::AnyMap& properties,
+                           Qwen3ASRInputModelMode mode = Qwen3ASRInputModelMode::NPUW);
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const ModelsMap& models_map,
                            const Tokenizer& tokenizer,
@@ -70,7 +73,8 @@ private:
                            const std::shared_ptr<ov::Model>& audio_model,
                            const std::filesystem::path& config_dir,
                            const std::string& device,
-                           const ov::AnyMap& properties);
+                           const ov::AnyMap& properties,
+                           Qwen3ASRInputModelMode mode);
 
     void merge_audio_embeddings(ov::Tensor& inputs_embeds,
                                 const ov::Tensor& input_ids,

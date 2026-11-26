@@ -17,10 +17,46 @@
 #include "automatic_speech_recognition/models/qwen3-asr/split/audio_encoder.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/split/npu/embedding_model.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/split/npu/generation.hpp"
+#include "automatic_speech_recognition/models/qwen3-asr/split/npu/properties.hpp"
 #include "openvino/op/ops.hpp"
 #include "openvino/openvino.hpp"
 
 namespace {
+
+TEST(Qwen3ASRInputPropertiesTest, ResolvesAutoPrioritiesPerRole) {
+    const ov::AnyMap properties{
+        {ov::device::priorities.name(), "GPU"},
+        {ov::device::properties.name(), ov::AnyMap{{"AUTO", ov::AnyMap{{ov::device::priorities.name(), "NPU"}}}}},
+        {"MODEL_PROPERTIES",
+         ov::AnyMap{{"audio_encoder", ov::AnyMap{{ov::device::priorities.name(), "CPU"}}},
+                    {"text_embeddings", ov::AnyMap{{ov::device::priorities.name(), "NPU"}}}}}};
+
+    EXPECT_EQ(ov::genai::qwen3_asr_input_device("AUTO", properties, "audio_encoder"), "AUTO");
+    EXPECT_EQ(ov::genai::qwen3_asr_input_device("AUTO", properties, "text_embeddings"), "NPU");
+    EXPECT_EQ(ov::genai::qwen3_asr_input_device("AUTO", properties, "other"), "NPU");
+    EXPECT_EQ(ov::genai::qwen3_asr_input_device("CPU", properties, "text_embeddings"), "CPU");
+    EXPECT_EQ(ov::genai::qwen3_asr_input_device("NPU", properties, "audio_encoder"), "NPU");
+
+    const ov::AnyMap role_only{
+        {"MODEL_PROPERTIES", ov::AnyMap{{"audio_encoder", ov::AnyMap{{ov::device::priorities.name(), "NPU"}}}}}};
+    EXPECT_EQ(ov::genai::qwen3_asr_input_device("AUTO", role_only, "audio_encoder"), "NPU");
+    EXPECT_EQ(ov::genai::qwen3_asr_input_device("AUTO", role_only, "text_embeddings"), "AUTO");
+    EXPECT_EQ(ov::genai::qwen3_asr_input_device("AUTO", {}, "audio_encoder"), "AUTO");
+}
+
+TEST(Qwen3ASRInputPropertiesTest, DoesNotForwardAutoPriorityToNPU) {
+    const ov::AnyMap properties{
+        {ov::device::priorities.name(), "CPU"},
+        {ov::device::properties.name(), ov::AnyMap{{"NPU", ov::AnyMap{{"NPUW_DEVICES", "GPU"}}}}},
+        {"MODEL_PROPERTIES",
+         ov::AnyMap{{"text_embeddings", ov::AnyMap{{ov::device::priorities.name(), "NPU"}, {"NPUW_DEVICES", "CPU"}}}}}};
+
+    const auto resolved = ov::genai::qwen3_asr_input_model_properties(properties, "text_embeddings", "AUTO");
+    EXPECT_EQ(resolved.count(ov::device::priorities.name()), 0u);
+    EXPECT_EQ(resolved.count(ov::device::properties.name()), 0u);
+    EXPECT_EQ(resolved.count("MODEL_PROPERTIES"), 0u);
+    EXPECT_EQ(resolved.at("NPUW_DEVICES").as<std::string>(), "CPU");
+}
 
 class Qwen3ASRStaticEncoderTest : public ::testing::TestWithParam<size_t> {
 protected:
@@ -211,6 +247,51 @@ TEST_F(Qwen3ASRStaticEncoderTest, NPUAudioEncoderRequiresNPUW) {
     auto disabled_audio = cpu_fallback();
     disabled_audio["NPUW_QWEN3_ASR_AUDIO_ENCODER"] = "NO";
     expect_error(disabled_audio, "audio encoder requires NPUW_QWEN3_ASR_AUDIO_ENCODER=YES");
+}
+
+TEST_F(Qwen3ASRStaticEncoderTest, RoleSpecificAutoNPUUsesNPUWForBothInputModels) {
+    save_embeddings();
+    auto properties = cpu_fallback();
+    properties[ov::device::properties.name()] =
+        ov::AnyMap{{"AUTO", ov::AnyMap{{ov::device::priorities.name(), "CPU"}}}};
+    properties["MODEL_PROPERTIES"] =
+        ov::AnyMap{{"audio_encoder", ov::AnyMap{{ov::device::priorities.name(), "NPU"}}},
+                   {"text_embeddings", ov::AnyMap{{ov::device::priorities.name(), "NPU"}}}};
+
+    auto encoder =
+        ov::genai::create_qwen3_asr_audio_encoder(split_config(), split_model(), m_model_dir, "AUTO", properties);
+    ov::Tensor audio{ov::element::f32, {480}};
+    std::fill_n(audio.data<float>(), audio.get_size(), 0.01f);
+    EXPECT_GT(encoder->encode({audio}).at(0).num_audio_tokens, 0u);
+
+    auto embeddings = ov::genai::create_qwen3_asr_embeddings(m_model_dir, 1.0f, "AUTO", properties);
+    ov::genai::CircularBufferQueueElementGuard<ov::genai::EmbeddingsRequest> request(
+        embeddings->get_request_queue().get());
+    ov::Tensor ids{ov::element::i64, {1, 1}};
+    ids.data<int64_t>()[0] = 1;
+    EXPECT_FLOAT_EQ(embeddings->infer(request.get(), ids).data<const float>()[0], 4.0f);
+}
+
+TEST_F(Qwen3ASRStaticEncoderTest, RoleSpecificAutoCPUUsesStandardInputModels) {
+    save_embeddings();
+    const ov::AnyMap properties{
+        {ov::device::properties.name(), ov::AnyMap{{"AUTO", ov::AnyMap{{ov::device::priorities.name(), "NPU"}}}}},
+        {"MODEL_PROPERTIES",
+         ov::AnyMap{{"audio_encoder", ov::AnyMap{{ov::device::priorities.name(), "CPU"}}},
+                    {"text_embeddings", ov::AnyMap{{ov::device::priorities.name(), "CPU"}}}}}};
+
+    auto encoder =
+        ov::genai::create_qwen3_asr_audio_encoder(split_config(), split_model(), m_model_dir, "AUTO", properties);
+    ov::Tensor audio{ov::element::f32, {480}};
+    std::fill_n(audio.data<float>(), audio.get_size(), 0.01f);
+    EXPECT_GT(encoder->encode({audio}).at(0).num_audio_tokens, 0u);
+
+    auto embeddings = ov::genai::create_qwen3_asr_embeddings(m_model_dir, 1.0f, "AUTO", properties);
+    ov::genai::CircularBufferQueueElementGuard<ov::genai::EmbeddingsRequest> request(
+        embeddings->get_request_queue().get());
+    ov::Tensor ids{ov::element::i64, {1, 1}};
+    ids.data<int64_t>()[0] = 1;
+    EXPECT_FLOAT_EQ(embeddings->infer(request.get(), ids).data<const float>()[0], 4.0f);
 }
 
 TEST_F(Qwen3ASRStaticEncoderTest, NPUTextEmbeddingsMatchCPUAcrossChunkBoundaries) {

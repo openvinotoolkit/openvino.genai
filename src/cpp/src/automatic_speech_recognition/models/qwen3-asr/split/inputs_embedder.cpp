@@ -71,14 +71,18 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const std::filesystem::path& model_dir,
                                                const Tokenizer& tokenizer,
                                                const std::string& device,
-                                               const ov::AnyMap& properties)
+                                               const ov::AnyMap& properties,
+                                               Qwen3ASRInputModelMode mode)
     : InputsEmbedderQwen3ASR(config,
                              tokenizer,
-                             create_qwen3_asr_embeddings(model_dir, config.scale_emb, device, properties),
+                             mode == Qwen3ASRInputModelMode::NPUW
+                                 ? create_qwen3_asr_embeddings(model_dir, config.scale_emb, device, properties)
+                                 : EmbeddingsModel::create(model_dir, config.scale_emb, device, properties),
                              utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
                              model_dir,
                              device,
-                             properties) {}
+                             properties,
+                             mode) {}
 
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const ModelsMap& models_map,
@@ -98,7 +102,8 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                              utils::get_model_weights_pair(models_map, "audio_encoder").second),
           config_dir,
           device,
-          properties) {}
+          properties,
+          Qwen3ASRInputModelMode::NPUW) {}
 
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const Tokenizer& tokenizer,
@@ -106,9 +111,13 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const std::shared_ptr<ov::Model>& audio_model,
                                                const std::filesystem::path& config_dir,
                                                const std::string& device,
-                                               const ov::AnyMap& properties)
+                                               const ov::AnyMap& properties,
+                                               Qwen3ASRInputModelMode mode)
     : IInputsEmbedder(config, tokenizer, std::move(embedding)),
-      m_audio_encoder(create_qwen3_asr_audio_encoder(config, audio_model, config_dir, device, properties)) {
+      m_audio_encoder(
+          mode == Qwen3ASRInputModelMode::NPUW
+              ? create_qwen3_asr_audio_encoder(config, audio_model, config_dir, device, properties)
+              : std::make_unique<AudioEncoderQwen3ASR>(config, audio_model, config_dir, device, properties)) {
     const auto vocab = tokenizer.get_vocab();
     const auto audio_token = vocab.find(AUDIO_PAD);
     OPENVINO_ASSERT(audio_token != vocab.end() && audio_token->second == config.audio_token_id,
