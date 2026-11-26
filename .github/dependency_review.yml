@@ -38,5 +38,5 @@ allow-dependencies-licenses:
   - "pkg:pypi/PyGithub" # Dependencies of the workflow rerunner script
   - "pkg:pypi/psycopg2-binary"
   - "pkg:pypi/certifi@2026.10.23" # MPL-2.0, dependency of the workflow rerunner script: https://github.com/certifi/python-certifi
-  - "pkg:pypi/typing_extensions@4.16.0" # PSF-2.0, reported as Python-2.0.1, dependency of the workflow rerunner script: https://github.com/python/typing_extensions
+  - "pkg:pypi/typing-extensions@4.16.0" # PSF-2.0, reported as Python-2.0.1, dependency of the workflow rerunner script: https://github.com/python/typing_extensions
   - "pkg:pypi/tqdm" # MPL-2.0 AND MIT
