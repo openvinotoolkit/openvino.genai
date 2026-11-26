@@ -729,7 +729,8 @@ jobs:
         run: ccache --show-stats
 
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        # TODO: Remove 'pull_request' before merge, it is enabled only to check ccache hits on PR reruns.
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-nodejs-${{ github.sha }}
