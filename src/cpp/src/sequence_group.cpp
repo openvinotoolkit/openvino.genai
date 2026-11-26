@@ -29,7 +29,7 @@ size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
         content.emplace_back(prefix_hashes[filled_blocks_count - 1]);
     }
 
-    _append_block_content(content, block_start_idx, content_length);
+    _append_block_content(content, block_start_idx, content_length, /*exact_embeddings=*/false);
     const char* data = reinterpret_cast<const char*>(content.data());
     std::size_t size = content.size() * sizeof(content[0]);
     return std::hash<std::string_view>{}(std::string_view(data, size));
@@ -55,7 +55,7 @@ ContentHash Sequence::_make_digest(size_t content_length, size_t block_size) {
         content.push_back(static_cast<int64_t>(previous.lo));
         content.push_back(static_cast<int64_t>(previous.hi));
     }
-    _append_block_content(content, block_start_idx, content_length);
+    _append_block_content(content, block_start_idx, content_length, /*exact_embeddings=*/true);
     return compute_content_hash(content.data(), content.size() * sizeof(content[0]));
 }
 
@@ -73,7 +73,7 @@ ContentHash Sequence::get_digest(size_t content_length, size_t block_size) {
     return digests[block_idx];
 }
 
-void Sequence::_append_block_content(std::vector<int64_t>& content, size_t block_start_idx, size_t content_length) {
+void Sequence::_append_block_content(std::vector<int64_t>& content, size_t block_start_idx, size_t content_length, bool exact_embeddings) {
     auto sequence_group = get_sequence_group_ptr();
     // get tokens corresponding to current block
     if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
@@ -102,7 +102,7 @@ void Sequence::_append_block_content(std::vector<int64_t>& content, size_t block
                                     "Prompt-only embedding prefix caching requires one token ID per embedding");
                     content.push_back(prompt_ids[idx]);
                 }
-                auto embed = _reduce_embedding(input_embeds[idx]);
+                auto embed = exact_embeddings ? _exact_embedding(input_embeds[idx]) : _reduce_embedding(input_embeds[idx]);
                 content.insert(content.end(), embed.begin(), embed.end());
             }
         }
@@ -111,7 +111,7 @@ void Sequence::_append_block_content(std::vector<int64_t>& content, size_t block
         if (content_length > input_embeds.size()) {
             size_t start = block_start_idx < input_embeds.size() ? 0 : block_start_idx - input_embeds.size();
             for (size_t idx = start; idx < content_length - input_embeds.size(); idx++) {
-                auto embed = _reduce_embedding(generated_embeds[idx]);
+                auto embed = exact_embeddings ? _exact_embedding(generated_embeds[idx]) : _reduce_embedding(generated_embeds[idx]);
                 content.insert(content.end(), embed.begin(), embed.end());
             }
         }
@@ -127,6 +127,14 @@ std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embed
     for (size_t i = 0, idx=0; idx < res_size; i+= m_embeddings_hash_calculation_stride, idx++) {
         std::memcpy(&(res[idx]), &(embedding[i]), sizeof(embedding[i]));
     }
+    return res;
+}
+
+// A block of image or audio embeddings must not be taken for another one because a few sampled values agree, once
+// a store keeps blocks for later runs, so the digest covers every value.
+std::vector<int64_t> Sequence::_exact_embedding(const std::vector<float>& embedding) {
+    std::vector<int64_t> res((embedding.size() * sizeof(float) + sizeof(int64_t) - 1) / sizeof(int64_t), 0);
+    std::memcpy(res.data(), embedding.data(), embedding.size() * sizeof(float));
     return res;
 }
 
@@ -195,7 +203,7 @@ void Sequence::record_digest(size_t hash, size_t content_length, size_t block_si
         if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
             token_ids = std::make_shared<std::vector<int64_t>>();
             token_ids->reserve(content_length);
-            _append_block_content(*token_ids, 0, content_length);
+            _append_block_content(*token_ids, 0, content_length, /*exact_embeddings=*/false);
         } else if (content_length <= prompt_ids.size()) {
             token_ids = std::make_shared<std::vector<int64_t>>(prompt_ids.begin(), prompt_ids.begin() + content_length);
         }

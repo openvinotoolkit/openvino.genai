@@ -98,10 +98,13 @@ class Sequence {
     size_t _make_hash(size_t content_length, size_t block_size);
     ContentHash _make_digest(size_t content_length, size_t block_size);
     void record_digest(size_t hash, size_t content_length, size_t block_size);
-    void _append_block_content(std::vector<int64_t>& content, size_t block_start_idx, size_t content_length);
+    /// @param exact_embeddings Whether an embedding enters the content with all its values (the digest, which a store
+    /// that outlives the process keys blocks by) or with a few sampled ones (the in-process hash).
+    void _append_block_content(std::vector<int64_t>& content, size_t block_start_idx, size_t content_length, bool exact_embeddings);
     void truncate_prefix_hashes();
 
     static std::vector<int64_t> _reduce_embedding(const std::vector<float>& embedding);
+    static std::vector<int64_t> _exact_embedding(const std::vector<float>& embedding);
 
     explicit Sequence(const uint64_t id, const SequenceGroupType type, const size_t hidden_size) : m_grouped_id(id), m_type(type), m_hidden_size(hidden_size) {}
 

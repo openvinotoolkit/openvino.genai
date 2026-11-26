@@ -752,6 +752,24 @@ TEST(TestBlockManager, SequenceHashEmbeddingRollbackMatchesFreshSequence) {
     EXPECT_EQ(sequence->get_hash(12, 4), fresh_sequence->get_hash(12, 4));
 }
 
+TEST(TestBlockManager, EmbeddingDigestCoversEveryValueWhileTheHashSamplesFew) {
+    // Two prompts whose embeddings agree on every value the in-process hash samples (every 50th) and differ elsewhere,
+    // like two images that share a few pixels' worth of features.
+    std::vector<std::vector<float>> first(4, std::vector<float>(200, 1.0f));
+    auto second = first;
+    second[2][1] = 2.0f;
+    auto first_group = create_embedding_sequence_group(first, 41);
+    auto second_group = create_embedding_sequence_group(second, 42);
+    auto same_group = create_embedding_sequence_group(first, 43);
+    auto first_sequence = first_group->get_running_sequences().at(0);
+    auto second_sequence = second_group->get_running_sequences().at(0);
+    auto same_sequence = same_group->get_running_sequences().at(0);
+
+    EXPECT_EQ(first_sequence->get_hash(4, 4), second_sequence->get_hash(4, 4));
+    EXPECT_NE(first_sequence->get_digest(4, 4), second_sequence->get_digest(4, 4));
+    EXPECT_EQ(first_sequence->get_digest(4, 4), same_sequence->get_digest(4, 4));
+}
+
 TEST(TestBlockManager, TemporaryReservationReclaimsOldestCheckpointFirst) {
     for (size_t num_layers : {1u, 2u}) {
         ov::genai::BlockManager manager(4, true, 4, num_layers, 0, true, 4);

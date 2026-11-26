@@ -46,14 +46,14 @@ Setting `cache_offload` enables offload. The size of the store is set with `ssd_
 
 ## What Is Reused, and When
 
-The default store is a file that belongs to one pipeline instance: it is created with the pipeline and removed with it. Out of the box, offload therefore only helps within one run, when a block has been evicted from device memory and the same prefix comes back. It does not carry over to the next process.
+The default store is a set of files under `kv_cache_dir`, one directory per model, device and cache layout. Blocks of one run are reused when a block has been evicted from device memory and the same prefix comes back. They are also found by the next process that opens the same model on the same device with the same `kv_cache_dir`, unless `reuse_ssd_cache=False` purges them at start. Two settings decide how much carries over:
 
-Reuse across processes, for example after a restart, needs two more settings:
-
-* A **persistent store plugin** that keeps its blocks beyond the process, set with `CacheOffloadConfig.plugin`; giving a `library_path` is the explicit opt-in to load it. The plugin implements the C ABI declared in [kv_cache_store_provider_abi.h](../../../../src/cpp/include/openvino/genai/c/kv_cache_store_provider_abi.h); [samples/c/kv_cache_store_plugin](../../../../samples/c/kv_cache_store_plugin/sample_kv_cache_store_plugin.c) is a reference implementation. A plugin that cannot be loaded, fails the handshake or cannot open its store makes the pipeline fail to start; there is no fallback to the default store. `reuse_ssd_cache` tells the plugin whether to keep what an earlier run left in `kv_cache_dir`.
 * `write_policy=CacheOffloadWritePolicy.WRITE_THROUGH`, which stores every block right after the forward pass that completed it instead of only when it is about to be overwritten. Without it, a block that was never evicted is not in the store when the process ends.
+* A **store plugin**, set with `CacheOffloadConfig.plugin`, when the blocks should live in storage of your own; giving a `library_path` is the explicit opt-in to load it. The plugin implements the C ABI declared in [kv_cache_store_provider_abi.h](../../../../src/cpp/include/openvino/genai/c/kv_cache_store_provider_abi.h); [samples/c/kv_cache_store_plugin](../../../../samples/c/kv_cache_store_plugin/sample_kv_cache_store_plugin.c) is a reference implementation. A plugin that cannot be loaded, fails the handshake or cannot open its store makes the pipeline fail to start; there is no fallback to the default store. `reuse_ssd_cache` tells the plugin whether to keep what an earlier run left in `kv_cache_dir`.
 
-Blocks are stored under a name derived from the model, the device and the cache layout, so a store written for another model or device is not reused.
+Blocks are stored under a name derived from the model, the device and the cache layout, so a store written for another model or device is not reused. The model is told apart by a digest of its graph and weights; for a model read from a directory the weights digest is remembered under `<kv_cache_dir>/ov_kvcache_v1/.identity`, so a later start checks a few pages of the weight file instead of hashing all of it. Besides the digest, the identity covers the runtime versions, the inference precision and the device generation. A model the digest cannot cover is not reused by a later run.
+
+For a vision-language model the blocks of image and audio embeddings are keyed by every value of their embeddings, so two different images never share a block.
 
 ```python
 scheduler_config.cache_offload = ov_genai.CacheOffloadConfig(
@@ -69,6 +69,12 @@ A plugin is arbitrary native code that runs in the process, which is why it has 
 A prefix is read back from the store in one or more rounds, so a plugin cannot tell from its own read calls how much of a request was reused. A plugin that implements the optional `on_restore_finish` entry (`OV_KVCACHE_CAP_RESTORE_STATS`, ABI 1.2) is told once per request, after the restore is decided, how many prompt tokens were already in the device cache, how many were read from its store and how many the request finally reuses, and the host then reports no reuse metrics for that store. For any other store the host logs one summary line per restore at the `INFO` log level.
 
 A plugin that advertises `OV_KVCACHE_CAP_MULTI_GROUP` (ABI 1.3) is opened once for all cache groups of a pipeline (the KV cache and, for a hybrid model, the linear attention cache), with one budget for both, so it can keep their blocks aligned itself. A plugin that also advertises `OV_KVCACHE_CAP_PREFIX_TOKENS` is told, before the host probes or writes linear attention checkpoints, which prompt tokens each checkpoint covers. These token ids are user content and are sent only to a plugin that asks for them.
+
+## Behavior Changes
+
+* A model with linear attention layers is offloaded as a hybrid model without any further setting: the linear-attention state is stored beside the KV blocks under one shared budget (see below).
+* A store plugin owns eviction. `write_blocks` must make room by its own policy instead of failing for lack of space, the host never asks it to drop blocks to free capacity, and any block may be gone when it is asked for again, which only costs recomputation.
+* Offload is configured with the flat fields of `CacheOffloadConfig` (`ssd_cache_capacity_gb`, `kv_cache_dir`, `write_policy`, `plugin`); there is no per-tier setting.
 
 ## Hybrid Models
 
