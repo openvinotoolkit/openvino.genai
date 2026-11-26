@@ -133,12 +133,33 @@ static void sample_on_restore_finish(void* self, const OvKVCacheRestoreStats* st
     if (stats == NULL || stats->struct_bytes < sizeof(OvKVCacheRestoreStats)) {
         return;
     }
+    /* ABI 1.3: the group tells the reports of the KV and the linear-attention blocks apart when one instance serves both. */
     fprintf(stderr,
-            "sample: restore prompt=%llu device_hit=%llu store_hit=%llu reused=%llu\n",
+            "sample: restore prompt=%llu device_hit=%llu store_hit=%llu reused=%llu group=%.*s\n",
             (unsigned long long)stats->prompt_tokens,
             (unsigned long long)stats->device_hit_tokens,
             (unsigned long long)stats->store_hit_tokens,
-            (unsigned long long)stats->reused_tokens);
+            (unsigned long long)stats->reused_tokens,
+            (int)stats->group_len,
+            stats->group != NULL ? stats->group : "");
+}
+
+/* ABI 1.3: before the host probes or writes linear-attention checkpoints it says which tokens each one covers. A plugin
+ * that keeps the KV blocks and the checkpoints of a request together would use them to place a checkpoint among the
+ * KV blocks (a checkpoint at `token_count` follows block token_count / block_tokens - 1); this sample only reports
+ * what it was told. */
+static OvKVCacheStatus sample_announce_prefix_tokens(void* self, const OvKVCachePrefixTokens* items, size_t count) {
+    size_t i;
+    (void)self;
+    for (i = 0; i < count; ++i) {
+        const OvKVCachePrefixTokens* item = &items[i];
+        fprintf(stderr,
+                "sample: prefix tokens count=%llu first=%lld last=%lld\n",
+                (unsigned long long)item->token_count,
+                item->token_count > 0 ? (long long)item->token_ids[0] : 0LL,
+                item->token_count > 0 ? (long long)item->token_ids[item->token_count - 1] : 0LL);
+    }
+    return OV_KVCACHE_OK;
 }
 
 /* --------------------------------------------------------------------------
@@ -160,7 +181,7 @@ typedef struct SampleEntry {
 typedef struct SampleStore {
     SampleEntry* head;
     sample_mutex_t mutex;
-    uint64_t max_blocks; /* 0 = unbounded; otherwise the oldest block is evicted by write_blocks (self-evict provider) */
+    uint64_t max_bytes; /* 0 = unbounded; otherwise the oldest blocks are evicted by write_blocks (self-evict provider) */
 } SampleStore;
 
 static int hash_equal(const OvKVCacheContentHash* a, const OvKVCacheContentHash* b) {
@@ -222,13 +243,13 @@ static void evict_oldest_locked(SampleStore* store) {
     free(dead);
 }
 
-static uint64_t count_locked(const SampleStore* store) {
-    uint64_t count = 0;
+static uint64_t bytes_locked(const SampleStore* store) {
+    uint64_t bytes = 0;
     const SampleEntry* entry;
     for (entry = store->head; entry != NULL; entry = entry->next) {
-        ++count;
+        bytes += entry->bytes;
     }
-    return count;
+    return bytes;
 }
 
 static void store_destroy(void* self) {
@@ -351,7 +372,7 @@ static OvKVCacheStatus store_write_blocks(void* self,
 
         /* Idempotent overwrite: drop any existing entry for this key first. */
         remove_locked(store, &req->key);
-        while (store->max_blocks > 0 && count_locked(store) >= store->max_blocks) {
+        while (store->max_bytes > 0 && store->head != NULL && bytes_locked(store) + req->bytes > store->max_bytes) {
             evict_oldest_locked(store);
         }
 
@@ -446,6 +467,7 @@ static const OvKVCacheStoreVTable g_store_vtable = {
     &sample_wait,
     &sample_cancel,
     &sample_on_restore_finish,
+    &sample_announce_prefix_tokens,
 };
 
 /* --------------------------------------------------------------------------
@@ -577,7 +599,7 @@ static OvKVCacheStatus provider_open(void* self,
             return out->status;
         }
         fresh->head = NULL;
-        fresh->max_blocks = 0;
+        fresh->max_bytes = 0;
         sample_mutex_init(&fresh->mutex);
         strcpy(directory_copy, directory);
         if (ns_len > 0) {
@@ -645,7 +667,10 @@ static const OvKVCacheStoreProviderDescriptor g_provider_descriptor = {
 
 /* --------------------------------------------------------------------------
  * "sample-self-evict-memory" provider: the in-memory store above, but bounded by `capacity_bytes` and evicting its
- * own oldest block when full (OV_KVCACHE_CAP_SELF_EVICT). The host then neither tracks capacity nor drops blocks.
+ * own oldest blocks when full (OV_KVCACHE_CAP_SELF_EVICT). The host then neither tracks capacity nor drops blocks.
+ * It also shows the ABI 1.3 capabilities: it is opened once for all cache groups (OV_KVCACHE_CAP_MULTI_GROUP), so
+ * its budget covers KV blocks and linear-attention checkpoints of very different sizes, and it is told which tokens
+ * each checkpoint covers (OV_KVCACHE_CAP_PREFIX_TOKENS).
  * ----------------------------------------------------------------------- */
 static const char* self_evict_provider_name(void* self) {
     (void)self;
@@ -657,9 +682,8 @@ static OvKVCacheStatus self_evict_provider_open(void* self,
                                                 const OvKVCacheStoreOpenOptions* opts,
                                                 OvKVCacheStoreOpenResult* out) {
     const OvKVCacheStatus status = provider_open(self, ns, opts, out);
-    if (status == OV_KVCACHE_OK && opts != NULL && opts->groups != NULL && opts->group_count > 0 &&
-        opts->groups[0].block_bytes > 0 && opts->capacity_bytes > 0) {
-        ((SampleStore*)out->store)->max_blocks = opts->capacity_bytes / opts->groups[0].block_bytes;
+    if (status == OV_KVCACHE_OK && opts != NULL && opts->capacity_bytes > 0) {
+        ((SampleStore*)out->store)->max_bytes = opts->capacity_bytes;
     }
     return status;
 }
@@ -679,7 +703,8 @@ static const OvKVCacheStoreProviderDescriptor g_self_evict_provider_descriptor =
     &g_self_evict_provider_vtable,
     NULL,
     OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO |
-        OV_KVCACHE_CAP_SELF_EVICT | OV_KVCACHE_CAP_RESTORE_STATS,
+        OV_KVCACHE_CAP_SELF_EVICT | OV_KVCACHE_CAP_RESTORE_STATS | OV_KVCACHE_CAP_MULTI_GROUP |
+        OV_KVCACHE_CAP_PREFIX_TOKENS,
     "sample-self-evict-memory",
 };
 

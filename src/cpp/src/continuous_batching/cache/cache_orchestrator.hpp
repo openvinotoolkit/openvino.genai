@@ -244,44 +244,43 @@ public:
         OPENVINO_ASSERT(orchestrator->has_registered_types(), "No supported cache types detected in the model");
 
         if (config.use_cache_offload) {
-            orchestrator->enable_kv_cache_offload(config.cache_offload_config, allocation_device);
-            if (config.cache_offload_config.linear_attention_capacity_bytes > 0 &&
-                orchestrator->m_cache_managers.count(CacheType::LINEAR_ATTENTION_CACHE) > 0) {
-                orchestrator->enable_linear_attention_cache_offload(config.cache_offload_config, allocation_device);
-            }
+            const bool offload_linear_attention =
+                config.cache_offload_config.linear_attention_capacity_bytes > 0 &&
+                orchestrator->m_cache_managers.count(CacheType::LINEAR_ATTENTION_CACHE) > 0;
+            orchestrator->enable_cache_offload(config.cache_offload_config, allocation_device, offload_linear_attention);
         }
 
         return orchestrator;
     }
 
     /**
-     * @brief Creates the disk offload cache for KV blocks and attaches it to the KV block manager.
+     * @brief Creates the disk offload caches of the KV blocks and, when asked, of the linear attention state blocks,
+     * and attaches each to its block manager. Both go to one store set, see CacheOffloadCoordinator::enable.
      */
-    void enable_kv_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
+    void enable_cache_offload(const CacheOffloadConfig& offload_config,
+                              const std::string& device,
+                              bool offload_linear_attention) {
         auto cache_mgr_it = m_cache_managers.find(CacheType::KV_CACHE);
         OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
                         "KV cache offload requires a model with KV cache inputs");
         // The offload slot holds only the key/value blocks; the index caches of the same block would come back stale.
         OPENVINO_ASSERT(!static_cast<KVCacheManager&>(*cache_mgr_it->second).has_qsa_index_caches(),
                         "KV cache offload is not supported yet for models with sparse attention index caches (QSA)");
-        m_offload->enable_kv(static_cast<KVCacheManager&>(*cache_mgr_it->second),
-                             *m_block_managers.at(CacheType::KV_CACHE),
-                             offload_config,
-                             device);
-    }
-
-    /**
-     * @brief Creates the disk offload cache for linear attention state blocks and attaches it to the
-     * linear attention block manager.
-     */
-    void enable_linear_attention_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
-        auto cache_mgr_it = m_cache_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
-        OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
-                        "Linear attention cache offload requires a model with linear attention cache inputs");
-        m_offload->enable_linear_attention(static_cast<LinearAttentionCacheManager&>(*cache_mgr_it->second),
-                                           *m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE),
-                                           offload_config,
-                                           device);
+        LinearAttentionCacheManager* la_manager = nullptr;
+        BlockManager* la_block_manager = nullptr;
+        if (offload_linear_attention) {
+            auto la_mgr_it = m_cache_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+            OPENVINO_ASSERT(la_mgr_it != m_cache_managers.end(),
+                            "Linear attention cache offload requires a model with linear attention cache inputs");
+            la_manager = &static_cast<LinearAttentionCacheManager&>(*la_mgr_it->second);
+            la_block_manager = m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE).get();
+        }
+        m_offload->enable(static_cast<KVCacheManager&>(*cache_mgr_it->second),
+                          *m_block_managers.at(CacheType::KV_CACHE),
+                          la_manager,
+                          la_block_manager,
+                          offload_config,
+                          device);
     }
 
     /**

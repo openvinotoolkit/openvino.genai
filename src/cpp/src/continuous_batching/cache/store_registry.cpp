@@ -5,6 +5,8 @@
 
 #include <cstddef>
 #include <cstring>
+#include <memory>
+#include <optional>
 #include <vector>
 
 #ifdef _WIN32
@@ -114,12 +116,9 @@ std::unique_ptr<IKVCacheStore> make_default_store(const KVCacheDiskLayout& layou
     return std::make_unique<FileKVCacheStore>(std::move(backend));
 }
 
-/// Returns nullptr (after logging why) when the plugin cannot be used, and never falls back itself. Throws on a config error.
-std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& layout,
-                                                     const CacheOffloadConfig& config,
-                                                     const std::string& device,
-                                                     const std::string& group,
-                                                     size_t block_tokens) {
+/// The provider of the configured plugin. Returns nullptr (after logging why) when the plugin cannot be used, and never
+/// falls back itself. Throws on a config error.
+const OvKVCacheStoreProviderDescriptor* load_plugin_provider(const CacheOffloadConfig& config) {
     for (const auto& [key, value] : config.store_properties) {
         OPENVINO_ASSERT(key != "block_size_bytes" && key != "device" && key != "dram_cache_capacity_gb" &&
                             key != "reuse_ssd_cache" && key != "debug_log_path",
@@ -165,13 +164,39 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
         return nullptr;
     }
 
-    const std::string block_size_str = std::to_string(layout.get_slot_size());
+    return provider;
+}
+
+/// The cache group of a store instance, as the plugin is told about it.
+struct PluginGroup {
+    std::string name;
+    size_t block_bytes = 0;
+    size_t block_tokens = 0;
+};
+
+struct PluginInstance {
+    std::shared_ptr<AbiStoreInstance> instance;
+    AbiKVCacheStore::StoreInfo info;
+};
+
+/// Opens one store instance of @p provider for @p groups. Returns nothing (after logging why) when it cannot be used.
+std::optional<PluginInstance> open_plugin_instance(const OvKVCacheStoreProviderDescriptor* provider,
+                                                   const CacheOffloadConfig& config,
+                                                   const std::string& device,
+                                                   const std::string& ns_string,
+                                                   const std::vector<PluginGroup>& groups,
+                                                   uint64_t capacity_bytes) {
+    // One group has the block size the in-tree file provider needs; a shared instance serves groups of several sizes.
+    const std::string block_size_str = groups.size() == 1 ? std::to_string(groups.front().block_bytes) : std::string();
     const std::string dram_capacity_str = std::to_string(config.dram_cache_capacity_gb);
     const std::string reuse_str = config.reuse_ssd_cache ? "true" : "false";
-    std::vector<OvKVCacheProperty> properties = {{"block_size_bytes", block_size_str.c_str()},
-                                                 {"device", device.c_str()},
-                                                 {"dram_cache_capacity_gb", dram_capacity_str.c_str()},
-                                                 {"reuse_ssd_cache", reuse_str.c_str()}};
+    std::vector<OvKVCacheProperty> properties;
+    if (groups.size() == 1) {
+        properties.push_back({"block_size_bytes", block_size_str.c_str()});
+    }
+    properties.push_back({"device", device.c_str()});
+    properties.push_back({"dram_cache_capacity_gb", dram_capacity_str.c_str()});
+    properties.push_back({"reuse_ssd_cache", reuse_str.c_str()});
     if (!config.debug_log_path.empty()) {
         properties.push_back({"debug_log_path", config.debug_log_path.c_str()});
     }
@@ -181,19 +206,22 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
 
     OvKVCacheStoreOpenOptions options{};
     options.directory = config.kv_cache_dir.empty() ? nullptr : config.kv_cache_dir.c_str();
-    options.capacity_bytes = config.capacity_bytes;
+    options.capacity_bytes = capacity_bytes;
     options.properties = properties.data();
     options.property_count = properties.size();
-    const OvKVCacheGroupInfo group_info{group.c_str(),
-                                        static_cast<uint32_t>(group.size()),
-                                        static_cast<uint32_t>(block_tokens),
-                                        static_cast<uint64_t>(layout.get_slot_size())};
-    options.groups = &group_info;
-    options.group_count = 1;
+    std::vector<OvKVCacheGroupInfo> group_infos;
+    group_infos.reserve(groups.size());
+    for (const PluginGroup& group : groups) {
+        group_infos.push_back(OvKVCacheGroupInfo{group.name.c_str(),
+                                                 static_cast<uint32_t>(group.name.size()),
+                                                 static_cast<uint32_t>(group.block_tokens),
+                                                 static_cast<uint64_t>(group.block_bytes)});
+    }
+    options.groups = group_infos.data();
+    options.group_count = group_infos.size();
     options.witness_bytes_max = sizeof(ContentHash);
     options.log = &plugin_log;
-    // The ABI opens one store instance per namespace; the group (kv / la, plus the model digest) is the namespace.
-    const OvKVCacheNamespace ns{reinterpret_cast<const uint8_t*>(group.data()), static_cast<uint64_t>(group.size())};
+    const OvKVCacheNamespace ns{reinterpret_cast<const uint8_t*>(ns_string.data()), static_cast<uint64_t>(ns_string.size())};
 
     OvKVCacheStoreOpenResult result{};
     const OvKVCacheStatus status = provider->vtable->open(provider->self, &ns, &options, &result);
@@ -201,7 +229,7 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
         GENAI_WARN("KV cache store plugin '%s' failed to open a store instance (status %d)",
                    config.store_library_path.c_str(),
                    static_cast<int>(result.status));
-        return nullptr;
+        return std::nullopt;
     }
 
     constexpr size_t store_sync_end = offsetof(OvKVCacheStoreVTable, read_blocks_async);
@@ -218,35 +246,61 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const KVCacheDiskLayout& la
         if (result.vtable->struct_bytes >= destroy_end && result.vtable->destroy != nullptr) {
             result.vtable->destroy(result.store);
         }
-        return nullptr;
+        return std::nullopt;
     }
 
-    const size_t capacity_blocks = layout.get_slot_size() > 0 ? config.capacity_bytes / layout.get_slot_size() : 0;
-
-    AbiKVCacheStore::StoreInfo info;
-    info.capabilities = provider->capabilities;
+    PluginInstance opened;
+    opened.instance = std::make_shared<AbiStoreInstance>(result.vtable, result.store);
+    opened.info.capabilities = provider->capabilities;
     const bool fingerprint_advertised = (provider->capabilities & OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT) != 0;
     if (fingerprint_advertised && result.has_semantics_fingerprint != 0) {
-        info.semantics_fingerprint = result.store_semantics_fingerprint;
+        opened.info.semantics_fingerprint = result.store_semantics_fingerprint;
     } else if (fingerprint_advertised != (result.has_semantics_fingerprint != 0)) {
         GENAI_WARN("KV cache store plugin '%s' advertises a semantics fingerprint inconsistently with what open() reported; ignoring it",
                    config.store_library_path.c_str());
     }
-    GENAI_INFO("[KV_TRACE] kv_cache_store plugin='%s' provider='%s' group='%s' capacity_blocks=%zu async_io=%d semantics_fingerprint=%016llx%016llx",
+    GENAI_INFO("[KV_TRACE] kv_cache_store plugin='%s' provider='%s' groups=%zu capacity_bytes=%llu async_io=%d semantics_fingerprint=%016llx%016llx",
                config.store_library_path.c_str(),
                provider->name != nullptr ? provider->name : "",
-               group.c_str(),
-               capacity_blocks,
+               groups.size(),
+               static_cast<unsigned long long>(capacity_bytes),
                (provider->capabilities & OV_KVCACHE_CAP_ASYNC_IO) != 0 ? 1 : 0,
-               static_cast<unsigned long long>(info.semantics_fingerprint ? info.semantics_fingerprint->hi : 0),
-               static_cast<unsigned long long>(info.semantics_fingerprint ? info.semantics_fingerprint->lo : 0));
-    return std::make_unique<AbiKVCacheStore>(result.vtable,
-                                             result.store,
-                                             group,
-                                             layout.get_slot_size(),
-                                             capacity_blocks,
-                                             info,
-                                             config.store_timeout_ms);
+               static_cast<unsigned long long>(opened.info.semantics_fingerprint ? opened.info.semantics_fingerprint->hi : 0),
+               static_cast<unsigned long long>(opened.info.semantics_fingerprint ? opened.info.semantics_fingerprint->lo : 0));
+    return opened;
+}
+
+std::unique_ptr<AbiKVCacheStore> make_plugin_view(const PluginInstance& opened,
+                                                  const std::string& group,
+                                                  size_t block_bytes,
+                                                  uint64_t capacity_bytes,
+                                                  std::uint32_t timeout_ms) {
+    const size_t capacity_blocks = block_bytes > 0 ? static_cast<size_t>(capacity_bytes / block_bytes) : 0;
+    GENAI_INFO("[KV_TRACE] kv_cache_store group='%s' capacity_blocks=%zu", group.c_str(), capacity_blocks);
+    return std::make_unique<AbiKVCacheStore>(opened.instance, group, block_bytes, capacity_blocks, opened.info, timeout_ms);
+}
+
+/// One store instance for the group, opened under its own namespace. Returns nullptr when the plugin cannot be used.
+std::unique_ptr<IKVCacheStore> try_open_plugin_store(const OvKVCacheStoreProviderDescriptor* provider,
+                                                     const KVCacheDiskLayout& layout,
+                                                     const CacheOffloadConfig& config,
+                                                     const std::string& device,
+                                                     const std::string& group,
+                                                     size_t block_tokens,
+                                                     uint64_t capacity_bytes) {
+    const size_t block_bytes = layout.get_slot_size();
+    // The ABI opens one store instance per namespace; the group (kv / la, plus the model digest) is the namespace.
+    const auto opened = open_plugin_instance(provider, config, device, group, {{group, block_bytes, block_tokens}}, capacity_bytes);
+    if (!opened) {
+        return nullptr;
+    }
+    return make_plugin_view(*opened, group, block_bytes, capacity_bytes, config.store_timeout_ms);
+}
+
+CacheOffloadConfig config_with_capacity(const CacheOffloadConfig& config, uint64_t capacity_bytes) {
+    CacheOffloadConfig group_config = config;
+    group_config.capacity_bytes = capacity_bytes;
+    return group_config;
 }
 
 }  // namespace
@@ -257,12 +311,79 @@ std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layo
                                                    const std::string& group,
                                                    size_t block_tokens) {
     if (config.allow_untrusted_store_plugin && !config.store_library_path.empty()) {
-        if (auto store = try_open_plugin_store(layout, config, device, group, block_tokens)) {
-            return store;
+        if (const auto* provider = load_plugin_provider(config)) {
+            if (auto store = try_open_plugin_store(provider, layout, config, device, group, block_tokens, config.capacity_bytes)) {
+                return store;
+            }
         }
         GENAI_WARN("Falling back to the default file store for group '%s'", group.c_str());
     }
     return make_default_store(layout, config, device);
+}
+
+std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vector<StoreGroupSpec>& groups,
+                                                                  const CacheOffloadConfig& config,
+                                                                  const std::string& device,
+                                                                  const std::string& shared_namespace) {
+    OPENVINO_ASSERT(!groups.empty(), "A grouped KV cache store needs at least one group");
+    const OvKVCacheStoreProviderDescriptor* provider = nullptr;
+    if (config.allow_untrusted_store_plugin && !config.store_library_path.empty()) {
+        provider = load_plugin_provider(config);
+        if (provider == nullptr) {
+            GENAI_WARN("Falling back to the default file store");
+        }
+    }
+
+    if (provider != nullptr && (provider->capabilities & OV_KVCACHE_CAP_MULTI_GROUP) != 0) {
+        if ((provider->capabilities & OV_KVCACHE_CAP_SELF_EVICT) == 0) {
+            GENAI_WARN("KV cache store plugin '%s' serves all groups from one instance but does not evict by itself, "
+                       "which the host cannot count per group; opening one instance per group instead",
+                       config.store_library_path.c_str());
+        } else {
+            std::vector<PluginGroup> plugin_groups;
+            uint64_t capacity_bytes = 0;
+            for (const StoreGroupSpec& group : groups) {
+                plugin_groups.push_back({group.name, group.layout.get_slot_size(), group.block_tokens});
+                capacity_bytes += group.capacity_bytes;
+            }
+            if (const auto opened = open_plugin_instance(provider, config, device, shared_namespace, plugin_groups, capacity_bytes)) {
+                std::vector<std::unique_ptr<IKVCacheStore>> views;
+                for (const StoreGroupSpec& group : groups) {
+                    views.push_back(make_plugin_view(*opened,
+                                                     group.name,
+                                                     group.layout.get_slot_size(),
+                                                     group.capacity_bytes,
+                                                     config.store_timeout_ms));
+                }
+                return std::make_unique<ViewSetKVCacheStore>(std::move(views));
+            }
+            GENAI_WARN("Falling back to the default file store");
+            provider = nullptr;
+        }
+    }
+
+    std::vector<std::unique_ptr<IKVCacheStore>> views;
+    for (const StoreGroupSpec& group : groups) {
+        const CacheOffloadConfig group_config = config_with_capacity(config, group.capacity_bytes);
+        std::unique_ptr<IKVCacheStore> store;
+        if (provider != nullptr) {
+            store = try_open_plugin_store(provider,
+                                          group.layout,
+                                          group_config,
+                                          device,
+                                          group.own_namespace,
+                                          group.block_tokens,
+                                          group.capacity_bytes);
+            if (store == nullptr) {
+                GENAI_WARN("Falling back to the default file store for group '%s'", group.own_namespace.c_str());
+            }
+        }
+        if (store == nullptr) {
+            store = make_default_store(group.layout, group_config, device);
+        }
+        views.push_back(std::move(store));
+    }
+    return std::make_unique<ViewSetKVCacheStore>(std::move(views));
 }
 
 }  // namespace ov::genai

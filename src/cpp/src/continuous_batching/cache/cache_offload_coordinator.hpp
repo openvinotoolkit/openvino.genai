@@ -9,6 +9,7 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "content_hash.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
@@ -52,55 +53,81 @@ public:
     }
 
     /**
-     * @brief Creates the disk offload cache for KV blocks and attaches it to the KV block manager.
+     * @brief Opens the store of the KV cache and, for a hybrid model, of the linear attention cache together, creates
+     * their offload tiers and attaches each to its block manager.
+     *
+     * The stores are opened as one set (see open_grouped_kv_cache_store), so a plugin that serves all groups from one
+     * instance sees the KV blocks and the linear attention checkpoints of a request in one place. The slot sizes
+     * differ, so each group keeps its own layout and capacity.
+     *
+     * @param la_manager Linear attention cache manager, or null when that cache is not offloaded.
      */
-    void enable_kv(KVCacheManager& kv_manager,
-                   BlockManager& block_manager,
-                   const CacheOffloadConfig& offload_config,
-                   const std::string& device) {
-        const size_t kv_block_tokens = block_manager.get_block_size();
-        auto store = open_kv_cache_store(kv_manager.get_block_layout(),
-                                         offload_config,
-                                         device,
-                                         group_name("kv", kv_manager.get_block_layout(), kv_block_tokens, device,
-                                                    kv_manager.get_layout_signature()),
-                                         kv_block_tokens);
-        GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
-                   store->get_block_size(),
-                   store->get_capacity_blocks());
+    void enable(KVCacheManager& kv_manager,
+                BlockManager& kv_block_manager,
+                LinearAttentionCacheManager* la_manager,
+                BlockManager* la_block_manager,
+                const CacheOffloadConfig& offload_config,
+                const std::string& device) {
+        OPENVINO_ASSERT((la_manager == nullptr) == (la_block_manager == nullptr),
+                        "The linear attention cache manager and its block manager go together");
+        const size_t kv_block_tokens = kv_block_manager.get_block_size();
+        std::vector<StoreGroupSpec> specs;
+        specs.push_back(StoreGroupSpec{
+            "kv",
+            group_name("kv", kv_manager.get_block_layout(), kv_block_tokens, device, kv_manager.get_layout_signature()),
+            kv_manager.get_block_layout(),
+            kv_block_tokens,
+            offload_config.capacity_bytes});
+        if (la_manager != nullptr) {
+            // The LA block manager's block size is the checkpoint interval in tokens.
+            const size_t la_interval = la_block_manager->get_block_size();
+            specs.push_back(StoreGroupSpec{
+                "la",
+                group_name("la", la_manager->get_block_layout(), la_interval, device, la_manager->get_layout_signature()),
+                la_manager->get_block_layout(),
+                la_interval,
+                offload_config.linear_attention_capacity_bytes});
+        }
 
-        m_kv = std::make_unique<KVCacheOffloadCache>(kv_manager, std::move(store), offload_config.buffer_slots);
-        block_manager.set_overwritten_block_observer(m_kv.get());
-        m_kv_block_manager = &block_manager;
+        auto stores = open_grouped_kv_cache_store(specs, offload_config, device, shared_namespace(specs));
+        auto kv_store = stores->group(0);
+        GENAI_INFO("[KV_TRACE] kv_cache_offload slot_bytes=%zu capacity_blocks=%zu",
+                   kv_store->get_block_size(),
+                   kv_store->get_capacity_blocks());
+        m_kv = std::make_unique<KVCacheOffloadCache>(kv_manager, std::move(kv_store), offload_config.buffer_slots);
+        kv_block_manager.set_overwritten_block_observer(m_kv.get());
+        m_kv_block_manager = &kv_block_manager;
         m_kv->set_store_completed_blocks(offload_config.store_completed_blocks);
+
+        if (la_manager != nullptr) {
+            auto la_store = stores->group(1);
+            GENAI_INFO("[KV_TRACE] la_cache_offload slot_bytes=%zu capacity_blocks=%zu",
+                       la_store->get_block_size(),
+                       la_store->get_capacity_blocks());
+            m_la = std::make_unique<LinearAttentionOffloadCache>(*la_manager, std::move(la_store), offload_config.buffer_slots);
+            la_block_manager->set_overwritten_block_observer(m_la.get());
+            m_la_block_manager = la_block_manager;
+            m_la->set_store_completed_blocks(offload_config.store_completed_blocks);
+            // The LA block manager's block size is the checkpoint interval in tokens.
+            m_la->enable_prefix_tokens(la_block_manager->get_block_size());
+        }
     }
 
-    /**
-     * @brief Creates the disk offload cache for linear attention state blocks and attaches it to the linear attention
-     * block manager. Separate file/cache from the KV one, since the slot sizes differ.
-     */
-    void enable_linear_attention(LinearAttentionCacheManager& la_manager,
-                                 BlockManager& block_manager,
-                                 const CacheOffloadConfig& offload_config,
-                                 const std::string& device) {
-        CacheOffloadConfig la_backend_config = offload_config;
-        la_backend_config.capacity_bytes = offload_config.linear_attention_capacity_bytes;
-        // The LA block manager's block size is the checkpoint interval in tokens.
-        const size_t la_interval = block_manager.get_block_size();
-        auto store = open_kv_cache_store(la_manager.get_block_layout(),
-                                         la_backend_config,
-                                         device,
-                                         group_name("la", la_manager.get_block_layout(), la_interval, device,
-                                                    la_manager.get_layout_signature()),
-                                         la_interval);
-        GENAI_INFO("[KV_TRACE] la_cache_offload slot_bytes=%zu capacity_blocks=%zu",
-                   store->get_block_size(),
-                   store->get_capacity_blocks());
-
-        m_la = std::make_unique<LinearAttentionOffloadCache>(la_manager, std::move(store), offload_config.buffer_slots);
-        block_manager.set_overwritten_block_observer(m_la.get());
-        m_la_block_manager = &block_manager;
-        m_la->set_store_completed_blocks(offload_config.store_completed_blocks);
+    /// Namespace of a store instance that serves all groups of @p specs: the namespaces the groups would have apart.
+    std::string shared_namespace(const std::vector<StoreGroupSpec>& specs) const {
+        if (m_model_identity.empty()) {
+            return "kv+la";
+        }
+        std::string key;
+        for (const StoreGroupSpec& spec : specs) {
+            key += spec.own_namespace;
+            key += '|';
+        }
+        const ContentHash digest = compute_content_hash(key.data(), key.size());
+        char hex[33];
+        std::snprintf(hex, sizeof(hex), "%016llx%016llx", static_cast<unsigned long long>(digest.hi),
+                      static_cast<unsigned long long>(digest.lo));
+        return std::string("kv+la:") + hex;
     }
 
     /**

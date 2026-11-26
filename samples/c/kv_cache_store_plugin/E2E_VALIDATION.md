@@ -178,7 +178,8 @@ later.
 ### What the host expects from your plugin's stores
 
 The host opens **one store instance per group** and passes the group as the `OvKVCacheNamespace`
-(`kv` for KV blocks and `la` for linear-attention blocks). The group string is an opaque byte string: when a plugin is
+(`kv` for KV blocks and `la` for linear-attention blocks) unless the provider advertises
+`OV_KVCACHE_CAP_MULTI_GROUP` (ABI 1.3, see below). The group string is an opaque byte string: when a plugin is
 configured the host appends a digest of the model and cache layout (for example `kv:<32 hex digits>`),
 so that stores shared by different models never serve each other's blocks. Treat the namespace as a
 key, do not parse it. `OvKVCacheGroupInfo` (ABI 1.1) tells you each group's `block_bytes` and
@@ -221,7 +222,20 @@ same reason.
   group, so a hybrid model's `kv` and `la` stores each get a call; for `la` the counts are checkpoint positions),
   and logs no reuse metrics of its own for a store that takes it. A store without it gets one summary line in the
   host log instead. A plugin that prints its own reuse metrics should do it here and not in `read_blocks`. The
-  sample plugin prints one line per call to stderr.
+  sample plugin prints one line per call to stderr. From ABI 1.3 the report names its group (`group`), which is how
+  the reports of the `kv` and the `la` store are told apart when one instance serves both.
+- A provider that advertises `OV_KVCACHE_CAP_MULTI_GROUP` (ABI 1.3, and `OV_KVCACHE_CAP_SELF_EVICT` with it) is opened
+  **once** for the whole pipeline: `OvKVCacheStoreOpenOptions.groups` lists `kv` and, for a hybrid model, `la` with
+  their block sizes, `OvKVCacheBlockKey::group` tells them apart, the namespace identifies the model and cache layout
+  only, and `capacity_bytes` is the budget of both groups together (`capacity_bytes` plus
+  `linear_attention_capacity_bytes`). This lets a plugin keep the linear-attention checkpoints and the KV blocks of a
+  request aligned itself. Without the bit the host opens one instance per group, as before.
+- A provider that advertises `OV_KVCACHE_CAP_PREFIX_TOKENS` (ABI 1.3) gets `announce_prefix_tokens` before the host
+  probes or writes linear-attention checkpoints: for each checkpoint whose tokens the host still knows, the whole
+  prompt prefix `[0, token_count)` as token ids, so the plugin can place a checkpoint at `token_count` among the KV
+  blocks of `block_tokens` tokens. Token ids are user content, so they are sent only to a plugin that asks for them,
+  only for the `la` group, and the witness stays a digest. The sample `sample-self-evict-memory` provider advertises
+  both capabilities and prints what it is told.
 
 Checked on Qwen3.5-9B / GPU with `sample-self-evict-memory` (and `"store_properties": {"tier": "ssd-test",
 "policy": "lru"}`, both of which the plugin logged on open) and `"store_completed_blocks": true`: with room for

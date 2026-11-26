@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "continuous_batching/cache/kv_cache_store.hpp"
@@ -37,5 +38,26 @@ std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layo
                                                    const std::string& device,
                                                    const std::string& group,
                                                    size_t block_tokens = 0);
+
+/// One cache group of a pipeline whose store is opened together with the others.
+struct StoreGroupSpec {
+    std::string name;           ///< group in the block keys of a store instance shared by all groups ("kv" / "la")
+    std::string own_namespace;  ///< namespace (and group) when the group has an instance of its own
+    KVCacheDiskLayout layout;
+    size_t block_tokens = 0;    ///< see open_kv_cache_store()
+    uint64_t capacity_bytes = 0;
+};
+
+/**
+ * @brief Opens the stores of all cache groups of a pipeline together.
+ *
+ * A plugin that advertises OV_KVCACHE_CAP_MULTI_GROUP (and OV_KVCACHE_CAP_SELF_EVICT) is opened once, under
+ * @p shared_namespace, with every group in its open options, and the groups are views of that one instance. Any other
+ * backend gets a store per group, as open_kv_cache_store() would open it.
+ */
+std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vector<StoreGroupSpec>& groups,
+                                                                  const CacheOffloadConfig& config,
+                                                                  const std::string& device,
+                                                                  const std::string& shared_namespace);
 
 }  // namespace ov::genai

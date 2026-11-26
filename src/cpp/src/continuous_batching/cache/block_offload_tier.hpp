@@ -25,6 +25,7 @@
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "logger.hpp"
 #include "prefix_digest_registry.hpp"
+#include "prefix_token_registry.hpp"
 
 namespace ov::genai {
 
@@ -158,6 +159,19 @@ public:
     BlockOffloadTier(const BlockOffloadTier&) = delete;
     BlockOffloadTier& operator=(const BlockOffloadTier&) = delete;
 
+    /**
+     * @brief Starts telling a store that wants it which tokens each of its blocks covers.
+     * @param block_size Tokens between two blocks of this tier: the checkpoint interval of linear attention.
+     *
+     * Sequence records the tokens of the prefixes it hashes with @p block_size while this tier lives. Only a store of
+     * state checkpoints asks for them, so a KV tier never calls this.
+     */
+    void enable_prefix_tokens(std::size_t block_size) {
+        if (m_store->wants_prefix_tokens()) {
+            m_token_lease.emplace(block_size);
+        }
+    }
+
     void on_blocks_overwritten(std::size_t hash, const BlocksPerLayer& blocks) override {
         queue_store(hash, blocks, "overwritten");
     }
@@ -225,6 +239,7 @@ public:
             keys.push_back(PrefixKey{chain[i], digests[i]});
         }
         try {
+            announce_prefix_tokens(keys);
             in_store = m_store->has_blocks_by_key(keys);
         } catch (const std::exception& error) {
             GENAI_WARN("%s store probe failed: %s", Traits::kKind, error.what());
@@ -608,6 +623,7 @@ private:
                         continue;
                     }
                     if (!batch[i]->chain.empty()) {
+                        announce_prefix_tokens(batch[i]->chain);
                         // Every write is preceded by a probe of its chain from block 0, so the store can place the block.
                         const std::vector<bool> present = m_store->has_blocks_by_key(batch[i]->chain);
                         // No index here knows what a self-evicting store holds, so the probe also tells whether to skip.
@@ -620,6 +636,7 @@ private:
                     }
                 }
                 if (!to_write.empty()) {
+                    announce_prefix_tokens(keys);
                     const std::vector<bool> written = m_store->write_blocks_by_key(keys, data);
                     for (std::size_t i = 0; i < to_write.size(); ++i) {
                         stored[to_write[i]] = written[i];
@@ -707,6 +724,22 @@ private:
         m_store_hits.insert(hash);
     }
 
+    /// Tells the store the tokens of the checkpoints in @p keys, when it asked for them. Called with no lock held.
+    void announce_prefix_tokens(const std::vector<PrefixKey>& keys) {
+        if (!m_token_lease) {
+            return;
+        }
+        std::vector<PrefixTokens> prefixes;
+        for (const PrefixKey& key : keys) {
+            if (auto token_ids = PrefixTokenRegistry::instance().find(key.hash)) {
+                prefixes.push_back(PrefixTokens{key, std::move(token_ids)});
+            }
+        }
+        if (!prefixes.empty()) {
+            m_store->announce_prefix_tokens(prefixes);
+        }
+    }
+
     /// Marks the entry of @p hash as the most recently used; a hash without an entry is ignored.
     void touch_locked(std::size_t hash) {
         if (const auto position = m_recency_position.find(hash); position != m_recency_position.end()) {
@@ -776,6 +809,8 @@ private:
     bool m_track_chains = false;
     // Held for a plugin store, so that Sequence records the digests it is keyed by.
     std::optional<PrefixDigestRegistry::Lease> m_digest_lease;
+    // Held for a store of state checkpoints that wants their tokens, so that Sequence records them.
+    std::optional<PrefixTokenRegistry::Lease> m_token_lease;
     // The store drops blocks by its own policy, so no index of its content is kept here and nothing is reclaimed.
     bool m_self_evicting = false;
     bool m_store_completed_blocks = false;

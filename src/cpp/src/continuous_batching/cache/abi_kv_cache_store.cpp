@@ -59,7 +59,39 @@ uint64_t witness_seed(const PrefixKey& key) {
     return id.lo ^ (id.hi * 0x9E3779B97F4A7C15ull);
 }
 
+std::shared_ptr<AbiStoreInstance> make_instance(const OvKVCacheStoreVTable* vtable, void* store) {
+    OPENVINO_ASSERT(vtable != nullptr && store != nullptr, "ABI KV cache store must not be null");
+    return std::make_shared<AbiStoreInstance>(vtable, store);
+}
+
 }  // namespace
+
+AbiStoreInstance::~AbiStoreInstance() {
+    if (abandoned) {
+        // The plugin still holds buffers of a batch it never finished, so the instance cannot be flushed or destroyed.
+        GENAI_WARN("KV cache store plugin instance is left undestroyed because it never finished a cancelled batch");
+        return;
+    }
+    // Teardown order of the plugin contract: make everything written durable, then destroy the instance.
+    try {
+        flush();
+    } catch (const std::exception& error) {
+        GENAI_WARN("KV cache store plugin flush before destroy failed: %s", error.what());
+    }
+    if (vtable->destroy != nullptr) {
+        vtable->destroy(store);
+    }
+}
+
+void AbiStoreInstance::flush() {
+    // flush is a tail entry of the vtable: only call it when struct_bytes says the plugin provides it.
+    constexpr size_t flush_end = offsetof(OvKVCacheStoreVTable, flush) + sizeof(OvKVCacheStoreVTable::flush);
+    if (abandoned || vtable->struct_bytes < flush_end || vtable->flush == nullptr) {
+        return;
+    }
+    const OvKVCacheStatus status = vtable->flush(store);
+    OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store flush failed with status ", status);
+}
 
 AbiKVCacheStore::AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
                                  void* store,
@@ -68,13 +100,28 @@ AbiKVCacheStore::AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
                                  size_t capacity_blocks,
                                  StoreInfo info,
                                  std::uint32_t io_timeout_ms)
-    : m_vtable(vtable),
-      m_store(store),
+    : AbiKVCacheStore(make_instance(vtable, store),
+                      std::move(group),
+                      block_size,
+                      capacity_blocks,
+                      info,
+                      io_timeout_ms) {}
+
+AbiKVCacheStore::AbiKVCacheStore(std::shared_ptr<AbiStoreInstance> instance,
+                                 std::string group,
+                                 size_t block_size,
+                                 size_t capacity_blocks,
+                                 StoreInfo info,
+                                 std::uint32_t io_timeout_ms)
+    : m_instance(std::move(instance)),
+      m_vtable(m_instance->vtable),
+      m_store(m_instance->store),
       m_group(std::move(group)),
       m_block_size(block_size),
       m_capacity_blocks(capacity_blocks),
       m_info(info),
-      m_io_timeout_ms(io_timeout_ms) {
+      m_io_timeout_ms(io_timeout_ms),
+      m_abandoned(m_instance->abandoned) {
     OPENVINO_ASSERT(m_vtable != nullptr && m_store != nullptr, "ABI KV cache store must not be null");
     OPENVINO_ASSERT(m_io_timeout_ms > 0, "ABI KV cache store I/O timeout must be greater than 0");
     OPENVINO_ASSERT(m_vtable->struct_bytes >= offsetof(OvKVCacheStoreVTable, read_blocks_async),
@@ -101,6 +148,15 @@ AbiKVCacheStore::AbiKVCacheStore(const OvKVCacheStoreVTable* vtable,
                        "the host reports the reuse metrics itself");
         }
     }
+    if ((m_info.capabilities & OV_KVCACHE_CAP_PREFIX_TOKENS) != 0) {
+        constexpr size_t announce_end = offsetof(OvKVCacheStoreVTable, announce_prefix_tokens) +
+                                        sizeof(OvKVCacheStoreVTable::announce_prefix_tokens);
+        m_takes_prefix_tokens = m_vtable->struct_bytes >= announce_end && m_vtable->announce_prefix_tokens != nullptr;
+        if (!m_takes_prefix_tokens) {
+            GENAI_WARN("KV cache store plugin advertises prefix tokens but its vtable lacks announce_prefix_tokens; "
+                       "no token ids are sent");
+        }
+    }
 }
 
 bool AbiKVCacheStore::report_restore_stats(const RestoreStats& stats) {
@@ -113,24 +169,34 @@ bool AbiKVCacheStore::report_restore_stats(const RestoreStats& stats) {
     abi_stats.device_hit_tokens = stats.device_hit_tokens;
     abi_stats.store_hit_tokens = stats.store_hit_tokens;
     abi_stats.reused_tokens = stats.reused_tokens;
+    abi_stats.group = m_group.c_str();
+    abi_stats.group_len = static_cast<uint32_t>(m_group.size());
     m_vtable->on_restore_finish(m_store, &abi_stats);
     return true;
 }
 
-AbiKVCacheStore::~AbiKVCacheStore() {
-    if (m_abandoned) {
-        // The plugin still holds buffers of a batch it never finished, so the instance cannot be flushed or destroyed.
-        GENAI_WARN("KV cache store plugin instance is left undestroyed because it never finished a cancelled batch");
+void AbiKVCacheStore::announce_prefix_tokens(const std::vector<PrefixTokens>& prefixes) {
+    if (!m_takes_prefix_tokens || m_abandoned || prefixes.empty()) {
         return;
     }
-    // Teardown order of the plugin contract: make everything written durable, then destroy the instance.
-    try {
-        flush();
-    } catch (const std::exception& error) {
-        GENAI_WARN("KV cache store plugin flush before destroy failed: %s", error.what());
+    std::vector<OvKVCachePrefixTokens> items;
+    items.reserve(prefixes.size());
+    for (const PrefixTokens& prefix : prefixes) {
+        if (prefix.token_ids == nullptr) {
+            continue;
+        }
+        items.push_back(OvKVCachePrefixTokens{to_abi_hash(prefix.key),
+                                              prefix.token_ids->data(),
+                                              static_cast<uint64_t>(prefix.token_ids->size())});
     }
-    if (m_vtable->destroy != nullptr) {
-        m_vtable->destroy(m_store);
+    if (items.empty()) {
+        return;
+    }
+    const OvKVCacheStatus status = m_vtable->announce_prefix_tokens(m_store, items.data(), items.size());
+    if (status != OV_KVCACHE_OK) {
+        GENAI_WARN("KV cache store plugin rejected the prefix tokens of group '%s' (status %d)",
+                   m_group.c_str(),
+                   static_cast<int>(status));
     }
 }
 
@@ -408,13 +474,7 @@ size_t AbiKVCacheStore::get_num_free_blocks() const {
 }
 
 void AbiKVCacheStore::flush() {
-    // flush is a tail entry of the vtable: only call it when struct_bytes says the plugin provides it.
-    constexpr size_t flush_end = offsetof(OvKVCacheStoreVTable, flush) + sizeof(OvKVCacheStoreVTable::flush);
-    if (m_abandoned || m_vtable->struct_bytes < flush_end || m_vtable->flush == nullptr) {
-        return;
-    }
-    const OvKVCacheStatus status = m_vtable->flush(m_store);
-    OPENVINO_ASSERT(status == OV_KVCACHE_OK, "ABI store flush failed with status ", status);
+    m_instance->flush();
 }
 
 }  // namespace ov::genai

@@ -297,6 +297,7 @@ const OvKVCacheStoreVTable g_store_vtable = {
     &store_wait,
     &store_cancel,
     nullptr,
+    nullptr,
 };
 
 void destroy_provider(void* /*self*/) {}

@@ -15,6 +15,27 @@
 namespace ov::genai {
 
 /**
+ * @brief A plugin store instance, shared by the AbiKVCacheStore views of its cache groups.
+ *
+ * Flushes and destroys the instance when the last view is gone, unless the plugin never finished a cancelled batch.
+ */
+struct AbiStoreInstance {
+    AbiStoreInstance(const OvKVCacheStoreVTable* vtable, void* store) : vtable(vtable), store(store) {}
+    ~AbiStoreInstance();
+
+    AbiStoreInstance(const AbiStoreInstance&) = delete;
+    AbiStoreInstance& operator=(const AbiStoreInstance&) = delete;
+
+    /// Makes what was written durable. Throws on failure.
+    void flush();
+
+    const OvKVCacheStoreVTable* vtable;
+    void* store;
+    /// Set once the plugin holds buffers of a batch it never finished: the instance is then never touched again.
+    std::atomic<bool> abandoned{false};
+};
+
+/**
  * @brief IKVCacheStore adapter around an ABI store instance.
  *
  * Wraps an (OvKVCacheStoreVTable*, void* store) pair obtained from a provider's `open()` - whether
@@ -24,6 +45,9 @@ namespace ov::genai {
  * so a store that returns a different but internally-consistent block for the requested key is
  * caught, not just bit-level corruption: the ABI's witness is host-defined and host-verified,
  * never trusted from the plugin (see kv_cache_store_provider_abi.h).
+ *
+ * One instance can serve several cache groups (OV_KVCACHE_CAP_MULTI_GROUP): each group is a view with its own group
+ * name, block size and capacity over the shared AbiStoreInstance.
  */
 class AbiKVCacheStore final : public IKVCacheStore {
 public:
@@ -40,7 +64,15 @@ public:
                     size_t capacity_blocks,
                     StoreInfo info = StoreInfo{0, std::nullopt},
                     std::uint32_t io_timeout_ms = CacheOffloadConfig::DEFAULT_STORE_TIMEOUT_MS);
-    ~AbiKVCacheStore() override;
+
+    /// A view of @p group over an instance that other views share.
+    AbiKVCacheStore(std::shared_ptr<AbiStoreInstance> instance,
+                    std::string group,
+                    size_t block_size,
+                    size_t capacity_blocks,
+                    StoreInfo info,
+                    std::uint32_t io_timeout_ms = CacheOffloadConfig::DEFAULT_STORE_TIMEOUT_MS);
+    ~AbiKVCacheStore() override = default;
 
     AbiKVCacheStore(const AbiKVCacheStore&) = delete;
     AbiKVCacheStore& operator=(const AbiKVCacheStore&) = delete;
@@ -79,6 +111,13 @@ public:
     /// Calls the plugin's `on_restore_finish`. @return false when the plugin has no such entry.
     bool report_restore_stats(const RestoreStats& stats) override;
 
+    bool wants_prefix_tokens() const override {
+        return m_takes_prefix_tokens;
+    }
+
+    /// Calls the plugin's `announce_prefix_tokens`; a failure is logged and otherwise ignored.
+    void announce_prefix_tokens(const std::vector<PrefixTokens>& prefixes) override;
+
     /// Whether the plugin takes restore reports.
     bool takes_restore_stats() const {
         return m_takes_restore_stats;
@@ -114,6 +153,7 @@ private:
     OvKVCacheStatus await_token(OvKVCacheAsyncToken token, const std::shared_ptr<void>& batch) const;
     void give_up(const std::shared_ptr<void>& batch) const;
 
+    std::shared_ptr<AbiStoreInstance> m_instance;
     const OvKVCacheStoreVTable* m_vtable;
     void* m_store;
     std::string m_group;
@@ -123,7 +163,8 @@ private:
     std::uint32_t m_io_timeout_ms;
     bool m_use_async = false;
     bool m_takes_restore_stats = false;
-    mutable std::atomic<bool> m_abandoned{false};
+    bool m_takes_prefix_tokens = false;
+    std::atomic<bool>& m_abandoned;
 };
 
 }  // namespace ov::genai

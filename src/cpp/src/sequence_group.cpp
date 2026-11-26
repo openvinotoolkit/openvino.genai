@@ -4,6 +4,7 @@
 #include <string_view>
 #include "content_hash.hpp"
 #include "prefix_digest_registry.hpp"
+#include "prefix_token_registry.hpp"
 #include "sequence_group.hpp"
 
 namespace ov {
@@ -184,6 +185,23 @@ size_t Sequence::get_hash(size_t content_length, size_t block_size) {
 void Sequence::record_digest(size_t hash, size_t content_length, size_t block_size) {
     if (PrefixDigestRegistry::enabled()) {
         PrefixDigestRegistry::instance().record(hash, get_digest(content_length, block_size));
+    }
+    // A prefix that is already known is not copied again. Tokens are recorded for the part of the prefix that lies in the
+    // prompt: a sequence of embeddings keeps the ids of its prompt only when the caller supplied them.
+    if (PrefixTokenRegistry::wants(block_size) && PrefixTokenRegistry::instance().find(hash) == nullptr) {
+        const auto sequence_group = get_sequence_group_ptr();
+        const auto& prompt_ids = sequence_group->get_prompt_ids();
+        std::shared_ptr<std::vector<int64_t>> token_ids;
+        if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
+            token_ids = std::make_shared<std::vector<int64_t>>();
+            token_ids->reserve(content_length);
+            _append_block_content(*token_ids, 0, content_length);
+        } else if (content_length <= prompt_ids.size()) {
+            token_ids = std::make_shared<std::vector<int64_t>>(prompt_ids.begin(), prompt_ids.begin() + content_length);
+        }
+        if (token_ids != nullptr) {
+            PrefixTokenRegistry::instance().record(hash, std::move(token_ids));
+        }
     }
 }
 

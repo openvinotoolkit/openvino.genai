@@ -191,6 +191,106 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
     EXPECT_EQ(second->get_num_free_blocks(), NUM_BLOCKS);
 }
 
+namespace {
+
+// A KV group of one-block slots and a linear-attention group of slots twice that size, as a hybrid model has.
+std::vector<StoreGroupSpec> make_group_specs(const std::string& tag, uint64_t kv_capacity_bytes, uint64_t la_capacity_bytes) {
+    return {StoreGroupSpec{"kv", "kv_" + tag, make_layout(), 4, kv_capacity_bytes},
+            StoreGroupSpec{"la", "la_" + tag, KVCacheDiskLayout({2 * BLOCK_SIZE}, {0}), 16, la_capacity_bytes}};
+}
+
+CacheOffloadConfig make_plugin_config(const std::string& library_path, const std::string& provider_name) {
+    CacheOffloadConfig config = make_config();
+    config.store_library_path = library_path;
+    config.store_provider_name = provider_name;
+    config.allow_untrusted_store_plugin = true;
+    return config;
+}
+
+std::vector<uint8_t> make_la_block(uint8_t seed) {
+    std::vector<uint8_t> data(2 * BLOCK_SIZE);
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = static_cast<uint8_t>(seed + i);
+    }
+    return data;
+}
+
+}  // namespace
+
+TEST(TestStoreRegistry, GroupedStoreOfTheDefaultBackendHasAnIndependentStorePerGroup) {
+    const auto specs = make_group_specs("default", NUM_BLOCKS * BLOCK_SIZE, NUM_BLOCKS * 2 * BLOCK_SIZE);
+    auto stores = open_grouped_kv_cache_store(specs, make_config(), "CPU", "kv+la");
+    ASSERT_NE(stores, nullptr);
+    ASSERT_EQ(stores->group_count(), 2u);
+    auto kv = stores->group(0);
+    auto la = stores->group(1);
+
+    EXPECT_EQ(kv->get_block_size(), BLOCK_SIZE);
+    EXPECT_EQ(la->get_block_size(), 2 * BLOCK_SIZE);
+    ASSERT_TRUE(kv->write_block(1, make_block(/*seed=*/3)));
+    EXPECT_FALSE(la->has_block(1));
+    EXPECT_FALSE(kv->wants_prefix_tokens());
+}
+
+// A provider without OV_KVCACHE_CAP_MULTI_GROUP is opened once per group, under the namespace of the group.
+TEST(TestStoreRegistry, GroupedStoreOpensAPluginWithoutTheMultiGroupCapabilityOncePerGroup) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    const auto specs = make_group_specs("per_group", NUM_BLOCKS * BLOCK_SIZE, NUM_BLOCKS * 2 * BLOCK_SIZE);
+    auto stores = open_grouped_kv_cache_store(specs, make_plugin_config(*library_path, "sample-in-memory"), "CPU", "kv+la:per_group");
+    ASSERT_EQ(stores->group_count(), 2u);
+    auto kv = stores->group(0);
+    auto la = stores->group(1);
+    ASSERT_TRUE(kv->is_plugin_backed());
+    ASSERT_TRUE(la->is_plugin_backed());
+
+    ASSERT_TRUE(kv->write_block(1, make_block(/*seed=*/3)));
+    EXPECT_EQ(kv->get_num_free_blocks(), NUM_BLOCKS - 1);
+    EXPECT_EQ(la->get_num_free_blocks(), NUM_BLOCKS);
+    EXPECT_FALSE(kv->wants_prefix_tokens());
+}
+
+// All groups share one instance and its byte budget, so a block of one group can push out a block of the other.
+TEST(TestStoreRegistry, GroupedStoreOpensAMultiGroupPluginOnceForAllGroups) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    // Room for two KV blocks and one linear-attention block, the budget of both groups together.
+    const auto specs = make_group_specs("multi_group", 2 * BLOCK_SIZE, 2 * BLOCK_SIZE);
+    auto stores = open_grouped_kv_cache_store(specs,
+                                              make_plugin_config(*library_path, "sample-self-evict-memory"),
+                                              "CPU",
+                                              "kv+la:multi_group");
+    ASSERT_EQ(stores->group_count(), 2u);
+    auto kv = stores->group(0);
+    auto la = stores->group(1);
+    ASSERT_TRUE(kv->is_plugin_backed());
+    ASSERT_TRUE(la->is_plugin_backed());
+    EXPECT_TRUE(kv->wants_prefix_tokens());
+    EXPECT_TRUE(la->wants_prefix_tokens());
+
+    ASSERT_TRUE(la->write_block(9, make_la_block(/*seed=*/1)));
+    ASSERT_TRUE(kv->write_block(1, make_block(/*seed=*/2)));
+    ASSERT_TRUE(kv->write_block(2, make_block(/*seed=*/3)));
+    EXPECT_TRUE(la->has_block(9));
+
+    // The instance is full: this block evicts the oldest one, which is the linear-attention block of the other group.
+    ASSERT_TRUE(kv->write_block(3, make_block(/*seed=*/4)));
+    EXPECT_FALSE(la->has_block(9));
+    EXPECT_TRUE(kv->has_block(3));
+
+    // The group is part of the key: the same hash in the other group is another block.
+    ASSERT_TRUE(la->write_block(1, make_la_block(/*seed=*/5)));
+    std::vector<uint8_t> kv_data;
+    ASSERT_TRUE(kv->read_block(3, kv_data));
+    EXPECT_EQ(kv_data, make_block(/*seed=*/4));
+}
+
 // The persistent provider keeps a block in a file under CacheOffloadConfig::kv_cache_dir, which is what lets another process
 // read it back; the cross-process round trip itself is checked by verify_chunk_store.py (write/read phases).
 TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {

@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -42,6 +43,12 @@ struct RestoreStats {
     size_t device_hit_tokens = 0;  ///< already in the device cache when the restore began
     size_t store_hit_tokens = 0;   ///< read from the store and written to the device cache, all rounds together
     size_t reused_tokens = 0;      ///< prefix length the request finally uses
+};
+
+/// The tokens a state checkpoint (linear attention) covers: the whole prompt prefix from position 0 up to it.
+struct PrefixTokens {
+    PrefixKey key;
+    std::shared_ptr<const std::vector<int64_t>> token_ids;
 };
 
 /**
@@ -176,6 +183,16 @@ public:
         return false;
     }
 
+    /// Whether the store wants to know which tokens each linear-attention checkpoint covers. The caller then calls
+    /// announce_prefix_tokens() before it probes or writes checkpoints.
+    virtual bool wants_prefix_tokens() const {
+        return false;
+    }
+
+    /// Tells the store the tokens of the checkpoints of the call that follows. A checkpoint whose tokens are no longer
+    /// known is left out, and the store has to cope with that.
+    virtual void announce_prefix_tokens(const std::vector<PrefixTokens>& /*prefixes*/) {}
+
 protected:
     static std::vector<size_t> hashes_of(const std::vector<PrefixKey>& keys) {
         std::vector<size_t> hashes;
@@ -185,6 +202,40 @@ protected:
         }
         return hashes;
     }
+};
+
+/**
+ * @brief The stores of all cache groups of one pipeline (KV, and linear attention for a hybrid model), opened together.
+ *
+ * Each group is used through an IKVCacheStore view. The views of a store that serves all groups from one instance
+ * (a plugin with OV_KVCACHE_CAP_MULTI_GROUP) share that instance, so everything the pipeline writes reaches it in one
+ * place; other backends hand out independent stores.
+ */
+class IGroupedKVCacheStore {
+public:
+    virtual ~IGroupedKVCacheStore() = default;
+
+    virtual size_t group_count() const = 0;
+
+    /// Hands out the view of group @p index; each view can be taken once.
+    virtual std::unique_ptr<IKVCacheStore> group(size_t index) = 0;
+};
+
+/// A set of ready views, one per group.
+class ViewSetKVCacheStore final : public IGroupedKVCacheStore {
+public:
+    explicit ViewSetKVCacheStore(std::vector<std::unique_ptr<IKVCacheStore>> views) : m_views(std::move(views)) {}
+
+    size_t group_count() const override {
+        return m_views.size();
+    }
+
+    std::unique_ptr<IKVCacheStore> group(size_t index) override {
+        return std::move(m_views.at(index));
+    }
+
+private:
+    std::vector<std::unique_ptr<IKVCacheStore>> m_views;
 };
 
 }  // namespace ov::genai

@@ -693,10 +693,12 @@ public:
     RecordingStore(std::shared_ptr<IKVCacheStore> inner,
                    bool plugin_backed,
                    std::vector<std::string>& events,
-                   bool takes_restore_stats = false)
+                   bool takes_restore_stats = false,
+                   bool wants_prefix_tokens = false)
         : m_inner(std::move(inner)),
           m_plugin_backed(plugin_backed),
           m_takes_restore_stats(takes_restore_stats),
+          m_wants_prefix_tokens(wants_prefix_tokens),
           m_events(events) {}
 
     bool has_block(size_t hash) const override {
@@ -748,11 +750,22 @@ public:
                            std::to_string(stats.reused_tokens));
         return m_takes_restore_stats;
     }
+    bool wants_prefix_tokens() const override {
+        return m_wants_prefix_tokens;
+    }
+    void announce_prefix_tokens(const std::vector<PrefixTokens>& prefixes) override {
+        std::string event = "announce";
+        for (const PrefixTokens& prefix : prefixes) {
+            event += " " + std::to_string(prefix.key.hash) + ":" + std::to_string(prefix.token_ids->size());
+        }
+        m_events.push_back(event);
+    }
 
 private:
     std::shared_ptr<IKVCacheStore> m_inner;
     bool m_plugin_backed;
     bool m_takes_restore_stats;
+    bool m_wants_prefix_tokens;
     std::vector<std::string>& m_events;
 };
 
@@ -760,13 +773,15 @@ std::unique_ptr<KVCacheOffloadCache> make_recording_cache(CacheFixture& fixture,
                                                           bool plugin_backed,
                                                           std::vector<std::string>& events,
                                                           size_t num_slots = 4,
-                                                          bool takes_restore_stats = false) {
+                                                          bool takes_restore_stats = false,
+                                                          bool wants_prefix_tokens = false) {
     return std::make_unique<KVCacheOffloadCache>(
         *fixture.cache_manager,
         std::make_unique<RecordingStore>(make_shared_file_store(fixture, num_slots),
                                          plugin_backed,
                                          events,
-                                         takes_restore_stats),
+                                         takes_restore_stats,
+                                         wants_prefix_tokens),
         /*max_queued_stores=*/8);
 }
 
@@ -786,6 +801,75 @@ TEST(TestKVCacheOffloadCache, PluginStoreWriteIsPrecededByAProbeOfItsChainFromBl
 
     const std::vector<std::string> expected{"has_blocks 11 22 33", "write_block 33"};
     EXPECT_EQ(events, expected);
+}
+
+TEST(TestKVCacheOffloadCache, AStoreThatWantsPrefixTokensGetsThoseKnownForItsChainBeforeEachProbeAndWrite) {
+    CacheFixture fixture;
+    std::vector<std::string> events;
+    auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/true, events, /*num_slots=*/4,
+                                              /*takes_restore_stats=*/false, /*wants_prefix_tokens=*/true);
+    // The tier asks Sequence to record tokens for blocks of this size; here the registry is filled by hand instead.
+    offload_cache->enable_prefix_tokens(/*block_size=*/4);
+    auto& registry = PrefixTokenRegistry::instance();
+    registry.record(/*hash=*/9011, std::make_shared<const std::vector<int64_t>>(std::vector<int64_t>{1, 2, 3, 4}));
+    registry.record(/*hash=*/9033, std::make_shared<const std::vector<int64_t>>(std::vector<int64_t>(12, 7)));
+    fixture.fill_block(0, /*seed=*/3);
+
+    offload_cache->on_prefix_link(/*hash=*/9011, /*parent_hash=*/0, /*has_parent=*/false);
+    offload_cache->on_prefix_link(/*hash=*/9022, /*parent_hash=*/9011, /*has_parent=*/true);
+    offload_cache->on_prefix_link(/*hash=*/9033, /*parent_hash=*/9022, /*has_parent=*/true);
+    offload_cache->on_blocks_overwritten(/*hash=*/9033, make_block_set(0));
+    offload_cache->flush();
+
+    // 9022 has no tokens recorded and is left out; the write is announced with its own key only.
+    const std::vector<std::string> expected{"announce 9011:4 9033:12", "has_blocks 9011 9022 9033", "announce 9033:12",
+                                            "write_block 9033"};
+    EXPECT_EQ(events, expected);
+}
+
+TEST(TestKVCacheOffloadCache, AStoreThatDoesNotWantPrefixTokensIsNeverToldAny) {
+    CacheFixture fixture;
+    std::vector<std::string> events;
+    auto offload_cache = make_recording_cache(fixture, /*plugin_backed=*/true, events);
+    offload_cache->enable_prefix_tokens(/*block_size=*/4);
+    PrefixTokenRegistry::instance().record(/*hash=*/9111,
+                                           std::make_shared<const std::vector<int64_t>>(std::vector<int64_t>{1, 2, 3, 4}));
+    fixture.fill_block(0, /*seed=*/3);
+
+    offload_cache->on_prefix_link(/*hash=*/9111, /*parent_hash=*/0, /*has_parent=*/false);
+    offload_cache->on_blocks_overwritten(/*hash=*/9111, make_block_set(0));
+    offload_cache->flush();
+
+    const std::vector<std::string> expected{"has_blocks 9111", "write_block 9111"};
+    EXPECT_EQ(events, expected);
+}
+
+TEST(TestKVCacheOffloadCache, SequenceRecordsThePrefixTokensOfAWantedBlockSizeOnlyWhileALeaseIsHeld) {
+    std::vector<int64_t> tokens(12);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        tokens[i] = 100 + static_cast<int64_t>(i);
+    }
+    auto group = make_group(tokens, /*request_id=*/9211);
+    auto sequence = group->get_running_sequences().at(0);
+    auto& registry = PrefixTokenRegistry::instance();
+
+    const size_t unleased_hash = sequence->get_hash(/*content_length=*/4, /*block_size=*/4);
+    EXPECT_EQ(registry.find(unleased_hash), nullptr);
+
+    {
+        PrefixTokenRegistry::Lease lease(/*block_size=*/4);
+        const size_t hash = sequence->get_hash(/*content_length=*/8, /*block_size=*/4);
+        const auto recorded = registry.find(hash);
+        ASSERT_NE(recorded, nullptr);
+        EXPECT_EQ(*recorded, (std::vector<int64_t>{100, 101, 102, 103, 104, 105, 106, 107}));
+
+        // A hash over another block size is not what the lease asked for.
+        const size_t other_hash = sequence->get_hash(/*content_length=*/6, /*block_size=*/3);
+        EXPECT_EQ(registry.find(other_hash), nullptr);
+    }
+
+    const size_t after_hash = sequence->get_hash(/*content_length=*/12, /*block_size=*/4);
+    EXPECT_EQ(registry.find(after_hash), nullptr);
 }
 
 namespace {

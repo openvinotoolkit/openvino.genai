@@ -22,7 +22,8 @@
 //   * tier / host / write-policy / residency / eviction policy
 //   * block / chunk / layer / tensor layout, bytes_per_block, sub-byte packing
 //   * the content-hash algorithm and the plugin's internal index structure
-//   * token ids, prompt text, or any reversible content ("preimage")
+//   * token ids, prompt text, or any reversible content ("preimage"), except the token ids of
+//     a state-group checkpoint sent to a plugin that asks for them (`OV_KVCACHE_CAP_PREFIX_TOKENS`)
 //   * IPrefixIndex / IHostCache / IStagingBuffer / PlacementCopies
 //   * C++ types, STL containers, exceptions, ov::* types
 // Changing the hash algorithm, index format, sharding or on-disk layout must
@@ -108,7 +109,7 @@
 /// a renamed entry symbol); the host rejects a major mismatch loudly instead of
 /// loading a stale plugin and failing later on symbol lookup.
 #define OV_KVCACHE_STORE_ABI_MAJOR 1
-#define OV_KVCACHE_STORE_ABI_MINOR 2
+#define OV_KVCACHE_STORE_ABI_MINOR 3
 
 /// The plugin module's single C discovery entry symbol.
 #define OV_KVCACHE_STORE_ENTRY_SYMBOL "ov_pipeline_query_kvcache_store_providers"
@@ -174,6 +175,17 @@ typedef uint64_t OvKVCacheCapabilities;
 #define OV_KVCACHE_CAP_SELF_EVICT (1ull << 5)
 /// `on_restore_finish` implemented (ABI 1.2): the host reports the reuse metrics of every prefix restore, and prints none itself.
 #define OV_KVCACHE_CAP_RESTORE_STATS (1ull << 6)
+/// One instance for all cache groups (ABI 1.3). The host calls `open` once per pipeline with every group in
+/// `OvKVCacheStoreOpenOptions::groups`, so the KV blocks and the linear-attention checkpoints of a request reach the
+/// same instance and the plugin can keep them aligned. `OvKVCacheBlockKey::group` tells the groups apart,
+/// `OvKVCacheNamespace` identifies the model and cache layout only, and `capacity_bytes` is the budget of all groups
+/// together. A provider that advertises this MUST also advertise `OV_KVCACHE_CAP_SELF_EVICT`: the host cannot count
+/// blocks per group against one instance. Without this bit the host opens one instance per group, as in ABI 1.0.
+#define OV_KVCACHE_CAP_MULTI_GROUP (1ull << 7)
+/// `announce_prefix_tokens` implemented (ABI 1.3): before the host probes or writes blocks of a state group
+/// (linear attention) it tells the plugin which tokens each checkpoint covers. Token ids are user content, so they are
+/// sent only to a plugin that asks for them with this bit.
+#define OV_KVCACHE_CAP_PREFIX_TOKENS (1ull << 8)
 
 // -----------------------------------------------------------------------------
 // Async completion (optional; OV_KVCACHE_CAP_ASYNC_IO)
@@ -317,7 +329,24 @@ typedef struct OvKVCacheRestoreStats {
     uint64_t device_hit_tokens;   ///< already in the device cache when the restore began
     uint64_t store_hit_tokens;    ///< read from this store, verified and written to the device cache, all rounds together
     uint64_t reused_tokens;       ///< prefix length the request finally uses (what its prefill skips)
+    // ---- appended in 1.3 (read only when struct_bytes covers them) ----
+    const char* group;            ///< cache group these counts are for; borrowed for the call
+    uint32_t group_len;
+    uint32_t reserved1;
 } OvKVCacheRestoreStats;
+
+// -----------------------------------------------------------------------------
+// Prefix tokens (ABI 1.3; OV_KVCACHE_CAP_PREFIX_TOKENS)
+// -----------------------------------------------------------------------------
+
+/// The tokens one block of a state group (linear attention) covers: a checkpoint holds the state after
+/// `token_count` tokens, so its meaning is the whole prefix from position 0. Lets a plugin that keeps the KV blocks and
+/// the checkpoints of a request together place each checkpoint among the KV blocks, which are `block_tokens` tokens each.
+typedef struct OvKVCachePrefixTokens {
+    OvKVCacheContentHash hash;  ///< key of the block these tokens belong to
+    const int64_t* token_ids;   ///< tokens [0, token_count) of the prompt, host-owned, valid for the call only
+    uint64_t token_count;       ///< the position of the checkpoint, in tokens
+} OvKVCachePrefixTokens;
 
 // -----------------------------------------------------------------------------
 // Stats / open options / namespace listing
@@ -338,7 +367,7 @@ typedef struct OvKVCacheProperty {
 
 /// Describes one cache group the host will use. Strings are borrowed for the `open` call.
 typedef struct OvKVCacheGroupInfo {
-    const char* group;       ///< group name; equals the namespace passed to `open`
+    const char* group;       ///< group name used in `OvKVCacheBlockKey::group`; equals the namespace passed to `open` unless the provider advertises `OV_KVCACHE_CAP_MULTI_GROUP`
     uint32_t group_len;
     uint32_t block_tokens;   ///< tokens one block covers (for a state group: the checkpoint interval); 0 if not token-addressed
     uint64_t block_bytes;    ///< exact byte size of every read and write of this group
@@ -486,6 +515,14 @@ typedef struct OvKVCacheStoreVTable {
     /// prints one summary line itself. `stats` is borrowed for the call. A restore that is attempted again for the
     /// same request (e.g. after preemption) is reported again.
     void (*on_restore_finish)(void* self, const OvKVCacheRestoreStats* stats);
+
+    // ---- prefix tokens (ABI 1.3; present only with OV_KVCACHE_CAP_PREFIX_TOKENS) ----------
+
+    /// Called before `has_blocks` or `write_blocks` for blocks of a state group, with an entry for each such block of
+    /// that call whose tokens the host still knows (`hash` matches the key); a block without an entry has to be
+    /// handled without them. `items` and the token ids are borrowed for the call: copy what you keep. Not called for
+    /// the KV group. A non-OK status is only logged.
+    OvKVCacheStatus (*announce_prefix_tokens)(void* self, const OvKVCachePrefixTokens* items, size_t count);
 } OvKVCacheStoreVTable;
 
 // -----------------------------------------------------------------------------
@@ -579,6 +616,7 @@ static_assert(std::is_standard_layout<OvKVCacheBlockKey>::value, "ABI struct mus
 static_assert(std::is_standard_layout<OvKVCacheNamespace>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheWitness>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheWitnessBuffer>::value, "ABI struct must be standard layout");
+static_assert(std::is_standard_layout<OvKVCachePrefixTokens>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreReadRequest>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreReadResult>::value, "ABI struct must be standard layout");
 static_assert(std::is_standard_layout<OvKVCacheStoreWriteRequest>::value, "ABI struct must be standard layout");

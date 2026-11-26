@@ -862,6 +862,146 @@ TEST(TestAbiFileStoreProvider, RestoreStatsAreNotSentThroughAVtableTooShortToHol
     EXPECT_EQ(RestoreSpy::calls, 0u);
 }
 
+TEST(TestAbiFileStoreProvider, RestoreStatsNameTheGroupOfTheView) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    RestoreSpy::calls = 0;
+    OvKVCacheStoreVTable reporting = *file_store.opened.vtable;
+    reporting.on_restore_finish = &RestoreSpy::on_restore_finish;
+
+    AbiKVCacheStore store(&reporting, file_store.opened.store, "la", BLOCK_SIZE, 4,
+                          {file_store.provider->capabilities | OV_KVCACHE_CAP_RESTORE_STATS, std::nullopt});
+    ASSERT_TRUE(store.report_restore_stats(RestoreStats{1, 2, 3, 4}));
+    EXPECT_EQ(std::string(RestoreSpy::last.group, RestoreSpy::last.group_len), "la");
+}
+
+namespace {
+
+/// Records what a plugin is told about the tokens of linear-attention checkpoints.
+struct PrefixTokensSpy {
+    static inline size_t calls = 0;
+    static inline std::vector<OvKVCachePrefixTokens> items;
+    static inline std::vector<std::vector<int64_t>> token_copies;
+
+    static void reset() {
+        calls = 0;
+        items.clear();
+        token_copies.clear();
+    }
+
+    static OvKVCacheStatus announce(void* /*self*/, const OvKVCachePrefixTokens* announced, size_t count) {
+        ++calls;
+        for (size_t i = 0; i < count; ++i) {
+            items.push_back(announced[i]);
+            token_copies.emplace_back(announced[i].token_ids, announced[i].token_ids + announced[i].token_count);
+        }
+        return OV_KVCACHE_OK;
+    }
+};
+
+std::vector<PrefixTokens> make_prefix_tokens(const ContentHash& digest, std::vector<int64_t> token_ids) {
+    return {PrefixTokens{PrefixKey{1, digest}, std::make_shared<const std::vector<int64_t>>(std::move(token_ids))}};
+}
+
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, PrefixTokensReachThePluginWhenItAdvertisesTheCapability) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    PrefixTokensSpy::reset();
+    OvKVCacheStoreVTable announcing = *file_store.opened.vtable;
+    announcing.announce_prefix_tokens = &PrefixTokensSpy::announce;
+
+    AbiKVCacheStore store(&announcing, file_store.opened.store, "la", BLOCK_SIZE, 4,
+                          {file_store.provider->capabilities | OV_KVCACHE_CAP_PREFIX_TOKENS, std::nullopt});
+    ASSERT_TRUE(store.wants_prefix_tokens());
+
+    const ContentHash digest{0x1122334455667788ull, 0x99aabbccddeeff00ull};
+    store.announce_prefix_tokens(make_prefix_tokens(digest, {5, 6, 7, 8}));
+
+    ASSERT_EQ(PrefixTokensSpy::calls, 1u);
+    ASSERT_EQ(PrefixTokensSpy::items.size(), 1u);
+    EXPECT_EQ(PrefixTokensSpy::items[0].hash.lo, digest.lo);
+    EXPECT_EQ(PrefixTokensSpy::items[0].hash.hi, digest.hi);
+    EXPECT_EQ(PrefixTokensSpy::items[0].token_count, 4u);
+    EXPECT_EQ(PrefixTokensSpy::token_copies[0], (std::vector<int64_t>{5, 6, 7, 8}));
+}
+
+TEST(TestAbiFileStoreProvider, PrefixTokensAreNotSentWithoutTheCapabilityOrTheEntry) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    PrefixTokensSpy::reset();
+    OvKVCacheStoreVTable announcing = *file_store.opened.vtable;
+    announcing.announce_prefix_tokens = &PrefixTokensSpy::announce;
+    const ContentHash digest{1, 2};
+
+    // The entry is there but the capability was not passed: token ids are user content, so they stay home.
+    AbiKVCacheStore without_capability(&announcing, file_store.opened.store, "la", BLOCK_SIZE, 4,
+                                       {file_store.provider->capabilities, std::nullopt});
+    EXPECT_FALSE(without_capability.wants_prefix_tokens());
+    without_capability.announce_prefix_tokens(make_prefix_tokens(digest, {1}));
+    EXPECT_EQ(PrefixTokensSpy::calls, 0u);
+
+    // The capability is advertised but the entry is not set.
+    auto other_file_store = open_file_store(/*num_blocks=*/4);
+    OvKVCacheStoreVTable without_entry = *other_file_store.opened.vtable;
+    without_entry.announce_prefix_tokens = nullptr;
+    AbiKVCacheStore without_function(&without_entry, other_file_store.opened.store, "la", BLOCK_SIZE, 4,
+                                     {other_file_store.provider->capabilities | OV_KVCACHE_CAP_PREFIX_TOKENS,
+                                      std::nullopt});
+    EXPECT_FALSE(without_function.wants_prefix_tokens());
+
+    // An ABI 1.2 plugin builds a vtable that ends before the entry.
+    auto third_file_store = open_file_store(/*num_blocks=*/4);
+    OvKVCacheStoreVTable short_vtable = *third_file_store.opened.vtable;
+    short_vtable.announce_prefix_tokens = &PrefixTokensSpy::announce;
+    short_vtable.struct_bytes = static_cast<uint32_t>(offsetof(OvKVCacheStoreVTable, announce_prefix_tokens));
+    AbiKVCacheStore too_short(&short_vtable, third_file_store.opened.store, "la", BLOCK_SIZE, 4,
+                              {third_file_store.provider->capabilities | OV_KVCACHE_CAP_PREFIX_TOKENS, std::nullopt});
+    EXPECT_FALSE(too_short.wants_prefix_tokens());
+    too_short.announce_prefix_tokens(make_prefix_tokens(digest, {1}));
+    EXPECT_EQ(PrefixTokensSpy::calls, 0u);
+}
+
+namespace {
+
+struct DestroySpy {
+    static inline size_t calls = 0;
+    static inline void (*real_destroy)(void*) = nullptr;
+
+    static void destroy(void* self) {
+        ++calls;
+        real_destroy(self);
+    }
+};
+
+}  // namespace
+
+TEST(TestAbiFileStoreProvider, ViewsOfOneInstanceShareItsLifetimeAndAreEachUsable) {
+    auto file_store = open_file_store(/*num_blocks=*/4);
+    DestroySpy::calls = 0;
+    DestroySpy::real_destroy = file_store.opened.vtable->destroy;
+    OvKVCacheStoreVTable counting = *file_store.opened.vtable;
+    counting.destroy = &DestroySpy::destroy;
+
+    auto instance = std::make_shared<AbiStoreInstance>(&counting, file_store.opened.store);
+    const AbiKVCacheStore::StoreInfo info{file_store.provider->capabilities, std::nullopt};
+    auto kv_view = std::make_unique<AbiKVCacheStore>(instance, "kv", BLOCK_SIZE, 4, info);
+    auto la_view = std::make_unique<AbiKVCacheStore>(instance, "la", BLOCK_SIZE, 4, info);
+    instance.reset();
+
+    ASSERT_TRUE(kv_view->write_block(7, make_block(1)));
+    EXPECT_TRUE(kv_view->has_block(7));
+    ASSERT_TRUE(la_view->write_block(8, make_block(2)));
+
+    // The instance outlives the view that was first closed.
+    kv_view.reset();
+    EXPECT_EQ(DestroySpy::calls, 0u);
+    std::vector<uint8_t> data;
+    ASSERT_TRUE(la_view->read_block(8, data));
+    EXPECT_EQ(data, make_block(2));
+
+    la_view.reset();
+    EXPECT_EQ(DestroySpy::calls, 1u);
+}
+
 TEST(TestAbiFileStoreProvider, ConcurrentWritesReadsAndDropsNeverExposeAHalfPublishedBlock) {
     constexpr size_t num_keys = 8;
     constexpr size_t rounds = 300;
