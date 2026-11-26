@@ -1380,6 +1380,30 @@ TEST(TestKVCacheOffloadCache, SelfEvictingStoreIsNotWrittenTwiceForTheSameBlock)
     EXPECT_EQ(offload.cache->get_statistics().num_already_present, 1u);
 }
 
+// A warm-up evicts memory blocks, and their writes must not push out a store block the warm-up still has to read.
+TEST(TestKVCacheOffloadCache, SelfEvictingStoreGetsNoWritesWhileAWarmUpPausesReclamation) {
+    CacheFixture fixture;
+    SelfEvictingCache offload(fixture, /*max_blocks=*/4);
+    const auto expected = fixture.fill_block(0, /*seed=*/5);
+
+    {
+        KVCacheOffloadCache::ScopedReclamationPause pause(*offload.cache);
+        offload.cache->on_blocks_overwritten(/*hash=*/9, make_block_set(0));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        EXPECT_EQ(offload.store->num_writes(), 0u);
+        // Until the pause ends the staged copy is what loads and reads see.
+        EXPECT_TRUE(offload.cache->contains(9));
+        std::vector<uint8_t> staged;
+        ASSERT_TRUE(offload.cache->read(9, staged));
+        EXPECT_EQ(staged, expected);
+    }
+
+    offload.cache->flush();
+    EXPECT_EQ(offload.store->num_writes(), 1u);
+    EXPECT_TRUE(offload.store->has_block(9));
+}
+
 TEST(TestKVCacheOffloadCache, WarmPrefixCacheDoesNotReadTheStoreForBlocksThatReachTheSourceAfterTheProbe) {
     constexpr size_t block_size = 4;
     constexpr size_t num_blocks = 3;

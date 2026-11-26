@@ -93,10 +93,12 @@ public:
     };
 
     /**
-     * @brief Keeps existing entries from being replaced for as long as it exists.
+     * @brief Keeps the store from losing blocks to the blocks a warm-up pushes out of memory, for as long as it exists.
      *
      * Warming a prefix chain evicts memory blocks in order to host that very chain, so storing them
-     * must not be allowed to reclaim a slot the chain still has to read back.
+     * must not be allowed to push out a block the chain still has to read back. A host-evicting store does not
+     * reclaim a slot meanwhile; a self-evicting store gets no writes meanwhile, the blocks wait in the staging queue
+     * (where loads still find them) and are written once the pause ends. A full queue drops further blocks.
      */
     class ScopedReclamationPause {
     public:
@@ -105,8 +107,11 @@ public:
             m_cache.m_reclamation_paused = true;
         }
         ~ScopedReclamationPause() {
-            std::lock_guard<std::mutex> lock(m_cache.m_mutex);
-            m_cache.m_reclamation_paused = false;
+            {
+                std::lock_guard<std::mutex> lock(m_cache.m_mutex);
+                m_cache.m_reclamation_paused = false;
+            }
+            m_cache.m_queued_cv.notify_all();
         }
 
         ScopedReclamationPause(const ScopedReclamationPause&) = delete;
@@ -564,7 +569,9 @@ private:
     void run_writer() {
         std::unique_lock<std::mutex> lock(m_mutex);
         while (true) {
-            m_queued_cv.wait(lock, [this] { return m_stopping || !m_queued_stores.empty(); });
+            m_queued_cv.wait(lock, [this] {
+                return m_stopping || (!m_queued_stores.empty() && !(m_self_evicting && m_reclamation_paused));
+            });
             if (m_queued_stores.empty()) {
                 if (m_stopping) {
                     return;
