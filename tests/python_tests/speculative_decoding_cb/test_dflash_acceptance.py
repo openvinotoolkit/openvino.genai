@@ -19,6 +19,8 @@ from huggingface_hub import snapshot_download
 
 from test_speculative_decoding import (
     BLOCK_MAX_NEW_TOKENS,
+    PRUNED_VOCABULARY_EXPORT,
+    PRUNED_VOCABULARY_EXPORT_SKIP_REASON,
     ModelPair,
     _block_config,
     _block_pipeline,
@@ -40,13 +42,10 @@ if not all(
         "This optimum-intel version predates huggingface/optimum-intel#2098, which exports DSpark and DFlash-2 drafts.",
         allow_module_level=True,
     )
-dflash_utils = pytest.importorskip("optimum.exporters.openvino.dflash_utils")
 
 TINY_QWEN3 = "optimum-intel-internal-testing/tiny-random-qwen3"
 VARIANTS = ("dflash", "dspark", "dspark_pruned", "dflash2")
 PRUNED_DRAFT_VOCAB_SIZE = 512
-# huggingface/optimum-intel#2099 exports DSpark drafts with a pruned vocabulary
-PRUNED_VOCABULARY_EXPORT = hasattr(dflash_utils, "has_pruned_draft_vocabulary")
 # draft variant and draft properties: DSpark's Markov head drafts with its candidate scorer or its dense step
 DRAFTS = {
     "dflash": ("dflash", {}),
@@ -56,8 +55,6 @@ DRAFTS = {
     "dspark-pruned-markov-step": ("dspark_pruned", {"markov_head_top_k": 0}),
     "dflash2": ("dflash2", {}),
 }
-# no pair of the shared speculative decoding scenarios has a draft with a pruned vocabulary
-PRUNED_DRAFTS = ("dspark-pruned", "dspark-pruned-markov-step")
 
 
 def _keep_first_channel(norm):
@@ -171,10 +168,7 @@ def dflash_models(tmp_path_factory):
 def _pair(models, draft=None) -> ModelPair:
     variant, draft_properties = DRAFTS[draft] if draft else (None, {})
     if variant is not None and variant not in models:
-        pytest.skip(
-            "This optimum-intel version cannot export DSpark drafts with a pruned vocabulary "
-            "(huggingface/optimum-intel#2099)."
-        )
+        pytest.skip(PRUNED_VOCABULARY_EXPORT_SKIP_REASON)
     return ModelPair(models["target"], models.get(variant), draft_properties, is_vlm=False)
 
 
@@ -244,41 +238,11 @@ def test_greedy_requests_with_penalties_accept_every_candidate(dflash_models, dr
     _assert_every_candidate_accepted(results)
 
 
-@pytest.mark.parametrize("draft", PRUNED_DRAFTS)
-def test_staggered_requests_accept_every_candidate(dflash_models, target_outputs, draft):
-    pair = _pair(dflash_models, draft)
-    pipe = _block_pipeline(pair)
-    prompts = _block_prompts(pair)
-    handles = {}
-    # a new request arrives while the earlier ones are prefilling, validating or drafting
-    arrival_steps = {0: 0, 1: 3, 2: 7}
-    step = 0
-    while len(handles) < len(prompts) or pipe.has_non_finished_requests():
-        for request_id, arrival in arrival_steps.items():
-            if arrival == step:
-                handles[request_id] = pipe.add_request(request_id, prompts[request_id], _block_config())
-        if pipe.has_non_finished_requests():
-            pipe.step()
-        step += 1
-    outputs = [handles[request_id].read_all()[0].generated_ids for request_id in range(len(prompts))]
-    assert outputs == target_outputs
-
-
-@pytest.mark.parametrize("draft", PRUNED_DRAFTS)
-def test_prefix_caching_accepts_every_candidate(dflash_models, target_outputs, draft):
-    pair = _pair(dflash_models, draft)
-    prompts = _block_prompts(pair)
-    pipe = _block_pipeline(pair, _block_scheduler_config(enable_prefix_caching=True))
-    runs = [_generate(pipe, [prompt], _block_config()) for prompt in prompts + prompts]
-    assert [outputs[0] for outputs, _ in runs] == target_outputs + target_outputs
-    for _, results in runs:
-        _assert_every_candidate_accepted(results)
-
-
-@pytest.mark.parametrize("draft", PRUNED_DRAFTS)
+@pytest.mark.parametrize("draft", ["dspark-pruned", "dspark-pruned-markov-step"])
 def test_sampled_requests_accept_candidates(dflash_models, draft):
     # The target accepts or replaces every sampled candidate by speculative sampling against the distribution the
-    # draft drew it from; the draws of both follow the request seed.
+    # draft drew it from; the draws of both follow the request seed. For a draft with a pruned vocabulary, the shared
+    # speculative decoding scenarios only check that sampled requests are reproducible.
     config = _block_config()
     config.do_sample = True
     config.temperature = 0.8

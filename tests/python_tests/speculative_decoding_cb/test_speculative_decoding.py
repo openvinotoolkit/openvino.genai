@@ -86,10 +86,13 @@ def _exports_pruned_draft_vocabulary() -> bool:
     return hasattr(dflash_utils, "has_pruned_draft_vocabulary")
 
 
+PRUNED_VOCABULARY_EXPORT = _exports_pruned_draft_vocabulary()
+PRUNED_VOCABULARY_EXPORT_SKIP_REASON = (
+    "This optimum-intel version cannot export drafts with a pruned vocabulary (huggingface/optimum-intel#2099)."
+)
 # The MiniCPM-OCR DSpark draft predicts 48 of the target's tokens through its own LM head.
 PRUNED_VOCABULARY_EXPORT_SKIP = pytest.mark.skipif(
-    not _exports_pruned_draft_vocabulary(),
-    reason="This optimum-intel version cannot export drafts with a pruned vocabulary (huggingface/optimum-intel#2099).",
+    not PRUNED_VOCABULARY_EXPORT, reason=PRUNED_VOCABULARY_EXPORT_SKIP_REASON
 )
 MINICPM_OCR_DSPARK = pytest.param(
     (MINICPM_OCR, "optimum-intel-internal-testing/tiny-random-minicpm-ocr-dspark", {}),
@@ -103,7 +106,13 @@ MINICPM_OCR_DSPARK_MARKOV_STEP = pytest.param(
 )
 
 TEXT_TARGET_PAIRS = [QWEN3_DFLASH, QWEN3_DEEPSPEC, QWEN3_DSPARK, QWEN3_DSPARK_MARKOV_STEP, QWEN3_DFLASH2]
-VLM_TARGET_PAIRS = [QWEN35_DFLASH, MINICPMV47_DSPARK, MINICPMV47_DSPARK_MARKOV_STEP]
+VLM_TARGET_PAIRS = [
+    QWEN35_DFLASH,
+    MINICPMV47_DSPARK,
+    MINICPMV47_DSPARK_MARKOV_STEP,
+    MINICPM_OCR_DSPARK,
+    MINICPM_OCR_DSPARK_MARKOV_STEP,
+]
 PAIRS = TEXT_TARGET_PAIRS + VLM_TARGET_PAIRS
 
 # A compressed KV cache lets speculative and autoregressive decoding diverge: a validation window attends to
