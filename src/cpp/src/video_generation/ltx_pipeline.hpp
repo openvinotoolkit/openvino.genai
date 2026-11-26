@@ -75,7 +75,7 @@ class LTXPipeline : public VideoPipeline {
         return config.decode_timestep.value_or(0.0f) != 0.0f;
     }
 
-    void check_inputs(const VideoGenerationConfig& generation_config) const {
+    void check_decode_controls(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
         const bool needs_noise = needs_decode_noise(generation_config);
         const auto& vae_config = m_vae->get_config();
@@ -86,9 +86,13 @@ class LTXPipeline : public VideoPipeline {
                             (!generation_config.decode_timestep.has_value() &&
                              !generation_config.decode_noise_scale.has_value()),
                         "decode_timestep and decode_noise_scale require a timestep-conditioned VAE decoder");
+    }
+
+    void check_inputs(const VideoGenerationConfig& generation_config) const {
+        check_decode_controls(generation_config);
         video_generation_utils::check_video_size(generation_config.height,
                                                  generation_config.width,
-                                                 vae_config.spatial_compression_ratio);
+                                                 m_vae->get_config().spatial_compression_ratio);
 
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 512,
                         "T5's 'max_sequence_length' must be less or equal to 512");
@@ -846,11 +850,10 @@ public:
 
     VideoGenerationResult decode(const ov::Tensor& latent,
                                  const std::optional<VideoGenerationConfig>& generation_config_override) override {
-        VideoGenerationConfig generation_config = generation_config_override
-                                                       ? *generation_config_override
-                                                       : m_custom_generation_config;
-        replace_defaults(generation_config);
-        check_inputs(generation_config);
+        const VideoGenerationConfig& generation_config = generation_config_override
+                                                             ? *generation_config_override
+                                                             : m_custom_generation_config;
+        check_decode_controls(generation_config);
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();
