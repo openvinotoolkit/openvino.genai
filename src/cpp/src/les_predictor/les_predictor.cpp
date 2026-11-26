@@ -4,7 +4,6 @@
 #include "les_predictor/les_predictor.hpp"
 
 #include <algorithm>
-#include <cstdlib>
 #include <deque>
 #include <regex>
 #include <unordered_set>
@@ -18,11 +17,6 @@
 #include "openvino/op/sigmoid.hpp"
 #include "openvino/op/topk.hpp"
 #include "openvino/op/util/topk_base.hpp"
-#include "openvino/runtime/tensor.hpp"
-
-extern "C" {
-#include "safetensors.h"
-}
 
 namespace ov {
 namespace genai {
@@ -34,43 +28,6 @@ using NodeOutput = ov::Output<ov::Node>;
 
 // The only input mode seen so far: `weight` takes the current token, `previous_weight` the previous token.
 constexpr int64_t INPUT_MODE_CURRENT_PREVIOUS = 2;
-
-ov::element::Type to_ov_type(int dtype) {
-    switch (dtype) {
-    case SAFETENSORS_F32:
-        return ov::element::f32;
-    case SAFETENSORS_F16:
-        return ov::element::f16;
-    case SAFETENSORS_BF16:
-        return ov::element::bf16;
-    case SAFETENSORS_I64:
-        return ov::element::i64;
-    case SAFETENSORS_I32:
-        return ov::element::i32;
-    default:
-        OPENVINO_THROW("LES predictor: unsupported safetensors dtype ", dtype);
-    }
-}
-
-std::map<std::string, std::shared_ptr<v0::Constant>> read_safetensors(const std::filesystem::path& path) {
-    const ov::Tensor file = ov::read_tensor_data(path);  // read-only mapping of the file
-    safetensors_File st{};
-    // safetensors_file_init only reads the buffer, it needs a non-const pointer
-    auto* data = const_cast<char*>(file.data<const char>());
-    const char* error = safetensors_file_init(data, file.get_byte_size(), &st);
-    OPENVINO_ASSERT(error == nullptr, "LES predictor: cannot parse ", path, " as a safetensors file: ", error);
-
-    std::map<std::string, std::shared_ptr<v0::Constant>> tensors;
-    for (int i = 0; i < st.num_tensors; ++i) {
-        const safetensors_TensorDescriptor& t = st.tensors[i];
-        std::string name(t.name.ptr, t.name.ptr + t.name.len);
-        ov::Shape shape(t.shape, t.shape + t.n_dimensions);
-        tensors[name] = std::make_shared<v0::Constant>(to_ov_type(t.dtype), shape, t.ptr);  // copies the data
-    }
-    std::free(st.tensors);
-    std::free(st.metadata);
-    return tensors;
-}
 
 NodeOutput as_f32(const NodeOutput& x) {
     if (x.get_element_type() == ov::element::f32) {
@@ -180,7 +137,13 @@ LESPredictorImpl::LESPredictorImpl(const std::filesystem::path& path) {
     OPENVINO_ASSERT(path.extension() == ".safetensors", "LES predictor: expected a .safetensors file, got ", path);
     static const std::regex tensor_name(R"(expert_predictors\.(\d+)\.(weight|previous_weight|selection_bias|input_mode_code))");
     std::map<size_t, std::map<std::string, std::shared_ptr<v0::Constant>>> parts;
-    for (const auto& [name, constant] : read_safetensors(path)) {
+    utils::ConstantMap tensors;
+    try {
+        tensors = utils::read_safetensors(path);  // the constants share the memory-mapped file
+    } catch (const ov::Exception& error) {
+        OPENVINO_THROW("LES predictor: cannot read ", path, ": ", error.what());
+    }
+    for (const auto& [name, constant] : tensors) {
         std::smatch match;
         if (std::regex_match(name, match, tensor_name)) {
             parts[std::stoul(match[1].str())][match[2].str()] = constant;

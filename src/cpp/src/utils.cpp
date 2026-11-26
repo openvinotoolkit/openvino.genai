@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <variant>
 #include <fstream>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <regex>
@@ -26,6 +27,10 @@
 
 
 #include "sampling/sampler.hpp"
+
+extern "C" {
+#include "safetensors.h"
+}
 
 namespace ov {
 
@@ -1327,6 +1332,65 @@ std::string patch_chat_template_multiline_strings(const std::string& chat_templa
 std::string patch_chat_template_undefined_tests(const std::string& chat_template) {
     const std::regex var_is_undefined{R"((\b[\w\.]+)\s+is\s+undefined)"};
     return std::regex_replace(chat_template, var_is_undefined, "not $1 is defined");
+}
+
+ov::element::Type safetensors_to_ov_element_type(int dtype) {
+    switch (dtype) {
+    case SAFETENSORS_F32:
+        return ov::element::f32;
+    case SAFETENSORS_F16:
+        return ov::element::f16;
+    case SAFETENSORS_BF16:
+        return ov::element::bf16;
+    case SAFETENSORS_I64:
+        return ov::element::i64;
+    case SAFETENSORS_I32:
+        return ov::element::i32;
+    default:
+        OPENVINO_THROW("Not supported safetensors dtype: ", dtype);
+    }
+}
+
+namespace {
+
+// Safetensor file parser that deallocates temporary buffers automatically.
+// Drop-in replacement for the third party safetensors_File struct.
+struct AutoSafetensor : public safetensors_File {
+    ~AutoSafetensor() {
+        std::free(tensors);
+        std::free(metadata);
+    }
+};
+
+}  // namespace
+
+ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor) {
+    AutoSafetensor safe_tensors_file{};
+    // Intentionally discard const qualifier used as read only in safetensors_file_init
+    auto safetensor_data = const_cast<char*>(safetensor.data<char>());
+    OPENVINO_ASSERT(safetensors_file_init(safetensor_data, safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
+        "Cannot parse safetensor as a Safetensors file format. Safetensors file format is supported only"
+    );
+
+    ConstantMap tensors;
+    for (int i = 0; i < safe_tensors_file.num_tensors; i++) {
+        safetensors_TensorDescriptor tensor = safe_tensors_file.tensors[i];
+        std::string name(tensor.name.ptr, tensor.name.ptr + tensor.name.len);
+        ov::Shape shape(tensor.shape, tensor.shape + tensor.n_dimensions);
+        void* ptr = tensor.ptr;     // FIXME: needs a non-constant pointer because Tensor doesn't accept a constant pointer
+
+        auto type = safetensors_to_ov_element_type(tensor.dtype);
+        auto constant =
+            std::make_shared<ov::op::v0::Constant>(type, shape, ptr, nullptr);      // wraps existing memory, no ownership
+        constant->get_rt_info()["__safetensors_buffer_holder"] = safetensor;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
+        tensors[name] = constant;
+    }
+    return tensors;
+}
+
+ConstantMap read_safetensors(const std::filesystem::path& filename) {
+    auto safetensor = ov::read_tensor_data(filename);
+    return safetensor_to_constant_map(safetensor);
 }
 
 }  // namespace utils
