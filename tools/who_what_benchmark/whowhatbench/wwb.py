@@ -23,6 +23,7 @@ from whowhatbench.utils import fix_phi3_v_eos_token_id, patch_transformers_gguf_
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
 from whowhatbench.artifacts_manager import Metrics
+from whowhatbench.whowhat_metrics import DEFAULT_CONFIDENCE, similarity_summary
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1691,6 +1692,26 @@ def _format_metrics_summary(all_metrics: pd.DataFrame) -> str:
     return all_metrics.to_string(index=True, float_format=lambda value: f"{value:.7f}")
 
 
+def _similarity_summary(all_metrics_per_question) -> Optional[dict]:
+    per_question = pd.DataFrame(all_metrics_per_question)
+    if "similarity" not in per_question.columns:
+        return None
+    return similarity_summary(per_question["similarity"])
+
+
+def _log_similarity_summary(summary: dict):
+    # Logged before the summary table on purpose: check_model.py and the tests read the similarity
+    # from the last lines of the output, so nothing new may be printed after the table.
+    message = (
+        f"Similarity {DEFAULT_CONFIDENCE:.0%} confidence interval: "
+        f"[{summary['similarity_ci_low']:.4f}, {summary['similarity_ci_high']:.4f}], "
+        f"worst sample: {summary['similarity_min']:.4f} (bootstrap over {summary['num_samples']} samples)"
+    )
+    if summary["num_non_finite"]:
+        message += f", {summary['num_non_finite']} non-finite value(s) left out"
+    logger.info(message)
+
+
 def print_speech_results(evaluator):
     metric_of_interest = "overall similarity"
     worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
@@ -1900,6 +1921,10 @@ def main():
                 output_dir=args.output,
                 verbose=args.verbose,
             )
+        similarity_stats = _similarity_summary(all_metrics_per_question)
+        if similarity_stats is not None:
+            _log_similarity_summary(similarity_stats)
+
         logger.info("Metrics for model: %s", args.target_model)
         if args.model_type == "speech-generation":
             _log_speech_metrics_summary(all_metrics)
@@ -1911,6 +1936,10 @@ def main():
             df = pd.DataFrame(all_metrics_per_question)
             df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
             df = pd.DataFrame(all_metrics)
+            if similarity_stats is not None:
+                # Extra columns go after the existing ones, so "similarity" stays the first column.
+                for key in ("similarity_ci_low", "similarity_ci_high", "similarity_min"):
+                    df[key] = similarity_stats[key]
             df.to_csv(os.path.join(args.output, "metrics.csv"))
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
