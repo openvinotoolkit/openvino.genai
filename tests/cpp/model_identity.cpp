@@ -182,6 +182,39 @@ TEST(TestModelIdentity, RejectsAnAttributeItCannotHash) {
     EXPECT_THROW(compute_model_identity(model), ov::Exception);
 }
 
+// 6M floats are 24 MiB, which the digest splits into two shards that are hashed on different threads.
+TEST(TestModelIdentity, ALargeConstantIsCoveredInEveryShard) {
+    const ov::Shape shape{6 * 1024 * 1024};
+    std::vector<float> weights(shape[0], 1.f);
+    const auto base = compute_model_identity(make_model(weights, shape));
+    EXPECT_EQ(base, compute_model_identity(make_model(weights, shape)));
+
+    weights.front() = 2.f;
+    EXPECT_NE(base, compute_model_identity(make_model(weights, shape)));
+    weights.front() = 1.f;
+    weights.back() = 2.f;
+    EXPECT_NE(base, compute_model_identity(make_model(weights, shape)));
+}
+
+TEST(TestModelIdentity, ATiedConstantIsHashedLikeTwoConstantsOfTheSameBytes) {
+    auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{4});
+    auto shared = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{4}, std::vector<float>{1.f, 2.f, 3.f, 4.f});
+    auto first = std::make_shared<ov::op::v1::Add>(parameter, shared);
+    auto second = std::make_shared<ov::op::v1::Add>(first, shared);
+    auto model = std::make_shared<ov::Model>(ov::ResultVector{std::make_shared<ov::op::v0::Result>(second)},
+                                             ov::ParameterVector{parameter});
+
+    EXPECT_EQ(compute_model_identity(model), compute_model_identity(model->clone()));
+}
+
+TEST(TestModelIdentity, NumericsFingerprintNamesTheRuntimeAndWhatTheDeviceReports) {
+    ov::Core core;
+    const auto compiled = core.compile_model(make_model({1.f, 2.f, 3.f, 4.f}, {2, 2}), "CPU");
+    const std::string fingerprint = compute_numerics_fingerprint(compiled, core);
+    EXPECT_NE(fingerprint.find(ov::get_openvino_version().buildNumber), std::string::npos);
+    EXPECT_EQ(fingerprint, compute_numerics_fingerprint(compiled, core));
+}
+
 namespace {
 
 /// Owns what an orchestrator keeps referring to.

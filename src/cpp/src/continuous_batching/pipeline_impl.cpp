@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <future>
 #include <optional>
+#include <random>
 #include <thread>
 #include <utility>
 
@@ -203,14 +205,19 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                     "KV cache offload is not supported together with LoRA adapters yet, since the store namespace "
                     "does not distinguish adapters from the base model. Remove cache_offload or the adapters to proceed.");
 
+    // The digest reads the weights while the device compiles the model; both only read the model.
+    std::future<std::string> model_identity_future;
     if (offload_requested) {
-        const auto identity_start = std::chrono::steady_clock::now();
-        model_identity = compute_model_identity(model);
-        GENAI_INFO("[KV_TRACE] model_identity=%s computed_in_ms=%lld",
-                   model_identity.c_str(),
-                   static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                              std::chrono::steady_clock::now() - identity_start)
-                                              .count()));
+        model_identity_future = std::async(std::launch::async, [model] {
+            const auto identity_start = std::chrono::steady_clock::now();
+            std::string identity = compute_model_identity(model);
+            GENAI_INFO("[KV_TRACE] model_identity=%s computed_in_ms=%lld",
+                       identity.c_str(),
+                       static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                  std::chrono::steady_clock::now() - identity_start)
+                                                  .count()));
+            return identity;
+        });
     }
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
@@ -236,6 +243,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     OPENVINO_ASSERT(all_gpu_device || execution_devices.size() == 1,
                     "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
     const std::string execution_device = execution_devices[0];
+
+    if (model_identity_future.valid()) {
+        try {
+            model_identity = model_identity_future.get() + '|' + compute_numerics_fingerprint(compiled_model, utils::singleton_core());
+        } catch (const ov::Exception& error) {
+            // A model that cannot be told apart from another gets a store of its own for this run: the default store
+            // deletes it on exit, and a plugin gets a namespace that no later run will open.
+            GENAI_WARN("KV cache offload cannot identify the model, so its blocks are not reused by a later run: %s", error.what());
+            if (normalized_config.cache_offload->plugin.has_value()) {
+                std::random_device random_device;
+                model_identity = "run_private_" + std::to_string(random_device()) + "_" + std::to_string(random_device());
+            }
+        }
+    }
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();

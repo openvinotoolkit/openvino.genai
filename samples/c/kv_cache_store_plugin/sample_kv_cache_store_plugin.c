@@ -516,9 +516,9 @@ static void ensure_registry_mutex(void) {
     }
 }
 
-/* Shows what CacheStorePluginConfig.properties looks like on the plugin side: the host's own entries (block_size_bytes
- * and device are skipped here, dram_cache_capacity_gb, reuse_ssd_cache and debug_log_path are listed) come first,
- * anything the user configured follows. A real plugin would parse the keys it knows and ignore the rest. */
+/* Shows what CacheStorePluginConfig.properties looks like on the plugin side: only what the user configured arrives
+ * there (the host's own settings are typed fields of OvKVCacheStoreOpenOptions). A real plugin would parse the keys it
+ * knows and ignore the rest. */
 static void log_user_properties(const OvKVCacheStoreOpenOptions* opts) {
     uint64_t i;
     if (opts == NULL || opts->log == NULL) {
@@ -527,27 +527,12 @@ static void log_user_properties(const OvKVCacheStoreOpenOptions* opts) {
     for (i = 0; i < opts->property_count; ++i) {
         const OvKVCacheProperty* property = &opts->properties[i];
         char message[256];
-        if (property->key == NULL || property->value == NULL || strcmp(property->key, "block_size_bytes") == 0 ||
-            strcmp(property->key, "device") == 0) {
+        if (property->key == NULL || property->value == NULL) {
             continue;
         }
         snprintf(message, sizeof(message), "sample: user property %s=%s", property->key, property->value);
         opts->log(OV_KVCACHE_LOG_INFO, message);
     }
-}
-
-static int property_equals(const OvKVCacheStoreOpenOptions* opts, const char* key, const char* value) {
-    uint64_t i;
-    if (opts == NULL || opts->properties == NULL) {
-        return 0;
-    }
-    for (i = 0; i < opts->property_count; ++i) {
-        const OvKVCacheProperty* property = &opts->properties[i];
-        if (property->key != NULL && property->value != NULL && strcmp(property->key, key) == 0) {
-            return strcmp(property->value, value) == 0;
-        }
-    }
-    return 0;
 }
 
 static OvKVCacheStatus provider_open(void* self,
@@ -626,11 +611,29 @@ static OvKVCacheStatus provider_open(void* self,
 }
 
 static OvKVCacheStatus provider_purge(void* self, const OvKVCacheNamespace* ns) {
+    DirectoryStore* it;
+    const uint64_t ns_len = (ns != NULL && ns->bytes != NULL) ? ns->len : 0;
     (void)self;
-    (void)ns;
-    /* This sample keeps no state outside of individual store instances, so there is nothing to
-     * purge independently of destroying the instance that was opened. */
-    return OV_KVCACHE_ERR_UNSUPPORTED;
+    /* The blocks live in this process only, so a purge empties the stores opened for the namespace so far. */
+    ensure_registry_mutex();
+    sample_mutex_lock(&g_registry_mutex);
+    for (it = g_directories; it != NULL; it = it->next) {
+        if (it->ns_len == ns_len && (ns_len == 0 || memcmp(it->ns_bytes, ns->bytes, (size_t)ns_len) == 0)) {
+            SampleStore* store = it->store;
+            sample_mutex_lock(&store->mutex);
+            while (store->head != NULL) {
+                SampleEntry* dead = store->head;
+                store->head = dead->next;
+                free(dead->group);
+                free(dead->data);
+                free(dead->witness);
+                free(dead);
+            }
+            sample_mutex_unlock(&store->mutex);
+        }
+    }
+    sample_mutex_unlock(&g_registry_mutex);
+    return OV_KVCACHE_OK;
 }
 
 static OvKVCacheStatus provider_list(void* self,
@@ -1178,7 +1181,6 @@ static OvKVCacheStatus persistent_provider_open(void* self,
     uint64_t ns_hash;
     const uint8_t* ns_bytes;
     size_t ns_len;
-    int purge;
     (void)self;
     if (out == NULL) {
         return OV_KVCACHE_ERR_INVALID_ARG;
@@ -1191,7 +1193,6 @@ static OvKVCacheStatus persistent_provider_open(void* self,
         out->status = OV_KVCACHE_ERR_INVALID_ARG;
         return out->status;
     }
-    purge = property_equals(opts, "reuse_ssd_cache", "false");
     ns_bytes = (ns != NULL && ns->bytes != NULL) ? ns->bytes : (const uint8_t*)"";
     ns_len = (ns != NULL && ns->bytes != NULL) ? (size_t)ns->len : 0;
     ns_hash = fnv1a64(ns_bytes, ns_len);
@@ -1232,16 +1233,9 @@ static OvKVCacheStatus persistent_provider_open(void* self,
         store->dir = dir;
         dir = NULL;
         sample_mutex_init(&store->mutex);
-        scan_persistent_store(store, purge);
+        scan_persistent_store(store, 0);
         store->next = g_persistent_stores;
         g_persistent_stores = store;
-    } else if (purge) {
-        /* An instance kept from an earlier open in this process: drop what it holds before handing it out again. */
-        sample_mutex_lock(&store->mutex);
-        scan_persistent_store(store, 1);
-        store->blocks = 0;
-        store->bytes = 0;
-        sample_mutex_unlock(&store->mutex);
     }
     sample_mutex_unlock(&g_registry_mutex);
     free(dir);
@@ -1259,13 +1253,39 @@ static OvKVCacheStatus persistent_provider_open(void* self,
     return out->status;
 }
 
+/* The host calls this right after opening the namespace when the user asked not to reuse the cache of an earlier run. */
+static OvKVCacheStatus persistent_provider_purge(void* self, const OvKVCacheNamespace* ns) {
+    PersistentStore* it;
+    char suffix[24];
+    const uint8_t* ns_bytes = (ns != NULL && ns->bytes != NULL) ? ns->bytes : (const uint8_t*)"";
+    const size_t ns_len = (ns != NULL && ns->bytes != NULL) ? (size_t)ns->len : 0;
+    size_t suffix_length;
+    (void)self;
+    snprintf(suffix, sizeof(suffix), "/ns_%016llx", (unsigned long long)fnv1a64(ns_bytes, ns_len));
+    suffix_length = strlen(suffix);
+    ensure_registry_mutex();
+    sample_mutex_lock(&g_registry_mutex);
+    for (it = g_persistent_stores; it != NULL; it = it->next) {
+        const size_t dir_length = strlen(it->dir);
+        if (dir_length >= suffix_length && strcmp(it->dir + dir_length - suffix_length, suffix) == 0) {
+            sample_mutex_lock(&it->mutex);
+            scan_persistent_store(it, 1);
+            it->blocks = 0;
+            it->bytes = 0;
+            sample_mutex_unlock(&it->mutex);
+        }
+    }
+    sample_mutex_unlock(&g_registry_mutex);
+    return OV_KVCACHE_OK;
+}
+
 static const OvKVCacheStoreProviderVTable g_persistent_provider_vtable = {
     sizeof(OvKVCacheStoreProviderVTable),
     0,
     &provider_destroy,
     &persistent_provider_name,
     &persistent_provider_open,
-    &provider_purge,
+    &persistent_provider_purge,
     &provider_list,
     NULL,
 };

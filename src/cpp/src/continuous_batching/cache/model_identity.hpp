@@ -3,13 +3,19 @@
 
 #pragma once
 
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "content_hash.hpp"
@@ -17,14 +23,123 @@
 #include "openvino/core/except.hpp"
 #include "openvino/core/model.hpp"
 #include "openvino/core/node.hpp"
+#include "openvino/core/version.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/loop.hpp"
 #include "openvino/op/util/multi_subgraph_base.hpp"
 #include "openvino/op/util/variable.hpp"
+#include "openvino/runtime/compiled_model.hpp"
+#include "openvino/runtime/core.hpp"
+#include "openvino/runtime/properties.hpp"
 
 namespace ov::genai {
 
 namespace model_identity_detail {
+
+/// Bytes of a constant that are hashed as one piece; larger constants are split so threads can share the work.
+constexpr size_t SHARD_BYTES = 16ull * 1024 * 1024;
+
+/// Digest of @p size bytes: the digests of their shards of SHARD_BYTES, combined in order. It does not depend on
+/// how many threads computed the shards.
+inline ContentHash combine_shard_digests(const std::vector<ContentHash>& shards, size_t size) {
+    return compute_content_hash(shards.data(), shards.size() * sizeof(ContentHash), size);
+}
+
+inline ContentHash digest_of_bytes(const void* data, size_t size) {
+    const size_t num_shards = std::max<size_t>(1, (size + SHARD_BYTES - 1) / SHARD_BYTES);
+    std::vector<ContentHash> shards(num_shards);
+    for (size_t i = 0; i < num_shards; ++i) {
+        const size_t begin = i * SHARD_BYTES;
+        shards[i] = compute_content_hash(static_cast<const uint8_t*>(data) + begin, std::min(SHARD_BYTES, size - begin));
+    }
+    return combine_shard_digests(shards, size);
+}
+
+/**
+ * @brief The digests of all numeric constants of a model, computed on all cores before the graph is walked.
+ *
+ * A constant that several operators share (tied weights) is hashed once. A constant this class did not see, for
+ * example one inside a sub-graph it cannot reach, is hashed on demand with the same result.
+ */
+class ConstantDigests final {
+public:
+    explicit ConstantDigests(const ov::Model& model) {
+        std::vector<std::shared_ptr<const ov::op::v0::Constant>> constants;
+        collect(model, constants);
+
+        struct Shard {
+            size_t constant;
+            size_t index;
+        };
+        std::vector<Shard> shards;
+        std::vector<std::vector<ContentHash>> digests(constants.size());
+        for (size_t i = 0; i < constants.size(); ++i) {
+            const size_t size = constants[i]->get_byte_size();
+            const size_t num_shards = std::max<size_t>(1, (size + SHARD_BYTES - 1) / SHARD_BYTES);
+            digests[i].resize(num_shards);
+            for (size_t shard = 0; shard < num_shards; ++shard) {
+                shards.push_back({i, shard});
+            }
+        }
+
+        std::atomic<size_t> next{0};
+        const auto work = [&] {
+            for (size_t task = next.fetch_add(1); task < shards.size(); task = next.fetch_add(1)) {
+                const Shard& shard = shards[task];
+                const size_t size = constants[shard.constant]->get_byte_size();
+                const size_t begin = shard.index * SHARD_BYTES;
+                digests[shard.constant][shard.index] = compute_content_hash(
+                    static_cast<const uint8_t*>(constants[shard.constant]->get_data_ptr()) + begin,
+                    std::min(SHARD_BYTES, size - begin));
+            }
+        };
+        const size_t num_threads = std::max<size_t>(1, std::min<size_t>(std::thread::hardware_concurrency(), shards.size()));
+        std::vector<std::thread> threads;
+        for (size_t i = 1; i < num_threads; ++i) {
+            threads.emplace_back(work);
+        }
+        work();
+        for (std::thread& thread : threads) {
+            thread.join();
+        }
+
+        for (size_t i = 0; i < constants.size(); ++i) {
+            m_digests.emplace(key_of(*constants[i]), combine_shard_digests(digests[i], constants[i]->get_byte_size()));
+        }
+    }
+
+    ContentHash digest_of(const ov::op::v0::Constant& constant) const {
+        const auto found = m_digests.find(key_of(constant));
+        return found != m_digests.end() ? found->second : digest_of_bytes(constant.get_data_ptr(), constant.get_byte_size());
+    }
+
+private:
+    using Key = std::pair<const void*, size_t>;
+
+    static Key key_of(const ov::op::v0::Constant& constant) {
+        return {constant.get_data_ptr(), constant.get_byte_size()};
+    }
+
+    static void collect(const ov::Model& model, std::vector<std::shared_ptr<const ov::op::v0::Constant>>& constants) {
+        std::set<Key> seen;
+        for (const auto& known : constants) {
+            seen.insert(key_of(*known));
+        }
+        for (const auto& op : model.get_ordered_ops()) {
+            if (const auto constant = std::dynamic_pointer_cast<const ov::op::v0::Constant>(op)) {
+                if (constant->get_element_type() != ov::element::string && seen.insert(key_of(*constant)).second) {
+                    constants.push_back(constant);
+                }
+            } else if (const auto sub_graph_op = std::dynamic_pointer_cast<const ov::op::util::MultiSubGraphOp>(op)) {
+                for (size_t i = 0; i < sub_graph_op->get_internal_subgraphs_size(); ++i) {
+                    collect(*sub_graph_op->get_function(static_cast<int>(i)), constants);
+                }
+            }
+        }
+    }
+
+    std::map<Key, ContentHash> m_digests;
+};
 
 /**
  * @brief Feeds a graph into a ContentHash: every constant, and every operator's type, attributes and connectivity.
@@ -37,7 +152,9 @@ namespace model_identity_detail {
  */
 class ModelHasher final : public ov::AttributeVisitor {
 public:
-    explicit ModelHasher(ContentHash& state) : m_state(state) {}
+    ModelHasher(ContentHash& state, const ConstantDigests& constant_digests)
+        : m_state(state),
+          m_constant_digests(constant_digests) {}
 
     void hash_model(const ov::Model& model) {
         const auto ordered_ops = model.get_ordered_ops();
@@ -61,7 +178,8 @@ public:
                         mix_bytes(item.data(), size);
                     }
                 } else {
-                    mix_bytes(constant->get_data_ptr(), constant->get_byte_size());
+                    const ContentHash digest = m_constant_digests.digest_of(*constant);
+                    mix_bytes(&digest, sizeof(digest));
                 }
                 // Constant has no other attributes worth visiting; its identity is the bytes above.
                 continue;
@@ -269,6 +387,7 @@ private:
     }
 
     ContentHash& m_state;
+    const ConstantDigests& m_constant_digests;
     std::string m_current_op_type;
 };
 
@@ -287,13 +406,46 @@ private:
  */
 inline std::string compute_model_identity(const std::shared_ptr<const ov::Model>& model) {
     ContentHash state{0x9E3779B97F4A7C15ULL, 0xC2B2AE3D27D4EB4FULL};
-    model_identity_detail::ModelHasher hasher(state);
+    const model_identity_detail::ConstantDigests constant_digests(*model);
+    model_identity_detail::ModelHasher hasher(state, constant_digests);
     hasher.hash_model(*model);
 
     char hex[33];
     std::snprintf(hex, sizeof(hex), "%016llx%016llx", static_cast<unsigned long long>(state.hi),
                   static_cast<unsigned long long>(state.lo));
     return hex;
+}
+
+/**
+ * @brief What the compiled model computes with, which its weights do not tell: precisions, quantization settings, the
+ * hardware generation and the versions of the runtime.
+ *
+ * The same weights give other numbers under another inference precision or on another device generation, so blocks
+ * stored under one of these must not be reused under another. A property the device does not have is left out.
+ */
+inline std::string compute_numerics_fingerprint(const ov::CompiledModel& compiled_model, ov::Core& core) {
+    std::ostringstream fingerprint;
+    fingerprint << ov::get_openvino_version().buildNumber;
+    for (const char* name : {"INFERENCE_PRECISION_HINT",
+                             "KV_CACHE_PRECISION",
+                             "KEY_CACHE_PRECISION",
+                             "VALUE_CACHE_PRECISION",
+                             "KEY_CACHE_GROUP_SIZE",
+                             "VALUE_CACHE_GROUP_SIZE",
+                             "DYNAMIC_QUANTIZATION_GROUP_SIZE",
+                             "ACTIVATIONS_SCALE_FACTOR"}) {
+        try {
+            fingerprint << '|' << name << '=' << compiled_model.get_property(name).as<std::string>();
+        } catch (const ov::Exception&) {
+            // The device has no such property.
+        }
+    }
+    try {
+        fingerprint << "|architecture=" << core.get_property(compiled_model.get_property(ov::execution_devices).at(0), ov::device::architecture);
+    } catch (const ov::Exception&) {
+        // The device does not report its architecture.
+    }
+    return fingerprint.str();
 }
 
 }  // namespace ov::genai

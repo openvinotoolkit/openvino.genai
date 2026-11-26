@@ -320,7 +320,11 @@ OvKVCacheStatus provider_open(void* /*self*/,
     }
 
     std::optional<size_t> block_size_bytes;
-    std::string device = "CPU";
+    std::string device = opts->device != nullptr ? opts->device : "CPU";
+    if (opts->groups != nullptr && opts->group_count == 1) {
+        block_size_bytes = static_cast<size_t>(opts->groups[0].block_bytes);
+    }
+    // A host built before the typed fields passes these as properties.
     for (uint64_t i = 0; i < opts->property_count; ++i) {
         const OvKVCacheProperty& property = opts->properties[i];
         if (property.key == nullptr || property.value == nullptr) {
@@ -379,9 +383,8 @@ OvKVCacheStatus provider_open(void* /*self*/,
 }
 
 OvKVCacheStatus provider_purge(void* /*self*/, const OvKVCacheNamespace* /*ns*/) {
-    // Each store instance is a single run-scoped file (see KVCacheOffloadManager); there is no
-    // persisted namespace to purge independently of destroying the instance that opened it.
-    return OV_KVCACHE_ERR_UNSUPPORTED;
+    // Each store instance is a single run-scoped file (see KVCacheOffloadManager), so no block of an earlier run exists.
+    return OV_KVCACHE_OK;
 }
 
 OvKVCacheStatus provider_list(void* /*self*/,

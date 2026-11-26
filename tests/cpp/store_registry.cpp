@@ -356,14 +356,35 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToRe
     std::filesystem::remove_all(directory);
 }
 
-// The settings the host owns reach the plugin from their own fields, so naming one in store_properties is an error.
-TEST(TestStoreRegistry, StorePropertiesNamingAHostOwnedSettingAreRejected) {
-    for (const char* key : {"block_size_bytes", "device", "dram_cache_capacity_gb", "reuse_ssd_cache", "debug_log_path"}) {
-        OffloadSettings config = make_config();
-        config.store_library_path = "this_library_does_not_exist_anywhere.dll";
-        config.store_properties = {{key, "x"}};
-        EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv"), ov::Exception) << key;
+// A purge is asked of the plugin right after the open, and a plugin that cannot do it fails the open.
+TEST(TestStoreRegistry, PluginIsPurgedWhenTheCacheOfAnEarlierRunIsNotReused) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
     }
+
+    OffloadSettings config = make_plugin_config(*library_path, "sample-in-memory");
+    auto first = open_kv_cache_store(make_layout(), config, "CPU", "purge_test");
+    ASSERT_TRUE(first->write_block(1, make_block(/*seed=*/1)));
+
+    auto reused = open_kv_cache_store(make_layout(), config, "CPU", "purge_test");
+    EXPECT_TRUE(reused->has_block(1));
+
+    config.reuse_ssd_cache = false;
+    auto purged = open_kv_cache_store(make_layout(), config, "CPU", "purge_test");
+    EXPECT_FALSE(purged->has_block(1));
+}
+
+TEST(TestStoreRegistry, StorePropertiesReachThePluginUnchanged) {
+    const std::optional<std::string> library_path = find_sample_plugin_library();
+    if (!library_path.has_value()) {
+        GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
+    }
+
+    // Names the host used to set itself are the user's to use now.
+    OffloadSettings config = make_plugin_config(*library_path, "sample-in-memory");
+    config.store_properties = {{"device", "x"}, {"reuse_ssd_cache", "false"}, {"vendor_key", "1"}};
+    EXPECT_NO_THROW(open_kv_cache_store(make_layout(), config, "CPU", "properties_test"));
 }
 
 namespace {

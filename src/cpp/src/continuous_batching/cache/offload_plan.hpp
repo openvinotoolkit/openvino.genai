@@ -72,13 +72,15 @@ inline OffloadSettings resolve_offload_settings(const CacheOffloadConfig& config
     OPENVINO_ASSERT(!groups.empty() && groups.size() <= 2, "Cache offload serves the KV cache and at most one linear attention cache");
 
     if (config.dram_cache_capacity_gb > 0.0) {
-        // The built-in DRAM tier does not exist yet, so the SSD tier alone is used.
+        // The built-in DRAM tier does not exist yet, so the SSD tier alone is used; a plugin may keep a DRAM tier itself.
         OPENVINO_ASSERT(config.ssd_cache_capacity_gb > 0.0,
                         "CacheOffloadConfig dram_cache_capacity_gb alone is not supported yet: the host DRAM tier is not implemented, "
                         "set ssd_cache_capacity_gb as well");
-        GENAI_WARN("CacheOffloadConfig dram_cache_capacity_gb=%g is ignored: the host DRAM tier is not implemented yet, "
-                   "offload runs on the SSD tier only",
-                   config.dram_cache_capacity_gb);
+        if (!config.plugin.has_value()) {
+            GENAI_WARN("CacheOffloadConfig dram_cache_capacity_gb=%g is ignored: the host DRAM tier is not implemented yet, "
+                       "offload runs on the SSD tier only",
+                       config.dram_cache_capacity_gb);
+        }
     }
 
     OffloadSettings settings;

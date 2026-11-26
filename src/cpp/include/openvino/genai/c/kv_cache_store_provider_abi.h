@@ -186,6 +186,10 @@ typedef uint64_t OvKVCacheCapabilities;
 /// (linear attention) it tells the plugin which tokens each checkpoint covers. Token ids are user content, so they are
 /// sent only to a plugin that asks for them with this bit.
 #define OV_KVCACHE_CAP_PREFIX_TOKENS (1ull << 8)
+/// The plugin keeps a DRAM tier of its own in front of its SSD (ABI 1.3). Only a provider that advertises this bit is
+/// given `OvKVCacheStoreOpenOptions::dram_capacity_bytes`; for any other the host has no use for a DRAM budget and
+/// passes 0.
+#define OV_KVCACHE_CAP_DRAM_TIER (1ull << 9)
 
 // -----------------------------------------------------------------------------
 // Async completion (optional; OV_KVCACHE_CAP_ASYNC_IO)
@@ -397,6 +401,10 @@ typedef struct OvKVCacheStoreOpenOptions {
     uint64_t group_count;
     uint64_t witness_bytes_max;        ///< largest witness the host will pass to a write
     OvKVCacheLogFn log;                ///< host logger; may be NULL
+    // ---- appended in 1.3 (read only when built against 1.3 or newer) ----
+    uint64_t dram_capacity_bytes;      ///< DRAM tier budget of a provider with `OV_KVCACHE_CAP_DRAM_TIER`; 0 otherwise
+    const char* debug_log_path;        ///< where the plugin may write its own debug log; NULL when not configured
+    const char* device;                ///< device the model runs on, e.g. "CPU" or "GPU.0"; NULL-terminated
 } OvKVCacheStoreOpenOptions;
 
 // Forward declaration: the store instance vtable is produced by `open` and is
@@ -551,7 +559,10 @@ typedef struct OvKVCacheStoreProviderVTable {
                             const OvKVCacheStoreOpenOptions* opts,
                             OvKVCacheStoreOpenResult* out);
 
-    /// Atomically purge every block of a namespace.
+    /// Atomically purge every block of a namespace. The host calls it right after `open` of that namespace, before any
+    /// block I/O, when the user asked not to reuse the cache of an earlier run; anything but `OV_KVCACHE_OK`
+    /// (including `OV_KVCACHE_ERR_UNSUPPORTED`) fails the pipeline construction. A provider whose store cannot hold blocks
+    /// of an earlier run returns `OV_KVCACHE_OK` without doing anything.
     OvKVCacheStatus (*purge)(void* self, const OvKVCacheNamespace* ns);
 
     /// Enumerate stored namespaces. Fills up to `capacity` entries; `out_count`

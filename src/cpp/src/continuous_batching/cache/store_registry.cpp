@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -137,11 +138,6 @@ std::unique_ptr<IGroupedKVCacheStore> open_default_store(const std::vector<Store
 /// be used; the host never falls back to the in-tree store.
 const OvKVCacheStoreProviderDescriptor* load_plugin_provider(const OffloadSettings& config) {
     const std::string& library = config.store_library_path;
-    for (const auto& [key, value] : config.store_properties) {
-        OPENVINO_ASSERT(key != "block_size_bytes" && key != "device" && key != "dram_cache_capacity_gb" &&
-                            key != "reuse_ssd_cache" && key != "debug_log_path",
-                        "KV cache store property '", key, "' is set by the host; use the matching OffloadSettings field");
-    }
     void* handle = load_library(library);
     OPENVINO_ASSERT(handle != nullptr, "Failed to load KV cache store plugin '", library, "'");
 
@@ -188,20 +184,8 @@ PluginInstance open_plugin_instance(const OvKVCacheStoreProviderDescriptor* prov
                                                    const std::string& ns_string,
                                                    const std::vector<PluginGroup>& groups,
                                                    uint64_t capacity_bytes) {
-    // One group has the block size the in-tree file provider needs; a shared instance serves groups of several sizes.
-    const std::string block_size_str = groups.size() == 1 ? std::to_string(groups.front().block_bytes) : std::string();
-    const std::string dram_capacity_str = std::to_string(config.dram_cache_capacity_gb);
-    const std::string reuse_str = config.reuse_ssd_cache ? "true" : "false";
+    // The settings of the host reach the plugin in typed fields; the properties are only the ones the user configured.
     std::vector<OvKVCacheProperty> properties;
-    if (groups.size() == 1) {
-        properties.push_back({"block_size_bytes", block_size_str.c_str()});
-    }
-    properties.push_back({"device", device.c_str()});
-    properties.push_back({"dram_cache_capacity_gb", dram_capacity_str.c_str()});
-    properties.push_back({"reuse_ssd_cache", reuse_str.c_str()});
-    if (!config.debug_log_path.empty()) {
-        properties.push_back({"debug_log_path", config.debug_log_path.c_str()});
-    }
     for (const auto& [key, value] : config.store_properties) {
         properties.push_back({key.c_str(), value.c_str()});
     }
@@ -211,6 +195,15 @@ PluginInstance open_plugin_instance(const OvKVCacheStoreProviderDescriptor* prov
     options.capacity_bytes = capacity_bytes;
     options.properties = properties.data();
     options.property_count = properties.size();
+    options.device = device.c_str();
+    options.debug_log_path = config.debug_log_path.empty() ? nullptr : config.debug_log_path.c_str();
+    if ((provider->capabilities & OV_KVCACHE_CAP_DRAM_TIER) != 0) {
+        options.dram_capacity_bytes = static_cast<uint64_t>(std::llround(config.dram_cache_capacity_gb * (1ull << 30)));
+    } else if (config.dram_cache_capacity_gb > 0.0) {
+        GENAI_WARN("KV cache store plugin '%s' has no DRAM tier, so dram_cache_capacity_gb=%g is ignored",
+                   config.store_library_path.c_str(),
+                   config.dram_cache_capacity_gb);
+    }
     std::vector<OvKVCacheGroupInfo> group_infos;
     group_infos.reserve(groups.size());
     for (const PluginGroup& group : groups) {
@@ -251,6 +244,17 @@ PluginInstance open_plugin_instance(const OvKVCacheStoreProviderDescriptor* prov
 
     PluginInstance opened;
     opened.instance = std::make_shared<AbiStoreInstance>(result.vtable, result.store);
+    if (!config.reuse_ssd_cache) {
+        constexpr size_t provider_purge_end =
+            offsetof(OvKVCacheStoreProviderVTable, purge) + sizeof(OvKVCacheStoreProviderVTable::purge);
+        const OvKVCacheStatus purged = provider->vtable->struct_bytes >= provider_purge_end && provider->vtable->purge != nullptr
+                                           ? provider->vtable->purge(provider->self, &ns)
+                                           : OV_KVCACHE_ERR_UNSUPPORTED;
+        OPENVINO_ASSERT(purged == OV_KVCACHE_OK,
+                        "KV cache store plugin '", config.store_library_path,
+                        "' could not purge the cache of an earlier run (status ", static_cast<int>(purged),
+                        "), which reuse_ssd_cache=false asks for");
+    }
     opened.info.capabilities = provider->capabilities;
     const bool fingerprint_advertised = (provider->capabilities & OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT) != 0;
     if (fingerprint_advertised && result.has_semantics_fingerprint != 0) {
