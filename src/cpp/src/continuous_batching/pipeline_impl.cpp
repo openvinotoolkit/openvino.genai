@@ -405,7 +405,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_reques
     SamplingOverrides sampling_overrides;
     std::unique_ptr<StepRequestState> step_state;
     if (m_step_hook) {
-        step_state = m_step_hook->admit(
+        step_state = m_step_hook->create_request_state(
             {sampling_params_copy, inputs, prompt_ids, m_inputs_embedder.get(), sampling_overrides, step_payload});
     }
     // Step work assumes one running sequence per request, and forced tokens reach only greedy or multinomial sampling.
@@ -459,7 +459,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_reques
                                                          sampling_params_copy);
     }
     sequence_group->set_sampling_overrides(std::move(sampling_overrides));
-    // Until the queue push below, a throw destroys the state without a terminal.
+    // Until the queue push below, a throw destroys the state without on_request_done().
     sequence_group->set_step_state(std::move(step_state));
 
     // Enable hidden state accumulation for speech output (Qwen3-Omni).
@@ -924,7 +924,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     std::vector<std::optional<int64_t>> forced_tokens;
     std::optional<ForcedTokens> forced_tokens_by_sequence;
     if (!step_rows.empty()) {
-        forced_tokens = m_step_hook->select_tokens(step_rows);
+        forced_tokens = m_step_hook->force_tokens(step_rows);
         OPENVINO_ASSERT(forced_tokens.size() == step_rows.size(),
                         "A step hook must select one token or none per row, got ",
                         forced_tokens.size(),
@@ -1570,7 +1570,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_end_step_state(const SequenceGroup::Ptr& request,
-                                                                         const IStepHook::Terminal& terminal) {
+                                                                         const IStepHook::RequestDone& done) {
     const auto state = request->take_step_state();
     if (!state) {
         return;
@@ -1578,9 +1578,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_end_step_state(const S
     OPENVINO_ASSERT(m_step_hook,
                     "Request ", request->get_request_id(), " has step state but the pipeline has no step hook");
     try {
-        m_step_hook->on_terminal(*state, terminal);
+        m_step_hook->on_request_done(*state, done);
     } catch (...) {
-        if (terminal.status == GenerationStatus::FAILED) {
+        if (done.status == GenerationStatus::FAILED) {
             throw;
         }
         request->fail_generation(std::current_exception());
@@ -1596,9 +1596,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_end_step_state(const S
         } catch (...) {
             message = "unknown exception";
         }
-        GENAI_WARN("Request %lu failed in the step hook's terminal %d: %s",
+        GENAI_WARN("Request %lu failed in the step hook's on_request_done, status %d: %s",
                    static_cast<unsigned long>(request->get_request_id()),
-                   static_cast<int>(terminal.status),
+                   static_cast<int>(done.status),
                    message.c_str());
     }
 }

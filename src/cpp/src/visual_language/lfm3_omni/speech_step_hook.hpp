@@ -13,7 +13,7 @@
 
 namespace ov::genai {
 
-/// @brief Speech settings of one request, built by the caller of generate(); on_terminal() stores its result here.
+/// @brief Speech settings of one request, built by the caller of generate(); on_request_done() stores its result here.
 struct LFM3SpeechPayload final : StepRequestPayload {
     LFM3SpeechPayload(LFM3SpeechRequest request,
                       const OmniSpeechStreamerVariant& speech_streamer,
@@ -40,9 +40,9 @@ public:
         return m_models->config();
     }
 
-    std::unique_ptr<StepRequestState> admit(const Admission& admission) override;
-    void on_terminal(StepRequestState& state, const Terminal& terminal) override;
-    std::vector<std::optional<int64_t>> select_tokens(const std::vector<Row>& rows) override;
+    std::unique_ptr<StepRequestState> create_request_state(const Admission& admission) override;
+    void on_request_done(StepRequestState& state, const RequestDone& done) override;
+    std::vector<std::optional<int64_t>> force_tokens(const std::vector<Row>& rows) override;
     std::vector<RowOutcome> after_sampling(const std::vector<Row>& rows) override;
 
 private:

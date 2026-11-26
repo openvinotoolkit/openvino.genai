@@ -57,18 +57,18 @@ struct LFM3SpeechStepHook::RequestState final : StepRequestState {
 
     std::shared_ptr<LFM3SpeechPayload> payload;
     LFM3SpeechState speech;
-    /// @brief Set once the speech decode ended; on_terminal() hands it to the payload.
+    /// @brief Set once the speech decode ended; on_request_done() hands it to the payload.
     std::optional<LFM3SpeechResult> result;
 };
 
 LFM3SpeechStepHook::LFM3SpeechStepHook(std::unique_ptr<LFM3SpeechModels> models) : m_models(std::move(models)) {}
 
 LFM3SpeechStepHook::RequestState& LFM3SpeechStepHook::as_request_state(StepRequestState& state) {
-    // Only admit() of the hook installed on a pipeline creates the step states of its requests.
+    // Only create_request_state() of the hook installed on a pipeline creates the step states of its requests.
     return static_cast<RequestState&>(state);
 }
 
-std::unique_ptr<StepRequestState> LFM3SpeechStepHook::admit(const Admission& admission) {
+std::unique_ptr<StepRequestState> LFM3SpeechStepHook::create_request_state(const Admission& admission) {
     if (!admission.payload) {
         return nullptr;
     }
@@ -103,25 +103,25 @@ std::unique_ptr<StepRequestState> LFM3SpeechStepHook::admit(const Admission& adm
     return state;
 }
 
-void LFM3SpeechStepHook::on_terminal(StepRequestState& step_state, const Terminal& terminal) {
+void LFM3SpeechStepHook::on_request_done(StepRequestState& step_state, const RequestDone& done) {
     auto& state = as_request_state(step_state);
-    if (terminal.status == GenerationStatus::FAILED || terminal.status == GenerationStatus::IGNORED) {
+    if (done.status == GenerationStatus::FAILED || done.status == GenerationStatus::IGNORED) {
         // No speech model or streamer may run for a dropped request, and its caller reads no result.
-        GENAI_DEBUG("LFM3-Omni speech request ends without a result, status %d", static_cast<int>(terminal.status));
+        GENAI_DEBUG("LFM3-Omni speech request ends without a result, status %d", static_cast<int>(done.status));
         return;
     }
     if (!state.result) {
         // Only a request whose handle was stopped or cancelled from outside is still running: after_sampling() finishes
         // the others.
-        if (terminal.status == GenerationStatus::STOP || terminal.status == GenerationStatus::CANCEL) {
-            state.speech.end_with(terminal.status);
+        if (done.status == GenerationStatus::STOP || done.status == GenerationStatus::CANCEL) {
+            state.speech.end_with(done.status);
         }
         state.result = state.speech.finish(*m_models);
     }
     state.payload->result = std::move(state.result);
 }
 
-std::vector<std::optional<int64_t>> LFM3SpeechStepHook::select_tokens(const std::vector<Row>& rows) {
+std::vector<std::optional<int64_t>> LFM3SpeechStepHook::force_tokens(const std::vector<Row>& rows) {
     std::vector<std::optional<int64_t>> tokens;
     tokens.reserve(rows.size());
     for (const Row& row : rows) {

@@ -145,7 +145,7 @@ protected:
     virtual void drop_requests();
 
     /// Ends the step state of request once, if it has one.
-    void _end_step_state(const SequenceGroup::Ptr& request, const IStepHook::Terminal& terminal);
+    void _end_step_state(const SequenceGroup::Ptr& request, const IStepHook::RequestDone& done);
 
     /// Requests with step state that sample in this step, without a stopped or cancelled handle.
     std::vector<IStepHook::Row> _collect_step_rows() const;

@@ -501,8 +501,9 @@ public:
     }
 };
 
-/// @brief Model-specific state of one request: created by IStepHook::admit(), owned by its SequenceGroup.
-/// The destructor must not call into the hook or user code: it is only the backstop after on_terminal().
+/// @brief Model-specific state of one request: created by IStepHook::create_request_state(), owned by its
+/// SequenceGroup. The destructor must not call into the hook or user code: it is only the backstop after
+/// on_request_done().
 class StepRequestState {
 public:
     virtual ~StepRequestState() = default;
@@ -1060,7 +1061,7 @@ public:
         m_step_state = std::move(state);
     }
 
-    /// @brief Detaches the state for IStepHook::on_terminal(); null once taken, so each state ends once.
+    /// @brief Detaches the state for IStepHook::on_request_done(); null once taken, so each state ends once.
     std::unique_ptr<StepRequestState> take_step_state() {
         return std::exchange(m_step_state, nullptr);
     }

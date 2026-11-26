@@ -15,7 +15,8 @@
 
 namespace ov::genai {
 
-/// @brief Per-request input of a step hook, passed through generate() to IStepHook::admit(); opaque to the pipeline.
+/// @brief Per-request input of a step hook, passed through generate() to IStepHook::create_request_state();
+/// opaque to the pipeline.
 class StepRequestPayload {
 public:
     virtual ~StepRequestPayload() = default;
@@ -40,7 +41,7 @@ public:
     };
 
     /// @brief How a request ended. error is set for a failure and null for a dropped request.
-    struct Terminal {
+    struct RequestDone {
         /// @brief FINISHED, IGNORED, STOP, CANCEL or FAILED.
         GenerationStatus status;
         std::exception_ptr error;
@@ -77,14 +78,14 @@ public:
 
     /// @brief Called by add_request() on the caller's thread.
     /// @return The state of a request the hook takes, else null.
-    virtual std::unique_ptr<StepRequestState> admit(const Admission& admission) = 0;
+    virtual std::unique_ptr<StepRequestState> create_request_state(const Admission& admission) = 0;
 
-    /// @brief Called once per queued admitted request, on the step thread or under the queue lock; for FAILED no model
-    /// or user callback may run. An exception fails this request, or the step for FAILED or a FINISHED/IGNORED handle.
-    virtual void on_terminal(StepRequestState& state, const Terminal& terminal) = 0;
+    /// @brief Called once per queued request with state, on the step thread or under the queue lock; for FAILED no
+    /// model or user callback may run. A throw fails this request, or the step for FAILED or a FINISHED/IGNORED handle.
+    virtual void on_request_done(StepRequestState& state, const RequestDone& done) = 0;
 
     /// @brief After forward, before sampling: a forced token per row, or none to sample it.
-    virtual std::vector<std::optional<int64_t>> select_tokens(const std::vector<Row>& rows) = 0;
+    virtual std::vector<std::optional<int64_t>> force_tokens(const std::vector<Row>& rows) = 0;
 
     /// @brief After sampling, before handles are notified: one outcome per row, in row order.
     virtual std::vector<RowOutcome> after_sampling(const std::vector<Row>& rows) = 0;
