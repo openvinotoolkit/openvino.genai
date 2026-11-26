@@ -4109,4 +4109,3 @@ TEST(TestScheduler, BatchedGenerateExceedingCapacityLeavesPipelineClean) {
     // Subsequent valid call succeeds without hitting "already in running state"
     EXPECT_NO_THROW(pipeline.add_request(10, input_fitting, config));
 }
-
