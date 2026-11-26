@@ -17,7 +17,7 @@
 #include "continuous_batching/cache/file_kv_cache_store.hpp"
 #include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "continuous_batching/cache/kv_cache_offload_manager.hpp"
-#include "openvino/genai/cache_offload.hpp"
+#include "continuous_batching/cache/offload_settings.hpp"
 
 namespace ov::genai {
 
@@ -361,7 +361,7 @@ OvKVCacheStatus provider_open(void* /*self*/,
     }
 
     try {
-        CacheOffloadConfig config;
+        OffloadSettings config;
         config.kv_cache_dir = opts->directory != nullptr ? opts->directory : "";
         config.capacity_bytes = opts->capacity_bytes;
         const KVCacheDiskLayout layout({*block_size_bytes}, {0});

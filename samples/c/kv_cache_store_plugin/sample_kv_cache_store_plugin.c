@@ -516,7 +516,7 @@ static void ensure_registry_mutex(void) {
     }
 }
 
-/* Shows what CacheOffloadConfig.store_properties looks like on the plugin side: the host's own entries (block_size_bytes
+/* Shows what CacheStorePluginConfig.properties looks like on the plugin side: the host's own entries (block_size_bytes
  * and device are skipped here, dram_cache_capacity_gb, reuse_ssd_cache and debug_log_path are listed) come first,
  * anything the user configured follows. A real plugin would parse the keys it knows and ignore the rest. */
 static void log_user_properties(const OvKVCacheStoreOpenOptions* opts) {

@@ -3,147 +3,141 @@
 
 #pragma once
 
-#include <cstddef>
+#include <cmath>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <string>
+
+#include "openvino/core/except.hpp"
 
 namespace ov::genai {
 
 /**
- * @brief Configuration of the KV cache disk offload backend.
- *
- * Offloaded blocks are rediscovered through the prefix-cache block hash, so offload is only
- * meaningful together with `SchedulerConfig::enable_prefix_caching`. It is not supported yet together with
- * `SchedulerConfig::use_cache_eviction`, `SchedulerConfig::use_sparse_attention`, or models whose sparse attention
- * keeps index caches per block (QSA).
+ * @brief Controls when device KV / linear attention cache blocks are copied into the offload store.
+ * Eviction inside the store is always owned by the store itself.
  */
-struct CacheOffloadConfig {
-    /**
-     * Existing directory on the SSD where the offloaded KV cache files are stored, which is also the directory a store
-     * plugin keeps its files under. When empty, the system temporary directory is used.
-     */
-    std::string kv_cache_dir;
+enum class CacheOffloadWritePolicy {
+    ON_EVICT,       ///< Only blocks that are about to be overwritten in device memory (victim cache).
+    WRITE_THROUGH,  ///< Also copy every completed block right after the forward pass that completed it.
+};
 
-    /** Upper bound of the offload file size in bytes. The usable slot count is derived from this. */
-    std::size_t capacity_bytes = 0;
+/**
+ * @brief A third-party KV cache store plugin loaded through the ABI in
+ * openvino/genai/c/kv_cache_store_provider_abi.h.
+ *
+ * Setting `CacheOffloadConfig::plugin` with a non-empty `library_path` is the explicit opt-in to load that library.
+ * Any failure to load, handshake, find the provider, open a store or purge it throws when the pipeline is created;
+ * the host never falls back to the in-tree store.
+ */
+struct CacheStorePluginConfig {
+    static constexpr std::uint32_t DEFAULT_TIMEOUT_MS = 10000;
 
-    /**
-     * Upper bound of the SSD space used for the KV cache, in GB. When greater than 0 it takes the place of
-     * `capacity_bytes`, which then has to stay 0.
-     */
-    std::int32_t ssd_cache_capacity_gb = 0;
+    /// Path to the plugin shared library. Must not be empty.
+    std::string library_path;
 
-    /**
-     * Upper bound of the DRAM used for the KV cache, in GB. Handed to a store plugin as the `dram_cache_capacity_gb`
-     * property; the in-tree file store has no DRAM tier and ignores it.
-     */
-    std::int32_t dram_cache_capacity_gb = 0;
+    /// Provider to select from the plugin module. Empty uses the module's first provider.
+    std::string provider_name;
 
-    /**
-     * Whether a store plugin loads the cache that an earlier run left in `kv_cache_dir` for the same model (true) or purges
-     * it when opening the store (false). Handed to the plugin as the `reuse_ssd_cache` property; the in-tree file store
-     * lives and dies with the pipeline and ignores it.
-     */
-    bool reuse_ssd_cache = true;
-
-    /** Directory for the debug logs of a store plugin, handed to it as the `debug_log_path` property when not empty. */
+    /// Directory for the debug logs of the plugin. Empty: none.
     std::string debug_log_path;
 
     /**
-     * Upper bound of the linear attention state offload file size in bytes, in a separate file from
-     * the KV cache offload file above. When 0 (default), linear attention cache offload is disabled
-     * even if the model has linear attention layers; `capacity_bytes` alone only offloads KV cache.
+     * Longest wait, in milliseconds, for one asynchronous batch of the plugin. A batch that is not done by then is
+     * cancelled and counted as a cache miss, so a stalled plugin only costs recomputation. Must be greater than 0.
      */
-    std::size_t linear_attention_capacity_bytes = 0;
+    std::uint32_t timeout_ms = DEFAULT_TIMEOUT_MS;
 
-    /** Number of staging buffers reserved for transfers. */
-    std::size_t buffer_slots = 2;
+    /// Plugin-specific settings handed to the plugin when it opens a store. The host does not interpret them.
+    std::map<std::string, std::string> properties;
 
-    /** Whether the offload file may go through the OS page cache. Direct I/O is not implemented yet. */
-    bool use_page_cache = true;
+    bool operator==(const CacheStorePluginConfig& other) const {
+        return library_path == other.library_path && provider_name == other.provider_name &&
+               debug_log_path == other.debug_log_path && timeout_ms == other.timeout_ms &&
+               properties == other.properties;
+    }
+};
 
-    /**
-     * Path to a third-party KV cache store plugin shared library implementing the ABI declared in
-     * openvino/genai/c/kv_cache_store_provider_abi.h. Empty (default) uses the in-tree file store
-     * directly, with no plugin ABI involved. Ignored unless `allow_untrusted_store_plugin` is true.
-     */
-    std::string store_library_path;
+/**
+ * @brief Configuration of the tiered KV / linear attention cache offload.
+ *
+ * Offloaded blocks are rediscovered through the prefix-cache block hash, so offload is only meaningful together with
+ * `SchedulerConfig::enable_prefix_caching`. It is not supported together with `SchedulerConfig::use_cache_eviction`,
+ * `SchedulerConfig::use_sparse_attention`, or models whose sparse attention keeps index caches per block (QSA).
+ * Setting `SchedulerConfig::cache_offload` enables offload; a model with linear attention layers offloads those too,
+ * out of the same budget.
+ *
+ * The built-in host DRAM tier is not implemented yet: `dram_cache_capacity_gb` is only honored by a plugin that
+ * advertises OV_KVCACHE_CAP_DRAM_TIER, and is otherwise ignored with a warning when an SSD tier is configured.
+ */
+struct CacheOffloadConfig {
+    /// When blocks are written to the store.
+    CacheOffloadWritePolicy write_policy = CacheOffloadWritePolicy::ON_EVICT;
 
-    /** Provider name to select from the plugin module. Empty uses the module's first provider. */
-    std::string store_provider_name;
+    /// Upper bound of the DRAM tier in GiB (2^30 bytes); fractions are allowed. 0 disables the tier.
+    double dram_cache_capacity_gb = 0.0;
 
-    /**
-     * Must be explicitly set to load `store_library_path`. Defaults to false so that no third-party
-     * code is ever loaded without an explicit opt-in (see kv_cache_store_provider_abi.h, D39).
-     */
-    bool allow_untrusted_store_plugin = false;
+    /// Upper bound of the SSD tier in GiB (2^30 bytes); fractions are allowed. 0 disables the tier.
+    double ssd_cache_capacity_gb = 0.0;
 
-    /**
-     * Plugin-specific key/value settings handed to the store plugin when it opens a store, next to the ones the host
-     * always passes (`block_size_bytes`, `device`, `dram_cache_capacity_gb`, `reuse_ssd_cache` and `debug_log_path`;
-     * setting one of those here is rejected, use the matching field instead). The host does not interpret them.
-     */
-    std::map<std::string, std::string> store_properties;
+    /// Existing, writable directory of the SSD tier. Required when `ssd_cache_capacity_gb` is greater than 0 and
+    /// must be empty otherwise. There is no fallback to the system temporary directory.
+    std::string kv_cache_dir;
 
-    /**
-     * Also stores every block as soon as the forward pass that completed it has finished (chunk store), instead of
-     * only when the block is about to be overwritten. The block is copied out right after the pass and a
-     * background thread writes it, so generation does not wait for the store. A block still stays in the device
-     * cache; this makes it reusable from the store without having been evicted first, for example by another
-     * process that opens the same persistent store.
-     */
-    bool store_completed_blocks = false;
+    /// Whether the cache an earlier run left in `kv_cache_dir` for the same model is loaded (true) or purged when
+    /// the store is opened (false).
+    bool reuse_ssd_cache = true;
 
-    static constexpr std::uint32_t DEFAULT_STORE_TIMEOUT_MS = 10000;
+    /// A third-party store plugin. Unset: the in-tree store.
+    std::optional<CacheStorePluginConfig> plugin;
 
-    /**
-     * Longest wait, in milliseconds, for one asynchronous batch of a store plugin. A batch that is not done by then
-     * is cancelled and counted as a cache miss, so a stalled plugin only costs recomputation. Only plugins that
-     * advertise asynchronous I/O can be timed out; a synchronous plugin call is not interrupted. Must be greater
-     * than 0.
-     */
-    std::uint32_t store_timeout_ms = DEFAULT_STORE_TIMEOUT_MS;
+    /// Model-independent checks of the values; throws ov::Exception.
+    void validate() const {
+        OPENVINO_ASSERT(std::isfinite(dram_cache_capacity_gb) && dram_cache_capacity_gb >= 0.0,
+                        "CacheOffloadConfig dram_cache_capacity_gb must be finite and not negative");
+        OPENVINO_ASSERT(std::isfinite(ssd_cache_capacity_gb) && ssd_cache_capacity_gb >= 0.0,
+                        "CacheOffloadConfig ssd_cache_capacity_gb must be finite and not negative");
+        OPENVINO_ASSERT(dram_cache_capacity_gb > 0.0 || ssd_cache_capacity_gb > 0.0,
+                        "CacheOffloadConfig needs at least one tier: set dram_cache_capacity_gb or ssd_cache_capacity_gb");
+        OPENVINO_ASSERT(ssd_cache_capacity_gb == 0.0 || !kv_cache_dir.empty(),
+                        "CacheOffloadConfig kv_cache_dir is required when ssd_cache_capacity_gb is greater than 0");
+        OPENVINO_ASSERT(ssd_cache_capacity_gb > 0.0 || kv_cache_dir.empty(),
+                        "CacheOffloadConfig kv_cache_dir must be empty when ssd_cache_capacity_gb is 0");
+        if (plugin.has_value()) {
+            OPENVINO_ASSERT(!plugin->library_path.empty(),
+                            "CacheOffloadConfig plugin needs a library_path; leave plugin unset to use the in-tree store");
+            OPENVINO_ASSERT(plugin->timeout_ms > 0, "CacheOffloadConfig plugin timeout_ms must be greater than 0");
+        }
+    }
 
     bool operator==(const CacheOffloadConfig& other) const {
-        return kv_cache_dir == other.kv_cache_dir && capacity_bytes == other.capacity_bytes &&
-               ssd_cache_capacity_gb == other.ssd_cache_capacity_gb &&
-               dram_cache_capacity_gb == other.dram_cache_capacity_gb && reuse_ssd_cache == other.reuse_ssd_cache &&
-               debug_log_path == other.debug_log_path &&
-               linear_attention_capacity_bytes == other.linear_attention_capacity_bytes &&
-               buffer_slots == other.buffer_slots && use_page_cache == other.use_page_cache &&
-               store_library_path == other.store_library_path && store_provider_name == other.store_provider_name &&
-               allow_untrusted_store_plugin == other.allow_untrusted_store_plugin &&
-               store_properties == other.store_properties && store_completed_blocks == other.store_completed_blocks &&
-               store_timeout_ms == other.store_timeout_ms;
+        return write_policy == other.write_policy && dram_cache_capacity_gb == other.dram_cache_capacity_gb &&
+               ssd_cache_capacity_gb == other.ssd_cache_capacity_gb && kv_cache_dir == other.kv_cache_dir &&
+               reuse_ssd_cache == other.reuse_ssd_cache && plugin == other.plugin;
     }
 
     std::string to_string() const {
         std::ostringstream oss;
         oss << "  CacheOffloadConfig { \n";
-        oss << "    kv_cache_dir: " << (kv_cache_dir.empty() ? std::string("<temporary directory>") : kv_cache_dir)
-            << "\n";
-        oss << "    capacity_bytes: " << capacity_bytes << "\n";
-        oss << "    ssd_cache_capacity_gb: " << ssd_cache_capacity_gb << "\n";
+        oss << "    write_policy: "
+            << (write_policy == CacheOffloadWritePolicy::ON_EVICT ? "ON_EVICT" : "WRITE_THROUGH") << "\n";
         oss << "    dram_cache_capacity_gb: " << dram_cache_capacity_gb << "\n";
+        oss << "    ssd_cache_capacity_gb: " << ssd_cache_capacity_gb << "\n";
+        oss << "    kv_cache_dir: " << (kv_cache_dir.empty() ? std::string("<none>") : kv_cache_dir) << "\n";
         oss << "    reuse_ssd_cache: " << std::boolalpha << reuse_ssd_cache << "\n";
-        oss << "    debug_log_path: " << (debug_log_path.empty() ? std::string("<none>") : debug_log_path) << "\n";
-        oss << "    linear_attention_capacity_bytes: " << linear_attention_capacity_bytes << "\n";
-        oss << "    buffer_slots: " << buffer_slots << "\n";
-        oss << "    use_page_cache: " << std::boolalpha << use_page_cache << "\n";
-        oss << "    store_library_path: " << (store_library_path.empty() ? std::string("<none>") : store_library_path)
-            << "\n";
-        oss << "    store_provider_name: " << (store_provider_name.empty() ? std::string("<default>") : store_provider_name)
-            << "\n";
-        oss << "    allow_untrusted_store_plugin: " << std::boolalpha << allow_untrusted_store_plugin << "\n";
-        oss << "    store_properties: {";
-        for (const auto& [key, value] : store_properties) {
-            oss << " " << key << "=" << value;
+        if (plugin.has_value()) {
+            oss << "    plugin: { library_path: " << plugin->library_path << ", provider_name: "
+                << (plugin->provider_name.empty() ? std::string("<default>") : plugin->provider_name)
+                << ", debug_log_path: " << (plugin->debug_log_path.empty() ? std::string("<none>") : plugin->debug_log_path)
+                << ", timeout_ms: " << plugin->timeout_ms << ", properties: {";
+            for (const auto& [key, value] : plugin->properties) {
+                oss << " " << key << "=" << value;
+            }
+            oss << " } }\n";
+        } else {
+            oss << "    plugin: <none>\n";
         }
-        oss << " }\n";
-        oss << "    store_completed_blocks: " << std::boolalpha << store_completed_blocks << "\n";
-        oss << "    store_timeout_ms: " << store_timeout_ms << "\n";
         oss << "  }";
         return oss.str();
     }

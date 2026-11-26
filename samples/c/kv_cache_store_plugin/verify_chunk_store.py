@@ -1,4 +1,4 @@
-"""Checks the chunk store: with `CacheOffloadConfig.store_completed_blocks`, every block is stored right after the
+"""Checks the chunk store: with `CacheOffloadWritePolicy.WRITE_THROUGH`, every block is stored right after the
 forward pass that completed it, so a new process can reuse it from a persistent store although nothing was evicted.
 
 Run the three phases as separate processes against the same store directory:
@@ -8,7 +8,7 @@ Run the three phases as separate processes against the same store directory:
   python verify_chunk_store.py -m <model_dir> -d CPU --plugin <plugin> --store-dir <dir> --phase read
 
   baseline: no offload; prints the TTFT of the prompt and the generated text.
-  write:    offload through a persistent provider with store_completed_blocks. The device cache is large, so nothing is
+  write:    offload through a persistent provider with the WRITE_THROUGH write policy. The device cache is large, so nothing is
             evicted and the store only holds what the chunk store wrote.
   read:     a new process opens the same store and runs the same prompt. Its TTFT should be far below the baseline's
             and the generated text must be identical.
@@ -33,16 +33,12 @@ def make_pipeline(args, offload: bool) -> ov_genai.ContinuousBatchingPipeline:
     scheduler.num_kv_blocks = args.num_kv_blocks
     if offload:
         offload_config = ov_genai.CacheOffloadConfig()
-        offload_config.store_library_path = args.plugin
-        offload_config.store_provider_name = args.provider
-        offload_config.allow_untrusted_store_plugin = True
         offload_config.kv_cache_dir = args.store_dir
-        offload_config.capacity_bytes = 4 * 1024**3
-        offload_config.linear_attention_capacity_bytes = 8 * 1024**3
-        offload_config.buffer_slots = 512
-        offload_config.store_completed_blocks = not args.no_chunk
-        scheduler.use_cache_offload = True
-        scheduler.cache_offload_config = offload_config
+        offload_config.ssd_cache_capacity_gb = 12
+        if not args.no_chunk:
+            offload_config.write_policy = ov_genai.CacheOffloadWritePolicy.WRITE_THROUGH
+        offload_config.plugin = ov_genai.CacheStorePluginConfig(library_path=args.plugin, provider_name=args.provider)
+        scheduler.cache_offload = offload_config
     return ov_genai.ContinuousBatchingPipeline(args.model, scheduler, args.device)
 
 
@@ -58,7 +54,7 @@ def main() -> None:
     )
     parser.add_argument("--store-dir", required=True, help="Directory of the persistent store")
     parser.add_argument("--phase", choices=["baseline", "write", "read"], required=True)
-    parser.add_argument("--no-chunk", action="store_true", help="Leave store_completed_blocks off in write/read")
+    parser.add_argument("--no-chunk", action="store_true", help="Use the ON_EVICT write policy in write/read")
     parser.add_argument("--repeat", type=int, default=300, help="Repetitions of the sample sentence in the prompt")
     parser.add_argument(
         "--num-kv-blocks", type=int, default=600, help="Device cache blocks; large enough that nothing is evicted"

@@ -60,8 +60,8 @@ struct CacheFixture {
     }
 };
 
-CacheOffloadConfig make_offload_config(const CacheFixture& fixture, size_t num_slots) {
-    CacheOffloadConfig config;
+OffloadSettings make_offload_config(const CacheFixture& fixture, size_t num_slots) {
+    OffloadSettings config;
     config.capacity_bytes = fixture.cache_manager->get_block_layout().get_slot_size() * num_slots;
     return config;
 }
@@ -1546,8 +1546,9 @@ TEST(TestKVCacheOffloadCache, PrefixWarmUpWaitsForTheExecutionMutexBeforeItAlloc
     SchedulerConfig config;
     config.num_kv_blocks = 4;
     config.enable_prefix_caching = true;
-    config.use_cache_offload = true;
-    config.cache_offload_config.capacity_bytes = 1 << 20;
+    config.cache_offload = CacheOffloadConfig{};
+    config.cache_offload->ssd_cache_capacity_gb = 1.0 / 1024;
+    config.cache_offload->kv_cache_dir = std::filesystem::temp_directory_path().string();
     auto orchestrator = CacheOrchestrator::create(request, config, [](const std::string&, size_t) {
         return std::numeric_limits<size_t>::max();
     });
@@ -1582,8 +1583,9 @@ TEST(TestKVCacheOffloadCache, ARestoreThatNoStoreTakesIsReportedOnceByTheHost) {
     SchedulerConfig config;
     config.num_kv_blocks = 4;
     config.enable_prefix_caching = true;
-    config.use_cache_offload = true;
-    config.cache_offload_config.capacity_bytes = 1 << 20;
+    config.cache_offload = CacheOffloadConfig{};
+    config.cache_offload->ssd_cache_capacity_gb = 1.0 / 1024;
+    config.cache_offload->kv_cache_dir = std::filesystem::temp_directory_path().string();
     auto orchestrator = CacheOrchestrator::create(request, config, [](const std::string&, size_t) {
         return std::numeric_limits<size_t>::max();
     });
@@ -1612,8 +1614,9 @@ TEST(TestKVCacheOffloadCache, DynamicCacheSizingOfARestoreWaitsForTheExecutionMu
     ov::InferRequest request = core.compile_model(get_dummy_model(core, NUM_DECODER_LAYERS)).create_infer_request();
     SchedulerConfig config;
     config.enable_prefix_caching = true;
-    config.use_cache_offload = true;
-    config.cache_offload_config.capacity_bytes = 1 << 20;
+    config.cache_offload = CacheOffloadConfig{};
+    config.cache_offload->ssd_cache_capacity_gb = 1.0 / 1024;
+    config.cache_offload->kv_cache_dir = std::filesystem::temp_directory_path().string();
     auto orchestrator = CacheOrchestrator::create(request, config, [](const std::string&, size_t) {
         return std::numeric_limits<size_t>::max();
     });

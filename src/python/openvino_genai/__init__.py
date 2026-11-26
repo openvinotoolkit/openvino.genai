@@ -159,6 +159,8 @@ from .py_openvino_genai import (
     SchedulerConfig,
     CacheEvictionConfig,
     CacheOffloadConfig,
+    CacheOffloadWritePolicy,
+    CacheStorePluginConfig,
     AggregationMode,
     SparseAttentionMode,
     SparseAttentionConfig,

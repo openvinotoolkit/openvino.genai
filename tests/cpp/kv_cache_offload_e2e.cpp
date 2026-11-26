@@ -62,17 +62,13 @@ SchedulerConfig make_scheduler_config(bool use_offload) {
     config.max_num_seqs = 4;
     config.dynamic_split_fuse = false;
     config.enable_prefix_caching = true;
-    config.use_cache_offload = use_offload;
     if (use_offload) {
-        // Room for far more blocks than the device cache holds, so eviction lands on disk.
-        config.cache_offload_config.capacity_bytes = 256u * 1024u * 1024u;
-        // Also exercise linear attention cache offload for hybrid models (e.g. Qwen3.5); harmless
-        // when the model has no linear attention layers, since enable_linear_attention_cache_offload
-        // is only invoked when a linear attention cache manager was actually registered.
-        config.cache_offload_config.linear_attention_capacity_bytes = 128u * 1024u * 1024u;
-        // Freeing a sequence releases its whole block table at once, so a staging pool smaller than
-        // that burst silently drops most of the blocks and the disk cache fills up only slowly.
-        config.cache_offload_config.buffer_slots = 128;
+        // Room for far more blocks than the device cache holds, so eviction lands on disk. A model with linear
+        // attention layers (e.g. Qwen3.5) offloads those out of the same budget.
+        CacheOffloadConfig offload;
+        offload.ssd_cache_capacity_gb = 0.375;
+        offload.kv_cache_dir = std::filesystem::temp_directory_path().string();
+        config.cache_offload = offload;
     }
     return config;
 }

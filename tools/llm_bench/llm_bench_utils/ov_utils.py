@@ -197,7 +197,7 @@ def apply_taylorseer_config_genai(pipe, config_data=None):
 def get_scheduler_config_genai(config_data, config_name="CB config"):
     import openvino_genai
     user_config = copy.deepcopy(config_data)
-    offload_config = user_config.pop("cache_offload_config", None)
+    offload_config = user_config.pop("cache_offload", None)
 
     scheduler_config = openvino_genai.SchedulerConfig()
     if user_config:
@@ -234,7 +234,12 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
             setattr(scheduler_config, param, value)
 
     if isinstance(offload_config, dict):
-        scheduler_config.cache_offload_config = openvino_genai.CacheOffloadConfig(**offload_config)
+        offload_kwargs = dict(offload_config)
+        if "write_policy" in offload_kwargs:
+            offload_kwargs["write_policy"] = getattr(openvino_genai.CacheOffloadWritePolicy, offload_kwargs["write_policy"])
+        if isinstance(offload_kwargs.get("plugin"), dict):
+            offload_kwargs["plugin"] = openvino_genai.CacheStorePluginConfig(**offload_kwargs["plugin"])
+        scheduler_config.cache_offload = openvino_genai.CacheOffloadConfig(**offload_kwargs)
 
     return scheduler_config
 
@@ -246,7 +251,7 @@ def cb_pipeline_required(args):
         and (
             args["cb_config"].get("cache_eviction_config") is not None
             or args["cb_config"].get("sparse_attention_config") is not None
-            or args["cb_config"].get("use_cache_offload", False)
+            or args["cb_config"].get("cache_offload") is not None
         )
     )
 

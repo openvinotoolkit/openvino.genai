@@ -110,7 +110,7 @@ const OvKVCacheStoreProviderDescriptor* find_provider(const OvKVCacheStoreModule
 }
 
 std::unique_ptr<IKVCacheStore> make_default_store(const KVCacheDiskLayout& layout,
-                                                  const CacheOffloadConfig& config,
+                                                  const OffloadSettings& config,
                                                   const std::string& device) {
     auto backend = std::make_unique<KVCacheOffloadManager>(layout, config, device);
     return std::make_unique<FileKVCacheStore>(std::move(backend));
@@ -118,11 +118,11 @@ std::unique_ptr<IKVCacheStore> make_default_store(const KVCacheDiskLayout& layou
 
 /// The provider of the configured plugin. Returns nullptr (after logging why) when the plugin cannot be used, and never
 /// falls back itself. Throws on a config error.
-const OvKVCacheStoreProviderDescriptor* load_plugin_provider(const CacheOffloadConfig& config) {
+const OvKVCacheStoreProviderDescriptor* load_plugin_provider(const OffloadSettings& config) {
     for (const auto& [key, value] : config.store_properties) {
         OPENVINO_ASSERT(key != "block_size_bytes" && key != "device" && key != "dram_cache_capacity_gb" &&
                             key != "reuse_ssd_cache" && key != "debug_log_path",
-                        "KV cache store property '", key, "' is set by the host; use the matching CacheOffloadConfig field");
+                        "KV cache store property '", key, "' is set by the host; use the matching OffloadSettings field");
     }
     void* handle = load_library(config.store_library_path);
     if (handle == nullptr) {
@@ -181,7 +181,7 @@ struct PluginInstance {
 
 /// Opens one store instance of @p provider for @p groups. Returns nothing (after logging why) when it cannot be used.
 std::optional<PluginInstance> open_plugin_instance(const OvKVCacheStoreProviderDescriptor* provider,
-                                                   const CacheOffloadConfig& config,
+                                                   const OffloadSettings& config,
                                                    const std::string& device,
                                                    const std::string& ns_string,
                                                    const std::vector<PluginGroup>& groups,
@@ -283,7 +283,7 @@ std::unique_ptr<AbiKVCacheStore> make_plugin_view(const PluginInstance& opened,
 /// One store instance for the group, opened under its own namespace. Returns nullptr when the plugin cannot be used.
 std::unique_ptr<IKVCacheStore> try_open_plugin_store(const OvKVCacheStoreProviderDescriptor* provider,
                                                      const KVCacheDiskLayout& layout,
-                                                     const CacheOffloadConfig& config,
+                                                     const OffloadSettings& config,
                                                      const std::string& device,
                                                      const std::string& group,
                                                      size_t block_tokens,
@@ -297,8 +297,8 @@ std::unique_ptr<IKVCacheStore> try_open_plugin_store(const OvKVCacheStoreProvide
     return make_plugin_view(*opened, group, block_bytes, capacity_bytes, config.store_timeout_ms);
 }
 
-CacheOffloadConfig config_with_capacity(const CacheOffloadConfig& config, uint64_t capacity_bytes) {
-    CacheOffloadConfig group_config = config;
+OffloadSettings config_with_capacity(const OffloadSettings& config, uint64_t capacity_bytes) {
+    OffloadSettings group_config = config;
     group_config.capacity_bytes = capacity_bytes;
     return group_config;
 }
@@ -306,7 +306,7 @@ CacheOffloadConfig config_with_capacity(const CacheOffloadConfig& config, uint64
 }  // namespace
 
 std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layout,
-                                                   const CacheOffloadConfig& config,
+                                                   const OffloadSettings& config,
                                                    const std::string& device,
                                                    const std::string& group,
                                                    size_t block_tokens) {
@@ -322,7 +322,7 @@ std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layo
 }
 
 std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vector<StoreGroupSpec>& groups,
-                                                                  const CacheOffloadConfig& config,
+                                                                  const OffloadSettings& config,
                                                                   const std::string& device,
                                                                   const std::string& shared_namespace) {
     OPENVINO_ASSERT(!groups.empty(), "A grouped KV cache store needs at least one group");
@@ -364,7 +364,7 @@ std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vec
 
     std::vector<std::unique_ptr<IKVCacheStore>> views;
     for (const StoreGroupSpec& group : groups) {
-        const CacheOffloadConfig group_config = config_with_capacity(config, group.capacity_bytes);
+        const OffloadSettings group_config = config_with_capacity(config, group.capacity_bytes);
         std::unique_ptr<IKVCacheStore> store;
         if (provider != nullptr) {
             store = try_open_plugin_store(provider,

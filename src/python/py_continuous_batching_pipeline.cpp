@@ -23,6 +23,8 @@ using ov::genai::AggregationMode;
 using ov::genai::SparseAttentionMode;
 using ov::genai::CacheEvictionConfig;
 using ov::genai::CacheOffloadConfig;
+using ov::genai::CacheOffloadWritePolicy;
+using ov::genai::CacheStorePluginConfig;
 using ov::genai::SparseAttentionConfig;
 using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::GenerationResult;
@@ -107,75 +109,60 @@ auto sparse_attention_config_docstring = R"(
     :type xattention_stride: int
 )";
 auto cache_offload_config_docstring = R"(
-    Configuration of the KV cache disk offload backend.
+    Configuration of the tiered KV / linear attention cache offload. Setting SchedulerConfig.cache_offload enables it.
 
     Offloaded blocks are rediscovered through the prefix-cache block hash, so offload requires
     SchedulerConfig.enable_prefix_caching and is currently not supported together with
     SchedulerConfig.use_cache_eviction, SchedulerConfig.use_sparse_attention, or models whose
-    sparse attention keeps index caches per block (QSA).
+    sparse attention keeps index caches per block (QSA). A model with linear attention layers offloads those too,
+    out of the same budget.
+
+    The built-in host DRAM tier is not implemented yet: dram_cache_capacity_gb is only honored by a plugin that
+    advertises OV_KVCACHE_CAP_DRAM_TIER, and is otherwise ignored with a warning when an SSD tier is configured.
 
     Parameters:
-    :param kv_cache_dir: existing directory on the SSD where the offloaded KV cache files are stored, which is also the
-        directory a store plugin keeps its files under. When empty, the system temporary directory is used.
+    :param write_policy: when blocks are written to the store: ON_EVICT (default) writes the blocks that are about to be
+        overwritten in device memory, WRITE_THROUGH also writes every block right after the forward pass that completed it.
+    :type write_policy: openvino_genai.CacheOffloadWritePolicy
+
+    :param dram_cache_capacity_gb: upper bound of the DRAM tier in GiB (fractions allowed). 0 disables the tier.
+    :type dram_cache_capacity_gb: float
+
+    :param ssd_cache_capacity_gb: upper bound of the SSD tier in GiB (fractions allowed). 0 disables the tier.
+    :type ssd_cache_capacity_gb: float
+
+    :param kv_cache_dir: existing, writable directory of the SSD tier. Required when ssd_cache_capacity_gb is greater than
+        0 and must be empty otherwise.
     :type kv_cache_dir: str
 
-    :param capacity_bytes: upper bound of the offload file size in bytes. The usable slot count is derived from this.
-    :type capacity_bytes: int
-
-    :param ssd_cache_capacity_gb: upper bound of the SSD space used for the KV cache, in GB. When greater than 0 it
-        takes the place of capacity_bytes, which then has to stay 0.
-    :type ssd_cache_capacity_gb: int
-
-    :param dram_cache_capacity_gb: upper bound of the DRAM used for the KV cache, in GB. Handed to a store plugin as the
-        dram_cache_capacity_gb property; the in-tree file store has no DRAM tier and ignores it.
-    :type dram_cache_capacity_gb: int
-
-    :param reuse_ssd_cache: whether a store plugin loads the cache that an earlier run left in kv_cache_dir for the same model
-        (True, default) or purges it when opening the store (False). Handed to the plugin as the reuse_ssd_cache
-        property; the in-tree file store ignores it.
+    :param reuse_ssd_cache: whether the cache an earlier run left in kv_cache_dir for the same model is loaded (True,
+        default) or purged when the store is opened (False).
     :type reuse_ssd_cache: bool
 
-    :param debug_log_path: directory for the debug logs of a store plugin, handed to it as the debug_log_path property
-        when not empty.
+    :param plugin: a third-party store plugin; None uses the in-tree store.
+    :type plugin: openvino_genai.CacheStorePluginConfig | None
+)";
+
+auto cache_store_plugin_config_docstring = R"(
+    A third-party KV cache store plugin. Setting CacheOffloadConfig.plugin with a non-empty library_path is the explicit
+    opt-in to load that library. A failure to load, handshake, open or purge it raises when the pipeline is created.
+
+    Parameters:
+    :param library_path: path to the plugin shared library. Must not be empty.
+    :type library_path: str
+
+    :param provider_name: provider to select from the plugin module. Empty uses the module's first provider.
+    :type provider_name: str
+
+    :param debug_log_path: directory for the debug logs of the plugin. Empty: none.
     :type debug_log_path: str
 
-    :param linear_attention_capacity_bytes: upper bound of the linear attention state offload file size in bytes,
-        in a separate file from the KV cache offload file. When 0 (default), linear attention cache offload is
-        disabled even if the model has linear attention layers.
-    :type linear_attention_capacity_bytes: int
+    :param timeout_ms: longest wait for one asynchronous batch of the plugin, in milliseconds. A batch that is not done
+        by then is cancelled and counted as a cache miss. Must be greater than 0.
+    :type timeout_ms: int
 
-    :param buffer_slots: number of staging buffers reserved for transfers.
-    :type buffer_slots: int
-
-    :param use_page_cache: whether the offload file may go through the OS page cache. Direct I/O is not implemented yet.
-    :type use_page_cache: bool
-
-    :param store_library_path: path to a third-party KV cache store plugin shared library implementing the ABI
-        declared in openvino/genai/c/kv_cache_store_provider_abi.h. Empty (default) uses the in-tree file store
-        directly, with no plugin ABI involved. Ignored unless allow_untrusted_store_plugin is true.
-    :type store_library_path: str
-
-    :param store_provider_name: provider name to select from the plugin module. Empty uses the module's first provider.
-    :type store_provider_name: str
-
-    :param allow_untrusted_store_plugin: must be explicitly set to load store_library_path. Defaults to false so
-        that no third-party code is ever loaded without an explicit opt-in.
-    :type allow_untrusted_store_plugin: bool
-
-    :param store_properties: plugin-specific key/value settings handed to the store plugin when it opens a store, next
-        to the ones the host always passes (block_size_bytes, device, dram_cache_capacity_gb, reuse_ssd_cache and
-        debug_log_path, which cannot be overridden).
-    :type store_properties: dict[str, str]
-
-    :param store_completed_blocks: also store every block as soon as the forward pass that completed it has finished
-        (chunk store), instead of only when the block is about to be overwritten. A background thread writes the
-        copied block, so generation does not wait for the store. Defaults to false.
-    :type store_completed_blocks: bool
-
-    :param store_timeout_ms: longest wait, in milliseconds, for one asynchronous batch of a store plugin. A batch that
-        is not done by then is cancelled and counted as a cache miss. Only plugins that advertise asynchronous I/O
-        can be timed out. Must be greater than 0.
-    :type store_timeout_ms: int
+    :param properties: plugin-specific settings handed to the plugin when it opens a store.
+    :type properties: dict[str, str]
 )";
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
@@ -507,61 +494,66 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readwrite("xattention_stride", &SparseAttentionConfig::xattention_stride)
             .def("to_string", &SparseAttentionConfig::to_string);
 
-    py::class_<CacheOffloadConfig>(m, "CacheOffloadConfig", cache_offload_config_docstring)
-            .def(py::init<>())
-            .def(py::init([](const std::string& kv_cache_dir, size_t capacity_bytes, size_t buffer_slots, bool use_page_cache,
-                             size_t linear_attention_capacity_bytes, const std::string& store_library_path,
-                             const std::string& store_provider_name, bool allow_untrusted_store_plugin,
-                             bool store_completed_blocks, const std::map<std::string, std::string>& store_properties,
-                             int32_t ssd_cache_capacity_gb, int32_t dram_cache_capacity_gb, bool reuse_ssd_cache,
-                             const std::string& debug_log_path, std::uint32_t store_timeout_ms) {
-                CacheOffloadConfig config;
-                config.kv_cache_dir = kv_cache_dir;
-                config.capacity_bytes = capacity_bytes;
-                config.ssd_cache_capacity_gb = ssd_cache_capacity_gb;
-                config.dram_cache_capacity_gb = dram_cache_capacity_gb;
-                config.reuse_ssd_cache = reuse_ssd_cache;
+    py::enum_<CacheOffloadWritePolicy>(m, "CacheOffloadWritePolicy", "Controls when blocks are written to the offload store.")
+            .value("ON_EVICT", CacheOffloadWritePolicy::ON_EVICT)
+            .value("WRITE_THROUGH", CacheOffloadWritePolicy::WRITE_THROUGH);
+
+    py::class_<CacheStorePluginConfig>(m, "CacheStorePluginConfig", cache_store_plugin_config_docstring)
+            .def(py::init([](const std::string& library_path, const std::string& provider_name,
+                             const std::string& debug_log_path, std::uint32_t timeout_ms,
+                             const std::map<std::string, std::string>& properties) {
+                CacheStorePluginConfig config;
+                config.library_path = library_path;
+                config.provider_name = provider_name;
                 config.debug_log_path = debug_log_path;
-                config.store_timeout_ms = store_timeout_ms;
-                config.linear_attention_capacity_bytes = linear_attention_capacity_bytes;
-                config.buffer_slots = buffer_slots;
-                config.use_page_cache = use_page_cache;
-                config.store_library_path = store_library_path;
-                config.store_provider_name = store_provider_name;
-                config.allow_untrusted_store_plugin = allow_untrusted_store_plugin;
-                config.store_completed_blocks = store_completed_blocks;
-                config.store_properties = store_properties;
+                config.timeout_ms = timeout_ms;
+                config.properties = properties;
                 return config; }),
-                 py::arg("kv_cache_dir") = std::string{},
-                 py::arg("capacity_bytes") = 0,
-                 py::arg("buffer_slots") = 2,
-                 py::arg("use_page_cache") = true,
-                 py::arg("linear_attention_capacity_bytes") = 0,
-                 py::arg("store_library_path") = std::string{},
-                 py::arg("store_provider_name") = std::string{},
-                 py::arg("allow_untrusted_store_plugin") = false,
-                 py::arg("store_completed_blocks") = false,
-                 py::arg("store_properties") = std::map<std::string, std::string>{},
-                 py::arg("ssd_cache_capacity_gb") = 0,
-                 py::arg("dram_cache_capacity_gb") = 0,
-                 py::arg("reuse_ssd_cache") = true,
+                 py::arg("library_path") = std::string{},
+                 py::arg("provider_name") = std::string{},
                  py::arg("debug_log_path") = std::string{},
-                 py::arg("store_timeout_ms") = CacheOffloadConfig::DEFAULT_STORE_TIMEOUT_MS)
-            .def_readwrite("kv_cache_dir", &CacheOffloadConfig::kv_cache_dir)
-            .def_readwrite("capacity_bytes", &CacheOffloadConfig::capacity_bytes)
-            .def_readwrite("ssd_cache_capacity_gb", &CacheOffloadConfig::ssd_cache_capacity_gb)
+                 py::arg("timeout_ms") = CacheStorePluginConfig::DEFAULT_TIMEOUT_MS,
+                 py::arg("properties") = std::map<std::string, std::string>{})
+            .def_readwrite("library_path", &CacheStorePluginConfig::library_path)
+            .def_readwrite("provider_name", &CacheStorePluginConfig::provider_name)
+            .def_readwrite("debug_log_path", &CacheStorePluginConfig::debug_log_path)
+            .def_readwrite("timeout_ms", &CacheStorePluginConfig::timeout_ms)
+            .def_readwrite("properties", &CacheStorePluginConfig::properties);
+
+    py::class_<CacheOffloadConfig>(m, "CacheOffloadConfig", cache_offload_config_docstring)
+            .def(py::init([](CacheOffloadWritePolicy write_policy, double dram_cache_capacity_gb,
+                             double ssd_cache_capacity_gb, const std::string& kv_cache_dir, bool reuse_ssd_cache,
+                             const std::optional<CacheStorePluginConfig>& plugin) {
+                CacheOffloadConfig config;
+                config.write_policy = write_policy;
+                config.dram_cache_capacity_gb = dram_cache_capacity_gb;
+                config.ssd_cache_capacity_gb = ssd_cache_capacity_gb;
+                config.kv_cache_dir = kv_cache_dir;
+                config.reuse_ssd_cache = reuse_ssd_cache;
+                config.plugin = plugin;
+                return config; }),
+                 py::arg("write_policy") = CacheOffloadWritePolicy::ON_EVICT,
+                 py::arg("dram_cache_capacity_gb") = 0.0,
+                 py::arg("ssd_cache_capacity_gb") = 0.0,
+                 py::arg("kv_cache_dir") = std::string{},
+                 py::arg("reuse_ssd_cache") = true,
+                 py::arg("plugin") = py::none())
+            .def_readwrite("write_policy", &CacheOffloadConfig::write_policy)
             .def_readwrite("dram_cache_capacity_gb", &CacheOffloadConfig::dram_cache_capacity_gb)
+            .def_readwrite("ssd_cache_capacity_gb", &CacheOffloadConfig::ssd_cache_capacity_gb)
+            .def_readwrite("kv_cache_dir", &CacheOffloadConfig::kv_cache_dir)
             .def_readwrite("reuse_ssd_cache", &CacheOffloadConfig::reuse_ssd_cache)
-            .def_readwrite("debug_log_path", &CacheOffloadConfig::debug_log_path)
-            .def_readwrite("linear_attention_capacity_bytes", &CacheOffloadConfig::linear_attention_capacity_bytes)
-            .def_readwrite("buffer_slots", &CacheOffloadConfig::buffer_slots)
-            .def_readwrite("use_page_cache", &CacheOffloadConfig::use_page_cache)
-            .def_readwrite("store_library_path", &CacheOffloadConfig::store_library_path)
-            .def_readwrite("store_provider_name", &CacheOffloadConfig::store_provider_name)
-            .def_readwrite("allow_untrusted_store_plugin", &CacheOffloadConfig::allow_untrusted_store_plugin)
-            .def_readwrite("store_properties", &CacheOffloadConfig::store_properties)
-            .def_readwrite("store_completed_blocks", &CacheOffloadConfig::store_completed_blocks)
-            .def_readwrite("store_timeout_ms", &CacheOffloadConfig::store_timeout_ms)
+            // An optional member is exposed through a reference to the member, not a copy, so that
+            // `config.plugin.library_path = ...` changes the config.
+            .def_property("plugin",
+                          [](CacheOffloadConfig& self) -> CacheStorePluginConfig* {
+                              return self.plugin.has_value() ? &*self.plugin : nullptr;
+                          },
+                          [](CacheOffloadConfig& self, const std::optional<CacheStorePluginConfig>& plugin) {
+                              self.plugin = plugin;
+                          },
+                          py::return_value_policy::reference_internal)
+            .def("validate", &CacheOffloadConfig::validate)
             .def("to_string", &CacheOffloadConfig::to_string);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
@@ -578,8 +570,16 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config)
         .def_readwrite("use_sparse_attention", &SchedulerConfig::use_sparse_attention)
         .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config)
-        .def_readwrite("use_cache_offload", &SchedulerConfig::use_cache_offload)
-        .def_readwrite("cache_offload_config", &SchedulerConfig::cache_offload_config)
+        // An optional member is exposed through a reference to the member, not a copy, so that
+        // `scheduler_config.cache_offload.ssd_cache_capacity_gb = 8` changes the config.
+        .def_property("cache_offload",
+                      [](SchedulerConfig& self) -> CacheOffloadConfig* {
+                          return self.cache_offload.has_value() ? &*self.cache_offload : nullptr;
+                      },
+                      [](SchedulerConfig& self, const std::optional<CacheOffloadConfig>& cache_offload) {
+                          self.cache_offload = cache_offload;
+                      },
+                      py::return_value_policy::reference_internal)
         .def("to_string", &SchedulerConfig::to_string);
 
     py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)

@@ -9,12 +9,12 @@
 
 #include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "continuous_batching/cache/kv_cache_store.hpp"
-#include "openvino/genai/cache_offload.hpp"
+#include "continuous_batching/cache/offload_settings.hpp"
 
 namespace ov::genai {
 
 /**
- * @brief Opens the KV cache store backend configured by a CacheOffloadConfig.
+ * @brief Opens the KV cache store backend configured by a OffloadSettings.
  *
  * Without a vendor plugin configured (the default), this returns the in-tree FileKVCacheStore
  * directly - no ABI marshaling in the hot path. A vendor plugin is only even attempted when
@@ -34,7 +34,7 @@ namespace ov::genai {
  * reported to the plugin as `OvKVCacheGroupInfo::block_tokens`; 0 when blocks are not token-addressed.
  */
 std::unique_ptr<IKVCacheStore> open_kv_cache_store(const KVCacheDiskLayout& layout,
-                                                   const CacheOffloadConfig& config,
+                                                   const OffloadSettings& config,
                                                    const std::string& device,
                                                    const std::string& group,
                                                    size_t block_tokens = 0);
@@ -56,7 +56,7 @@ struct StoreGroupSpec {
  * backend gets a store per group, as open_kv_cache_store() would open it.
  */
 std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vector<StoreGroupSpec>& groups,
-                                                                  const CacheOffloadConfig& config,
+                                                                  const OffloadSettings& config,
                                                                   const std::string& device,
                                                                   const std::string& shared_namespace);
 

@@ -20,8 +20,8 @@ namespace {
 constexpr size_t BLOCK_SIZE = 32;
 constexpr size_t NUM_BLOCKS = 4;
 
-CacheOffloadConfig make_config() {
-    CacheOffloadConfig config;
+OffloadSettings make_config() {
+    OffloadSettings config;
     config.capacity_bytes = BLOCK_SIZE * NUM_BLOCKS;
     return config;
 }
@@ -64,7 +64,7 @@ TEST(TestStoreRegistry, DefaultConfigUsesTheInTreeFileStoreDirectly) {
 }
 
 TEST(TestStoreRegistry, DisallowedPluginIsIgnoredEvenWhenAPathIsSet) {
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     config.store_library_path = "does_not_matter_because_disallowed.dll";
     config.allow_untrusted_store_plugin = false;
 
@@ -74,7 +74,7 @@ TEST(TestStoreRegistry, DisallowedPluginIsIgnoredEvenWhenAPathIsSet) {
 }
 
 TEST(TestStoreRegistry, NonexistentPluginLibraryFallsBackGracefully) {
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     config.store_library_path = "this_library_does_not_exist_anywhere.dll";
     config.allow_untrusted_store_plugin = true;
 
@@ -85,7 +85,7 @@ TEST(TestStoreRegistry, NonexistentPluginLibraryFallsBackGracefully) {
 
 #ifdef _WIN32
 TEST(TestStoreRegistry, LibraryMissingTheEntrySymbolFallsBackGracefully) {
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     // A real, always-present system DLL that definitely does not export our ABI entry symbol.
     config.store_library_path = "kernel32.dll";
     config.allow_untrusted_store_plugin = true;
@@ -102,7 +102,7 @@ TEST(TestStoreRegistry, LoadsAndUsesAGenuinelySeparateDynamicallyLoadedPlugin) {
         GTEST_SKIP() << "Could not locate openvino_genai's own shared library next to the test binary";
     }
 
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     config.store_library_path = *library_path;
     config.store_provider_name = "file";
     config.allow_untrusted_store_plugin = true;
@@ -119,7 +119,7 @@ TEST(TestStoreRegistry, LoadsAndUsesTheStandaloneSampleThirdPartyPlugin) {
         GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
     }
 
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-in-memory";
     config.allow_untrusted_store_plugin = true;
@@ -137,7 +137,7 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginTakesRestoreReportsAndTheFileProvi
         GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
     }
 
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-in-memory";
     config.allow_untrusted_store_plugin = true;
@@ -157,7 +157,7 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginTakesRestoreReportsAndTheFileProvi
     if (!self_path.has_value()) {
         return;
     }
-    CacheOffloadConfig file_config = make_config();
+    OffloadSettings file_config = make_config();
     file_config.store_library_path = *self_path;
     file_config.store_provider_name = "file";
     file_config.allow_untrusted_store_plugin = true;
@@ -174,7 +174,7 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
         GTEST_SKIP() << "samples/c/kv_cache_store_plugin was not built (requires -DENABLE_SAMPLES=ON)";
     }
 
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-in-memory";
     config.allow_untrusted_store_plugin = true;
@@ -199,8 +199,8 @@ std::vector<StoreGroupSpec> make_group_specs(const std::string& tag, uint64_t kv
             StoreGroupSpec{"la", "la_" + tag, KVCacheDiskLayout({2 * BLOCK_SIZE}, {0}), 16, la_capacity_bytes}};
 }
 
-CacheOffloadConfig make_plugin_config(const std::string& library_path, const std::string& provider_name) {
-    CacheOffloadConfig config = make_config();
+OffloadSettings make_plugin_config(const std::string& library_path, const std::string& provider_name) {
+    OffloadSettings config = make_config();
     config.store_library_path = library_path;
     config.store_provider_name = provider_name;
     config.allow_untrusted_store_plugin = true;
@@ -291,7 +291,7 @@ TEST(TestStoreRegistry, GroupedStoreOpensAMultiGroupPluginOnceForAllGroups) {
     EXPECT_EQ(kv_data, make_block(/*seed=*/4));
 }
 
-// The persistent provider keeps a block in a file under CacheOffloadConfig::kv_cache_dir, which is what lets another process
+// The persistent provider keeps a block in a file under OffloadSettings::kv_cache_dir, which is what lets another process
 // read it back; the cross-process round trip itself is checked by verify_chunk_store.py (write/read phases).
 TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
     const std::optional<std::string> library_path = find_sample_plugin_library();
@@ -301,7 +301,7 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
 
     const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_persistent_store_test";
     std::filesystem::remove_all(directory);
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     config.kv_cache_dir = directory.string();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-persistent-file";
@@ -348,7 +348,7 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToRe
 
     const auto directory = std::filesystem::temp_directory_path() / "openvino_genai_reuse_ssd_cache_test";
     std::filesystem::remove_all(directory);
-    CacheOffloadConfig config = make_config();
+    OffloadSettings config = make_config();
     config.kv_cache_dir = directory.string();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-persistent-file";
@@ -383,7 +383,7 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToRe
 // The settings the host owns reach the plugin from their own fields, so naming one in store_properties is an error.
 TEST(TestStoreRegistry, StorePropertiesNamingAHostOwnedSettingAreRejected) {
     for (const char* key : {"block_size_bytes", "device", "dram_cache_capacity_gb", "reuse_ssd_cache", "debug_log_path"}) {
-        CacheOffloadConfig config = make_config();
+        OffloadSettings config = make_config();
         config.store_library_path = "this_library_does_not_exist_anywhere.dll";
         config.allow_untrusted_store_plugin = true;
         config.store_properties = {{key, "x"}};

@@ -117,18 +117,15 @@ SchedulerConfig make_restart_scheduler_config() {
 /// completed block stored right after the forward pass that completed it.
 SchedulerConfig make_persistent_store_config(const std::string& plugin_path, const std::string& store_dir, bool hybrid) {
     auto config = make_restart_scheduler_config();
-    config.use_cache_offload = true;
-    config.cache_offload_config.kv_cache_dir = store_dir;
-    config.cache_offload_config.capacity_bytes = 2048ull * 1024 * 1024;
-    if (hybrid) {
-        // A linear-attention checkpoint is large, so the store holds only a few of them.
-        config.cache_offload_config.linear_attention_capacity_bytes = 4096ull * 1024 * 1024;
-    }
-    config.cache_offload_config.buffer_slots = 256;
-    config.cache_offload_config.store_library_path = plugin_path;
-    config.cache_offload_config.store_provider_name = "sample-persistent-file";
-    config.cache_offload_config.allow_untrusted_store_plugin = true;
-    config.cache_offload_config.store_completed_blocks = true;
+    CacheOffloadConfig offload;
+    offload.kv_cache_dir = store_dir;
+    // A linear-attention checkpoint is large, so a hybrid model's store holds only a few of them.
+    offload.ssd_cache_capacity_gb = hybrid ? 6.0 : 2.0;
+    offload.write_policy = CacheOffloadWritePolicy::WRITE_THROUGH;
+    offload.plugin = CacheStorePluginConfig{};
+    offload.plugin->library_path = plugin_path;
+    offload.plugin->provider_name = "sample-persistent-file";
+    config.cache_offload = offload;
     return config;
 }
 

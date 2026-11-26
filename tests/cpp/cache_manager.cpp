@@ -3,6 +3,7 @@
 //
 
 #include <gtest/gtest.h>
+#include <filesystem>
 #include "openvino/op/parameter.hpp"
 #include "openvino/runtime/core.hpp"
 #include "continuous_batching/scheduler.hpp"
@@ -73,8 +74,9 @@ TEST(TestCacheManager, cache_offload_is_rejected_for_models_with_qsa_index_cache
     EXPECT_NO_THROW(CacheOrchestrator::create(request, config, get_available_memory));
 
     SchedulerConfig offload_config = config;
-    offload_config.use_cache_offload = true;
-    offload_config.cache_offload_config.capacity_bytes = 1 << 20;
+    offload_config.cache_offload = CacheOffloadConfig{};
+    offload_config.cache_offload->ssd_cache_capacity_gb = 1.0 / 1024;
+    offload_config.cache_offload->kv_cache_dir = std::filesystem::temp_directory_path().string();
     EXPECT_THROW(CacheOrchestrator::create(request, offload_config, get_available_memory), ov::Exception);
 }
 

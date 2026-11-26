@@ -10,7 +10,7 @@ sanity-check that your own host integration loads and drives a plugin correctly.
 
 ## What this is
 
-By default, OpenVINO GenAI's KV cache disk offload (`SchedulerConfig::use_cache_offload`) writes
+By default, OpenVINO GenAI's KV cache offload (`SchedulerConfig::cache_offload`) writes
 evicted blocks to a plain file (`FileKVCacheStore`). This ABI lets a third party replace that
 default with its own storage backend - without linking against `openvino::genai` or any C++ code
 at all - by shipping a shared library that exports one C entry symbol.
@@ -22,9 +22,12 @@ This sample implements the **full** ABI surface and exports two providers:
   exactly what a vendor plugin needs to implement, and to prove the pattern works end-to-end with a real model.
 - `sample-persistent-file`: one file per block under `CacheOffloadConfig.kv_cache_dir` (set it to a directory), written to a
   temporary name, synced and renamed. Blocks survive the process, so blocks stored by one process (see
-  `store_completed_blocks`) can be reused by another (see `verify_chunk_store.py`). Still a reference: no eviction, no
-  locking between processes, and a store reopened with a smaller `capacity_bytes` than the blocks it already holds
-  is rejected by the host.
+  `CacheOffloadWritePolicy.WRITE_THROUGH`) can be reused by another (see `verify_chunk_store.py`). Still a reference:
+  no eviction, no locking between processes, and a store reopened with a smaller budget than the blocks it already
+  holds is rejected by the host.
+- `sample-self-evict-memory`: the in-memory store, bounded by its byte budget and evicting its own oldest blocks when
+  full. It also shows the ABI 1.3 capabilities: one instance for all cache groups and the tokens of linear attention
+  checkpoints.
 
 Key properties demonstrated by this sample:
 - **Zero dependency on genai.** The `.c` file only includes the one ABI header; the CMake target
@@ -51,22 +54,23 @@ Linux/macOS).
 
 ## Use it with a host pipeline
 
-Point `CacheOffloadConfig` at the built library. `allow_untrusted_store_plugin` must be set
-explicitly - it defaults to `false` so no third-party code is ever loaded without an explicit
-opt-in:
+Point `CacheOffloadConfig.plugin` at the built library. Setting a plugin with a `library_path` is the explicit
+opt-in to load third-party code; a plugin that cannot be loaded, fails the ABI handshake, has no such provider or cannot
+open a store makes the pipeline fail to start, instead of falling back to the default store. The SSD tier needs an
+existing `kv_cache_dir`, which this in-memory sample does not use:
 
 ```python
 import openvino_genai as ov_genai
 
 scheduler_config = ov_genai.SchedulerConfig()
-scheduler_config.use_cache_offload = True
 scheduler_config.enable_prefix_caching = True  # offloaded blocks are rediscovered via prefix hash
-scheduler_config.cache_offload_config = ov_genai.CacheOffloadConfig(
-    capacity_bytes=1 * 1024 * 1024 * 1024,
-    buffer_slots=128,
-    store_library_path="/path/to/sample_kv_cache_store_plugin.dll",
-    store_provider_name="sample-in-memory",  # this sample's only provider; optional if a module exports just one
-    allow_untrusted_store_plugin=True,
+scheduler_config.cache_offload = ov_genai.CacheOffloadConfig(
+    ssd_cache_capacity_gb=1,
+    kv_cache_dir="/path/to/an/existing/directory",
+    plugin=ov_genai.CacheStorePluginConfig(
+        library_path="/path/to/sample_kv_cache_store_plugin.dll",
+        provider_name="sample-in-memory",  # optional if a module exports just one
+    ),
 )
 ```
 
@@ -74,43 +78,41 @@ Or via a `tools/llm_bench` `--cb_config` JSON file:
 
 ```json
 {
-  "use_cache_offload": true,
   "enable_prefix_caching": true,
-  "cache_offload_config": {
-    "capacity_bytes": 1073741824,
-    "buffer_slots": 128,
-    "store_library_path": "/path/to/sample_kv_cache_store_plugin.dll",
-    "store_provider_name": "sample-in-memory",
-    "allow_untrusted_store_plugin": true
+  "cache_offload": {
+    "ssd_cache_capacity_gb": 1,
+    "kv_cache_dir": "/path/to/an/existing/directory",
+    "plugin": {
+      "library_path": "/path/to/sample_kv_cache_store_plugin.dll",
+      "provider_name": "sample-in-memory"
+    }
   }
 }
 ```
 
-If the library fails to load, fails the ABI handshake, or the named provider is not found, the
-host logs a warning and falls back to the default `FileKVCacheStore` - offload is always
-best-effort, never a hard dependency on the plugin being present.
+Once the plugin is open, a failing read or write is only a cache miss: offload stays best-effort at run time.
 
 ### Settings the host hands to the plugin
 
 `CacheOffloadConfig` carries the settings of an SSD-backed store. The host passes them to `open` as follows; the
-property keys cannot be overridden through `store_properties`:
+property keys below cannot be overridden through `plugin.properties`:
 
 | `CacheOffloadConfig` field | Reaches the plugin as |
 |---|---|
 | `kv_cache_dir` | `OvKVCacheStoreOpenOptions.directory` |
-| `capacity_bytes` or `ssd_cache_capacity_gb` (set one of them) | `OvKVCacheStoreOpenOptions.capacity_bytes` |
+| `ssd_cache_capacity_gb` | `OvKVCacheStoreOpenOptions.capacity_bytes`, in bytes (GiB * 2^30), split over the KV and the linear attention group by the host so that both reach the same number of tokens |
 | `dram_cache_capacity_gb` | property `dram_cache_capacity_gb` (decimal string, `0` for no budget) |
 | `reuse_ssd_cache` | property `reuse_ssd_cache` (`true` or `false`) |
-| `debug_log_path` | property `debug_log_path`, only when not empty |
+| `plugin.debug_log_path` | property `debug_log_path`, only when not empty |
 
 With `reuse_ssd_cache` set to `false` a plugin must purge what it holds for the opened namespace before serving
 requests; `sample-persistent-file` deletes the block files of that namespace. The in-tree file store ignores
-`dram_cache_capacity_gb`, `reuse_ssd_cache` and `debug_log_path`.
+`dram_cache_capacity_gb` and `reuse_ssd_cache`.
 
-`CacheOffloadConfig.store_timeout_ms` (default 10000) bounds how long the host waits for one asynchronous batch.
+`CacheStorePluginConfig.timeout_ms` (default 10000) bounds how long the host waits for one asynchronous batch.
 A batch that is not terminal by then is cancelled through the `cancel` entry, which belongs to the async capability:
 a provider that advertises `OV_KVCACHE_CAP_ASYNC_IO` without `cancel` is used through its synchronous entries.
-After the cancel the host waits one more `store_timeout_ms`, so a plugin has to drive a cancelled token to a terminal
+After the cancel the host waits one more `timeout_ms`, so a plugin has to drive a cancelled token to a terminal
 status (`OV_KVCACHE_ERR_CANCELLED`) within that time. A cancelled batch that ends in time is counted as a cache miss.
 If the token is still pending then, the host gives up the store: every later request to it is a miss, the buffers of
 the batch stay allocated for the rest of the process because the plugin may still use them, and the instance is

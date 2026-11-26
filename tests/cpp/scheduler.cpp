@@ -1724,40 +1724,66 @@ TEST(TestScheduler, scheduler_config_zero_cache_interval_multiplier_requires_dis
     EXPECT_EQ(scheduler_config.cache_interval_multiplier.value(), 0);
 }
 
-TEST(TestScheduler, scheduler_config_cache_offload_takes_either_capacity_unit_but_not_both) {
+TEST(TestScheduler, scheduler_config_cache_offload_validates_its_tiers_and_directory) {
     SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = true;
-    scheduler_config.use_cache_offload = true;
-    EXPECT_ANY_THROW(scheduler_config.validate());
+    EXPECT_NO_THROW(scheduler_config.validate()) << "offload is off while cache_offload is unset";
 
-    scheduler_config.cache_offload_config.ssd_cache_capacity_gb = 1;
+    scheduler_config.cache_offload = CacheOffloadConfig{};
+    EXPECT_ANY_THROW(scheduler_config.validate()) << "no tier is enabled";
+
+    scheduler_config.cache_offload->ssd_cache_capacity_gb = 1;
+    EXPECT_ANY_THROW(scheduler_config.validate()) << "an SSD tier needs a directory";
+
+    scheduler_config.cache_offload->kv_cache_dir = "/mnt/ssd/kv_cache";
     EXPECT_NO_THROW(scheduler_config.validate());
 
-    scheduler_config.cache_offload_config.capacity_bytes = 1 << 20;
-    EXPECT_ANY_THROW(scheduler_config.validate());
+    scheduler_config.cache_offload->ssd_cache_capacity_gb = 0;
+    EXPECT_ANY_THROW(scheduler_config.validate()) << "a directory without an SSD tier";
 
-    scheduler_config.cache_offload_config.ssd_cache_capacity_gb = 0;
+    scheduler_config.cache_offload->kv_cache_dir.clear();
+    scheduler_config.cache_offload->dram_cache_capacity_gb = 2;
     EXPECT_NO_THROW(scheduler_config.validate());
 
-    scheduler_config.cache_offload_config.dram_cache_capacity_gb = -1;
+    scheduler_config.cache_offload->dram_cache_capacity_gb = -1;
     EXPECT_ANY_THROW(scheduler_config.validate());
 
-    scheduler_config.cache_offload_config.dram_cache_capacity_gb = 0;
-    scheduler_config.cache_offload_config.store_timeout_ms = 0;
+    scheduler_config.cache_offload->dram_cache_capacity_gb = std::numeric_limits<double>::infinity();
     EXPECT_ANY_THROW(scheduler_config.validate());
 }
 
-TEST(TestScheduler, scheduler_config_cache_offload_is_rejected_with_sparse_attention) {
+TEST(TestScheduler, scheduler_config_cache_offload_plugin_needs_a_library_and_a_timeout) {
     SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = true;
-    scheduler_config.use_cache_offload = true;
-    scheduler_config.cache_offload_config.capacity_bytes = 1 << 20;
+    scheduler_config.cache_offload = CacheOffloadConfig{};
+    scheduler_config.cache_offload->ssd_cache_capacity_gb = 1;
+    scheduler_config.cache_offload->kv_cache_dir = "/mnt/ssd/kv_cache";
+    scheduler_config.cache_offload->plugin = CacheStorePluginConfig{};
+    EXPECT_ANY_THROW(scheduler_config.validate()) << "an empty library_path";
+
+    scheduler_config.cache_offload->plugin->library_path = "plugin.dll";
+    EXPECT_NO_THROW(scheduler_config.validate());
+
+    scheduler_config.cache_offload->plugin->timeout_ms = 0;
+    EXPECT_ANY_THROW(scheduler_config.validate());
+}
+
+TEST(TestScheduler, scheduler_config_cache_offload_is_rejected_with_sparse_attention_and_without_prefix_caching) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.cache_offload = CacheOffloadConfig{};
+    scheduler_config.cache_offload->ssd_cache_capacity_gb = 1;
+    scheduler_config.cache_offload->kv_cache_dir = "/mnt/ssd/kv_cache";
     EXPECT_NO_THROW(scheduler_config.validate());
 
     scheduler_config.use_sparse_attention = true;
     EXPECT_ANY_THROW(scheduler_config.validate());
 
-    scheduler_config.use_cache_offload = false;
+    scheduler_config.use_sparse_attention = false;
+    scheduler_config.enable_prefix_caching = false;
+    EXPECT_ANY_THROW(scheduler_config.validate());
+
+    scheduler_config.cache_offload.reset();
     EXPECT_NO_THROW(scheduler_config.validate());
 }
 

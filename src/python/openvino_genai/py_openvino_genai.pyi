@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'CacheOffloadConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniStreamerBase', 'OmniTalkerSpeechConfig', 'OmniTextSourceBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'SpeechOutputMode', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRForcedAligner', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTX2Audio', 'AutoencoderKLLTX2Video', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'CacheOffloadConfig', 'CacheOffloadWritePolicy', 'CacheStorePluginConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GGUFTokenizer', 'Gemma3TextEncoder', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTX2TextConnectors', 'LTX2VideoTransformer3DModel', 'LTX2Vocoder', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniStreamerBase', 'OmniTalkerSpeechConfig', 'OmniTextSourceBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'Qwen3VLForConditionalGeneration', 'QwenImage21Transformer2DModel', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'SpeechOutputMode', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -1238,133 +1238,144 @@ class CacheEvictionConfig:
 class CacheOffloadConfig:
     """
     
-        Configuration of the KV cache disk offload backend.
+        Configuration of the tiered KV / linear attention cache offload. Setting SchedulerConfig.cache_offload enables it.
     
         Offloaded blocks are rediscovered through the prefix-cache block hash, so offload requires
         SchedulerConfig.enable_prefix_caching and is currently not supported together with
         SchedulerConfig.use_cache_eviction, SchedulerConfig.use_sparse_attention, or models whose
-        sparse attention keeps index caches per block (QSA).
+        sparse attention keeps index caches per block (QSA). A model with linear attention layers offloads those too,
+        out of the same budget.
+    
+        The built-in host DRAM tier is not implemented yet: dram_cache_capacity_gb is only honored by a plugin that
+        advertises OV_KVCACHE_CAP_DRAM_TIER, and is otherwise ignored with a warning when an SSD tier is configured.
     
         Parameters:
-        :param kv_cache_dir: existing directory on the SSD where the offloaded KV cache files are stored, which is also the
-            directory a store plugin keeps its files under. When empty, the system temporary directory is used.
+        :param write_policy: when blocks are written to the store: ON_EVICT (default) writes the blocks that are about to be
+            overwritten in device memory, WRITE_THROUGH also writes every block right after the forward pass that completed it.
+        :type write_policy: openvino_genai.CacheOffloadWritePolicy
+    
+        :param dram_cache_capacity_gb: upper bound of the DRAM tier in GiB (fractions allowed). 0 disables the tier.
+        :type dram_cache_capacity_gb: float
+    
+        :param ssd_cache_capacity_gb: upper bound of the SSD tier in GiB (fractions allowed). 0 disables the tier.
+        :type ssd_cache_capacity_gb: float
+    
+        :param kv_cache_dir: existing, writable directory of the SSD tier. Required when ssd_cache_capacity_gb is greater than
+            0 and must be empty otherwise.
         :type kv_cache_dir: str
     
-        :param capacity_bytes: upper bound of the offload file size in bytes. The usable slot count is derived from this.
-        :type capacity_bytes: int
-    
-        :param ssd_cache_capacity_gb: upper bound of the SSD space used for the KV cache, in GB. When greater than 0 it
-            takes the place of capacity_bytes, which then has to stay 0.
-        :type ssd_cache_capacity_gb: int
-    
-        :param dram_cache_capacity_gb: upper bound of the DRAM used for the KV cache, in GB. Handed to a store plugin as the
-            dram_cache_capacity_gb property; the in-tree file store has no DRAM tier and ignores it.
-        :type dram_cache_capacity_gb: int
-    
-        :param reuse_ssd_cache: whether a store plugin loads the cache that an earlier run left in kv_cache_dir for the same model
-            (True, default) or purges it when opening the store (False). Handed to the plugin as the reuse_ssd_cache
-            property; the in-tree file store ignores it.
+        :param reuse_ssd_cache: whether the cache an earlier run left in kv_cache_dir for the same model is loaded (True,
+            default) or purged when the store is opened (False).
         :type reuse_ssd_cache: bool
     
-        :param debug_log_path: directory for the debug logs of a store plugin, handed to it as the debug_log_path property
-            when not empty.
-        :type debug_log_path: str
-    
-        :param linear_attention_capacity_bytes: upper bound of the linear attention state offload file size in bytes,
-            in a separate file from the KV cache offload file. When 0 (default), linear attention cache offload is
-            disabled even if the model has linear attention layers.
-        :type linear_attention_capacity_bytes: int
-    
-        :param buffer_slots: number of staging buffers reserved for transfers.
-        :type buffer_slots: int
-    
-        :param use_page_cache: whether the offload file may go through the OS page cache. Direct I/O is not implemented yet.
-        :type use_page_cache: bool
-    
-        :param store_library_path: path to a third-party KV cache store plugin shared library implementing the ABI
-            declared in openvino/genai/c/kv_cache_store_provider_abi.h. Empty (default) uses the in-tree file store
-            directly, with no plugin ABI involved. Ignored unless allow_untrusted_store_plugin is true.
-        :type store_library_path: str
-    
-        :param store_provider_name: provider name to select from the plugin module. Empty uses the module's first provider.
-        :type store_provider_name: str
-    
-        :param allow_untrusted_store_plugin: must be explicitly set to load store_library_path. Defaults to false so
-            that no third-party code is ever loaded without an explicit opt-in.
-        :type allow_untrusted_store_plugin: bool
-    
-        :param store_properties: plugin-specific key/value settings handed to the store plugin when it opens a store, next
-            to the ones the host always passes (block_size_bytes, device, dram_cache_capacity_gb, reuse_ssd_cache and
-            debug_log_path, which cannot be overridden).
-        :type store_properties: dict[str, str]
-    
-        :param store_completed_blocks: also store every block as soon as the forward pass that completed it has finished
-            (chunk store), instead of only when the block is about to be overwritten. A background thread writes the
-            copied block, so generation does not wait for the store. Defaults to false.
-        :type store_completed_blocks: bool
-    
-        :param store_timeout_ms: longest wait, in milliseconds, for one asynchronous batch of a store plugin. A batch that
-            is not done by then is cancelled and counted as a cache miss. Only plugins that advertise asynchronous I/O
-            can be timed out. Must be greater than 0.
-        :type store_timeout_ms: int
+        :param plugin: a third-party store plugin; None uses the in-tree store.
+        :type plugin: openvino_genai.CacheStorePluginConfig | None
     """
-    allow_untrusted_store_plugin: bool
-    debug_log_path: str
     kv_cache_dir: str
     reuse_ssd_cache: bool
-    store_completed_blocks: bool
-    store_library_path: str
-    store_provider_name: str
-    use_page_cache: bool
-    @typing.overload
-    def __init__(self) -> None:
-        ...
-    @typing.overload
-    def __init__(self, kv_cache_dir: str = '', capacity_bytes: typing.SupportsInt = 0, buffer_slots: typing.SupportsInt = 2, use_page_cache: bool = True, linear_attention_capacity_bytes: typing.SupportsInt = 0, store_library_path: str = '', store_provider_name: str = '', allow_untrusted_store_plugin: bool = False, store_completed_blocks: bool = False, store_properties: collections.abc.Mapping[str, str] = {}, ssd_cache_capacity_gb: typing.SupportsInt = 0, dram_cache_capacity_gb: typing.SupportsInt = 0, reuse_ssd_cache: bool = True, debug_log_path: str = '', store_timeout_ms: typing.SupportsInt = 10000) -> None:
+    write_policy: CacheOffloadWritePolicy
+    def __init__(self, write_policy: CacheOffloadWritePolicy = ..., dram_cache_capacity_gb: typing.SupportsFloat = 0.0, ssd_cache_capacity_gb: typing.SupportsFloat = 0.0, kv_cache_dir: str = '', reuse_ssd_cache: bool = True, plugin: openvino_genai.py_openvino_genai.CacheStorePluginConfig | None = None) -> None:
         ...
     def to_string(self) -> str:
         ...
-    @property
-    def buffer_slots(self) -> int:
-        ...
-    @buffer_slots.setter
-    def buffer_slots(self, arg0: typing.SupportsInt) -> None:
+    def validate(self) -> None:
         ...
     @property
-    def capacity_bytes(self) -> int:
-        ...
-    @capacity_bytes.setter
-    def capacity_bytes(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def dram_cache_capacity_gb(self) -> int:
+    def dram_cache_capacity_gb(self) -> float:
         ...
     @dram_cache_capacity_gb.setter
-    def dram_cache_capacity_gb(self, arg0: typing.SupportsInt) -> None:
+    def dram_cache_capacity_gb(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
-    def linear_attention_capacity_bytes(self) -> int:
+    def plugin(self) -> CacheStorePluginConfig:
         ...
-    @linear_attention_capacity_bytes.setter
-    def linear_attention_capacity_bytes(self, arg0: typing.SupportsInt) -> None:
+    @plugin.setter
+    def plugin(self, arg1: openvino_genai.py_openvino_genai.CacheStorePluginConfig | None) -> None:
         ...
     @property
-    def ssd_cache_capacity_gb(self) -> int:
+    def ssd_cache_capacity_gb(self) -> float:
         ...
     @ssd_cache_capacity_gb.setter
-    def ssd_cache_capacity_gb(self, arg0: typing.SupportsInt) -> None:
+    def ssd_cache_capacity_gb(self, arg0: typing.SupportsFloat) -> None:
+        ...
+class CacheOffloadWritePolicy:
+    """
+    Controls when blocks are written to the offload store.
+    
+    Members:
+    
+      ON_EVICT
+    
+      WRITE_THROUGH
+    """
+    ON_EVICT: typing.ClassVar[CacheOffloadWritePolicy]  # value = <CacheOffloadWritePolicy.ON_EVICT: 0>
+    WRITE_THROUGH: typing.ClassVar[CacheOffloadWritePolicy]  # value = <CacheOffloadWritePolicy.WRITE_THROUGH: 1>
+    __members__: typing.ClassVar[dict[str, CacheOffloadWritePolicy]]  # value = {'ON_EVICT': <CacheOffloadWritePolicy.ON_EVICT: 0>, 'WRITE_THROUGH': <CacheOffloadWritePolicy.WRITE_THROUGH: 1>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt) -> None:
+        ...
+    def __str__(self) -> str:
         ...
     @property
-    def store_properties(self) -> dict[str, str]:
-        ...
-    @store_properties.setter
-    def store_properties(self, arg0: collections.abc.Mapping[str, str]) -> None:
+    def name(self) -> str:
         ...
     @property
-    def store_timeout_ms(self) -> int:
+    def value(self) -> int:
         ...
-    @store_timeout_ms.setter
-    def store_timeout_ms(self, arg0: typing.SupportsInt) -> None:
+class CacheStorePluginConfig:
+    """
+    
+        A third-party KV cache store plugin. Setting CacheOffloadConfig.plugin with a non-empty library_path is the explicit
+        opt-in to load that library. A failure to load, handshake, open or purge it raises when the pipeline is created.
+    
+        Parameters:
+        :param library_path: path to the plugin shared library. Must not be empty.
+        :type library_path: str
+    
+        :param provider_name: provider to select from the plugin module. Empty uses the module's first provider.
+        :type provider_name: str
+    
+        :param debug_log_path: directory for the debug logs of the plugin. Empty: none.
+        :type debug_log_path: str
+    
+        :param timeout_ms: longest wait for one asynchronous batch of the plugin, in milliseconds. A batch that is not done
+            by then is cancelled and counted as a cache miss. Must be greater than 0.
+        :type timeout_ms: int
+    
+        :param properties: plugin-specific settings handed to the plugin when it opens a store.
+        :type properties: dict[str, str]
+    """
+    debug_log_path: str
+    library_path: str
+    provider_name: str
+    def __init__(self, library_path: str = '', provider_name: str = '', debug_log_path: str = '', timeout_ms: typing.SupportsInt = 10000, properties: collections.abc.Mapping[str, str] = {}) -> None:
+        ...
+    @property
+    def properties(self) -> dict[str, str]:
+        ...
+    @properties.setter
+    def properties(self, arg0: collections.abc.Mapping[str, str]) -> None:
+        ...
+    @property
+    def timeout_ms(self) -> int:
+        ...
+    @timeout_ms.setter
+    def timeout_ms(self, arg0: typing.SupportsInt) -> None:
         ...
 class ChatHistory:
     """
@@ -4764,12 +4775,10 @@ class SchedulerConfig:
         sparse_attention_config     Sparse attention configuration struct.
     """
     cache_eviction_config: CacheEvictionConfig
-    cache_offload_config: CacheOffloadConfig
     dynamic_split_fuse: bool
     enable_prefix_caching: bool
     sparse_attention_config: SparseAttentionConfig
     use_cache_eviction: bool
-    use_cache_offload: bool
     use_sparse_attention: bool
     def __init__(self) -> None:
         ...
@@ -4780,6 +4789,12 @@ class SchedulerConfig:
         ...
     @cache_interval_multiplier.setter
     def cache_interval_multiplier(self, arg0: typing.SupportsInt | None) -> None:
+        ...
+    @property
+    def cache_offload(self) -> CacheOffloadConfig:
+        ...
+    @cache_offload.setter
+    def cache_offload(self, arg1: openvino_genai.py_openvino_genai.CacheOffloadConfig | None) -> None:
         ...
     @property
     def cache_size(self) -> int:

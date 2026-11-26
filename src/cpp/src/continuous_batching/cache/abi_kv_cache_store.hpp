@@ -9,7 +9,7 @@
 #include <string>
 
 #include "continuous_batching/cache/kv_cache_store.hpp"
-#include "openvino/genai/cache_offload.hpp"
+#include "continuous_batching/cache/offload_settings.hpp"
 #include "openvino/genai/c/kv_cache_store_provider_abi.h"
 
 namespace ov::genai {
@@ -63,7 +63,7 @@ public:
                     size_t block_size,
                     size_t capacity_blocks,
                     StoreInfo info = StoreInfo{0, std::nullopt},
-                    std::uint32_t io_timeout_ms = CacheOffloadConfig::DEFAULT_STORE_TIMEOUT_MS);
+                    std::uint32_t io_timeout_ms = OffloadSettings::DEFAULT_STORE_TIMEOUT_MS);
 
     /// A view of @p group over an instance that other views share.
     AbiKVCacheStore(std::shared_ptr<AbiStoreInstance> instance,
@@ -71,7 +71,7 @@ public:
                     size_t block_size,
                     size_t capacity_blocks,
                     StoreInfo info,
-                    std::uint32_t io_timeout_ms = CacheOffloadConfig::DEFAULT_STORE_TIMEOUT_MS);
+                    std::uint32_t io_timeout_ms = OffloadSettings::DEFAULT_STORE_TIMEOUT_MS);
     ~AbiKVCacheStore() override = default;
 
     AbiKVCacheStore(const AbiKVCacheStore&) = delete;

@@ -87,7 +87,7 @@ bool KVCacheOffloadManager::is_supported_device(const std::string& device) {
 }
 
 KVCacheOffloadManager::KVCacheOffloadManager(const KVCacheDiskLayout& layout,
-                                             const CacheOffloadConfig& config,
+                                             const OffloadSettings& config,
                                              const std::string& device)
     : m_layout(layout) {
     OPENVINO_ASSERT(is_supported_device(device),

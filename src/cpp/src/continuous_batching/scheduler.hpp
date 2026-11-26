@@ -486,7 +486,7 @@ public:
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group,
                                size_t max_processed_tokens = std::numeric_limits<size_t>::max()) {
-        if (m_config.use_cache_offload && m_config.num_kv_blocks == 0 && m_config.cache_size == 0) {
+        if (m_config.cache_offload.has_value() && m_config.num_kv_blocks == 0 && m_config.cache_size == 0) {
             // Blocks are read back into free cache blocks, which a dynamically sized cache only has once schedule()
             // has sized it, so a request arriving first has to size it here and keep it growing afterwards.
             // schedule() runs under the execution mutex, which sizing the cache and the flag have to be too.

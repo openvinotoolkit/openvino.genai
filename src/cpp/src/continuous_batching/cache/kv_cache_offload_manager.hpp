@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "continuous_batching/cache/kv_cache_disk_layout.hpp"
-#include "openvino/genai/cache_offload.hpp"
+#include "continuous_batching/cache/offload_settings.hpp"
 
 namespace ov::genai {
 
@@ -26,7 +26,7 @@ namespace ov::genai {
 class KVCacheOffloadManager {
 public:
     KVCacheOffloadManager(const KVCacheDiskLayout& layout,
-                          const CacheOffloadConfig& config,
+                          const OffloadSettings& config,
                           const std::string& device);
     ~KVCacheOffloadManager();
 

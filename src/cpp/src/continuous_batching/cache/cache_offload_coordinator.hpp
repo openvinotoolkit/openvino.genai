@@ -19,7 +19,7 @@
 #include "continuous_batching/cache/linear_attention_offload_cache.hpp"
 #include "continuous_batching/cache/store_registry.hpp"
 #include "logger.hpp"
-#include "openvino/genai/cache_offload.hpp"
+#include "continuous_batching/cache/offload_settings.hpp"
 
 namespace ov::genai {
 
@@ -66,7 +66,7 @@ public:
                 BlockManager& kv_block_manager,
                 LinearAttentionCacheManager* la_manager,
                 BlockManager* la_block_manager,
-                const CacheOffloadConfig& offload_config,
+                const OffloadSettings& offload_config,
                 const std::string& device) {
         OPENVINO_ASSERT((la_manager == nullptr) == (la_block_manager == nullptr),
                         "The linear attention cache manager and its block manager go together");

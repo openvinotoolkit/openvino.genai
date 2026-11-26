@@ -51,8 +51,8 @@ struct LaCacheFixture {
     }
 };
 
-CacheOffloadConfig make_offload_config(const LaCacheFixture& fixture, size_t num_slots) {
-    CacheOffloadConfig config;
+OffloadSettings make_offload_config(const LaCacheFixture& fixture, size_t num_slots) {
+    OffloadSettings config;
     config.capacity_bytes = fixture.cache_manager->get_block_layout().get_slot_size() * num_slots;
     return config;
 }

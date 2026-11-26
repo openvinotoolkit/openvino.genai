@@ -6,9 +6,9 @@ This guide walks you through validating your own compiled KV cache store plugin 
 library implementing [`kv_cache_store_provider_abi.h`](../../../src/cpp/include/openvino/genai/c/kv_cache_store_provider_abi.h))
 against the two scenarios this ABI is used for in OpenVINO GenAI:
 
-1. **Opportunistic KV cache offload** (`SchedulerConfig::use_cache_offload`) - blocks evicted during
+1. **Opportunistic KV cache offload** (`SchedulerConfig::cache_offload`) - blocks evicted during
    normal generation are written through your plugin and rediscovered later via prefix-cache hash.
-2. **Reuse after a restart** (`CacheOffloadConfig::store_completed_blocks`) - every completed block is also
+2. **Reuse after a restart** (`CacheOffloadWritePolicy::WRITE_THROUGH`) - every completed block is also
    written through your plugin right after the forward pass that completed it, so a new pipeline or process that opens
    the same persistent store finds the blocks of an earlier conversation as a prefix-cache hit and continues it
    without re-running prefill. No extra API is involved: the new pipeline just gets the history with `add_request()`.
@@ -25,11 +25,11 @@ same `num_kv_blocks` lands differently - the GPU value used here is called out i
 - Your compiled plugin library (`.dll`/`.so`), built against `kv_cache_store_provider_abi.h`.
 - A text-generation model in OpenVINO IR format. This guide uses Qwen3.5-9B, a hybrid model, so
   both the KV and the linear-attention payloads go through your plugin. For a model without linear
-  attention, `linear_attention_capacity_bytes` is simply ignored.
+  attention, the budget is simply used by the KV cache alone.
 
 ## Scenario 1: Opportunistic KV cache offload
 
-Point `CacheOffloadConfig` at your plugin and make the device cache too small to keep an earlier
+Point `CacheOffloadConfig.plugin` at your plugin and make the device cache too small to keep an earlier
 prompt around, so a repeated prompt can only be served by reading its blocks back from your plugin.
 [`perf_prompts.jsonl`](perf_prompts.jsonl) holds three requests: a long prompt `P0` (3110 tokens
 with Qwen3.5's tokenizer), a differently-worded filler `P1` (3231 tokens) that pushes `P0`'s blocks
@@ -38,7 +38,7 @@ out of the device cache, then `P0` again as `P2`. It is run twice and the two ru
 - [`perf_baseline_cb_config.json`](perf_baseline_cb_config.json): no offload, so `P2` is always a
   full recompute.
 - [`perf_offload_cb_config.json`](perf_offload_cb_config.json): offload through your plugin, so `P2`
-  should be restored from it. Replace `store_library_path` with your plugin's path first:
+  should be restored from it. Replace `plugin.library_path` with your plugin's path first and `kv_cache_dir` with an existing directory:
 
 ```json
 {
@@ -47,14 +47,13 @@ out of the device cache, then `P0` again as `P2`. It is run twice and the two ru
   "max_num_seqs": 1,
   "dynamic_split_fuse": true,
   "enable_prefix_caching": true,
-  "use_cache_offload": true,
-  "cache_offload_config": {
-    "capacity_bytes": 1073741824,
-    "linear_attention_capacity_bytes": 4294967296,
-    "buffer_slots": 256,
-    "store_library_path": "/path/to/your_plugin.dll",
-    "store_provider_name": "your-provider-name",
-    "allow_untrusted_store_plugin": true
+  "cache_offload": {
+    "ssd_cache_capacity_gb": 5,
+    "kv_cache_dir": "/path/to/an/existing/directory",
+    "plugin": {
+      "library_path": "/path/to/your_plugin.dll",
+      "provider_name": "your-provider-name"
+    }
   }
 }
 ```
@@ -63,11 +62,12 @@ out of the device cache, then `P0` again as `P2`. It is run twice and the two ru
   **On GPU use `220`** in both configs: GPU blocks hold fewer tokens, and 120 cannot even hold one
   prompt (the request fails with `Request 0 was dropped by the scheduler because it did not fit in
   the available cache budget`).
-- `capacity_bytes` sizes the KV store and `linear_attention_capacity_bytes` sizes the
-  linear-attention store. **Both must be set for a hybrid model**: without the second one only KV
-  blocks are offloaded, a linear-attention state is never found again, and the repeated prompt is
-  recomputed (still correct, just no speedup). For Qwen3.5-9B a linear-attention block is about
-  51 MB, so `4294967296` gives 80 of them.
+- `ssd_cache_capacity_gb` is one budget for all cache groups (GiB, fractions allowed). For a hybrid model the host
+  splits it over the KV and the linear-attention group so that both cover the same number of tokens; a model with
+  linear attention layers always offloads them too, since without their states a repeated prompt is recomputed (still
+  correct, just no speedup). For Qwen3.5-9B a linear-attention block is about 51 MB, so 5 GiB hold the blocks of a
+  few thousand tokens of both groups. A budget that cannot hold one block of every group makes the pipeline fail to
+  start.
 
 Run both with `tools/llm_bench/benchmark.py`. Qwen3.5 is natively multimodal, so use
 `--task visual_text_gen`; `--task text_gen` feeds pre-tokenized input and fails on this model with
@@ -85,7 +85,7 @@ python benchmark.py -m <model_dir> -d CPU --task visual_text_gen \
 python benchmark.py -m <model_dir> -d CPU --task visual_text_gen \
     -pf ../../samples/c/kv_cache_store_plugin/perf_prompts.jsonl -pi 0 1 2 -n 0 -ic 1 \
     --disable_prompt_permutation \
-    --cb_config ../../samples/c/kv_cache_store_plugin/perf_offload_cb_config.json  # edit store_library_path first
+    --cb_config ../../samples/c/kv_cache_store_plugin/perf_offload_cb_config.json  # edit plugin.library_path and kv_cache_dir first
 ```
 
 **What a pass looks like:**
@@ -129,7 +129,7 @@ through your plugin will show no speedup on a hybrid model.
 ### Storing blocks right after each forward pass (chunk store)
 
 By default a block reaches your plugin only when the device cache is about to overwrite it. With
-`cache_offload_config.store_completed_blocks: true` (off by default) every block is also stored as soon as the
+`write_policy: WRITE_THROUGH` (the default, `ON_EVICT`, only writes evicted blocks) every block is also stored as soon as the
 forward pass that completed it has finished: the pipeline thread copies the block out and the offload writer
 thread writes it, so generation does not wait for your plugin. The block stays in the device cache as before.
 This makes blocks reusable from the store without having been evicted first, for example by another process
@@ -162,15 +162,15 @@ five runs; the prompt is the sample sentence repeated, 300 times for Qwen3-8B an
 The timings vary a lot from run to run on the GPU: over the five runs the baseline ranged from 2392 to 3435 ms,
 `read` from 938 to 1968 ms, and the speedup from 1.5x to 3.7x. On CPU the `write` run was not measurably slower than
 the baseline. On the GPU it was 19% to 31% slower in every pair of runs (about 0.5 to 1 s for this prompt), so
-turning `store_completed_blocks` on has a visible cost on the first request of a long prefill there. The copy of each
+turning `WRITE_THROUGH` on has a visible cost on the first request of a long prefill there. The copy of each
 finished block runs on the pipeline thread, so a long prefill pays for copying its blocks right after the pass
 (0.23 s of copying for the 397 KV blocks of the `llm_bench` run below on GPU); the writing itself happens on the
-writer thread. Blocks that do not fit into the writer's `buffer_slots` queue are skipped and only cost recomputation
+writer thread. Blocks that do not fit into the writer's queue are skipped and only cost recomputation
 later.
 
-`store_completed_blocks` also works together with opportunistic offload (Qwen3.5-9B, GPU, the in-memory provider):
+`WRITE_THROUGH` also works together with opportunistic offload (Qwen3.5-9B, GPU, the in-memory provider):
 
-- `llm_bench`, `num_kv_blocks` 220, `"store_completed_blocks": true` in `cache_offload_config`:
+- `llm_bench`, `num_kv_blocks` 220, `"write_policy": "WRITE_THROUGH"` in `cache_offload`:
   P0/P1/P2 give the same output hashes as without the flag, and P2 (the P0 prompt again after P1 evicted it) takes
   773 ms against 3078 ms for P0 (194 KV blocks and 1 linear-attention block warmed from the store; 397 KV blocks
   and 4 linear-attention blocks stored over the run).
@@ -188,29 +188,28 @@ capacity and checks that the store's `stats()` stays within it. Your plugin must
 the namespaces apart: if it puts KV and linear-attention blocks in one store, `stats()` reports
 more blocks than the smaller store's capacity and the run fails with `Check 'stats.blocks <=
 m_capacity_blocks' failed ... ABI store reported more used blocks than its capacity`. Also make
-sure `capacity_bytes` is large enough for your plugin's real per-block storage overhead, for the
+sure the budget (`ssd_cache_capacity_gb`) is large enough for your plugin's real per-block storage overhead, for the
 same reason.
 
 #### Plugin settings and plugin-side eviction
 
-- `CacheOffloadConfig.store_properties` (a string-to-string map; `"store_properties": {...}` in the `llm_bench`
+- `CacheStorePluginConfig.properties` (a string-to-string map; `"properties": {...}` under `plugin` in the `llm_bench`
   cache offload JSON) reaches the plugin in `OvKVCacheStoreOpenOptions.properties`, after the entries the host
   always adds: `block_size_bytes`, `device`, `dram_cache_capacity_gb` and `reuse_ssd_cache`, plus `debug_log_path`
-  when `CacheOffloadConfig.debug_log_path` is set. The host ignores attempts to override those. The host
+  when `CacheStorePluginConfig.debug_log_path` is set. The host ignores attempts to override those. The host
   does not interpret the rest. The sample plugin logs every extra property it receives when it opens a store.
 - `CacheOffloadConfig.kv_cache_dir` reaches the plugin as `OvKVCacheStoreOpenOptions.directory`, and
-  `capacity_bytes` (or `ssd_cache_capacity_gb` converted to bytes; set only one of them) as
-  `OvKVCacheStoreOpenOptions.capacity_bytes`. `dram_cache_capacity_gb` is a decimal string, `0` meaning no DRAM budget.
+  `ssd_cache_capacity_gb` converted to bytes as `OvKVCacheStoreOpenOptions.capacity_bytes`. `dram_cache_capacity_gb` is a decimal string, `0` meaning no DRAM budget.
 - `reuse_ssd_cache` is `true` by default. With `false` the plugin has to purge what it holds for the opened namespace
   (one per model and cache kind) before serving requests; `sample-persistent-file` deletes that namespace's block
   files, so a restart finds nothing.
 - A provider that advertises `OV_KVCACHE_CAP_SELF_EVICT` owns eviction. The host then does not drop blocks to free
-  capacity and does not count blocks against `capacity_bytes`; it asks the plugin (`has_blocks`, reads) whenever
+  capacity and does not count blocks against the budget; it asks the plugin (`has_blocks`, reads) whenever
   it needs to know whether a block is still there and treats a block that disappeared as a miss, which only
   costs recomputation.
-  The sample's `sample-self-evict-memory` provider shows the contract: it keeps `capacity_bytes / block_bytes`
-  blocks and evicts the oldest one when a write finds it full.
-- The host writes the blocks queued by the writer thread in one `write_blocks` call (at most `buffer_slots` per
+  The sample's `sample-self-evict-memory` provider shows the contract: it keeps `capacity_bytes` bytes
+  of blocks and evicts the oldest ones when a write finds it full.
+- The host writes the blocks queued by the writer thread in one `write_blocks` call (a bounded number per
   call), after probing each block's chain from block 0.
 - A prefix is restored in one or more `read_blocks` rounds: the host holds at most 256 MiB of read-ahead blocks on
   the host at a time, copies them to the device cache and reads the next round. A long prefix is therefore read in
@@ -227,8 +226,7 @@ same reason.
 - A provider that advertises `OV_KVCACHE_CAP_MULTI_GROUP` (ABI 1.3, and `OV_KVCACHE_CAP_SELF_EVICT` with it) is opened
   **once** for the whole pipeline: `OvKVCacheStoreOpenOptions.groups` lists `kv` and, for a hybrid model, `la` with
   their block sizes, `OvKVCacheBlockKey::group` tells them apart, the namespace identifies the model and cache layout
-  only, and `capacity_bytes` is the budget of both groups together (`capacity_bytes` plus
-  `linear_attention_capacity_bytes`). This lets a plugin keep the linear-attention checkpoints and the KV blocks of a
+  only, and `capacity_bytes` is the budget of both groups together (`ssd_cache_capacity_gb`). This lets a plugin keep the linear-attention checkpoints and the KV blocks of a
   request aligned itself. Without the bit the host opens one instance per group, as before.
 - A provider that advertises `OV_KVCACHE_CAP_PREFIX_TOKENS` (ABI 1.3) gets `announce_prefix_tokens` before the host
   probes or writes linear-attention checkpoints: for each checkpoint whose tokens the host still knows, the whole
@@ -237,26 +235,26 @@ same reason.
   only for the `la` group, and the witness stays a digest. The sample `sample-self-evict-memory` provider advertises
   both capabilities and prints what it is told.
 
-Checked on Qwen3.5-9B / GPU with `sample-self-evict-memory` (and `"store_properties": {"tier": "ssd-test",
-"policy": "lru"}`, both of which the plugin logged on open) and `"store_completed_blocks": true`: with room for
+Checked on Qwen3.5-9B / GPU with `sample-self-evict-memory` (and `"properties": {"tier": "ssd-test",
+"policy": "lru"}` under `plugin`, both of which the plugin logged on open) and `"write_policy": "WRITE_THROUGH"`: with room for
 every block the `llm_bench` P2 run takes 646 ms against 2446 ms for P0 with identical output hashes; with a store
-of 250 blocks (`capacity_bytes` 41472000, 165888 bytes per KV block) the plugin evicts the oldest blocks, which
+of 250 blocks (a budget of 41472000 bytes for the KV group, 165888 bytes per KV block; with the pooled budget of ABI 1.3 set `ssd_cache_capacity_gb` so that both groups together stay that small) the plugin evicts the oldest blocks, which
 are the start of P0's prefix, so nothing is warmed for P2 (2369 ms), the output is still identical and the host
-reports no failed store. Without `store_completed_blocks` only the blocks the device cache overwrites reach the
+reports no failed store. With `ON_EVICT` only the blocks the device cache overwrites reach the
 store, about 195 of them, so the same 250-block store still holds all of P0's prefix and P2 is warmed (648 ms).
 Which block a plugin evicts first decides how much of a prefix survives, which is why the choice belongs to the
 plugin.
 
 ## Scenario 2: Reuse after a restart
 
-There is no save or restore call. With `cache_offload_config.store_completed_blocks` on, every completed KV block (and,
+There is no save or restore call. With `write_policy` `WRITE_THROUGH`, every completed KV block (and,
 for a hybrid model, every linear-attention checkpoint) reaches your plugin right after the forward pass that
 completed it. A pipeline created later against the same persistent stores finds those blocks like any other
 prefix-cache hit: `add_request()` with the history so far (the prompt plus the tokens generated earlier) reads them
 back through your plugin and recomputes only what is missing. Consequences for your plugin and configuration:
 
-- The pipeline must be created with `enable_prefix_caching`, `use_cache_offload` and `store_completed_blocks`, with
-  your plugin in `SchedulerConfig.cache_offload_config`. The new pipeline has to open the same stores: the same
+- The pipeline must be created with `enable_prefix_caching` and `SchedulerConfig.cache_offload` with the `WRITE_THROUGH`
+  write policy and your plugin. The new pipeline has to open the same stores: the same
   plugin and properties, and the same model, device and cache layout, because the namespace carries a digest of
   them and another model never sees these blocks.
 - The plugin must keep blocks across the process. A plugin that does not, such as the sample's `sample-in-memory`
@@ -266,12 +264,12 @@ back through your plugin and recomputes only what is missing. Consequences for y
   a hybrid model so is everything after the last linear-attention checkpoint, which is one checkpoint interval at
   most (see Scenario 1 for its size).
 - Nothing guarantees a block is still there: the store may be full, a block may not have fit the writer's
-  `buffer_slots` queue, or the plugin may evict it. The host then recomputes that part and the output stays the same;
+  queue, or the plugin may evict it. The host then recomputes that part and the output stays the same;
   there is no error. Blocks still queued when a process is killed are lost, while a pipeline that ends normally
   writes every queued block before it goes away.
-- Stored blocks count against `capacity_bytes` / `linear_attention_capacity_bytes` like any other offloaded block.
-  For Qwen3.5-9B a linear-attention checkpoint is about 51 MB, so size the linear-attention store for the number of
-  checkpoints you want to keep.
+- Stored blocks count against the budget (`ssd_cache_capacity_gb`) like any other offloaded block.
+  For Qwen3.5-9B a linear-attention checkpoint is about 51 MB, so size the budget for the number of checkpoints you
+  want to keep.
 
 Validating Scenario 1 does not guarantee Scenario 2 works (it also needs durable writes that survive the process), so
 run [`verify_chunk_store.py`](verify_chunk_store.py) from the chunk store section above against your plugin: its
@@ -295,7 +293,7 @@ The host uses the optional capabilities your provider advertises:
 
 - `OV_KVCACHE_CAP_ASYNC_IO` (`read_blocks_async`/`write_blocks_async`/`wait`): when it is set and the vtable
   carries those entries, every read and write goes through them. The host submits one batch, then calls `wait`
-  with `CacheOffloadConfig.store_timeout_ms` (default 10000 ms). If the status is still `PENDING` after that, the host
+  with `CacheStorePluginConfig.timeout_ms` (default 10000 ms). If the status is still `PENDING` after that, the host
   calls `cancel` and waits once more for the same time, and the batch counts as a cache miss. A plugin that does not
   reach a terminal status within that second wait is given up: later requests to its store are misses and the store is
   neither flushed nor destroyed. A provider without a `cancel` entry is used through the synchronous entries. It does

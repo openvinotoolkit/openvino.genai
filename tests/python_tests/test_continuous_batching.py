@@ -18,6 +18,8 @@ import openvino as ov
 import openvino.properties.hint as hints
 from openvino_genai import (
     CacheOffloadConfig,
+    CacheOffloadWritePolicy,
+    CacheStorePluginConfig,
     ContinuousBatchingPipeline,
     LLMPipeline,
     GenerationConfig,
@@ -194,93 +196,95 @@ def test_generation_handle_echo_only_publishes_output_and_finished_status(
 def test_cache_offload_config_defaults():
     config = CacheOffloadConfig()
 
-    assert config.kv_cache_dir == ""
-    assert config.capacity_bytes == 0
-    assert config.ssd_cache_capacity_gb == 0
+    assert config.write_policy == CacheOffloadWritePolicy.ON_EVICT
     assert config.dram_cache_capacity_gb == 0
+    assert config.ssd_cache_capacity_gb == 0
+    assert config.kv_cache_dir == ""
     assert config.reuse_ssd_cache is True
-    assert config.debug_log_path == ""
-    assert config.store_timeout_ms == 10000
-    assert config.linear_attention_capacity_bytes == 0
-    assert config.buffer_slots == 2
-    assert config.use_page_cache is True
-    assert config.store_library_path == ""
-    assert config.store_provider_name == ""
-    assert config.allow_untrusted_store_plugin is False
-    assert config.store_properties == {}
-    assert config.store_completed_blocks is False
+    assert config.plugin is None
 
-    scheduler_config = SchedulerConfig()
-    assert scheduler_config.use_cache_offload is False
-    assert scheduler_config.cache_offload_config.capacity_bytes == 0
+    plugin = CacheStorePluginConfig()
+    assert plugin.library_path == ""
+    assert plugin.provider_name == ""
+    assert plugin.debug_log_path == ""
+    assert plugin.timeout_ms == 10000
+    assert plugin.properties == {}
+
+    assert SchedulerConfig().cache_offload is None
 
 
 def test_cache_offload_config_keyword_construction_and_assignment(tmp_path: Path):
     config = CacheOffloadConfig(
-        kv_cache_dir=str(tmp_path),
-        capacity_bytes=1 << 20,
-        buffer_slots=4,
-        linear_attention_capacity_bytes=2 << 20,
-        store_completed_blocks=True,
-        store_properties={"tier": "ssd"},
-        ssd_cache_capacity_gb=8,
+        write_policy=CacheOffloadWritePolicy.WRITE_THROUGH,
         dram_cache_capacity_gb=2,
+        ssd_cache_capacity_gb=0.5,
+        kv_cache_dir=str(tmp_path),
         reuse_ssd_cache=False,
-        debug_log_path=str(tmp_path / "logs"),
-        store_timeout_ms=2500,
+        plugin=CacheStorePluginConfig(
+            library_path="plugin.dll",
+            provider_name="provider",
+            debug_log_path=str(tmp_path / "logs"),
+            timeout_ms=2500,
+            properties={"tier": "ssd"},
+        ),
     )
 
-    assert config.kv_cache_dir == str(tmp_path)
-    assert config.capacity_bytes == 1 << 20
-    assert config.ssd_cache_capacity_gb == 8
+    assert config.write_policy == CacheOffloadWritePolicy.WRITE_THROUGH
     assert config.dram_cache_capacity_gb == 2
+    assert config.ssd_cache_capacity_gb == 0.5
+    assert config.kv_cache_dir == str(tmp_path)
     assert config.reuse_ssd_cache is False
-    assert config.debug_log_path == str(tmp_path / "logs")
-    assert config.store_timeout_ms == 2500
-    assert config.buffer_slots == 4
-    assert config.linear_attention_capacity_bytes == 2 << 20
-    assert config.store_completed_blocks is True
-    assert config.store_properties == {"tier": "ssd"}
+    assert config.plugin.library_path == "plugin.dll"
+    assert config.plugin.provider_name == "provider"
+    assert config.plugin.debug_log_path == str(tmp_path / "logs")
+    assert config.plugin.timeout_ms == 2500
+    assert config.plugin.properties == {"tier": "ssd"}
+    config.validate()
+    assert "ssd_cache_capacity_gb: 0.5" in config.to_string()
+    assert "WRITE_THROUGH" in config.to_string()
 
-    config.capacity_bytes = 4 << 20
-    config.allow_untrusted_store_plugin = True
-    config.store_library_path = "plugin.dll"
     scheduler_config = SchedulerConfig()
-    scheduler_config.use_cache_offload = True
-    scheduler_config.cache_offload_config = config
+    scheduler_config.cache_offload = config
+    assert scheduler_config.cache_offload.ssd_cache_capacity_gb == 0.5
+    assert scheduler_config.cache_offload.plugin.library_path == "plugin.dll"
 
-    assert scheduler_config.use_cache_offload is True
-    assert scheduler_config.cache_offload_config.capacity_bytes == 4 << 20
-    assert scheduler_config.cache_offload_config.allow_untrusted_store_plugin is True
-    assert scheduler_config.cache_offload_config.store_library_path == "plugin.dll"
-    assert "capacity_bytes: 4194304" in config.to_string()
-    assert "ssd_cache_capacity_gb: 8" in config.to_string()
+    scheduler_config.cache_offload = None
+    assert scheduler_config.cache_offload is None
+
+
+def test_cache_offload_members_are_edited_in_place(tmp_path: Path):
+    scheduler_config = SchedulerConfig()
+    scheduler_config.cache_offload = CacheOffloadConfig(ssd_cache_capacity_gb=1, kv_cache_dir=str(tmp_path))
+
+    # The getters return references to the members, so an assignment through them changes the config.
+    scheduler_config.cache_offload.ssd_cache_capacity_gb = 8
+    assert scheduler_config.cache_offload.ssd_cache_capacity_gb == 8
+
+    scheduler_config.cache_offload.plugin = CacheStorePluginConfig(library_path="plugin.dll")
+    scheduler_config.cache_offload.plugin.timeout_ms = 500
+    assert scheduler_config.cache_offload.plugin.timeout_ms == 500
+
+    scheduler_config.cache_offload.plugin = None
+    assert scheduler_config.cache_offload.plugin is None
 
 
 @pytest.mark.parametrize(
     "scheduler_params",
     [
-        pytest.param({"enable_prefix_caching": False, "capacity_bytes": 1 << 20}, id="without_prefix_caching"),
-        pytest.param({"enable_prefix_caching": True, "capacity_bytes": 0}, id="without_capacity"),
-        pytest.param(
-            {"enable_prefix_caching": True, "capacity_bytes": 1 << 20, "ssd_cache_capacity_gb": 1},
-            id="both_capacity_units",
-        ),
-        pytest.param(
-            {"enable_prefix_caching": True, "capacity_bytes": 0, "ssd_cache_capacity_gb": -1},
-            id="negative_ssd_capacity",
-        ),
+        pytest.param({"enable_prefix_caching": False, "ssd_cache_capacity_gb": 1, "use_dir": True}, id="without_prefix_caching"),
+        pytest.param({"enable_prefix_caching": True, "ssd_cache_capacity_gb": 0, "use_dir": False}, id="without_a_tier"),
+        pytest.param({"enable_prefix_caching": True, "ssd_cache_capacity_gb": 1, "use_dir": False}, id="without_a_directory"),
+        pytest.param({"enable_prefix_caching": True, "ssd_cache_capacity_gb": -1, "use_dir": True}, id="negative_ssd_capacity"),
     ],
 )
 def test_cache_offload_rejects_invalid_scheduler_config(
-    model_facebook_opt_125m: OVConvertedModelSchema, scheduler_params: dict
+    model_facebook_opt_125m: OVConvertedModelSchema, scheduler_params: dict, tmp_path: Path
 ):
     scheduler_config = SchedulerConfig()
     scheduler_config.enable_prefix_caching = scheduler_params["enable_prefix_caching"]
-    scheduler_config.use_cache_offload = True
-    scheduler_config.cache_offload_config = CacheOffloadConfig(
-        capacity_bytes=scheduler_params["capacity_bytes"],
-        ssd_cache_capacity_gb=scheduler_params.get("ssd_cache_capacity_gb", 0),
+    scheduler_config.cache_offload = CacheOffloadConfig(
+        ssd_cache_capacity_gb=scheduler_params["ssd_cache_capacity_gb"],
+        kv_cache_dir=str(tmp_path) if scheduler_params["use_dir"] else "",
     )
 
     with pytest.raises(RuntimeError):
@@ -299,10 +303,7 @@ def test_cache_offload_restores_an_evicted_prefix_with_the_same_output(
         # Small enough that the filler request below displaces the first prompt from the device cache.
         scheduler_config.num_kv_blocks = 8
         if use_offload:
-            scheduler_config.use_cache_offload = True
-            scheduler_config.cache_offload_config = CacheOffloadConfig(
-                kv_cache_dir=str(tmp_path), capacity_bytes=256 << 20, buffer_slots=16
-            )
+            scheduler_config.cache_offload = CacheOffloadConfig(ssd_cache_capacity_gb=0.25, kv_cache_dir=str(tmp_path))
         return scheduler_config
 
     prompt = "The quick brown fox jumps over the lazy dog. " * 12
