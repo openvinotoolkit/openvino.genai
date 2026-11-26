@@ -336,6 +336,41 @@ def test_generate_frames_with_frames_models(genai_pipe, images):
     assert [stage for stage, _ in frames_pipe.get_perf_metrics().infer_ms].count("vae_dec") == 1
 
 
+def test_generate_frames_labels_match_optimum(genai_pipe, optimum_model, processor, images):
+    """Frame labels as the original OpenVINO BAGEL world model demo, with text and image guidance."""
+    frames = [np.ascontiguousarray(i[:20, :20]) for i in images]
+    labels = ["Frame 1 (t-2):", "Frame 2 (t-1):", "Frame 3 (t, current):"]
+    config = ov_genai.BagelImageGenerationConfig()
+    config.num_inference_steps = NUM_STEPS
+    config.seed = 3
+    config.frame_labels = labels
+    genai_frames = genai_pipe.generate_frames([ov.Tensor(f[None]) for f in frames], EDIT_PROMPT, 2, config).data
+
+    inputs = processor(
+        text=EDIT_PROMPT, images=[Image.fromarray(f) for f in frames], generation_mode="image", return_tensors="pt"
+    )
+    label_ids = [processor(text=label, generation_mode="image", return_tensors="pt")["input_ids"] for label in labels]
+    optimum_frames = optimum_model.generate_frames(
+        **inputs,
+        num_frames=2,
+        num_inference_steps=NUM_STEPS,
+        guidance_scale=config.cfg_text_scale,
+        image_guidance_scale=config.cfg_img_scale,
+        seed=config.seed,
+        frame_labels=label_ids,
+    )
+    for k, (genai_frame, frame) in enumerate(zip(genai_frames, optimum_frames)):
+        diff = np.abs(genai_frame.astype(np.int32) - to_uint8(frame[None]).astype(np.int32))
+        assert diff.max() <= 1, f"frame {k}: max abs pixel diff {diff.max()}"
+
+    config.frame_labels = []
+    unlabeled = genai_pipe.generate_frames([ov.Tensor(f[None]) for f in frames], EDIT_PROMPT, 2, config).data
+    assert not np.array_equal(unlabeled, genai_frames)
+    config.frame_labels = labels[:2]
+    with pytest.raises(RuntimeError, match="one label per input frame"):
+        genai_pipe.generate_frames([ov.Tensor(f[None]) for f in frames], EDIT_PROMPT, 2, config)
+
+
 def test_generate_frames_rejects_invalid_arguments(genai_pipe, image):
     with pytest.raises(RuntimeError, match="at least one input frame"):
         genai_pipe.generate_frames([], EDIT_PROMPT, 1)

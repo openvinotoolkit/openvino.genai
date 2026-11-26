@@ -35,7 +35,11 @@ void init_bagel_pipeline(py::module_& m) {
                        "Guidance is applied for timesteps t with low < t <= high; defaults to (0.4, 1.0] for "
                        "text-to-image and (0.0, 1.0] for image editing.")
         .def_readwrite("cfg_renorm_min", &BagelImageGenerationConfig::cfg_renorm_min)
-        .def_readwrite("seed", &BagelImageGenerationConfig::seed, "Matches numpy.random.RandomState(seed).randn.");
+        .def_readwrite("seed", &BagelImageGenerationConfig::seed, "Matches numpy.random.RandomState(seed).randn.")
+        .def_readwrite("frame_labels",
+                       &BagelImageGenerationConfig::frame_labels,
+                       "generate_frames only: one text per input frame, prefilled before the frame of that window "
+                       "slot, e.g. ['Frame 1 (t-2):', 'Frame 2 (t-1):', 'Frame 3 (t, current):'].");
 
     py::class_<BagelPerfMetrics>(m, "BagelPerfMetrics", "BAGEL compile and per-stage inference times.")
         .def_readonly("compile_ms",

@@ -32,6 +32,9 @@ struct BagelImageGenerationConfig {
     float cfg_renorm_min = 0.0f;
     // Initial noise matches numpy.random.RandomState(seed).randn
     uint32_t seed = 0;
+    // generate_frames only: one text per input frame, prefilled before the frame of that window slot, e.g.
+    // {"Frame 1 (t-2):", "Frame 2 (t-1):", "Frame 3 (t, current):"} as the original OpenVINO BAGEL world model demo
+    std::vector<std::string> frame_labels;
 };
 
 struct BagelPerfMetrics {

@@ -1071,6 +1071,14 @@ class BagelImageGenerationConfig:
     def cfg_text_scale(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
+    def frame_labels(self) -> list[str]:
+        """
+        generate_frames only: one text per input frame, prefilled before the frame of that window slot, e.g. ['Frame 1 (t-2):', 'Frame 2 (t-1):', 'Frame 3 (t, current):'].
+        """
+    @frame_labels.setter
+    def frame_labels(self, arg0: collections.abc.Sequence[str]) -> None:
+        ...
+    @property
     def num_inference_steps(self) -> int:
         ...
     @num_inference_steps.setter

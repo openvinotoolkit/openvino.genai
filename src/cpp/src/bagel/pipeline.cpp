@@ -481,6 +481,13 @@ public:
         OPENVINO_ASSERT(!frames.empty(), "generate_frames needs at least one input frame");
         OPENVINO_ASSERT(num_frames > 0, "num_frames must be positive");
         validate(config);
+        const auto& labels = config.frame_labels;
+        OPENVINO_ASSERT(labels.empty() || labels.size() == frames.size(),
+                        "frame_labels needs one label per input frame, got ",
+                        labels.size(),
+                        " labels for ",
+                        frames.size(),
+                        " frames");
         std::vector<clip_image_u8> vae_images;
         for (const auto& frame : frames) {
             vae_images.push_back(m_vae_transform.resize(to_clip_image(frame)));
@@ -492,16 +499,22 @@ public:
         std::optional<Context> cfg_img;
         if (config.cfg_text_scale > 1.0f && config.cfg_img_scale > 1.0f) {
             reset();
+            for (const auto& label : labels) {
+                prefill_text(label);
+            }
             prefill_text(prompt);
             cfg_img = m_ctx;
         }
         std::vector<ov::Tensor> latents;
         for (size_t k = 0; k < num_frames; ++k) {
             reset();
-            for (const auto& frame : window) {
-                m_ctx = latent_prefill(frame.latent, frame.hw, m_ctx);
-                if (frame.vit) {
-                    prefill_vit_embeds(*frame.vit);
+            for (size_t i = 0; i < window.size(); ++i) {
+                if (!labels.empty()) {
+                    prefill_text(labels[i]);
+                }
+                m_ctx = latent_prefill(window[i].latent, window[i].hw, m_ctx);
+                if (window[i].vit) {
+                    prefill_vit_embeds(*window[i].vit);
                 }
             }
             std::optional<Context> cfg_text;
