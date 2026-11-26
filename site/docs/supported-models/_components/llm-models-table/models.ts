@@ -127,6 +127,15 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Cohere2ForCausalLM',
+    models: [
+      {
+        name: 'Tiny Aya',
+        links: ['https://huggingface.co/CohereLabs/tiny-aya-global'],
+      },
+    ],
+  },
+  {
     architecture: 'DbrxForCausalLM',
     models: [
       {

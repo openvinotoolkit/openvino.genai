@@ -359,21 +359,30 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         m_inputs_embedder->set_position_ids(draft_position_ids);
         m_inputs_embedder->set_rope_delta(compute_rope_delta(draft_position_ids));
     }
-    // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
-    // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_prompt_ids)});
-    // Restore main position_ids/rope_delta before adding to the main pipeline.
-    if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder && main_position_ids.get_size() > 0) {
-        m_inputs_embedder->set_position_ids(main_position_ids);
-        m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
+    const auto restore_main_position_ids = [&]() {
+        if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder && main_position_ids.get_size() > 0) {
+            m_inputs_embedder->set_position_ids(main_position_ids);
+            m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
+        }
+    };
+    try {
+        // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
+        // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
+        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_prompt_ids)});
+        // Restore main position_ids/rope_delta before adding to the main pipeline.
+        restore_main_position_ids();
+        auto main_generation = m_main_pipeline->add_request(request_id,
+                                                            input_ids,
+                                                            sampling_params,
+                                                            prompt_ids,
+                                                            lm_extra_inputs);
+        align_request_pair_processed_prefix(request_id);
+        return main_generation;
+    } catch (...) {
+        restore_main_position_ids();
+        discard_awaiting_request(request_id);
+        throw;
     }
-    auto main_generation = m_main_pipeline->add_request(request_id,
-                                                        input_ids,
-                                                        sampling_params,
-                                                        prompt_ids,
-                                                        lm_extra_inputs);
-    align_request_pair_processed_prefix(request_id);
-    return main_generation;
 }
 
 GenerationHandle
@@ -396,10 +405,15 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // add_special_tokens is false for better compression rate
     auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
     ov::Tensor draft_input_ids = create_draft_input(input_ids);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
-    auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params);
-    align_request_pair_processed_prefix(request_id);
-    return main_generation;
+    try {
+        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
+        auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params);
+        align_request_pair_processed_prefix(request_id);
+        return main_generation;
+    } catch (...) {
+        discard_awaiting_request(request_id);
+        throw;
+    }
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingImpl::generate(
