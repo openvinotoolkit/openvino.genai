@@ -314,6 +314,11 @@ void VisionEncoderGemma4::compile(std::shared_ptr<ov::Model> model,
     auto compile_device = device;
     // DEVICE in the encoder's own model properties picks its device and makes those properties the only ones it gets.
     auto role_properties = utils::get_role_properties(properties, "vision_embeddings");
+    if (role_properties.find("max_soft_tokens") != role_properties.end()) {
+        const ProcessorConfig configured_processor = ProcessorConfig::from_any_map(role_properties, m_processor_config);
+        OPENVINO_ASSERT(configured_processor.max_soft_tokens > 0, "Gemma4 max_soft_tokens must be greater than zero");
+        m_processor_config.max_soft_tokens = configured_processor.max_soft_tokens;
+    }
     if (const auto device_it = role_properties.find("DEVICE"); device_it != role_properties.end()) {
         compile_device = device_it->second.as<std::string>();
         role_properties.erase(device_it);
@@ -340,6 +345,7 @@ void VisionEncoderGemma4::compile(std::shared_ptr<ov::Model> model,
     } else {
         role_properties = utils::get_model_properties(properties, "vision_embeddings", compile_device);
     }
+    role_properties.erase("max_soft_tokens");
     auto compiled_model = utils::singleton_core().compile_model(model, compile_device, role_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(

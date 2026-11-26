@@ -1729,16 +1729,27 @@ def test_vlm_npu_gemma3_vision_encoder(cat_tensor):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_vlm_npu_gemma4_vision_encoder(cat_tensor):
+@pytest.mark.parametrize("max_soft_tokens", [140, 280])
+def test_vlm_npu_gemma4_vision_encoder(cat_tensor, max_soft_tokens):
     models_path = _get_ov_model(MODEL_GEMMA4)
     # DEVICE puts the padded encoder body on NPU with a static shape, its pooling runs on CPU.
+    cpu_properties = {
+        "MODEL_PROPERTIES": {
+            "vision_embeddings": {"max_soft_tokens": max_soft_tokens},
+        }
+    }
     properties = {
         "MODEL_PROPERTIES": {
-            "vision_embeddings": {"DEVICE": "NPU", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"},
+            "vision_embeddings": {
+                "DEVICE": "NPU",
+                "max_soft_tokens": max_soft_tokens,
+                "NPUW_DEVICES": "CPU",
+                "NPUW_ONLINE_PIPELINE": "NONE",
+            },
         }
     }
 
-    cpu_pipe = VLMPipeline(models_path, "CPU")
+    cpu_pipe = VLMPipeline(models_path, "CPU", config=cpu_properties)
     npuw_pipe = VLMPipeline(models_path, "CPU", config=properties)
     generation_config = _setup_generation_config(cpu_pipe, max_new_tokens=10, do_sample=False)
 
