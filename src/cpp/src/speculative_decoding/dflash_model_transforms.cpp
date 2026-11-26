@@ -256,14 +256,19 @@ bool has_port_named(const std::vector<ov::Output<ov::Node>>& ports, const std::s
     });
 }
 
+// The result whose tensor has the name, else the first result with that friendly name.
 std::shared_ptr<ov::op::v0::Result> find_result_named(const std::shared_ptr<ov::Model>& model,
                                                       const std::string& name) {
+    std::shared_ptr<ov::op::v0::Result> with_friendly_name;
     for (const auto& result : model->get_results()) {
         if (result->output(0).get_names().count(name) != 0) {
             return result;
         }
+        if (!with_friendly_name && result->get_friendly_name() == name) {
+            with_friendly_name = result;
+        }
     }
-    return nullptr;
+    return with_friendly_name;
 }
 
 // The size of the last axis of the model's 'logits' output, its vocabulary.
@@ -840,14 +845,7 @@ void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model
     OPENVINO_ASSERT(cloned_weight, "DFlash: failed to clone the target lm_head weight subgraph.");
     auto cloned_weight_out = cloned_weight->output(weight_source.get_index());
 
-    std::shared_ptr<ov::op::v0::Result> hidden_result;
-    for (const auto& result : draft_model->get_results()) {
-        if (result->output(0).get_names().count(LAST_HIDDEN_STATE_OUTPUT_NAME) != 0 ||
-            result->get_friendly_name() == LAST_HIDDEN_STATE_OUTPUT_NAME) {
-            hidden_result = result;
-            break;
-        }
-    }
+    const auto hidden_result = find_result_named(draft_model, LAST_HIDDEN_STATE_OUTPUT_NAME);
     OPENVINO_ASSERT(hidden_result,
                     "DFlash draft model must expose a 'last_hidden_state' output to graft the target lm_head.");
 
@@ -879,15 +877,10 @@ void gather_last_hidden_state_with_logits(const std::shared_ptr<ov::Model>& draf
     OPENVINO_ASSERT(ov::as_type_ptr<ov::op::v8::Gather>(gathered_rows.get_node_shared_ptr()),
                     "DFlash: the draft lm_head must read the sampled_tokens_indices rows; apply the gather before "
                     "the lm_head first.");
-    for (const auto& result : draft_model->get_results()) {
-        if (result->output(0).get_names().count(LAST_HIDDEN_STATE_OUTPUT_NAME) != 0 ||
-            result->get_friendly_name() == LAST_HIDDEN_STATE_OUTPUT_NAME) {
-            result->input(0).replace_source_output(gathered_rows);
-            draft_model->validate_nodes_and_infer_types();
-            return;
-        }
-    }
-    OPENVINO_THROW("DFlash draft model has no 'last_hidden_state' output to gather.");
+    const auto hidden_result = find_result_named(draft_model, LAST_HIDDEN_STATE_OUTPUT_NAME);
+    OPENVINO_ASSERT(hidden_result, "DFlash draft model has no 'last_hidden_state' output to gather.");
+    hidden_result->input(0).replace_source_output(gathered_rows);
+    draft_model->validate_nodes_and_infer_types();
 }
 
 std::optional<PrunedDraftVocabulary> extract_pruned_draft_vocabulary(const std::shared_ptr<ov::Model>& main_model,
