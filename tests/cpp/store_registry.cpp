@@ -63,36 +63,20 @@ TEST(TestStoreRegistry, DefaultConfigUsesTheInTreeFileStoreDirectly) {
     expect_store_is_usable(*store);
 }
 
-TEST(TestStoreRegistry, DisallowedPluginIsIgnoredEvenWhenAPathIsSet) {
-    OffloadSettings config = make_config();
-    config.store_library_path = "does_not_matter_because_disallowed.dll";
-    config.allow_untrusted_store_plugin = false;
-
-    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
-    ASSERT_NE(store, nullptr);
-    expect_store_is_usable(*store);
-}
-
-TEST(TestStoreRegistry, NonexistentPluginLibraryFallsBackGracefully) {
+TEST(TestStoreRegistry, NonexistentPluginLibraryThrows) {
     OffloadSettings config = make_config();
     config.store_library_path = "this_library_does_not_exist_anywhere.dll";
-    config.allow_untrusted_store_plugin = true;
 
-    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
-    ASSERT_NE(store, nullptr);
-    expect_store_is_usable(*store);
+    EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv"), ov::Exception);
 }
 
 #ifdef _WIN32
-TEST(TestStoreRegistry, LibraryMissingTheEntrySymbolFallsBackGracefully) {
+TEST(TestStoreRegistry, LibraryMissingTheEntrySymbolThrows) {
     OffloadSettings config = make_config();
     // A real, always-present system DLL that definitely does not export our ABI entry symbol.
     config.store_library_path = "kernel32.dll";
-    config.allow_untrusted_store_plugin = true;
 
-    auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
-    ASSERT_NE(store, nullptr);
-    expect_store_is_usable(*store);
+    EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv"), ov::Exception);
 }
 #endif
 
@@ -105,11 +89,10 @@ TEST(TestStoreRegistry, LoadsAndUsesAGenuinelySeparateDynamicallyLoadedPlugin) {
     OffloadSettings config = make_config();
     config.store_library_path = *library_path;
     config.store_provider_name = "file";
-    config.allow_untrusted_store_plugin = true;
 
     auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
-    ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
+    ASSERT_TRUE(store->is_plugin_backed());
     expect_store_is_usable(*store);
 }
 
@@ -122,11 +105,10 @@ TEST(TestStoreRegistry, LoadsAndUsesTheStandaloneSampleThirdPartyPlugin) {
     OffloadSettings config = make_config();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-in-memory";
-    config.allow_untrusted_store_plugin = true;
 
     auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
-    ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
+    ASSERT_TRUE(store->is_plugin_backed());
     expect_store_is_usable(*store);
 }
 
@@ -140,7 +122,6 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginTakesRestoreReportsAndTheFileProvi
     OffloadSettings config = make_config();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-in-memory";
-    config.allow_untrusted_store_plugin = true;
 
     auto store = open_kv_cache_store(make_layout(), config, "CPU", "restore_stats_test");
     ASSERT_NE(store, nullptr);
@@ -160,7 +141,6 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginTakesRestoreReportsAndTheFileProvi
     OffloadSettings file_config = make_config();
     file_config.store_library_path = *self_path;
     file_config.store_provider_name = "file";
-    file_config.allow_untrusted_store_plugin = true;
     auto file_store = open_kv_cache_store(make_layout(), file_config, "CPU", "kv");
     ASSERT_NE(file_store, nullptr);
     ASSERT_TRUE(file_store->is_plugin_backed());
@@ -177,7 +157,6 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
     OffloadSettings config = make_config();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-in-memory";
-    config.allow_untrusted_store_plugin = true;
 
     auto first = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_first");
     auto second = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_second");
@@ -203,7 +182,6 @@ OffloadSettings make_plugin_config(const std::string& library_path, const std::s
     OffloadSettings config = make_config();
     config.store_library_path = library_path;
     config.store_provider_name = provider_name;
-    config.allow_untrusted_store_plugin = true;
     return config;
 }
 
@@ -305,12 +283,11 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
     config.kv_cache_dir = directory.string();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-persistent-file";
-    config.allow_untrusted_store_plugin = true;
 
     {
         auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
         ASSERT_NE(store, nullptr);
-        ASSERT_TRUE(store->is_plugin_backed()) << "the plugin did not load; the registry fell back to the default store";
+        ASSERT_TRUE(store->is_plugin_backed());
         expect_store_is_usable(*store);
 
         size_t block_files = 0;
@@ -320,11 +297,9 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
         EXPECT_EQ(block_files, 1u);
     }
 
-    // Without a directory the provider refuses to open, and the registry falls back to its default store.
+    // Without a directory the provider refuses to open, and that is an error rather than a silent fallback.
     config.kv_cache_dir.clear();
-    auto fallback = open_kv_cache_store(make_layout(), config, "CPU", "kv");
-    ASSERT_NE(fallback, nullptr);
-    EXPECT_FALSE(fallback->is_plugin_backed());
+    EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv"), ov::Exception);
     std::filesystem::remove_all(directory);
 }
 
@@ -352,7 +327,6 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToRe
     config.kv_cache_dir = directory.string();
     config.store_library_path = *library_path;
     config.store_provider_name = "sample-persistent-file";
-    config.allow_untrusted_store_plugin = true;
 
     {
         auto first = open_kv_cache_store(make_layout(), config, "CPU", "kv");
@@ -385,7 +359,6 @@ TEST(TestStoreRegistry, StorePropertiesNamingAHostOwnedSettingAreRejected) {
     for (const char* key : {"block_size_bytes", "device", "dram_cache_capacity_gb", "reuse_ssd_cache", "debug_log_path"}) {
         OffloadSettings config = make_config();
         config.store_library_path = "this_library_does_not_exist_anywhere.dll";
-        config.allow_untrusted_store_plugin = true;
         config.store_properties = {{key, "x"}};
         EXPECT_THROW(open_kv_cache_store(make_layout(), config, "CPU", "kv"), ov::Exception) << key;
     }

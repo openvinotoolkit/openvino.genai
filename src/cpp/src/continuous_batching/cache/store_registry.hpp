@@ -17,11 +17,10 @@ namespace ov::genai {
  * @brief Opens the KV cache store backend configured by a OffloadSettings.
  *
  * Without a vendor plugin configured (the default), this returns the in-tree FileKVCacheStore
- * directly - no ABI marshaling in the hot path. A vendor plugin is only even attempted when
- * `config.allow_untrusted_store_plugin` is true and `config.store_library_path` is non-empty; any
- * failure along the way (library not found, missing entry symbol, ABI version/fingerprint
- * mismatch, named provider not found, `open()` failure) is logged and degrades to the in-tree
- * default rather than throwing - offload is best effort, never a hard dependency on a plugin.
+ * directly - no ABI marshaling in the hot path. When config.store_library_path is non-empty the plugin
+ * is mandatory: any failure (library not found, missing entry symbol, ABI version/fingerprint
+ * mismatch, named provider not found, open() failure, incomplete vtable) throws instead of silently
+ * degrading to the file store.
  *
  * @param group Namespaces this store's keys from any other store opened against the same plugin
  * (e.g. "kv" vs "la") - plugins route purely on

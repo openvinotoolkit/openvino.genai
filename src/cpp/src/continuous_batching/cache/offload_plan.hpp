@@ -92,7 +92,6 @@ inline OffloadSettings resolve_offload_settings(const CacheOffloadConfig& config
         settings.debug_log_path = config.plugin->debug_log_path;
         settings.store_properties = config.plugin->properties;
         settings.store_timeout_ms = config.plugin->timeout_ms;
-        settings.allow_untrusted_store_plugin = true;
     }
 
     const auto budget_bytes = static_cast<std::uint64_t>(std::llround(config.ssd_cache_capacity_gb * (1ull << 30)));

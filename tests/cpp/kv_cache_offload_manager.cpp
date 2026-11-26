@@ -201,7 +201,6 @@ TEST(TestOffloadPlan, ResolveSplitsTheBudgetOverTheGroupsAndLeavesTheConfigAlone
     EXPECT_EQ(kv_only.capacity_bytes, 1024u * 1024u);
     EXPECT_EQ(kv_only.linear_attention_capacity_bytes, 0u);
     EXPECT_TRUE(kv_only.store_completed_blocks);
-    EXPECT_TRUE(kv_only.allow_untrusted_store_plugin);
     EXPECT_EQ(kv_only.store_library_path, "plugin.dll");
     EXPECT_EQ(kv_only.store_properties, (std::map<std::string, std::string>{{"key", "value"}}));
     EXPECT_EQ(kv_only.store_timeout_ms, 1234u);

@@ -39,7 +39,6 @@ struct OffloadSettings {
     /// Plugin to load; empty: the in-tree store. Loading it is the explicit opt-in of the user.
     std::string store_library_path;
     std::string store_provider_name;
-    bool allow_untrusted_store_plugin = false;
     std::map<std::string, std::string> store_properties;
     static constexpr std::uint32_t DEFAULT_STORE_TIMEOUT_MS = 10000;
     std::uint32_t store_timeout_ms = DEFAULT_STORE_TIMEOUT_MS;
