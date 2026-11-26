@@ -59,6 +59,57 @@ std::vector<uint8_t> make_block(uint8_t seed) {
     return data;
 }
 
+
+// The plugin is addressed by digest, so the tests that name a block by one number give it a digest made of that number.
+PrefixKey key_of(size_t hash) {
+    return PrefixKey{hash, ContentHash{hash, hash}};
+}
+
+bool has_one(const AbiKVCacheStore& store, size_t hash) {
+    return store.has_blocks({key_of(hash)})[0];
+}
+
+bool write_one(AbiKVCacheStore& store, size_t hash, const std::vector<uint8_t>& data) {
+    return store.write_blocks({key_of(hash)}, {&data})[0];
+}
+
+bool read_one(const AbiKVCacheStore& store, size_t hash, std::vector<uint8_t>& data) {
+    std::vector<std::vector<uint8_t>> blocks;
+    if (!store.read_blocks({key_of(hash)}, blocks)[0]) {
+        return false;
+    }
+    data = std::move(blocks[0]);
+    return true;
+}
+
+void drop_one(AbiKVCacheStore& store, size_t hash) {
+    store.invalidate(key_of(hash));
+}
+
+std::vector<PrefixKey> keys_of(const std::vector<size_t>& hashes) {
+    std::vector<PrefixKey> keys;
+    for (const size_t hash : hashes) {
+        keys.push_back(key_of(hash));
+    }
+    return keys;
+}
+
+std::vector<bool> has_many(const AbiKVCacheStore& store, const std::vector<size_t>& hashes) {
+    return store.has_blocks(keys_of(hashes));
+}
+
+std::vector<bool> write_many(AbiKVCacheStore& store,
+                             const std::vector<size_t>& hashes,
+                             const std::vector<const std::vector<uint8_t>*>& data) {
+    return store.write_blocks(keys_of(hashes), data);
+}
+
+std::vector<bool> read_many(const AbiKVCacheStore& store,
+                            const std::vector<size_t>& hashes,
+                            std::vector<std::vector<uint8_t>>& data) {
+    return store.read_blocks(keys_of(hashes), data);
+}
+
 }  // namespace
 
 TEST(TestAbiFileStoreProvider, ModuleHandshakeIsWellFormed) {
@@ -80,22 +131,22 @@ TEST(TestAbiFileStoreProvider, WriteThenReadRoundTripsBytesThroughTheAbi) {
     auto store = open_store(/*num_blocks=*/4);
     const auto expected = make_block(/*seed=*/7);
 
-    EXPECT_FALSE(store->has_block(42));
-    EXPECT_TRUE(store->write_block(42, expected));
-    EXPECT_TRUE(store->has_block(42));
+    EXPECT_FALSE(has_one(*store, 42));
+    EXPECT_TRUE(write_one(*store, 42, expected));
+    EXPECT_TRUE(has_one(*store, 42));
 
     std::vector<uint8_t> actual;
-    ASSERT_TRUE(store->read_block(42, actual));
+    ASSERT_TRUE(read_one(*store, 42, actual));
     EXPECT_EQ(actual, expected);
 }
 
 TEST(TestAbiFileStoreProvider, HasBlocksAnswersForTheWholeChainInOrder) {
     auto store = open_store(/*num_blocks=*/4);
-    ASSERT_TRUE(store->write_block(1, make_block(1)));
-    ASSERT_TRUE(store->write_block(3, make_block(3)));
+    ASSERT_TRUE(write_one(*store, 1, make_block(1)));
+    ASSERT_TRUE(write_one(*store, 3, make_block(3)));
 
-    EXPECT_EQ(store->has_blocks({1, 2, 3, 4}), (std::vector<bool>{true, false, true, false}));
-    EXPECT_TRUE(store->has_blocks({}).empty());
+    EXPECT_EQ(has_many(*store, {1, 2, 3, 4}), (std::vector<bool>{true, false, true, false}));
+    EXPECT_TRUE(has_many(*store, {}).empty());
 }
 
 TEST(TestAbiFileStoreProvider, AdvertisesAsyncIoAndASemanticsFingerprint) {
@@ -112,25 +163,25 @@ TEST(TestAbiFileStoreProvider, StaysOnSynchronousIoWhenTheCapabilityIsNotPassed)
     auto store = open_store(/*num_blocks=*/2, /*pass_capabilities=*/false);
     EXPECT_FALSE(store->uses_async_io());
 
-    ASSERT_TRUE(store->write_block(1, make_block(1)));
+    ASSERT_TRUE(write_one(*store, 1, make_block(1)));
     std::vector<uint8_t> actual;
-    ASSERT_TRUE(store->read_block(1, actual));
+    ASSERT_TRUE(read_one(*store, 1, actual));
     EXPECT_EQ(actual, make_block(1));
 }
 
 TEST(TestAbiFileStoreProvider, ReadBlocksReportsEveryBlockOfTheBatchInOrder) {
     auto store = open_store(/*num_blocks=*/4);
-    ASSERT_TRUE(store->write_block(1, make_block(1)));
-    ASSERT_TRUE(store->write_block(3, make_block(3)));
+    ASSERT_TRUE(write_one(*store, 1, make_block(1)));
+    ASSERT_TRUE(write_one(*store, 3, make_block(3)));
 
     std::vector<std::vector<uint8_t>> data;
-    EXPECT_EQ(store->read_blocks({1, 2, 3}, data), (std::vector<bool>{true, false, true}));
+    EXPECT_EQ(read_many(*store, {1, 2, 3}, data), (std::vector<bool>{true, false, true}));
     ASSERT_EQ(data.size(), 3u);
     EXPECT_EQ(data[0], make_block(1));
     EXPECT_TRUE(data[1].empty());
     EXPECT_EQ(data[2], make_block(3));
 
-    EXPECT_TRUE(store->read_blocks({}, data).empty());
+    EXPECT_TRUE(read_many(*store, {}, data).empty());
     EXPECT_TRUE(data.empty());
 }
 
@@ -206,13 +257,13 @@ TEST(TestAbiFileStoreProvider, EveryAsyncBatchIsWaitedOnUntilItIsTerminal) {
     {
         AbiKVCacheStore store(&spied, opened.store, "kv", BLOCK_SIZE, 4, {provider->capabilities, std::nullopt});
         ASSERT_TRUE(store.uses_async_io());
-        ASSERT_TRUE(store.write_block(1, make_block(1)));
-        ASSERT_TRUE(store.write_block(2, make_block(2)));
+        ASSERT_TRUE(write_one(store, 1, make_block(1)));
+        ASSERT_TRUE(write_one(store, 2, make_block(2)));
         std::vector<std::vector<uint8_t>> data;
-        EXPECT_EQ(store.read_blocks({1, 2}, data), (std::vector<bool>{true, true}));
+        EXPECT_EQ(read_many(store, {1, 2}, data), (std::vector<bool>{true, true}));
         EXPECT_EQ(data[1], make_block(2));
         std::vector<uint8_t> single;
-        EXPECT_TRUE(store.read_block(1, single));
+        EXPECT_TRUE(read_one(store, 1, single));
     }
 
     EXPECT_EQ(AsyncSpy::submitted, 4u);
@@ -223,7 +274,7 @@ TEST(TestAbiFileStoreProvider, EveryAsyncBatchIsWaitedOnUntilItIsTerminal) {
 TEST(TestAbiFileStoreProvider, ReadReportsMissForUnknownHash) {
     auto store = open_store(/*num_blocks=*/4);
     std::vector<uint8_t> data;
-    EXPECT_FALSE(store->read_block(1234, data));
+    EXPECT_FALSE(read_one(*store, 1234, data));
 }
 
 namespace {
@@ -262,13 +313,13 @@ TEST(TestAbiFileStoreProvider, ABlockWhoseWitnessDoesNotMatchIsDroppedAndReadAsA
 
     AbiKVCacheStore store(&corrupting, opened.store, "kv", BLOCK_SIZE, 4, AbiKVCacheStore::StoreInfo{});
     ASSERT_FALSE(store.uses_async_io());
-    ASSERT_TRUE(store.write_block(1, make_block(1)));
-    ASSERT_TRUE(store.has_block(1));
+    ASSERT_TRUE(write_one(store, 1, make_block(1)));
+    ASSERT_TRUE(has_one(store, 1));
 
     std::vector<std::vector<uint8_t>> data;
-    EXPECT_NO_THROW(EXPECT_EQ(store.read_blocks({1}, data), (std::vector<bool>{false})));
+    EXPECT_NO_THROW(EXPECT_EQ(read_many(store, {1}, data), (std::vector<bool>{false})));
     EXPECT_TRUE(data[0].empty());
-    EXPECT_FALSE(store.has_block(1)) << "a block that failed its witness check is dropped from the store";
+    EXPECT_FALSE(has_one(store, 1)) << "a block that failed its witness check is dropped from the store";
 }
 
 namespace {
@@ -309,13 +360,13 @@ TEST(TestAbiFileStoreProvider, ABatchThatStallsIsCancelledAndFailsInsteadOfBlock
     AbiKVCacheStore store(&stalled, opened.store, "kv", BLOCK_SIZE, 4, {provider->capabilities, std::nullopt},
                           /*io_timeout_ms=*/20);
     ASSERT_TRUE(store.uses_async_io());
-    EXPECT_FALSE(store.write_block(1, make_block(1))) << "a cancelled batch writes nothing and is not an error";
+    EXPECT_FALSE(write_one(store, 1, make_block(1))) << "a cancelled batch writes nothing and is not an error";
     EXPECT_EQ(StalledPlugin::cancels, 1u);
     EXPECT_EQ(StalledPlugin::waits, 2u) << "one wait that times out, then the wait for the cancelled token";
 
     StalledPlugin::waits = StalledPlugin::cancels = 0;
     std::vector<std::vector<uint8_t>> data;
-    EXPECT_EQ(store.read_blocks({1}, data), (std::vector<bool>{false})) << "a cancelled batch reads nothing";
+    EXPECT_EQ(read_many(store, {1}, data), (std::vector<bool>{false})) << "a cancelled batch reads nothing";
     EXPECT_EQ(StalledPlugin::cancels, 1u);
     EXPECT_FALSE(store.is_given_up()) << "a cancelled batch that ends in time leaves the store usable";
 }
@@ -423,7 +474,7 @@ TEST(TestAbiFileStoreProvider, APluginThatIgnoresCancelLeavesAMissAndAGivenUpSto
         ASSERT_TRUE(store.uses_async_io());
 
         std::vector<std::vector<uint8_t>> data;
-        EXPECT_EQ(store.read_blocks({1}, data), (std::vector<bool>{false}));
+        EXPECT_EQ(read_many(store, {1}, data), (std::vector<bool>{false}));
         EXPECT_TRUE(data[0].empty());
         EXPECT_TRUE(store.is_given_up());
         EXPECT_EQ(UnresponsivePlugin::cancels, 1u);
@@ -431,11 +482,11 @@ TEST(TestAbiFileStoreProvider, APluginThatIgnoresCancelLeavesAMissAndAGivenUpSto
 
         // Nothing reaches the plugin any more, and nothing throws.
         const size_t probes_before = UnresponsivePlugin::probes;
-        EXPECT_FALSE(store.has_block(1));
-        EXPECT_EQ(store.has_blocks({1, 2}), (std::vector<bool>{false, false}));
-        EXPECT_EQ(store.write_blocks({1}, {&data[0]}), (std::vector<bool>{false}));
-        EXPECT_EQ(store.read_blocks({1}, data), (std::vector<bool>{false}));
-        EXPECT_NO_THROW(store.drop_block(1));
+        EXPECT_FALSE(has_one(store, 1));
+        EXPECT_EQ(has_many(store, {1, 2}), (std::vector<bool>{false, false}));
+        EXPECT_EQ(write_many(store, {1}, {&data[0]}), (std::vector<bool>{false}));
+        EXPECT_EQ(read_many(store, {1}, data), (std::vector<bool>{false}));
+        EXPECT_NO_THROW(drop_one(store, 1));
         EXPECT_NO_THROW(store.flush());
         EXPECT_EQ(store.get_num_free_blocks(), 0u);
         EXPECT_EQ(UnresponsivePlugin::probes, probes_before);
@@ -466,7 +517,7 @@ TEST(TestAbiFileStoreProvider, AnUnresponsiveWriteIsAMissToo) {
     {
         AbiKVCacheStore store(&unresponsive, file_store.opened.store, "kv", BLOCK_SIZE, 4,
                               {file_store.provider->capabilities, std::nullopt}, /*io_timeout_ms=*/20);
-        EXPECT_EQ(store.write_blocks({1}, {&block}), (std::vector<bool>{false}));
+        EXPECT_EQ(write_many(store, {1}, {&block}), (std::vector<bool>{false}));
         EXPECT_TRUE(store.is_given_up());
     }
 
@@ -487,9 +538,9 @@ TEST(TestAbiFileStoreProvider, AsyncIoIsNotUsedWhenThePluginHasNoCancelEntry) {
     AbiKVCacheStore store(&without_cancel, file_store.opened.store, "kv", BLOCK_SIZE, 4,
                           {file_store.provider->capabilities, std::nullopt});
     EXPECT_FALSE(store.uses_async_io());
-    ASSERT_TRUE(store.write_block(1, make_block(1)));
+    ASSERT_TRUE(write_one(store, 1, make_block(1)));
     std::vector<uint8_t> actual;
-    ASSERT_TRUE(store.read_block(1, actual));
+    ASSERT_TRUE(read_one(store, 1, actual));
     EXPECT_EQ(actual, make_block(1));
 }
 
@@ -549,29 +600,36 @@ TEST(TestAbiFileStoreProvider, BlocksOfEqualHashButDifferentDigestsAreDistinctKe
     const auto first_payload = make_block(1);
     const auto second_payload = make_block(2);
 
-    EXPECT_EQ(store->write_blocks_by_key({first, second}, {&first_payload, &second_payload}),
+    EXPECT_EQ(store->write_blocks({first, second}, {&first_payload, &second_payload}),
               (std::vector<bool>{true, true}));
 
-    EXPECT_EQ(store->has_blocks_by_key({first, second}), (std::vector<bool>{true, true}));
-    EXPECT_FALSE(store->has_block(7)) << "without a digest the block is addressed by its size_t hash instead";
+    EXPECT_EQ(store->has_blocks({first, second}), (std::vector<bool>{true, true}));
+    EXPECT_FALSE(has_one(*store, 7)) << "the hash alone names no block; the digest does";
 
     std::vector<std::vector<uint8_t>> data;
-    EXPECT_EQ(store->read_blocks_by_key({second, first}, data), (std::vector<bool>{true, true}));
+    EXPECT_EQ(store->read_blocks({second, first}, data), (std::vector<bool>{true, true}));
     EXPECT_EQ(data[0], second_payload);
     EXPECT_EQ(data[1], first_payload);
 
-    store->drop_block_by_key(first);
-    EXPECT_EQ(store->has_blocks_by_key({first, second}), (std::vector<bool>{false, true}));
+    store->invalidate(first);
+    EXPECT_EQ(store->has_blocks({first, second}), (std::vector<bool>{false, true}));
 }
 
-TEST(TestAbiFileStoreProvider, ASizeTHashAndItsMirroredDigestAddressTheSameBlock) {
+TEST(TestAbiFileStoreProvider, ABlockWithoutADigestIsNeitherStoredNorFound) {
     auto store = open_store(/*num_blocks=*/4);
-    ASSERT_TRUE(store->write_block(42, make_block(3)));
+    const auto payload = make_block(3);
 
-    // A block without a digest is addressed by the hash mirrored into both halves, which is what write_block uses.
-    EXPECT_EQ(store->has_blocks_by_key({PrefixKey{42, std::nullopt}}), (std::vector<bool>{true}));
-    EXPECT_EQ(store->has_blocks_by_key({PrefixKey{42, ContentHash{42, 42}}}), (std::vector<bool>{true}));
-    EXPECT_EQ(store->has_blocks_by_key({PrefixKey{42, ContentHash{42, 43}}}), (std::vector<bool>{false}));
+    EXPECT_EQ(store->write_blocks({PrefixKey{42, std::nullopt}}, {&payload}), (std::vector<bool>{false}));
+    ASSERT_TRUE(write_one(*store, 42, payload));
+
+    // A block with a digest of the same hash does not make the block without one findable, nor the other way round.
+    EXPECT_EQ(store->has_blocks({PrefixKey{42, std::nullopt}}), (std::vector<bool>{false}));
+    EXPECT_EQ(store->has_blocks({PrefixKey{42, ContentHash{42, 42}}}), (std::vector<bool>{true}));
+    EXPECT_EQ(store->has_blocks({PrefixKey{42, ContentHash{42, 43}}}), (std::vector<bool>{false}));
+
+    // The chain a plugin is asked about ends where a digest is missing.
+    EXPECT_EQ(store->has_blocks({PrefixKey{42, ContentHash{42, 42}}, PrefixKey{43, std::nullopt}, PrefixKey{44, ContentHash{44, 44}}}),
+              (std::vector<bool>{true, false, false}));
 }
 
 namespace {
@@ -616,12 +674,12 @@ TEST(TestAbiFileStoreProvider, TheWitnessBindsABlockToBothHalvesOfItsKey) {
     const PrefixKey stored{7, ContentHash{1, 100}};
     const PrefixKey requested{7, ContentHash{1, 200}};
     const auto payload = make_block(5);
-    ASSERT_EQ(store.write_blocks_by_key({stored}, {&payload}), (std::vector<bool>{true}));
+    ASSERT_EQ(store.write_blocks({stored}, {&payload}), (std::vector<bool>{true}));
 
     std::vector<std::vector<uint8_t>> data;
-    EXPECT_EQ(store.read_blocks_by_key({stored}, data), (std::vector<bool>{true}));
+    EXPECT_EQ(store.read_blocks({stored}, data), (std::vector<bool>{true}));
     EXPECT_EQ(data[0], payload);
-    EXPECT_EQ(store.read_blocks_by_key({requested}, data), (std::vector<bool>{false}))
+    EXPECT_EQ(store.read_blocks({requested}, data), (std::vector<bool>{false}))
         << "a block served for the other key must fail its witness even though the low halves agree";
 }
 
@@ -680,7 +738,7 @@ TEST(TestAbiFileStoreProvider, OpenRejectsGroupInfoWhoseBlockBytesDisagreeWithTh
 TEST(TestAbiFileStoreProvider, MissLeavesTheCallersBufferUntouched) {
     auto store = open_store(/*num_blocks=*/4);
     std::vector<uint8_t> data = {1, 2, 3};
-    EXPECT_FALSE(store->read_block(1234, data));
+    EXPECT_FALSE(read_one(*store, 1234, data));
     EXPECT_EQ(data, (std::vector<uint8_t>{1, 2, 3}));
 }
 
@@ -705,32 +763,34 @@ TEST(TestAbiFileStoreProvider, MalformedBlockSizeIsReportedAsInvalidArgInsteadOf
 
 TEST(TestAbiFileStoreProvider, DropBlockRemovesTheEntry) {
     auto store = open_store(/*num_blocks=*/4);
-    ASSERT_TRUE(store->write_block(1, make_block(1)));
-    ASSERT_TRUE(store->has_block(1));
+    ASSERT_TRUE(write_one(*store, 1, make_block(1)));
+    ASSERT_TRUE(has_one(*store, 1));
 
-    store->drop_block(1);
+    drop_one(*store, 1);
 
-    EXPECT_FALSE(store->has_block(1));
+    EXPECT_FALSE(has_one(*store, 1));
     std::vector<uint8_t> data;
-    EXPECT_FALSE(store->read_block(1, data));
+    EXPECT_FALSE(read_one(*store, 1, data));
 }
 
-TEST(TestAbiFileStoreProvider, WriteFailsWhenCapacityIsExhausted) {
+TEST(TestAbiFileStoreProvider, WriteMakesRoomByEvictingTheLeastRecentlyUsedBlockWhenTheStoreIsFull) {
     auto store = open_store(/*num_blocks=*/2);
-    ASSERT_TRUE(store->write_block(1, make_block(1)));
-    ASSERT_TRUE(store->write_block(2, make_block(2)));
+    ASSERT_TRUE(write_one(*store, 1, make_block(1)));
+    ASSERT_TRUE(write_one(*store, 2, make_block(2)));
     EXPECT_EQ(store->get_num_free_blocks(), 0u);
 
-    EXPECT_FALSE(store->write_block(3, make_block(3)));
+    ASSERT_TRUE(write_one(*store, 3, make_block(3)));
+
+    EXPECT_EQ(has_many(*store, {1, 2, 3}), (std::vector<bool>{false, true, true}));
 }
 
 TEST(TestAbiFileStoreProvider, OverwritingAnExistingKeyReplacesItsContents) {
     auto store = open_store(/*num_blocks=*/4);
-    ASSERT_TRUE(store->write_block(1, make_block(1)));
-    ASSERT_TRUE(store->write_block(1, make_block(9)));
+    ASSERT_TRUE(write_one(*store, 1, make_block(1)));
+    ASSERT_TRUE(write_one(*store, 1, make_block(9)));
 
     std::vector<uint8_t> actual;
-    ASSERT_TRUE(store->read_block(1, actual));
+    ASSERT_TRUE(read_one(*store, 1, actual));
     EXPECT_EQ(actual, make_block(9));
 }
 
@@ -756,29 +816,24 @@ TEST(TestAbiFileStoreProvider, WriteBlocksStoresTheWholeBatchInOneAsyncSubmissio
     const std::vector<uint8_t> first = make_block(1);
     const std::vector<uint8_t> second = make_block(2);
     const std::vector<uint8_t> third = make_block(3);
-    EXPECT_EQ(store.write_blocks({1, 2, 3}, {&first, &second, &third}), (std::vector<bool>{true, true, true}));
+    EXPECT_EQ(write_many(store, {1, 2, 3}, {&first, &second, &third}), (std::vector<bool>{true, true, true}));
     EXPECT_EQ(AsyncSpy::submitted, 1u);
 
     std::vector<std::vector<uint8_t>> data;
-    EXPECT_EQ(store.read_blocks({1, 2, 3}, data), (std::vector<bool>{true, true, true}));
+    EXPECT_EQ(read_many(store, {1, 2, 3}, data), (std::vector<bool>{true, true, true}));
     EXPECT_EQ(data[0], first);
     EXPECT_EQ(data[2], third);
 }
 
-TEST(TestAbiFileStoreProvider, WriteBlocksReportsWhichBlocksFoundNoRoom) {
+TEST(TestAbiFileStoreProvider, WriteBlocksTakesAWholeBatchLargerThanTheStoreAndKeepsTheNewestBlocks) {
     auto store = open_store(/*num_blocks=*/2);
     const std::vector<uint8_t> first = make_block(1);
     const std::vector<uint8_t> second = make_block(2);
     const std::vector<uint8_t> third = make_block(3);
 
-    EXPECT_EQ(store->write_blocks({1, 2, 3}, {&first, &second, &third}), (std::vector<bool>{true, true, false}));
-    EXPECT_TRUE(store->write_blocks({}, {}).empty());
-}
-
-TEST(TestAbiFileStoreProvider, FileStoreDoesNotEvictByItself) {
-    const OvKVCacheStoreProviderDescriptor* provider = get_file_store_provider_module_info()->get_provider(0);
-    EXPECT_EQ(provider->capabilities & OV_KVCACHE_CAP_SELF_EVICT, 0u);
-    EXPECT_FALSE(open_store(/*num_blocks=*/2)->evicts_itself());
+    EXPECT_EQ(write_many(*store, {1, 2, 3}, {&first, &second, &third}), (std::vector<bool>{true, true, true}));
+    EXPECT_EQ(has_many(*store, {1, 2, 3}), (std::vector<bool>{false, true, true}));
+    EXPECT_TRUE(write_many(*store, {}, {}).empty());
 }
 
 namespace {
@@ -987,15 +1042,15 @@ TEST(TestAbiFileStoreProvider, ViewsOfOneInstanceShareItsLifetimeAndAreEachUsabl
     auto la_view = std::make_unique<AbiKVCacheStore>(instance, "la", BLOCK_SIZE, 4, info);
     instance.reset();
 
-    ASSERT_TRUE(kv_view->write_block(7, make_block(1)));
-    EXPECT_TRUE(kv_view->has_block(7));
-    ASSERT_TRUE(la_view->write_block(8, make_block(2)));
+    ASSERT_TRUE(write_one(*kv_view, 7, make_block(1)));
+    EXPECT_TRUE(has_one(*kv_view, 7));
+    ASSERT_TRUE(write_one(*la_view, 8, make_block(2)));
 
     // The instance outlives the view that was first closed.
     kv_view.reset();
     EXPECT_EQ(DestroySpy::calls, 0u);
     std::vector<uint8_t> data;
-    ASSERT_TRUE(la_view->read_block(8, data));
+    ASSERT_TRUE(read_one(*la_view, 8, data));
     EXPECT_EQ(data, make_block(2));
 
     la_view.reset();
@@ -1012,8 +1067,8 @@ TEST(TestAbiFileStoreProvider, ConcurrentWritesReadsAndDropsNeverExposeAHalfPubl
         for (size_t round = 0; round < rounds; ++round) {
             for (size_t key = 0; key < num_keys; ++key) {
                 try {
-                    store->write_block(key, make_block(static_cast<uint8_t>(key)));
-                    store->drop_block((key + 3) % num_keys);
+                    write_one(*store, key, make_block(static_cast<uint8_t>(key)));
+                    drop_one(*store, (key + 3) % num_keys);
                 } catch (const std::exception&) {
                     ++failures;
                 }
@@ -1025,7 +1080,7 @@ TEST(TestAbiFileStoreProvider, ConcurrentWritesReadsAndDropsNeverExposeAHalfPubl
             for (size_t key = 0; key < num_keys; ++key) {
                 try {
                     std::vector<uint8_t> data;
-                    if (store->read_block(key, data) && data != make_block(static_cast<uint8_t>(key))) {
+                    if (read_one(*store, key, data) && data != make_block(static_cast<uint8_t>(key))) {
                         ++failures;
                     }
                 } catch (const std::exception&) {

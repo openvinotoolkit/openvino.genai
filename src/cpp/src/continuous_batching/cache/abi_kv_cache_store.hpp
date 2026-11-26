@@ -77,36 +77,29 @@ public:
     AbiKVCacheStore(const AbiKVCacheStore&) = delete;
     AbiKVCacheStore& operator=(const AbiKVCacheStore&) = delete;
 
-    bool has_block(size_t hash) const override;
-    std::vector<bool> has_blocks(const std::vector<size_t>& chain) const override;
-    bool write_block(size_t hash, const std::vector<uint8_t>& data) override;
-    std::vector<bool> write_blocks(const std::vector<size_t>& hashes,
+    /// The plugin addresses a block by its 128-bit digest, so a block without one is never stored or found.
+    std::vector<bool> has_blocks(const std::vector<PrefixKey>& chain) const override;
+    std::vector<bool> write_blocks(const std::vector<PrefixKey>& keys,
                                    const std::vector<const std::vector<uint8_t>*>& data) override;
-    bool read_block(size_t hash, std::vector<uint8_t>& data) const override;
-    std::vector<bool> read_blocks(const std::vector<size_t>& hashes, std::vector<std::vector<uint8_t>>& data) const override;
-    void drop_block(size_t hash) override;
+    std::vector<bool> read_blocks(const std::vector<PrefixKey>& keys,
+                                  std::vector<std::vector<uint8_t>>& data) const override;
+    void invalidate(const PrefixKey& key) override;
 
-    /// These address the plugin by PrefixKey::wire_id(): the 128-bit digest when known, else the size_t hash mirrored
-    /// into both halves. The size_t methods above are the second case.
-    std::vector<bool> has_blocks_by_key(const std::vector<PrefixKey>& chain) const override;
-    std::vector<bool> write_blocks_by_key(const std::vector<PrefixKey>& keys,
-                                          const std::vector<const std::vector<uint8_t>*>& data) override;
-    std::vector<bool> read_blocks_by_key(const std::vector<PrefixKey>& keys,
-                                         std::vector<std::vector<uint8_t>>& data) const override;
-    void drop_block_by_key(const PrefixKey& key) override;
-
-    size_t get_block_size() const override;
-    size_t get_capacity_blocks() const override;
-    size_t get_num_free_blocks() const override;
+    size_t block_bytes() const override;
+    size_t capacity_blocks_hint() const override;
     void flush() override;
 
-    bool is_plugin_backed() const override {
+    /// A plugin store is assumed to outlive the pipeline and wants the chain before a write (ABI contract).
+    bool is_persistent() const override {
         return true;
     }
 
-    bool evicts_itself() const override {
-        return (m_info.capabilities & OV_KVCACHE_CAP_SELF_EVICT) != 0;
+    bool wants_chain_context() const override {
+        return true;
     }
+
+    /// How many more blocks the plugin reports room for; informational.
+    size_t get_num_free_blocks() const;
 
     /// Calls the plugin's `on_restore_finish`. @return false when the plugin has no such entry.
     bool report_restore_stats(const RestoreStats& stats) override;
@@ -142,7 +135,6 @@ private:
     struct WriteBatch;
 
     static OvKVCacheBlockKey make_key(const std::string& group, const PrefixKey& key);
-    static std::vector<PrefixKey> to_keys(const std::vector<size_t>& hashes);
 
     /// Runs one batch to completion. Through the async entry points the batch is waited on for the I/O timeout, then
     /// cancelled and waited on for one more timeout; the status is that of the batch, and CANCELLED means that it

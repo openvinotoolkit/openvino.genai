@@ -11,7 +11,7 @@ sanity-check that your own host integration loads and drives a plugin correctly.
 ## What this is
 
 By default, OpenVINO GenAI's KV cache offload (`SchedulerConfig::cache_offload`) writes
-evicted blocks to a plain file (`FileKVCacheStore`). This ABI lets a third party replace that
+evicted blocks to a file under `kv_cache_dir` (the built-in default store). This ABI lets a third party replace that
 default with its own storage backend - without linking against `openvino::genai` or any C++ code
 at all - by shipping a shared library that exports one C entry symbol.
 

@@ -235,7 +235,7 @@ private:
  * The store evicts the least recently used block when it is full, so writing never fails for lack of capacity.
  *
  * A store of a namespace with a model identity is persistent: it is keyed by the 128-bit digest only, and a block
- * without a digest is not stored. Without an identity the store is private to this run and keys by PrefixKey::wire_id().
+ * without a digest is not stored. Without an identity the store is private to this run and also takes a block by its size_t hash.
  */
 class DefaultFileGroupStore final : public IKVCacheStore {
 public:
@@ -305,28 +305,7 @@ public:
                    m_index.size());
     }
 
-    bool has_block(size_t hash) const override {
-        return has_blocks_by_key({PrefixKey{hash, std::nullopt}})[0];
-    }
-
-    bool write_block(size_t hash, const std::vector<uint8_t>& data) override {
-        return write_blocks_by_key({PrefixKey{hash, std::nullopt}}, {&data})[0];
-    }
-
-    bool read_block(size_t hash, std::vector<uint8_t>& data) const override {
-        std::vector<std::vector<uint8_t>> blocks;
-        const bool found = read_blocks_by_key({PrefixKey{hash, std::nullopt}}, blocks)[0];
-        if (found) {
-            data = std::move(blocks[0]);
-        }
-        return found;
-    }
-
-    void drop_block(size_t hash) override {
-        drop_block_by_key(PrefixKey{hash, std::nullopt});
-    }
-
-    std::vector<bool> has_blocks_by_key(const std::vector<PrefixKey>& chain) const override {
+    std::vector<bool> has_blocks(const std::vector<PrefixKey>& chain) const override {
         std::lock_guard<std::mutex> lock(m_mutex);
         std::vector<bool> present;
         present.reserve(chain.size());
@@ -337,8 +316,8 @@ public:
         return present;
     }
 
-    std::vector<bool> write_blocks_by_key(const std::vector<PrefixKey>& keys,
-                                          const std::vector<const std::vector<uint8_t>*>& data) override {
+    std::vector<bool> write_blocks(const std::vector<PrefixKey>& keys,
+                                   const std::vector<const std::vector<uint8_t>*>& data) override {
         std::lock_guard<std::mutex> lock(m_mutex);
         std::vector<bool> written;
         written.reserve(keys.size());
@@ -350,8 +329,8 @@ public:
         return written;
     }
 
-    std::vector<bool> read_blocks_by_key(const std::vector<PrefixKey>& keys,
-                                         std::vector<std::vector<uint8_t>>& data) const override {
+    std::vector<bool> read_blocks(const std::vector<PrefixKey>& keys,
+                                  std::vector<std::vector<uint8_t>>& data) const override {
         std::lock_guard<std::mutex> lock(m_mutex);
         std::vector<bool> found;
         found.reserve(keys.size());
@@ -363,22 +342,23 @@ public:
         return found;
     }
 
-    void drop_block_by_key(const PrefixKey& key) override {
+    void invalidate(const PrefixKey& key) override {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (const auto id = key_of(key)) {
             discard_locked(*id);
         }
     }
 
-    size_t get_block_size() const override {
+    size_t block_bytes() const override {
         return m_block_bytes;
     }
 
-    size_t get_capacity_blocks() const override {
+    size_t capacity_blocks_hint() const override {
         return m_capacity_blocks;
     }
 
-    size_t get_num_free_blocks() const override {
+    /// How many slots hold no block; informational.
+    size_t get_num_free_blocks() const {
         std::lock_guard<std::mutex> lock(m_mutex);
         return m_free_slots.size();
     }
@@ -386,10 +366,6 @@ public:
     void flush() override {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_file.flush();
-    }
-
-    bool evicts_itself() const override {
-        return true;
     }
 
     bool is_persistent() const override {
@@ -411,12 +387,16 @@ private:
         return (value + alignment - 1) / alignment * alignment;
     }
 
-    /// A persistent store addresses a block by its digest alone.
+    /// A persistent store addresses a block by its digest alone. A store private to this run may also take a block that
+    /// has none, by its size_t hash, which is as good as any key inside one process.
     std::optional<ContentHash> key_of(const PrefixKey& key) const {
         if (key.digest) {
             return key.digest;
         }
-        return m_directory->persistent() ? std::nullopt : std::optional<ContentHash>(key.wire_id());
+        if (m_directory->persistent()) {
+            return std::nullopt;
+        }
+        return ContentHash{static_cast<uint64_t>(key.hash), static_cast<uint64_t>(key.hash)};
     }
 
     uint64_t slot_offset(size_t slot) const {

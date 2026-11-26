@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "continuous_batching/cache/abi_kv_cache_store.hpp"
+#include "continuous_batching/cache/default_file_store.hpp"
 #include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "continuous_batching/cache/store_registry.hpp"
 #include "store_plugin_locator.hpp"
@@ -40,17 +42,55 @@ std::vector<uint8_t> make_block(uint8_t seed) {
     return data;
 }
 
+// Tests that name a block by one number give it a digest made of that number, which every store takes.
+PrefixKey hash_key(size_t hash) {
+    return PrefixKey{hash, ContentHash{hash, hash}};
+}
+
+bool has_hash(const IKVCacheStore& store, size_t hash) {
+    return store.has_blocks({hash_key(hash)})[0];
+}
+
+bool write_hash(IKVCacheStore& store, size_t hash, const std::vector<uint8_t>& data) {
+    return store.write_blocks({hash_key(hash)}, {&data})[0];
+}
+
+bool read_hash(const IKVCacheStore& store, size_t hash, std::vector<uint8_t>& data) {
+    std::vector<std::vector<uint8_t>> blocks;
+    if (!store.read_blocks({hash_key(hash)}, blocks)[0]) {
+        return false;
+    }
+    data = std::move(blocks[0]);
+    return true;
+}
+
+void drop_hash(IKVCacheStore& store, size_t hash) {
+    store.invalidate(hash_key(hash));
+}
+
+bool is_plugin(const IKVCacheStore& store) {
+    return dynamic_cast<const AbiKVCacheStore*>(&store) != nullptr;
+}
+
+/// How many more blocks the store has room for without evicting; informational.
+size_t free_blocks(const IKVCacheStore& store) {
+    if (const auto* plugin = dynamic_cast<const AbiKVCacheStore*>(&store)) {
+        return plugin->get_num_free_blocks();
+    }
+    return dynamic_cast<const DefaultFileGroupStore&>(store).get_num_free_blocks();
+}
+
 void expect_store_is_usable(IKVCacheStore& store) {
-    EXPECT_EQ(store.get_block_size(), BLOCK_SIZE);
-    EXPECT_EQ(store.get_capacity_blocks(), NUM_BLOCKS);
-    EXPECT_FALSE(store.has_block(1));
+    EXPECT_EQ(store.block_bytes(), BLOCK_SIZE);
+    EXPECT_EQ(store.capacity_blocks_hint(), NUM_BLOCKS);
+    EXPECT_FALSE(has_hash(store, 1));
 
     const auto expected = make_block(/*seed=*/5);
-    ASSERT_TRUE(store.write_block(1, expected));
-    ASSERT_TRUE(store.has_block(1));
+    ASSERT_TRUE(write_hash(store, 1, expected));
+    ASSERT_TRUE(has_hash(store, 1));
 
     std::vector<uint8_t> actual;
-    ASSERT_TRUE(store.read_block(1, actual));
+    ASSERT_TRUE(read_hash(store, 1, actual));
     EXPECT_EQ(actual, expected);
 }
 
@@ -94,7 +134,7 @@ TEST(TestStoreRegistry, LoadsAndUsesAGenuinelySeparateDynamicallyLoadedPlugin) {
 
     auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
-    ASSERT_TRUE(store->is_plugin_backed());
+    ASSERT_TRUE(is_plugin(*store));
     expect_store_is_usable(*store);
 }
 
@@ -110,7 +150,7 @@ TEST(TestStoreRegistry, LoadsAndUsesTheStandaloneSampleThirdPartyPlugin) {
 
     auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(store, nullptr);
-    ASSERT_TRUE(store->is_plugin_backed());
+    ASSERT_TRUE(is_plugin(*store));
     expect_store_is_usable(*store);
 }
 
@@ -127,7 +167,7 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginTakesRestoreReportsAndTheFileProvi
 
     auto store = open_kv_cache_store(make_layout(), config, "CPU", "restore_stats_test");
     ASSERT_NE(store, nullptr);
-    ASSERT_TRUE(store->is_plugin_backed());
+    ASSERT_TRUE(is_plugin(*store));
 
     testing::internal::CaptureStderr();
     const bool taken = store->report_restore_stats(RestoreStats{16384, 1024, 4096, 5000});
@@ -145,7 +185,7 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginTakesRestoreReportsAndTheFileProvi
     file_config.store_provider_name = "file";
     auto file_store = open_kv_cache_store(make_layout(), file_config, "CPU", "kv");
     ASSERT_NE(file_store, nullptr);
-    ASSERT_TRUE(file_store->is_plugin_backed());
+    ASSERT_TRUE(is_plugin(*file_store));
     EXPECT_FALSE(file_store->report_restore_stats(RestoreStats{1, 0, 0, 0}));
 }
 
@@ -164,12 +204,12 @@ TEST(TestStoreRegistry, SampleThirdPartyPluginKeepsGroupsInSeparateStores) {
     auto second = open_kv_cache_store(make_layout(), config, "CPU", "namespace_test_second");
     ASSERT_NE(first, nullptr);
     ASSERT_NE(second, nullptr);
-    ASSERT_TRUE(first->is_plugin_backed());
-    ASSERT_TRUE(second->is_plugin_backed());
+    ASSERT_TRUE(is_plugin(*first));
+    ASSERT_TRUE(is_plugin(*second));
 
-    ASSERT_TRUE(first->write_block(7, make_block(/*seed=*/1)));
-    EXPECT_EQ(first->get_num_free_blocks(), NUM_BLOCKS - 1);
-    EXPECT_EQ(second->get_num_free_blocks(), NUM_BLOCKS);
+    ASSERT_TRUE(write_hash(*first, 7, make_block(/*seed=*/1)));
+    EXPECT_EQ(free_blocks(*first), NUM_BLOCKS - 1);
+    EXPECT_EQ(free_blocks(*second), NUM_BLOCKS);
 }
 
 namespace {
@@ -205,10 +245,10 @@ TEST(TestStoreRegistry, GroupedStoreOfTheDefaultBackendHasAnIndependentStorePerG
     auto kv = stores->group(0);
     auto la = stores->group(1);
 
-    EXPECT_EQ(kv->get_block_size(), BLOCK_SIZE);
-    EXPECT_EQ(la->get_block_size(), 2 * BLOCK_SIZE);
-    ASSERT_TRUE(kv->write_block(1, make_block(/*seed=*/3)));
-    EXPECT_FALSE(la->has_block(1));
+    EXPECT_EQ(kv->block_bytes(), BLOCK_SIZE);
+    EXPECT_EQ(la->block_bytes(), 2 * BLOCK_SIZE);
+    ASSERT_TRUE(write_hash(*kv, 1, make_block(/*seed=*/3)));
+    EXPECT_FALSE(has_hash(*la, 1));
     EXPECT_FALSE(kv->wants_prefix_tokens());
 }
 
@@ -224,12 +264,12 @@ TEST(TestStoreRegistry, GroupedStoreOpensAPluginWithoutTheMultiGroupCapabilityOn
     ASSERT_EQ(stores->group_count(), 2u);
     auto kv = stores->group(0);
     auto la = stores->group(1);
-    ASSERT_TRUE(kv->is_plugin_backed());
-    ASSERT_TRUE(la->is_plugin_backed());
+    ASSERT_TRUE(is_plugin(*kv));
+    ASSERT_TRUE(is_plugin(*la));
 
-    ASSERT_TRUE(kv->write_block(1, make_block(/*seed=*/3)));
-    EXPECT_EQ(kv->get_num_free_blocks(), NUM_BLOCKS - 1);
-    EXPECT_EQ(la->get_num_free_blocks(), NUM_BLOCKS);
+    ASSERT_TRUE(write_hash(*kv, 1, make_block(/*seed=*/3)));
+    EXPECT_EQ(free_blocks(*kv), NUM_BLOCKS - 1);
+    EXPECT_EQ(free_blocks(*la), NUM_BLOCKS);
     EXPECT_FALSE(kv->wants_prefix_tokens());
 }
 
@@ -249,25 +289,25 @@ TEST(TestStoreRegistry, GroupedStoreOpensAMultiGroupPluginOnceForAllGroups) {
     ASSERT_EQ(stores->group_count(), 2u);
     auto kv = stores->group(0);
     auto la = stores->group(1);
-    ASSERT_TRUE(kv->is_plugin_backed());
-    ASSERT_TRUE(la->is_plugin_backed());
+    ASSERT_TRUE(is_plugin(*kv));
+    ASSERT_TRUE(is_plugin(*la));
     EXPECT_TRUE(kv->wants_prefix_tokens());
     EXPECT_TRUE(la->wants_prefix_tokens());
 
-    ASSERT_TRUE(la->write_block(9, make_la_block(/*seed=*/1)));
-    ASSERT_TRUE(kv->write_block(1, make_block(/*seed=*/2)));
-    ASSERT_TRUE(kv->write_block(2, make_block(/*seed=*/3)));
-    EXPECT_TRUE(la->has_block(9));
+    ASSERT_TRUE(write_hash(*la, 9, make_la_block(/*seed=*/1)));
+    ASSERT_TRUE(write_hash(*kv, 1, make_block(/*seed=*/2)));
+    ASSERT_TRUE(write_hash(*kv, 2, make_block(/*seed=*/3)));
+    EXPECT_TRUE(has_hash(*la, 9));
 
     // The instance is full: this block evicts the oldest one, which is the linear-attention block of the other group.
-    ASSERT_TRUE(kv->write_block(3, make_block(/*seed=*/4)));
-    EXPECT_FALSE(la->has_block(9));
-    EXPECT_TRUE(kv->has_block(3));
+    ASSERT_TRUE(write_hash(*kv, 3, make_block(/*seed=*/4)));
+    EXPECT_FALSE(has_hash(*la, 9));
+    EXPECT_TRUE(has_hash(*kv, 3));
 
     // The group is part of the key: the same hash in the other group is another block.
-    ASSERT_TRUE(la->write_block(1, make_la_block(/*seed=*/5)));
+    ASSERT_TRUE(write_hash(*la, 1, make_la_block(/*seed=*/5)));
     std::vector<uint8_t> kv_data;
-    ASSERT_TRUE(kv->read_block(3, kv_data));
+    ASSERT_TRUE(read_hash(*kv, 3, kv_data));
     EXPECT_EQ(kv_data, make_block(/*seed=*/4));
 }
 
@@ -289,7 +329,7 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsBlocksAsFilesOnDisk) {
     {
         auto store = open_kv_cache_store(make_layout(), config, "CPU", "kv");
         ASSERT_NE(store, nullptr);
-        ASSERT_TRUE(store->is_plugin_backed());
+        ASSERT_TRUE(is_plugin(*store));
         expect_store_is_usable(*store);
 
         size_t block_files = 0;
@@ -333,8 +373,8 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToRe
     {
         auto first = open_kv_cache_store(make_layout(), config, "CPU", "kv");
         ASSERT_NE(first, nullptr);
-        ASSERT_TRUE(first->is_plugin_backed());
-        ASSERT_TRUE(first->write_block(1, make_block(/*seed=*/5)));
+        ASSERT_TRUE(is_plugin(*first));
+        ASSERT_TRUE(write_hash(*first, 1, make_block(/*seed=*/5)));
     }
     ASSERT_EQ(count_block_files(directory), 1u);
 
@@ -342,16 +382,16 @@ TEST(TestStoreRegistry, SamplePersistentProviderKeepsOrPurgesBlocksAccordingToRe
     {
         auto reused = open_kv_cache_store(make_layout(), config, "CPU", "kv");
         ASSERT_NE(reused, nullptr);
-        ASSERT_TRUE(reused->is_plugin_backed());
-        EXPECT_TRUE(reused->has_block(1));
+        ASSERT_TRUE(is_plugin(*reused));
+        EXPECT_TRUE(has_hash(*reused, 1));
     }
 
     config.reuse_ssd_cache = false;
     auto purged = open_kv_cache_store(make_layout(), config, "CPU", "kv");
     ASSERT_NE(purged, nullptr);
-    ASSERT_TRUE(purged->is_plugin_backed());
-    EXPECT_FALSE(purged->has_block(1));
-    EXPECT_EQ(purged->get_num_free_blocks(), NUM_BLOCKS);
+    ASSERT_TRUE(is_plugin(*purged));
+    EXPECT_FALSE(has_hash(*purged, 1));
+    EXPECT_EQ(free_blocks(*purged), NUM_BLOCKS);
     EXPECT_EQ(count_block_files(directory), 0u);
     std::filesystem::remove_all(directory);
 }
@@ -365,14 +405,14 @@ TEST(TestStoreRegistry, PluginIsPurgedWhenTheCacheOfAnEarlierRunIsNotReused) {
 
     OffloadSettings config = make_plugin_config(*library_path, "sample-in-memory");
     auto first = open_kv_cache_store(make_layout(), config, "CPU", "purge_test");
-    ASSERT_TRUE(first->write_block(1, make_block(/*seed=*/1)));
+    ASSERT_TRUE(write_hash(*first, 1, make_block(/*seed=*/1)));
 
     auto reused = open_kv_cache_store(make_layout(), config, "CPU", "purge_test");
-    EXPECT_TRUE(reused->has_block(1));
+    EXPECT_TRUE(has_hash(*reused, 1));
 
     config.reuse_ssd_cache = false;
     auto purged = open_kv_cache_store(make_layout(), config, "CPU", "purge_test");
-    EXPECT_FALSE(purged->has_block(1));
+    EXPECT_FALSE(has_hash(*purged, 1));
 }
 
 TEST(TestStoreRegistry, StorePropertiesReachThePluginUnchanged) {
@@ -407,11 +447,11 @@ OffloadSettings make_default_store_config(const std::filesystem::path& directory
 }
 
 bool write_one(IKVCacheStore& store, const PrefixKey& key, const std::vector<uint8_t>& data) {
-    return store.write_blocks_by_key({key}, {&data})[0];
+    return store.write_blocks({key}, {&data})[0];
 }
 
 bool has_one(const IKVCacheStore& store, const PrefixKey& key) {
-    return store.has_blocks_by_key({key})[0];
+    return store.has_blocks({key})[0];
 }
 
 std::filesystem::path find_slots_file(const std::filesystem::path& directory) {
@@ -438,9 +478,9 @@ TEST(TestStoreRegistry, DefaultStoreKeepsBlocksOfAModelAcrossReopening) {
 
     auto reopened = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
     EXPECT_TRUE(has_one(*reopened, digest_key(1)));
-    EXPECT_EQ(reopened->get_num_free_blocks(), NUM_BLOCKS - 2);
+    EXPECT_EQ(free_blocks(*reopened), NUM_BLOCKS - 2);
     std::vector<std::vector<uint8_t>> data;
-    ASSERT_TRUE(reopened->read_blocks_by_key({digest_key(2)}, data)[0]);
+    ASSERT_TRUE(reopened->read_blocks({digest_key(2)}, data)[0]);
     EXPECT_EQ(data[0], make_block(2));
 
     auto other_model = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_b");
@@ -461,7 +501,7 @@ TEST(TestStoreRegistry, DefaultStoreDropsTheCacheOfAnEarlierRunWhenNotReused) {
     config.reuse_ssd_cache = false;
     auto purged = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
     EXPECT_FALSE(has_one(*purged, digest_key(1)));
-    EXPECT_EQ(purged->get_num_free_blocks(), NUM_BLOCKS);
+    EXPECT_EQ(free_blocks(*purged), NUM_BLOCKS);
     purged.reset();
     std::filesystem::remove_all(directory);
 }
@@ -469,13 +509,12 @@ TEST(TestStoreRegistry, DefaultStoreDropsTheCacheOfAnEarlierRunWhenNotReused) {
 TEST(TestStoreRegistry, DefaultStoreEvictsTheLeastRecentlyUsedBlock) {
     const auto directory = fresh_directory("openvino_genai_default_store_lru");
     auto store = open_kv_cache_store(make_layout(), make_default_store_config(directory), "CPU", "kv:model_a");
-    ASSERT_TRUE(store->evicts_itself());
     for (uint64_t number = 1; number <= NUM_BLOCKS; ++number) {
         ASSERT_TRUE(write_one(*store, digest_key(number), make_block(static_cast<uint8_t>(number))));
     }
 
     std::vector<std::vector<uint8_t>> data;
-    ASSERT_TRUE(store->read_blocks_by_key({digest_key(1)}, data)[0]);  // a hit makes block 1 the most recent
+    ASSERT_TRUE(store->read_blocks({digest_key(1)}, data)[0]);  // a hit makes block 1 the most recent
     ASSERT_TRUE(write_one(*store, digest_key(5), make_block(5)));      // never fails for lack of capacity
 
     EXPECT_TRUE(has_one(*store, digest_key(1)));
@@ -522,9 +561,9 @@ TEST(TestStoreRegistry, DefaultStoreTreatsADamagedBlockAsMissing) {
     auto reopened = open_kv_cache_store(make_layout(), config, "CPU", "kv:model_a");
     ASSERT_TRUE(has_one(*reopened, digest_key(1)));
     std::vector<std::vector<uint8_t>> data;
-    EXPECT_FALSE(reopened->read_blocks_by_key({digest_key(1)}, data)[0]);
+    EXPECT_FALSE(reopened->read_blocks({digest_key(1)}, data)[0]);
     EXPECT_FALSE(has_one(*reopened, digest_key(1)));
-    EXPECT_EQ(reopened->get_num_free_blocks(), NUM_BLOCKS);
+    EXPECT_EQ(free_blocks(*reopened), NUM_BLOCKS);
     reopened.reset();
     std::filesystem::remove_all(directory);
 }

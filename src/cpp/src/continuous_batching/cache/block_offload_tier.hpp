@@ -62,8 +62,8 @@ struct BlockOffloadTierTraits;
  * forward pass that completed them has finished). Contents are copied out synchronously at that
  * moment and reach the store on a background thread, so the allocation path never waits for it. A
  * queued block is served straight from its staging copy, which makes the hand-off invisible to
- * callers. Entries are keyed by the prefix-cache block hash; once the store is full the least recently
- * used entry is replaced, unless the store evicts by its own policy (IKVCacheStore::evicts_itself).
+ * callers. Blocks are keyed by the prefix-cache block hash. The store alone decides what it holds and what it evicts
+ * when it is full, so this class keeps no index of its content: it only remembers what the latest probes found.
  *
  * Offload is best effort: a failed store is reported through the statistics and never propagates to
  * the caller, since losing a cache entry only costs recomputation.
@@ -80,7 +80,6 @@ public:
 
     struct Statistics {
         std::size_t num_stored = 0;
-        std::size_t num_replaced = 0;
         std::size_t num_already_present = 0;
         std::size_t num_loaded = 0;
         std::size_t num_failed = 0;
@@ -95,10 +94,10 @@ public:
     /**
      * @brief Keeps the store from losing blocks to the blocks a warm-up pushes out of memory, for as long as it exists.
      *
-     * Warming a prefix chain evicts memory blocks in order to host that very chain, so storing them
-     * must not be allowed to push out a block the chain still has to read back. A host-evicting store does not
-     * reclaim a slot meanwhile; a self-evicting store gets no writes meanwhile, the blocks wait in the staging queue
-     * (where loads still find them) and are written once the pause ends. A full queue drops further blocks.
+     * Warming a prefix chain evicts memory blocks in order to host that very chain, so storing them must not be
+     * allowed to push out a block the chain still has to read back. The store gets no writes meanwhile: the blocks wait
+     * in the staging queue (where loads still find them) and are written once the pause ends. A full queue drops
+     * further blocks.
      */
     class ScopedReclamationPause {
     public:
@@ -127,16 +126,14 @@ public:
           m_max_queued_stores(max_queued_stores) {
         OPENVINO_ASSERT(m_store != nullptr, Traits::kKind, " store must not be null");
         OPENVINO_ASSERT(m_max_queued_stores > 0, Traits::kKind, " needs at least one staging buffer");
-        OPENVINO_ASSERT(m_store->get_block_size() == m_cache_manager.get_block_layout().get_slot_size(),
+        OPENVINO_ASSERT(m_store->block_bytes() == m_cache_manager.get_block_layout().get_slot_size(),
                         Traits::kKind, " store block size does not match the cache block layout");
         m_track_chains = m_store->wants_chain_context();
         if (m_store->is_persistent()) {
             // A store that outlives this process is keyed by the 128-bit digest, which Sequence records on request.
             m_digest_lease.emplace();
         }
-        m_self_evicting = m_store->evicts_itself();
-        m_max_links = std::max<std::size_t>(65536, 8 * m_store->get_capacity_blocks());
-        m_known_free_blocks = m_store->get_num_free_blocks();
+        m_max_links = std::max<std::size_t>(65536, 8 * m_store->capacity_blocks_hint());
         m_writer = std::thread(&BlockOffloadTier::run_writer, this);
     }
 
@@ -207,12 +204,9 @@ public:
         if (find_queued(hash) != nullptr) {
             return true;
         }
-        // The store is never asked here, because callers hold the block manager lock. It may hold entries this
+        // The store is never asked here, because callers hold the block manager lock. It may hold blocks this
         // instance never wrote, e.g. blocks of an earlier pipeline on a persistent store; probe() finds them.
-        if (m_self_evicting) {
-            return m_store_hits.find(hash) != m_store_hits.end();
-        }
-        return m_entries.find(hash) != m_entries.end() || m_store_hits.find(hash) != m_store_hits.end();
+        return m_store_hits.find(hash) != m_store_hits.end();
     }
 
     /**
@@ -225,11 +219,6 @@ public:
         std::vector<bool> present(chain.size(), false);
         if (chain.empty()) {
             return present;
-        }
-        std::size_t reclaim_epoch = 0;
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            reclaim_epoch = m_reclaim_epoch;
         }
         std::vector<bool> in_store(chain.size(), false);
         // The digests are resolved here, once, and pinned with the chain links below, so later requests for these
@@ -245,26 +234,20 @@ public:
         }
         try {
             announce_prefix_tokens(keys);
-            in_store = m_store->has_blocks_by_key(keys);
+            in_store = m_store->has_blocks(keys);
         } catch (const std::exception& error) {
             GENAI_WARN("%s store probe failed: %s", Traits::kKind, error.what());
         }
         std::lock_guard<std::mutex> lock(m_mutex);
-        // An entry reclaimed during the unlocked store call may still be reported present; remembering that hit
-        // would make contains() claim a block that is gone, so such an answer is not trusted.
-        const bool store_answer_current = reclaim_epoch == m_reclaim_epoch;
         for (std::size_t i = 0; i < chain.size(); ++i) {
-            bool stored = false;
-            if (store_answer_current) {
-                stored = i < in_store.size() && in_store[i];
-                if (stored) {
-                    remember_store_hit_locked(chain[i]);
-                } else {
-                    // An authoritative miss outweighs any earlier hit, e.g. the store evicted it since the last probe.
-                    m_store_hits.erase(chain[i]);
-                }
+            const bool stored = i < in_store.size() && in_store[i];
+            if (stored) {
+                remember_store_hit_locked(chain[i]);
+            } else {
+                // An authoritative miss outweighs any earlier hit, e.g. the store evicted it since the last probe.
+                m_store_hits.erase(chain[i]);
             }
-            present[i] = stored || m_entries.find(chain[i]) != m_entries.end() || find_queued(chain[i]) != nullptr;
+            present[i] = stored || find_queued(chain[i]) != nullptr;
             if (m_track_chains) {
                 record_link_locked(chain[i], i > 0 ? chain[i - 1] : 0, i > 0, digests[i]);
             }
@@ -292,10 +275,6 @@ public:
                 lock.lock();
                 m_statistics.load_write_us += write_us;
             } else {
-                if (!m_self_evicting && m_entries.find(hash) == m_entries.end() &&
-                    m_store_hits.find(hash) == m_store_hits.end()) {
-                    return false;
-                }
                 // Callers hold the block manager lock, so the store is not read here: only prefetch() reads it,
                 // without any host lock. A block it did not bring (over its memory budget, or lost) is a miss.
                 const auto prefetched = m_prefetched.find(hash);
@@ -327,7 +306,6 @@ public:
         }
 
         ++m_statistics.num_loaded;
-        touch_locked(hash);
         // TEMPORARY diagnostics, to be removed once the GPU cost breakdown is settled.
         GENAI_INFO("[KV_TRACE] %s index=%zu", Traits::kLoadBlockTrace, block_index);
         return true;
@@ -348,11 +326,8 @@ public:
                 if (m_prefetched.find(hash) != m_prefetched.end() || find_queued(hash) != nullptr) {
                     continue;
                 }
-                if (m_self_evicting || m_entries.find(hash) != m_entries.end() ||
-                    m_store_hits.find(hash) != m_store_hits.end()) {
-                    wanted.push_back(hash);
-                    wanted_keys.push_back(PrefixKey{hash, digest_locked(hash)});
-                }
+                wanted.push_back(hash);
+                wanted_keys.push_back(PrefixKey{hash, digest_locked(hash)});
             }
         }
         if (wanted.empty()) {
@@ -364,7 +339,7 @@ public:
         bool read_succeeded = true;
         const auto started = std::chrono::steady_clock::now();
         try {
-            found = m_store->read_blocks_by_key(wanted_keys, data);
+            found = m_store->read_blocks(wanted_keys, data);
         } catch (const std::exception& error) {
             // Nothing was read ahead, so load_into reports these blocks as misses.
             GENAI_WARN("%s prefetch failed: %s", Traits::kKind, error.what());
@@ -395,7 +370,7 @@ public:
 
     /// Bounds the memory one prefetch() holds before the warm-up copies the blocks into the device cache.
     std::size_t max_prefetch_blocks() const override {
-        return std::max<std::size_t>(1, m_max_prefetch_bytes / std::max<std::size_t>(1, m_store->get_block_size()));
+        return std::max<std::size_t>(1, m_max_prefetch_bytes / std::max<std::size_t>(1, m_store->block_bytes()));
     }
 
     void set_max_prefetch_bytes(std::size_t bytes) {
@@ -423,36 +398,17 @@ public:
             key.digest = digest_locked(hash);
         }
         std::vector<std::vector<uint8_t>> blocks;
-        if (!m_store->read_blocks_by_key({key}, blocks).at(0)) {
+        if (!m_store->read_blocks({key}, blocks).at(0)) {
             return false;
         }
         block_data = std::move(blocks[0]);
         return true;
     }
 
-    std::size_t get_num_entries() const {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        return m_entries.size();
-    }
-
-    /// Whether the backing store is a third-party plugin that may outlive this pipeline.
-    bool is_plugin_backed() const {
-        return m_store->is_plugin_backed();
-    }
-
-    /// Whether the backing store decides by itself which blocks to evict when it is full.
-    bool evicts_itself() const {
-        return m_self_evicting;
-    }
-
     /// Hands what a prefix restore found to the store, with no lock held, as a plugin store may be slow.
     /// @return Whether the store reports the reuse metrics itself.
     bool report_restore_stats(const RestoreStats& stats) {
         return m_store->report_restore_stats(stats);
-    }
-
-    std::size_t get_num_free_slots() const {
-        return m_store->get_num_free_blocks();
     }
 
     Statistics get_statistics() const {
@@ -466,8 +422,6 @@ private:
         std::size_t hash = 0;
         // The 128-bit digest behind hash, when known; a plugin store addresses the block by it.
         std::optional<ContentHash> digest;
-        // The writer thread drops the least recently used entry to make room for this block.
-        bool needs_reclaim = false;
         // The prefix chain from block 0 up to this block, probed right before the write. Empty when not tracked.
         std::vector<PrefixKey> chain;
         std::vector<uint8_t> data;
@@ -511,10 +465,10 @@ private:
 
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        if (m_entries.find(hash) != m_entries.end() || find_queued(hash) != nullptr) {
+        // A hint that can be stale: the store may have evicted the block since, which only costs the next run a recompute.
+        if (m_store_hits.find(hash) != m_store_hits.end() || find_queued(hash) != nullptr) {
             // Contents are content-addressed by `hash`, so the stored copy already holds the same data.
             ++m_statistics.num_already_present;
-            touch_locked(hash);
             return;
         }
 
@@ -524,22 +478,9 @@ private:
             return;
         }
 
-        bool needs_reclaim = false;
-        // Blocks already queued will each take a free slot once the writer thread gets to them, and each pending
-        // reclaim gives one back. A self-evicting store makes room itself. The store is not asked here: the free
-        // count is tracked locally, so no plugin call is made while this lock is held.
-        if (!m_self_evicting && m_known_free_blocks + m_pending_reclaims <= m_queued_stores.size()) {
-            if (m_reclamation_paused || m_recency_order.size() <= m_pending_reclaims) {
-                ++m_statistics.num_failed;
-                return;
-            }
-            needs_reclaim = true;
-        }
-
         QueuedStore queued;
         queued.hash = hash;
         queued.digest = digest_locked(hash);
-        queued.needs_reclaim = needs_reclaim;
         if (m_track_chains) {
             queued.chain = chain_to_locked(hash);
         }
@@ -554,9 +495,6 @@ private:
         }
 
         m_queued_stores.push_back(std::move(queued));
-        if (needs_reclaim) {
-            ++m_pending_reclaims;
-        }
         GENAI_INFO("[KV_TRACE] %s queue_store hash=%zu physical_block=%d queued=%zu reason=%s",
                    Traits::kClassName,
                    hash,
@@ -569,8 +507,9 @@ private:
     void run_writer() {
         std::unique_lock<std::mutex> lock(m_mutex);
         while (true) {
+            // While a warm-up pauses reclamation, what it pushes out of memory waits here and is written afterwards.
             m_queued_cv.wait(lock, [this] {
-                return m_stopping || (!m_queued_stores.empty() && !(m_self_evicting && m_reclamation_paused));
+                return m_stopping || (!m_queued_stores.empty() && !m_reclamation_paused);
             });
             if (m_queued_stores.empty()) {
                 if (m_stopping) {
@@ -589,52 +528,20 @@ private:
             }
             std::vector<bool> already_present(batch.size(), false);
             std::vector<bool> stored(batch.size(), false);
-            std::vector<bool> skipped(batch.size(), false);
 
-            // Room is made here rather than when queueing, so the plugin is dropped from without any host lock held.
-            std::vector<PrefixKey> reclaimed_keys;
-            for (std::size_t i = 0; i < batch.size(); ++i) {
-                if (!batch[i]->needs_reclaim) {
-                    continue;
-                }
-                --m_pending_reclaims;
-                // Pausing may have started after the block was queued, and then no entry may be replaced.
-                std::optional<PrefixKey> oldest;
-                if (!m_reclamation_paused) {
-                    oldest = pop_oldest_entry_locked();
-                }
-                if (oldest.has_value()) {
-                    reclaimed_keys.push_back(*oldest);
-                    ++m_known_free_blocks;
-                } else {
-                    skipped[i] = true;
-                }
-            }
-
-            bool capacity_rejected = false;
             const auto write_started = std::chrono::steady_clock::now();
             lock.unlock();
-            for (const PrefixKey& reclaimed : reclaimed_keys) {
-                try {
-                    m_store->drop_block_by_key(reclaimed);
-                } catch (const std::exception& error) {
-                    GENAI_WARN("%s drop failed for hash %zu: %s", Traits::kKind, reclaimed.hash, error.what());
-                }
-            }
             try {
                 std::vector<PrefixKey> keys;
                 std::vector<const std::vector<uint8_t>*> data;
                 std::vector<std::size_t> to_write;
                 for (std::size_t i = 0; i < batch.size(); ++i) {
-                    if (skipped[i]) {
-                        continue;
-                    }
                     if (!batch[i]->chain.empty()) {
                         announce_prefix_tokens(batch[i]->chain);
                         // Every write is preceded by a probe of its chain from block 0, so the store can place the block.
-                        const std::vector<bool> present = m_store->has_blocks_by_key(batch[i]->chain);
-                        // No index here knows what a self-evicting store holds, so the probe also tells whether to skip.
-                        already_present[i] = m_self_evicting && !present.empty() && present.back();
+                        const std::vector<bool> present = m_store->has_blocks(batch[i]->chain);
+                        // No index here knows what the store holds, so the probe also tells whether to skip.
+                        already_present[i] = !present.empty() && present.back();
                     }
                     if (!already_present[i]) {
                         to_write.push_back(i);
@@ -644,27 +551,17 @@ private:
                 }
                 if (!to_write.empty()) {
                     announce_prefix_tokens(keys);
-                    const std::vector<bool> written = m_store->write_blocks_by_key(keys, data);
+                    const std::vector<bool> written = m_store->write_blocks(keys, data);
                     for (std::size_t i = 0; i < to_write.size(); ++i) {
                         stored[to_write[i]] = written[i];
                         if (!written[i]) {
-                            capacity_rejected = true;
-                            GENAI_WARN("%s store ran out of capacity after reservation for hash %zu", Traits::kKind, keys[i].hash);
+                            GENAI_INFO("%s store did not take the block with hash %zu", Traits::kKind, keys[i].hash);
                         }
                     }
                 }
             } catch (const std::exception& error) {
                 GENAI_WARN("%s store failed for a batch of %zu blocks: %s", Traits::kKind, batch.size(), error.what());
                 std::fill(stored.begin(), stored.end(), false);
-            }
-            std::optional<std::size_t> free_blocks_in_store;
-            if (capacity_rejected) {
-                // The local count has drifted from the store, e.g. because another process shares it.
-                try {
-                    free_blocks_in_store = m_store->get_num_free_blocks();
-                } catch (const std::exception& error) {
-                    GENAI_WARN("%s free block query failed: %s", Traits::kKind, error.what());
-                }
             }
             // Stop the clock before re-taking the mutex, so lock contention is not counted as write time.
             const auto write_us = static_cast<std::size_t>(
@@ -674,23 +571,19 @@ private:
             // Accumulated only under the mutex, which get_statistics() also takes.
             m_statistics.store_write_us += write_us;
 
-            std::size_t num_stored = 0;
             for (std::size_t i = 0; i < batch.size(); ++i) {
                 const std::size_t hash = m_queued_stores.front().hash;
-                const std::optional<ContentHash> digest = m_queued_stores.front().digest;
-                const bool needs_reclaim = m_queued_stores.front().needs_reclaim;
                 m_queued_stores.pop_front();
                 if (already_present[i]) {
                     ++m_statistics.num_already_present;
+                    remember_store_hit_locked(hash);
                 } else if (stored[i]) {
-                    ++num_stored;
-                    publish(hash, digest, needs_reclaim);
+                    ++m_statistics.num_stored;
+                    remember_store_hit_locked(hash);
                 } else {
                     ++m_statistics.num_failed;
                 }
             }
-            // The queue now holds only blocks that are not written yet, which is what the free count excludes.
-            m_known_free_blocks = free_blocks_in_store.value_or(m_known_free_blocks - std::min(num_stored, m_known_free_blocks));
             m_drained_cv.notify_all();
         }
     }
@@ -710,16 +603,13 @@ private:
         return std::vector<PrefixKey>(reversed.rbegin(), reversed.rend());
     }
 
-    /// @return The digest of @p hash as pinned by a probe, a link or an entry, else what Sequence recorded last.
+    /// @return The digest of @p hash as pinned by a probe or a link, else what Sequence recorded last.
     std::optional<ContentHash> digest_locked(std::size_t hash) const {
         if (!m_digest_lease) {
             return std::nullopt;
         }
         if (const auto link = m_links.find(hash); link != m_links.end() && link->second.digest) {
             return link->second.digest;
-        }
-        if (const auto entry = m_entries.find(hash); entry != m_entries.end() && entry->second) {
-            return entry->second;
         }
         return PrefixDigestRegistry::instance().find(hash);
     }
@@ -747,32 +637,6 @@ private:
         }
     }
 
-    /// Marks the entry of @p hash as the most recently used; a hash without an entry is ignored.
-    void touch_locked(std::size_t hash) {
-        if (const auto position = m_recency_position.find(hash); position != m_recency_position.end()) {
-            m_recency_order.splice(m_recency_order.end(), m_recency_order, position->second);
-        }
-    }
-
-    /// Removes the least recently used entry from the index. The store still has to drop it, which must happen without a lock.
-    /// @return The key of the removed entry, or nothing if no entry exists.
-    std::optional<PrefixKey> pop_oldest_entry_locked() {
-        if (m_recency_order.empty()) {
-            return std::nullopt;
-        }
-        const std::size_t oldest_hash = m_recency_order.front();
-        const auto entry = m_entries.find(oldest_hash);
-        OPENVINO_ASSERT(entry != m_entries.end(),
-                        Traits::kKind, " index and recency order are out of sync");
-        const PrefixKey key{oldest_hash, entry->second};
-        m_recency_order.pop_front();
-        m_recency_position.erase(oldest_hash);
-        m_entries.erase(entry);
-        ++m_reclaim_epoch;
-        m_store_hits.erase(oldest_hash);
-        return key;
-    }
-
     const QueuedStore* find_queued(std::size_t hash) const {
         for (const auto& queued : m_queued_stores) {
             if (queued.hash == hash) {
@@ -782,31 +646,9 @@ private:
         return nullptr;
     }
 
-    void publish(std::size_t hash, const std::optional<ContentHash>& digest, bool reclaimed) {
-        if (m_self_evicting) {
-            // Nothing to index: the store alone knows whether the block is still there.
-            ++m_statistics.num_stored;
-            return;
-        }
-        m_recency_order.push_back(hash);
-        m_recency_position[hash] = std::prev(m_recency_order.end());
-        m_entries[hash] = digest;
-        ++m_statistics.num_stored;
-        if (reclaimed) {
-            ++m_statistics.num_replaced;
-        }
-        GENAI_INFO("[KV_TRACE] %s publish hash=%zu entries=%zu replaced=%s",
-                   Traits::kClassName,
-                   hash,
-                   m_entries.size(),
-                   reclaimed ? "true" : "false");
-    }
-
     CacheManagerT& m_cache_manager;
     std::unique_ptr<IKVCacheStore> m_store;
-    // Stored blocks this tier knows of, with the digest each was stored under so it can be dropped by the same key.
-    std::unordered_map<std::size_t, std::optional<ContentHash>> m_entries;
-    // Hashes the latest probes found in the store; the store itself is never asked about a single block.
+    // Hashes the latest probes and writes found in the store; a hint, since the store evicts by its own policy.
     std::unordered_set<std::size_t> m_store_hits;
     // Chain positions of published blocks, kept only for a plugin store, which wants the chain before a write.
     std::unordered_map<std::size_t, ChainLink> m_links;
@@ -818,25 +660,14 @@ private:
     std::optional<PrefixDigestRegistry::Lease> m_digest_lease;
     // Held for a store of state checkpoints that wants their tokens, so that Sequence records them.
     std::optional<PrefixTokenRegistry::Lease> m_token_lease;
-    // The store drops blocks by its own policy, so no index of its content is kept here and nothing is reclaimed.
-    bool m_self_evicting = false;
     bool m_store_completed_blocks = false;
-    // Front is the least recently used entry and the first to be replaced when the file is full.
-    std::list<std::size_t> m_recency_order;
-    std::unordered_map<std::size_t, std::list<std::size_t>::iterator> m_recency_position;
     // A store stays queued until it is published, so readers never lose sight of it.
     std::deque<QueuedStore> m_queued_stores;
     std::size_t m_max_queued_stores;
-    // Free blocks of the store, not counting the queued blocks that are still to be written.
-    std::size_t m_known_free_blocks = 0;
-    // Queued blocks whose writer-thread reclaim has not started yet.
-    std::size_t m_pending_reclaims = 0;
     std::vector<uint8_t> m_staging;
     // Blocks read ahead by prefetch() and not yet consumed by load_into().
     std::unordered_map<std::size_t, std::vector<uint8_t>> m_prefetched;
     Statistics m_statistics;
-    // Counts reclaimed entries, so probe() can tell that a block was dropped while it asked the store without a lock.
-    std::size_t m_reclaim_epoch = 0;
     bool m_reclamation_paused = false;
     bool m_stopping = false;
     mutable std::mutex m_mutex;

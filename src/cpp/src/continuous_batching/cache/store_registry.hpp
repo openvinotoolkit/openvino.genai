@@ -16,7 +16,7 @@ namespace ov::genai {
 /**
  * @brief Opens the KV cache store backend configured by a OffloadSettings.
  *
- * Without a vendor plugin configured (the default), this returns the in-tree FileKVCacheStore
+ * Without a vendor plugin configured (the default), this returns the in-tree DefaultFileGroupStore
  * directly - no ABI marshaling in the hot path. When config.store_library_path is non-empty the plugin
  * is mandatory: any failure (library not found, missing entry symbol, ABI version/fingerprint
  * mismatch, named provider not found, open() failure, incomplete vtable) throws instead of silently
@@ -50,7 +50,7 @@ struct StoreGroupSpec {
 /**
  * @brief Opens the stores of all cache groups of a pipeline together.
  *
- * A plugin that advertises OV_KVCACHE_CAP_MULTI_GROUP (and OV_KVCACHE_CAP_SELF_EVICT) is opened once, under
+ * A plugin that advertises OV_KVCACHE_CAP_MULTI_GROUP is opened once, under
  * @p shared_namespace, with every group in its open options, and the groups are views of that one instance. Any other
  * backend gets a store per group, as open_kv_cache_store() would open it.
  */

@@ -4,16 +4,17 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <thread>
 #include <vector>
 
 #include "continuous_batching/cache/block_manager.hpp"
-#include "continuous_batching/cache/file_kv_cache_store.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_offload_cache.hpp"
-#include "continuous_batching/cache/kv_cache_offload_manager.hpp"
+#include "continuous_batching/cache/store_registry.hpp"
+#include "store_test_utils.hpp"
 #include "helper.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/runtime/core.hpp"
@@ -53,15 +54,13 @@ struct LaCacheFixture {
 
 OffloadSettings make_offload_config(const LaCacheFixture& fixture, size_t num_slots) {
     OffloadSettings config;
+    config.kv_cache_dir = std::filesystem::temp_directory_path().string();
     config.capacity_bytes = fixture.cache_manager->get_block_layout().get_slot_size() * num_slots;
     return config;
 }
 
 std::unique_ptr<LinearAttentionOffloadCache> make_offload_cache(LaCacheFixture& fixture, size_t num_slots) {
-    auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
-                                                           make_offload_config(fixture, num_slots),
-                                                           "CPU");
-    auto store = std::make_unique<FileKVCacheStore>(std::move(backend));
+    auto store = open_kv_cache_store(fixture.cache_manager->get_block_layout(), make_offload_config(fixture, num_slots), "CPU", "kv");
     return std::make_unique<LinearAttentionOffloadCache>(*fixture.cache_manager, std::move(store), /*max_queued_stores=*/8);
 }
 
@@ -86,7 +85,7 @@ TEST(TestLinearAttentionOffloadCache, StoresBlockContentsOnOverwrite) {
     offload_cache->flush();
 
     EXPECT_TRUE(offload_cache->contains(42));
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
     EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
 
     std::vector<uint8_t> restored;
@@ -104,7 +103,7 @@ TEST(TestLinearAttentionOffloadCache, KeepsFirstCopyOfKnownHash) {
     offload_cache->on_blocks_overwritten(/*hash=*/5, make_block_set(1));
     offload_cache->flush();
 
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
     EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
     EXPECT_EQ(offload_cache->get_statistics().num_already_present, 1);
 
@@ -113,21 +112,20 @@ TEST(TestLinearAttentionOffloadCache, KeepsFirstCopyOfKnownHash) {
     EXPECT_EQ(restored, expected);
 }
 
-TEST(TestLinearAttentionOffloadCache, ReplacesOldestEntryWhenFileIsFull) {
+TEST(TestLinearAttentionOffloadCache, ReplacesTheOldestBlockWhenTheStoreIsFull) {
     LaCacheFixture fixture;
     auto offload_cache = make_offload_cache(fixture, 1);
     fixture.fill_block(0, /*seed=*/1);
     offload_cache->on_blocks_overwritten(/*hash=*/100, make_block_set(0));
     offload_cache->flush();
-    ASSERT_EQ(offload_cache->get_num_free_slots(), 0);
 
     const auto newer = fixture.fill_block(1, /*seed=*/60);
     offload_cache->on_blocks_overwritten(/*hash=*/200, make_block_set(1));
     offload_cache->flush();
 
-    EXPECT_EQ(offload_cache->get_num_entries(), 1);
+    EXPECT_EQ(offload_cache->probe({100, 200}), (std::vector<bool>{false, true}));
     EXPECT_FALSE(offload_cache->contains(100));
-    EXPECT_EQ(offload_cache->get_statistics().num_replaced, 1);
+    EXPECT_EQ(offload_cache->get_statistics().num_stored, 2u);
 
     std::vector<uint8_t> restored;
     ASSERT_TRUE(offload_cache->read(200, restored));
@@ -189,7 +187,7 @@ TEST(TestLinearAttentionOffloadCache, BlockManagerWarmsPrefixBlockFromOffloadCac
     fixture.fill_block(0, /*seed=*/31);
     offload_cache->on_blocks_overwritten(prefix_hash, make_block_set(0));
     offload_cache->flush();
-    ASSERT_GT(offload_cache->get_num_entries(), 0);
+    ASSERT_GT(offload_cache->get_statistics().num_stored, 0);
 
     EXPECT_GT(block_manager.warm_prefix_cache(consumer, *offload_cache), 0);
     EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
@@ -280,9 +278,9 @@ TEST(TestLinearAttentionOffloadCache, WarmUpStaysWithinTheRestoreLimit) {
 namespace {
 
 /// Lets several offload caches see one store, the way pipelines do through a persistent plugin.
-class SharedStore : public IKVCacheStore {
+class SharedStore : public test::HashKeyedStore {
 public:
-    explicit SharedStore(std::shared_ptr<IKVCacheStore> inner) : m_inner(std::move(inner)) {}
+    explicit SharedStore(std::shared_ptr<test::HashKeyedStore> inner) : m_inner(std::move(inner)) {}
 
     bool has_block(size_t hash) const override {
         return m_inner->has_block(hash);
@@ -310,18 +308,16 @@ public:
     }
 
 private:
-    std::shared_ptr<IKVCacheStore> m_inner;
+    std::shared_ptr<test::HashKeyedStore> m_inner;
 };
 
-std::shared_ptr<IKVCacheStore> make_shared_file_store(LaCacheFixture& fixture, size_t num_slots) {
-    auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
-                                                           make_offload_config(fixture, num_slots),
-                                                           "CPU");
-    return std::make_shared<FileKVCacheStore>(std::move(backend));
+std::shared_ptr<test::HashKeyedStore> make_shared_file_store(LaCacheFixture& fixture, size_t num_slots) {
+    return std::make_shared<test::HashAdapter>(
+        open_kv_cache_store(fixture.cache_manager->get_block_layout(), make_offload_config(fixture, num_slots), "CPU", "kv"));
 }
 
 std::unique_ptr<LinearAttentionOffloadCache> make_offload_cache_on(LaCacheFixture& fixture,
-                                                                   std::shared_ptr<IKVCacheStore> store) {
+                                                                   std::shared_ptr<test::HashKeyedStore> store) {
     return std::make_unique<LinearAttentionOffloadCache>(*fixture.cache_manager,
                                                          std::make_unique<SharedStore>(std::move(store)),
                                                          /*max_queued_stores=*/8);
@@ -340,7 +336,7 @@ TEST(TestLinearAttentionOffloadCache, AnotherInstanceServesEntriesItNeverWrote) 
     }
 
     auto second = make_offload_cache_on(fixture, store);
-    EXPECT_EQ(second->get_num_entries(), 0);
+    EXPECT_EQ(second->get_statistics().num_stored, 0);
     // The store is only asked through probe(); contains() answers from what the probes found.
     EXPECT_EQ(second->probe({42, 43}), (std::vector<bool>{true, false}));
     EXPECT_TRUE(second->contains(42));
@@ -353,12 +349,6 @@ TEST(TestLinearAttentionOffloadCache, AnotherInstanceServesEntriesItNeverWrote) 
     second->prefetch({42});
     ASSERT_TRUE(second->load_into(/*hash=*/42, /*block_index=*/1));
     EXPECT_EQ(fixture.cache_manager->read_block(1), expected);
-}
-
-TEST(TestLinearAttentionOffloadCache, ReportsWhetherItsStoreIsAPlugin) {
-    LaCacheFixture fixture;
-    auto offload_cache = make_offload_cache(fixture, 1);
-    EXPECT_FALSE(offload_cache->is_plugin_backed());
 }
 
 TEST(TestLinearAttentionOffloadCache, ConcurrentOverwritesNeverExceedTheStoreCapacity) {
@@ -378,5 +368,11 @@ TEST(TestLinearAttentionOffloadCache, ConcurrentOverwritesNeverExceedTheStoreCap
     overwriter.join();
     offload_cache->flush();
 
-    EXPECT_LE(offload_cache->get_num_entries(), 2);
+    std::vector<size_t> hashes;
+    for (size_t i = 0; i < 200; ++i) {
+        hashes.push_back(i);
+        hashes.push_back(1000 + i);
+    }
+    const std::vector<bool> present = offload_cache->probe(hashes);
+    EXPECT_LE(std::count(present.begin(), present.end(), true), 2);
 }

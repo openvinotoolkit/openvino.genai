@@ -600,6 +600,11 @@ static OvKVCacheStatus provider_open(void* self,
     }
     sample_mutex_unlock(&g_registry_mutex);
 
+    /* Every plugin evicts by itself: with a budget, write_blocks makes room by dropping the oldest blocks. */
+    if (opts != NULL && opts->capacity_bytes > 0) {
+        store->max_bytes = opts->capacity_bytes;
+    }
+
     out->store = store;
     out->vtable = &g_store_vtable;
     /* Identifies how this provider keeps blocks; change it whenever blocks written before would no longer be read back. */
@@ -669,8 +674,8 @@ static const OvKVCacheStoreProviderDescriptor g_provider_descriptor = {
 };
 
 /* --------------------------------------------------------------------------
- * "sample-self-evict-memory" provider: the in-memory store above, but bounded by `capacity_bytes` and evicting its
- * own oldest blocks when full (OV_KVCACHE_CAP_SELF_EVICT). The host then neither tracks capacity nor drops blocks.
+ * "sample-self-evict-memory" provider: the in-memory store above, which like every provider is bounded by
+ * `capacity_bytes` and evicts its own oldest blocks when full; the host neither tracks capacity nor drops blocks.
  * It also shows the ABI 1.3 capabilities: it is opened once for all cache groups (OV_KVCACHE_CAP_MULTI_GROUP), so
  * its budget covers KV blocks and linear-attention checkpoints of very different sizes, and it is told which tokens
  * each checkpoint covers (OV_KVCACHE_CAP_PREFIX_TOKENS).
@@ -684,11 +689,7 @@ static OvKVCacheStatus self_evict_provider_open(void* self,
                                                 const OvKVCacheNamespace* ns,
                                                 const OvKVCacheStoreOpenOptions* opts,
                                                 OvKVCacheStoreOpenResult* out) {
-    const OvKVCacheStatus status = provider_open(self, ns, opts, out);
-    if (status == OV_KVCACHE_OK && opts != NULL && opts->capacity_bytes > 0) {
-        ((SampleStore*)out->store)->max_bytes = opts->capacity_bytes;
-    }
-    return status;
+    return provider_open(self, ns, opts, out);
 }
 
 static const OvKVCacheStoreProviderVTable g_self_evict_provider_vtable = {
@@ -706,8 +707,7 @@ static const OvKVCacheStoreProviderDescriptor g_self_evict_provider_descriptor =
     &g_self_evict_provider_vtable,
     NULL,
     OV_KVCACHE_CAP_KEY_IO | OV_KVCACHE_CAP_EXISTS | OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT | OV_KVCACHE_CAP_ASYNC_IO |
-        OV_KVCACHE_CAP_SELF_EVICT | OV_KVCACHE_CAP_RESTORE_STATS | OV_KVCACHE_CAP_MULTI_GROUP |
-        OV_KVCACHE_CAP_PREFIX_TOKENS,
+        OV_KVCACHE_CAP_RESTORE_STATS | OV_KVCACHE_CAP_MULTI_GROUP | OV_KVCACHE_CAP_PREFIX_TOKENS,
     "sample-self-evict-memory",
 };
 

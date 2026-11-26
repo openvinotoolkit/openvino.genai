@@ -203,10 +203,10 @@ same reason.
 - `reuse_ssd_cache` is `true` by default. With `false` the host calls `provider->purge(ns)` for the opened namespace
   (one per model and cache kind) right after the open, and a failing purge fails the construction; `sample-persistent-file` deletes that namespace's block
   files, so a restart finds nothing.
-- A provider that advertises `OV_KVCACHE_CAP_SELF_EVICT` owns eviction. The host then does not drop blocks to free
-  capacity and does not count blocks against the budget; it asks the plugin (`has_blocks`, reads) whenever
-  it needs to know whether a block is still there and treats a block that disappeared as a miss, which only
-  costs recomputation.
+- Every provider owns eviction. The host never drops blocks to free capacity and does not count blocks against the
+  budget; `write_blocks` must not fail with `OV_KVCACHE_ERR_CAPACITY` for lack of space but make room by the
+  plugin's own policy. The host asks the plugin (`has_blocks`, reads) whenever it needs to know whether a block is
+  still there and treats a block that disappeared as a miss, which only costs recomputation.
   The sample's `sample-self-evict-memory` provider shows the contract: it keeps `capacity_bytes` bytes
   of blocks and evicts the oldest ones when a write finds it full.
 - The host writes the blocks queued by the writer thread in one `write_blocks` call (a bounded number per
@@ -223,7 +223,7 @@ same reason.
   host log instead. A plugin that prints its own reuse metrics should do it here and not in `read_blocks`. The
   sample plugin prints one line per call to stderr. From ABI 1.3 the report names its group (`group`), which is how
   the reports of the `kv` and the `la` store are told apart when one instance serves both.
-- A provider that advertises `OV_KVCACHE_CAP_MULTI_GROUP` (ABI 1.3, and `OV_KVCACHE_CAP_SELF_EVICT` with it) is opened
+- A provider that advertises `OV_KVCACHE_CAP_MULTI_GROUP` (ABI 1.3) is opened
   **once** for the whole pipeline: `OvKVCacheStoreOpenOptions.groups` lists `kv` and, for a hybrid model, `la` with
   their block sizes, `OvKVCacheBlockKey::group` tells them apart, the namespace identifies the model and cache layout
   only, and `capacity_bytes` is the budget of both groups together (`ssd_cache_capacity_gb`). This lets a plugin keep the linear-attention checkpoints and the KV blocks of a

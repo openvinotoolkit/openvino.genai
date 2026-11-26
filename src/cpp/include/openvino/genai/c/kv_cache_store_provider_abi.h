@@ -168,19 +168,20 @@ typedef uint64_t OvKVCacheCapabilities;
 #define OV_KVCACHE_CAP_REGISTER_HOST_MEMORY (1ull << 2)   ///< provider `register_host_memory` implemented
 #define OV_KVCACHE_CAP_SEMANTICS_FINGERPRINT (1ull << 3)  ///< open reports `store_semantics_fingerprint`
 #define OV_KVCACHE_CAP_ASYNC_IO (1ull << 4)               ///< async read/write submit + wait + cancel
-/// The plugin owns eviction: `write_blocks` never fails with `OV_KVCACHE_ERR_CAPACITY` for lack of space but makes
-/// room by its own policy, so the host never calls `drop_blocks` to free capacity, does not count blocks against
+/// Reserved, never set or read (it announced plugin-owned eviction before every plugin was required to evict). Every
+/// plugin owns eviction: `write_blocks` never fails with `OV_KVCACHE_ERR_CAPACITY` for lack of space but makes room by
+/// its own policy, so the host never calls `drop_blocks` to free capacity, does not count blocks against
 /// `capacity_bytes` and treats `has_blocks` / `read_blocks` as the only truth about what is stored. Any block may
-/// disappear between two calls; the host then recomputes it. `stats` is informational. `drop_blocks` is still required.
-#define OV_KVCACHE_CAP_SELF_EVICT (1ull << 5)
+/// disappear between two calls; the host then recomputes it. `stats` is informational.
+#define OV_KVCACHE_CAP_RESERVED_5 (1ull << 5)
 /// `on_restore_finish` implemented (ABI 1.2): the host reports the reuse metrics of every prefix restore, and prints none itself.
 #define OV_KVCACHE_CAP_RESTORE_STATS (1ull << 6)
 /// One instance for all cache groups (ABI 1.3). The host calls `open` once per pipeline with every group in
 /// `OvKVCacheStoreOpenOptions::groups`, so the KV blocks and the linear-attention checkpoints of a request reach the
 /// same instance and the plugin can keep them aligned. `OvKVCacheBlockKey::group` tells the groups apart,
 /// `OvKVCacheNamespace` identifies the model and cache layout only, and `capacity_bytes` is the budget of all groups
-/// together. A provider that advertises this MUST also advertise `OV_KVCACHE_CAP_SELF_EVICT`: the host cannot count
-/// blocks per group against one instance. Without this bit the host opens one instance per group, as in ABI 1.0.
+/// together, which the plugin keeps within by its own eviction. Without this bit the host opens one instance per
+/// group, as in ABI 1.0.
 #define OV_KVCACHE_CAP_MULTI_GROUP (1ull << 7)
 /// `announce_prefix_tokens` implemented (ABI 1.3): before the host probes or writes blocks of a state group
 /// (linear attention) it tells the plugin which tokens each checkpoint covers. Token ids are user content, so they are
@@ -466,7 +467,8 @@ typedef struct OvKVCacheStoreVTable {
                                     OvKVCacheStoreWriteResult* out,
                                     size_t count);
 
-    /// Drop the given keys. Missing keys are not an error.
+    /// Drop the given keys, which the host does only to quarantine a block that failed its witness check, never to make
+    /// room. Missing keys are not an error.
     OvKVCacheStatus (*drop_blocks)(void* self, const OvKVCacheBlockKey* keys, size_t count);
 
     /// Flush pending writes to the backing store.

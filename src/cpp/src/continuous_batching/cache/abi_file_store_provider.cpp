@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -14,39 +15,39 @@
 #include <utility>
 
 #include "continuous_batching/cache/abi_sdk_fingerprint.hpp"
-#include "continuous_batching/cache/file_kv_cache_store.hpp"
-#include "continuous_batching/cache/kv_cache_disk_layout.hpp"
-#include "continuous_batching/cache/kv_cache_offload_manager.hpp"
+#include "continuous_batching/cache/default_file_store.hpp"
 #include "continuous_batching/cache/offload_settings.hpp"
 
 namespace ov::genai {
 
 namespace {
 
-/// Identifies how this provider stores blocks (one run-scoped file, ids allocated per full 128-bit key); bump the low
+/// Identifies how this provider stores blocks (one run-private file, a block and its witness in one slot); bump the low
 /// half whenever that changes so blocks written under other semantics are never mistaken for these.
-constexpr OvKVCacheContentHash kFileStoreSemanticsFingerprint{/*lo=*/1, /*hi=*/0x66696c6553746f72ull};
+constexpr OvKVCacheContentHash kFileStoreSemanticsFingerprint{/*lo=*/2, /*hi=*/0x66696c6553746f72ull};
 
-/// One store instance per `open()` call. Holds the default FileKVCacheStore plus a side table for
-/// witnesses, since witnesses are host-defined/host-supplied (see kv_cache_store_provider_abi.h)
-/// and the payload-only FileKVCacheStore has no slot for them.
+/// Room the slot of a block keeps for its witness, after the payload: the length, then the bytes.
+constexpr size_t kWitnessLengthBytes = sizeof(uint64_t);
+
+/// One store instance per `open()` call: a run-private DefaultFileGroupStore that evicts by itself. A witness is
+/// host-defined and host-supplied (see kv_cache_store_provider_abi.h), so each slot holds it next to the payload and
+/// the two leave the store together.
 struct AbiFileStoreInstance {
-    AbiFileStoreInstance(std::unique_ptr<FileKVCacheStore> store_, size_t block_size_)
-        : store(std::move(store_)),
-          block_size(block_size_) {}
+    AbiFileStoreInstance(std::unique_ptr<DefaultFileStore> files_,
+                         std::unique_ptr<IKVCacheStore> store_,
+                         size_t block_size_,
+                         size_t witness_bytes_max_)
+        : files(std::move(files_)),
+          store(std::move(store_)),
+          block_size(block_size_),
+          witness_bytes_max(witness_bytes_max_) {}
 
-    std::unique_ptr<FileKVCacheStore> store;
+    std::unique_ptr<DefaultFileStore> files;  // owns the directory the store lives in
+    std::unique_ptr<IKVCacheStore> store;
     size_t block_size;
-    /// Serializes whole store operations, so a key's id, payload and witness are published and removed together.
-    /// Taken before `witness_mutex`.
+    size_t witness_bytes_max;
+    /// Serializes whole store operations.
     std::mutex op_mutex;
-    /// Guards `key_ids`, `next_id` and `witnesses`.
-    mutable std::mutex witness_mutex;
-    /// Full 128-bit ABI key -> the id FileKVCacheStore addresses the block by. Keys that differ only
-    /// in `hi` must stay distinct, so the id is allocated here instead of being derived from `lo`.
-    std::map<std::pair<uint64_t, uint64_t>, size_t> key_ids;
-    size_t next_id = 0;
-    std::unordered_map<size_t, std::vector<uint8_t>> witnesses;
     /// Guards `finished_batches` and `next_token`.
     std::mutex token_mutex;
     /// Async batches run to completion inside submit, so a token only carries the final batch status until it is waited on.
@@ -55,24 +56,8 @@ struct AbiFileStoreInstance {
 };
 
 // OvKVCacheBlockKey.group is not used by this single-group default provider.
-std::pair<uint64_t, uint64_t> full_key(const OvKVCacheBlockKey& key) {
-    return {key.hash.lo, key.hash.hi};
-}
-
-std::optional<size_t> find_id(AbiFileStoreInstance& instance, const OvKVCacheBlockKey& key) {
-    std::lock_guard<std::mutex> lock(instance.witness_mutex);
-    const auto it = instance.key_ids.find(full_key(key));
-    return it == instance.key_ids.end() ? std::nullopt : std::optional<size_t>(it->second);
-}
-
-/// @return The id for `key` and whether it was newly allocated by this call.
-std::pair<size_t, bool> get_or_create_id(AbiFileStoreInstance& instance, const OvKVCacheBlockKey& key) {
-    std::lock_guard<std::mutex> lock(instance.witness_mutex);
-    const auto [it, inserted] = instance.key_ids.emplace(full_key(key), instance.next_id);
-    if (inserted) {
-        ++instance.next_id;
-    }
-    return {it->second, inserted};
+PrefixKey store_key(const OvKVCacheBlockKey& key) {
+    return PrefixKey{static_cast<size_t>(key.hash.lo), ContentHash{key.hash.lo, key.hash.hi}};
 }
 
 void destroy_store(void* self) {
@@ -84,9 +69,14 @@ OvKVCacheStatus store_has_blocks(void* self, const OvKVCacheBlockKey* keys, uint
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
     try {
         std::lock_guard<std::mutex> operation_lock(instance->op_mutex);
+        std::vector<PrefixKey> chain;
+        chain.reserve(count);
         for (size_t i = 0; i < count; ++i) {
-            const auto id = find_id(*instance, keys[i]);
-            out_present[i] = id.has_value() && instance->store->has_block(*id) ? 1 : 0;
+            chain.push_back(store_key(keys[i]));
+        }
+        const std::vector<bool> present = instance->store->has_blocks(chain);
+        for (size_t i = 0; i < count; ++i) {
+            out_present[i] = present[i] ? 1 : 0;
         }
     } catch (...) {
         return OV_KVCACHE_ERR_IO;
@@ -112,11 +102,10 @@ OvKVCacheStatus store_read_blocks(void* self,
             continue;
         }
 
-        const auto id = find_id(*instance, req.key);
-        std::vector<uint8_t> data;
+        std::vector<std::vector<uint8_t>> slot;
         bool found = false;
         try {
-            found = id.has_value() && instance->store->read_block(*id, data);
+            found = instance->store->read_blocks({store_key(req.key)}, slot)[0];
         } catch (...) {
             result.status = OV_KVCACHE_ERR_IO;
             any_failed = true;
@@ -127,27 +116,28 @@ OvKVCacheStatus store_read_blocks(void* self,
             any_failed = true;
             continue;
         }
-        if (data.size() != req.target.bytes) {
+        const std::vector<uint8_t>& payload = slot[0];
+        if (req.target.bytes != instance->block_size) {
             result.status = OV_KVCACHE_ERR_INTERNAL;
             any_failed = true;
             continue;
         }
-        std::memcpy(req.target.base, data.data(), data.size());
+        std::memcpy(req.target.base, payload.data(), instance->block_size);
 
-        std::lock_guard<std::mutex> lock(instance->witness_mutex);
-        auto it = instance->witnesses.find(*id);
-        if (it != instance->witnesses.end() && req.witness_out.data != nullptr) {
-            if (it->second.size() > req.witness_out.capacity) {
+        uint64_t witness_len = 0;
+        std::memcpy(&witness_len, payload.data() + instance->block_size + instance->witness_bytes_max, sizeof(witness_len));
+        if (witness_len > 0 && req.witness_out.data != nullptr) {
+            if (witness_len > req.witness_out.capacity) {
                 result.status = OV_KVCACHE_ERR_BUFFER_TOO_SMALL;
                 any_failed = true;
                 continue;
             }
-            std::memcpy(req.witness_out.data, it->second.data(), it->second.size());
+            std::memcpy(req.witness_out.data, payload.data() + instance->block_size, static_cast<size_t>(witness_len));
             result.witness.data = req.witness_out.data;
-            result.witness.len = it->second.size();
+            result.witness.len = witness_len;
         }
         result.status = OV_KVCACHE_OK;
-        result.bytes_read = data.size();
+        result.bytes_read = instance->block_size;
     }
     return any_failed ? OV_KVCACHE_PARTIAL : OV_KVCACHE_OK;
 }
@@ -164,38 +154,26 @@ OvKVCacheStatus store_write_blocks(void* self,
         OvKVCacheStoreWriteResult& result = out[i];
         result = OvKVCacheStoreWriteResult{};
 
-        if (req.bytes != instance->block_size) {
+        if (req.bytes != instance->block_size || req.witness.len > instance->witness_bytes_max) {
             result.status = OV_KVCACHE_ERR_INVALID_ARG;
             any_failed = true;
             continue;
         }
 
-        const auto source_bytes = static_cast<const uint8_t*>(req.source);
-        const auto [id, created] = get_or_create_id(*instance, req.key);
         try {
-            std::vector<uint8_t> data(source_bytes, source_bytes + req.bytes);
-            if (!instance->store->write_block(id, data)) {
-                if (created) {
-                    std::lock_guard<std::mutex> lock(instance->witness_mutex);
-                    instance->key_ids.erase(full_key(req.key));
-                }
-                result.status = OV_KVCACHE_ERR_CAPACITY;
+            std::vector<uint8_t> slot(instance->block_size + instance->witness_bytes_max + kWitnessLengthBytes, 0);
+            std::memcpy(slot.data(), req.source, req.bytes);
+            if (req.witness.data != nullptr && req.witness.len > 0) {
+                std::memcpy(slot.data() + instance->block_size, req.witness.data, static_cast<size_t>(req.witness.len));
+            }
+            const uint64_t witness_len = req.witness.data != nullptr ? req.witness.len : 0;
+            std::memcpy(slot.data() + instance->block_size + instance->witness_bytes_max, &witness_len, sizeof(witness_len));
+            if (!instance->store->write_blocks({store_key(req.key)}, {&slot})[0]) {
+                result.status = OV_KVCACHE_ERR_IO;
                 any_failed = true;
                 continue;
             }
-
-            std::lock_guard<std::mutex> lock(instance->witness_mutex);
-            if (req.witness.data != nullptr && req.witness.len > 0) {
-                const auto* witness_bytes = static_cast<const uint8_t*>(req.witness.data);
-                instance->witnesses[id].assign(witness_bytes, witness_bytes + req.witness.len);
-            } else {
-                instance->witnesses.erase(id);
-            }
         } catch (...) {
-            if (created) {
-                std::lock_guard<std::mutex> lock(instance->witness_mutex);
-                instance->key_ids.erase(full_key(req.key));
-            }
             result.status = OV_KVCACHE_ERR_IO;
             any_failed = true;
             continue;
@@ -210,15 +188,8 @@ OvKVCacheStatus store_drop_blocks(void* self, const OvKVCacheBlockKey* keys, siz
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
     try {
         std::lock_guard<std::mutex> operation_lock(instance->op_mutex);
-        std::lock_guard<std::mutex> lock(instance->witness_mutex);
         for (size_t i = 0; i < count; ++i) {
-            const auto it = instance->key_ids.find(full_key(keys[i]));
-            if (it == instance->key_ids.end()) {
-                continue;
-            }
-            instance->store->drop_block(it->second);
-            instance->witnesses.erase(it->second);
-            instance->key_ids.erase(it);
+            instance->store->invalidate(store_key(keys[i]));
         }
     } catch (...) {
         return OV_KVCACHE_ERR_IO;
@@ -226,14 +197,19 @@ OvKVCacheStatus store_drop_blocks(void* self, const OvKVCacheBlockKey* keys, siz
     return OV_KVCACHE_OK;
 }
 
-OvKVCacheStatus store_flush(void* /*self*/) {
-    // KVCacheOffloadManager's pwrite/pread are already synchronous.
+OvKVCacheStatus store_flush(void* self) {
+    try {
+        static_cast<AbiFileStoreInstance*>(self)->store->flush();
+    } catch (...) {
+        return OV_KVCACHE_ERR_IO;
+    }
     return OV_KVCACHE_OK;
 }
 
 OvKVCacheStatus store_stats(void* self, OvKVCacheStoreStats* out) {
     auto* instance = static_cast<AbiFileStoreInstance*>(self);
-    out->blocks = instance->store->get_capacity_blocks() - instance->store->get_num_free_blocks();
+    auto* group = static_cast<DefaultFileGroupStore*>(instance->store.get());
+    out->blocks = group->capacity_blocks_hint() - group->get_num_free_blocks();
     out->bytes = out->blocks * instance->block_size;
     out->chunks = 0;
     return OV_KVCACHE_OK;
@@ -365,13 +341,22 @@ OvKVCacheStatus provider_open(void* /*self*/,
     }
 
     try {
-        OffloadSettings config;
-        config.kv_cache_dir = opts->directory != nullptr ? opts->directory : "";
-        config.capacity_bytes = opts->capacity_bytes;
-        const KVCacheDiskLayout layout({*block_size_bytes}, {0});
-        auto backend = std::make_unique<KVCacheOffloadManager>(layout, config, device);
-        auto store = std::make_unique<FileKVCacheStore>(std::move(backend));
-        out->store = new AbiFileStoreInstance(std::move(store), *block_size_bytes);
+        const size_t witness_bytes_max = opts->witness_bytes_max > 0 ? static_cast<size_t>(opts->witness_bytes_max) : 16;
+        const size_t slot_bytes = *block_size_bytes + witness_bytes_max + kWitnessLengthBytes;
+        // The budget counts the blocks themselves, as it does for every store.
+        const size_t capacity_blocks = static_cast<size_t>(opts->capacity_bytes / *block_size_bytes);
+        if (capacity_blocks == 0) {
+            out->status = OV_KVCACHE_ERR_INVALID_ARG;
+            return out->status;
+        }
+        // A namespace without ':' gives a directory that is deleted when the instance is destroyed.
+        const std::filesystem::path root =
+            opts->directory != nullptr && opts->directory[0] != '\0' ? std::filesystem::path(opts->directory)
+                                                                       : std::filesystem::temp_directory_path();
+        auto files = std::make_unique<DefaultFileStore>(
+            root, "file", std::vector<DefaultFileStore::Group>{{"file", slot_bytes, capacity_blocks}}, false);
+        auto store = files->group(0);
+        out->store = new AbiFileStoreInstance(std::move(files), std::move(store), *block_size_bytes, witness_bytes_max);
         out->vtable = &g_store_vtable;
         out->store_semantics_fingerprint = kFileStoreSemanticsFingerprint;
         out->has_semantics_fingerprint = 1;
@@ -383,7 +368,7 @@ OvKVCacheStatus provider_open(void* /*self*/,
 }
 
 OvKVCacheStatus provider_purge(void* /*self*/, const OvKVCacheNamespace* /*ns*/) {
-    // Each store instance is a single run-scoped file (see KVCacheOffloadManager), so no block of an earlier run exists.
+    // Each store instance is a single run-private file, so no block of an earlier run exists.
     return OV_KVCACHE_OK;
 }
 

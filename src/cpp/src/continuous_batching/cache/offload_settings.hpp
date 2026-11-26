@@ -32,10 +32,6 @@ struct OffloadSettings {
     /// Blocks queued for the writer thread per tier before further blocks are skipped. A block that is skipped breaks the
     /// prefix chain behind it, so the queue has to hold the blocks of a long prefill that the writer has not reached yet.
     static constexpr std::size_t DEFAULT_BUFFER_SLOTS = 512;
-    std::size_t buffer_slots = DEFAULT_BUFFER_SLOTS;
-
-    /// Whether the offload file may go through the OS page cache. Direct I/O is not implemented yet.
-    bool use_page_cache = true;
 
     /// Plugin to load; empty: the in-tree store. Loading it is the explicit opt-in of the user.
     std::string store_library_path;

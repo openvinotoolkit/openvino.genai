@@ -68,7 +68,7 @@ A plugin is arbitrary native code that runs in the process, which is why it has 
 
 A prefix is read back from the store in one or more rounds, so a plugin cannot tell from its own read calls how much of a request was reused. A plugin that implements the optional `on_restore_finish` entry (`OV_KVCACHE_CAP_RESTORE_STATS`, ABI 1.2) is told once per request, after the restore is decided, how many prompt tokens were already in the device cache, how many were read from its store and how many the request finally reuses, and the host then reports no reuse metrics for that store. For any other store the host logs one summary line per restore at the `INFO` log level.
 
-A plugin that advertises `OV_KVCACHE_CAP_MULTI_GROUP` and `OV_KVCACHE_CAP_SELF_EVICT` (ABI 1.3) is opened once for all cache groups of a pipeline (the KV cache and, for a hybrid model, the linear attention cache), with one budget for both, so it can keep their blocks aligned itself. A plugin that also advertises `OV_KVCACHE_CAP_PREFIX_TOKENS` is told, before the host probes or writes linear attention checkpoints, which prompt tokens each checkpoint covers. These token ids are user content and are sent only to a plugin that asks for them.
+A plugin that advertises `OV_KVCACHE_CAP_MULTI_GROUP` (ABI 1.3) is opened once for all cache groups of a pipeline (the KV cache and, for a hybrid model, the linear attention cache), with one budget for both, so it can keep their blocks aligned itself. A plugin that also advertises `OV_KVCACHE_CAP_PREFIX_TOKENS` is told, before the host probes or writes linear attention checkpoints, which prompt tokens each checkpoint covers. These token ids are user content and are sent only to a plugin that asks for them.
 
 ## Hybrid Models
 

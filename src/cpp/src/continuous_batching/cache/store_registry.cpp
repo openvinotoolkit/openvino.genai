@@ -27,7 +27,6 @@
 #include "continuous_batching/cache/abi_kv_cache_store.hpp"
 #include "continuous_batching/cache/abi_sdk_fingerprint.hpp"
 #include "continuous_batching/cache/default_file_store.hpp"
-#include "continuous_batching/cache/kv_cache_offload_manager.hpp"
 #include "content_hash.hpp"
 #include "logger.hpp"
 #include "openvino/genai/c/kv_cache_store_provider_abi.h"
@@ -123,7 +122,9 @@ std::unique_ptr<IGroupedKVCacheStore> open_default_store(const std::vector<Store
                                                          const OffloadSettings& config,
                                                          const std::string& device,
                                                          const std::string& name_space) {
-    OPENVINO_ASSERT(KVCacheOffloadManager::is_supported_device(device),
+    // Device caches are staged through host tensors, so anything the KV cache manager can copy a block out of works;
+    // NPU keeps its cache outside of that manager and is therefore excluded.
+    OPENVINO_ASSERT(device.find("CPU") != std::string::npos || device.find("GPU") != std::string::npos,
                     "KV cache offload is implemented for CPU and GPU, but the inference device is '", device, "'");
     std::vector<DefaultFileStore::Group> files;
     for (const StoreGroupSpec& group : groups) {
@@ -333,28 +334,22 @@ std::unique_ptr<IGroupedKVCacheStore> open_grouped_kv_cache_store(const std::vec
     const OvKVCacheStoreProviderDescriptor* provider = load_plugin_provider(config);
 
     if ((provider->capabilities & OV_KVCACHE_CAP_MULTI_GROUP) != 0) {
-        if ((provider->capabilities & OV_KVCACHE_CAP_SELF_EVICT) == 0) {
-            GENAI_WARN("KV cache store plugin '%s' serves all groups from one instance but does not evict by itself, "
-                       "which the host cannot count per group; opening one instance per group instead",
-                       config.store_library_path.c_str());
-        } else {
-            std::vector<PluginGroup> plugin_groups;
-            uint64_t capacity_bytes = 0;
-            for (const StoreGroupSpec& group : groups) {
-                plugin_groups.push_back({group.name, group.layout.get_slot_size(), group.block_tokens});
-                capacity_bytes += group.capacity_bytes;
-            }
-            const auto opened = open_plugin_instance(provider, config, device, shared_namespace, plugin_groups, capacity_bytes);
-            std::vector<std::unique_ptr<IKVCacheStore>> views;
-            for (const StoreGroupSpec& group : groups) {
-                views.push_back(make_plugin_view(opened,
-                                                 group.name,
-                                                 group.layout.get_slot_size(),
-                                                 group.capacity_bytes,
-                                                 config.store_timeout_ms));
-            }
-            return std::make_unique<ViewSetKVCacheStore>(std::move(views));
+        std::vector<PluginGroup> plugin_groups;
+        uint64_t capacity_bytes = 0;
+        for (const StoreGroupSpec& group : groups) {
+            plugin_groups.push_back({group.name, group.layout.get_slot_size(), group.block_tokens});
+            capacity_bytes += group.capacity_bytes;
         }
+        const auto opened = open_plugin_instance(provider, config, device, shared_namespace, plugin_groups, capacity_bytes);
+        std::vector<std::unique_ptr<IKVCacheStore>> views;
+        for (const StoreGroupSpec& group : groups) {
+            views.push_back(make_plugin_view(opened,
+                                             group.name,
+                                             group.layout.get_slot_size(),
+                                             group.capacity_bytes,
+                                             config.store_timeout_ms));
+        }
+        return std::make_unique<ViewSetKVCacheStore>(std::move(views));
     }
 
     std::vector<std::unique_ptr<IKVCacheStore>> views;
