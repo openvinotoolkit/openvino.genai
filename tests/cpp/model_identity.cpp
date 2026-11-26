@@ -4,19 +4,24 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/model_identity.hpp"
+#include "continuous_batching/cache/model_identity_memo.hpp"
 #include "helper.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/loop.hpp"
 #include "openvino/op/op.hpp"
 #include "openvino/op/subtract.hpp"
 #include "openvino/openvino.hpp"
+#include "openvino/pass/serialize.hpp"
 
 using namespace ov::genai;
 
@@ -224,6 +229,85 @@ TEST(TestModelIdentity, ATiedConstantIsHashedLikeTwoConstantsOfTheSameBytes) {
                                              ov::ParameterVector{parameter});
 
     EXPECT_EQ(compute_model_identity(model), compute_model_identity(model->clone()));
+}
+
+namespace {
+
+/// A temporary directory with the model of make_model() saved in it as openvino_model.xml / .bin.
+struct SavedModel {
+    std::filesystem::path directory;
+    std::filesystem::path memo_directory;
+    std::shared_ptr<ov::Model> model;
+
+    explicit SavedModel(const std::vector<float>& weights) {
+        directory = std::filesystem::temp_directory_path() / ("genai_memo_test_" + std::to_string(std::random_device{}()));
+        std::filesystem::create_directories(directory);
+        memo_directory = directory / "memo";
+        save(weights);
+    }
+    ~SavedModel() {
+        std::error_code error;
+        std::filesystem::remove_all(directory, error);
+    }
+
+    void save(const std::vector<float>& weights) {
+        model = make_model(weights, {1, weights.size()});
+        ov::serialize(model, (directory / "openvino_model.xml").string(), (directory / "openvino_model.bin").string());
+    }
+};
+
+}  // namespace
+
+TEST(TestModelIdentityMemo, StoresTheWeightsDigestAndUsesItNextTime) {
+    SavedModel saved({1.f, 2.f, 3.f, 4.f});
+    bool hit = true;
+    const std::string first = compute_weights_digest_memoized(saved.model, saved.directory, saved.memo_directory, hit);
+    EXPECT_FALSE(hit);
+    EXPECT_EQ(first, compute_weights_digest(saved.model));
+
+    const std::string second = compute_weights_digest_memoized(saved.model, saved.directory, saved.memo_directory, hit);
+    EXPECT_TRUE(hit);
+    EXPECT_EQ(second, first);
+}
+
+TEST(TestModelIdentityMemo, ChangedWeightsOfTheSameSizeComputeTheDigestAgain) {
+    SavedModel saved({1.f, 2.f, 3.f, 4.f});
+    bool hit = false;
+    const std::string before = compute_weights_digest_memoized(saved.model, saved.directory, saved.memo_directory, hit);
+
+    saved.save({1.f, 2.f, 3.f, 5.f});
+    const std::string after = compute_weights_digest_memoized(saved.model, saved.directory, saved.memo_directory, hit);
+    EXPECT_FALSE(hit);
+    EXPECT_NE(after, before);
+    EXPECT_EQ(after, compute_weights_digest(saved.model));
+}
+
+TEST(TestModelIdentityMemo, ADamagedMemoIsReplaced) {
+    SavedModel saved({1.f, 2.f, 3.f, 4.f});
+    bool hit = false;
+    const std::string digest = compute_weights_digest_memoized(saved.model, saved.directory, saved.memo_directory, hit);
+
+    const auto memo_path = weights_digest_memo_path(saved.memo_directory, saved.directory / "openvino_model.xml");
+    ASSERT_TRUE(std::filesystem::exists(memo_path));
+    {
+        std::ofstream memo(memo_path, std::ios::trunc);
+        memo << "garbage\n";
+    }
+    EXPECT_EQ(compute_weights_digest_memoized(saved.model, saved.directory, saved.memo_directory, hit), digest);
+    EXPECT_FALSE(hit);
+    EXPECT_EQ(compute_weights_digest_memoized(saved.model, saved.directory, saved.memo_directory, hit), digest);
+    EXPECT_TRUE(hit);
+}
+
+TEST(TestModelIdentityMemo, AModelWithoutFilesInTheDirectoryIsNotMemoized) {
+    const auto empty = std::filesystem::temp_directory_path() / ("genai_memo_empty_" + std::to_string(std::random_device{}()));
+    std::filesystem::create_directories(empty);
+    const auto model = make_model({1.f, 2.f, 3.f, 4.f}, {2, 2});
+    bool hit = true;
+    EXPECT_EQ(compute_weights_digest_memoized(model, empty, empty / "memo", hit), compute_weights_digest(model));
+    EXPECT_FALSE(hit);
+    EXPECT_FALSE(std::filesystem::exists(empty / "memo"));
+    std::filesystem::remove_all(empty);
 }
 
 TEST(TestModelIdentity, NumericsFingerprintNamesTheRuntimeAndWhatTheDeviceReports) {

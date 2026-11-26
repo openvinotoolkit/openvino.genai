@@ -20,7 +20,9 @@
 
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/cache_state_dumper.hpp"
+#include "continuous_batching/cache/default_file_store.hpp"
 #include "continuous_batching/cache/model_identity.hpp"
+#include "continuous_batching/cache/model_identity_memo.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "lora/helper.hpp"
@@ -208,14 +210,38 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     // The digest reads the weights while the device compiles the model; both only read the model.
     std::future<std::string> model_identity_future;
     if (offload_requested) {
-        model_identity_future = std::async(std::launch::async, [model] {
+        // A model read from a directory remembers its weights digest in the offload directory, so a later run
+        // checks a few pages of the files instead of hashing every weight.
+        std::optional<std::filesystem::path> model_directory;
+        std::filesystem::path memo_directory;
+        if (const auto path_property = properties.find(ov::cache_model_path.name()); path_property != properties.end()) {
+            if (path_property->second.is<std::filesystem::path>()) {
+                model_directory = path_property->second.as<std::filesystem::path>();
+            } else if (path_property->second.is<std::string>()) {
+                model_directory = std::filesystem::path(path_property->second.as<std::string>());
+            }
+        }
+        const std::string& kv_cache_dir = normalized_config.cache_offload->kv_cache_dir;
+        std::error_code directory_error;
+        if (model_directory.has_value() && !kv_cache_dir.empty() && std::filesystem::is_directory(kv_cache_dir, directory_error)) {
+            memo_directory = std::filesystem::path(kv_cache_dir) / default_file_store_detail::ROOT_DIRECTORY_NAME / ".identity";
+        }
+        model_identity_future = std::async(std::launch::async, [model, model_directory, memo_directory] {
             const auto identity_start = std::chrono::steady_clock::now();
-            std::string identity = compute_model_identity(model);
-            GENAI_INFO("[KV_TRACE] model_identity=%s computed_in_ms=%lld",
+            bool memo_hit = false;
+            std::string identity;
+            if (model_directory.has_value() && !memo_directory.empty()) {
+                identity = combine_model_identity(compute_structure_digest(model),
+                                                  compute_weights_digest_memoized(model, *model_directory, memo_directory, memo_hit));
+            } else {
+                identity = compute_model_identity(model);
+            }
+            GENAI_INFO("[KV_TRACE] model_identity=%s computed_in_ms=%lld weights_digest_memo=%s",
                        identity.c_str(),
                        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                                   std::chrono::steady_clock::now() - identity_start)
-                                                  .count()));
+                                                  .count()),
+                       memo_hit ? "hit" : "miss");
             return identity;
         });
     }
