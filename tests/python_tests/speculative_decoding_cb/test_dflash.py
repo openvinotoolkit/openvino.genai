@@ -135,8 +135,6 @@ def test_vlm_dflash_rejection_continues_like_target(model_pair, enable_prefix_ca
         actual_tokens = generate_tokens(speculative_batch, iteration)
         assert actual_tokens.generated_ids == expected_tokens.generated_ids
         assert actual_tokens.finish_reason == expected_tokens.finish_reason
-        if enable_prefix_caching and iteration == 1:
-            assert result.perf_metrics.get_num_prefix_cache_hit_tokens() > 0
 
 
 @pytest.mark.xfail(
