@@ -194,14 +194,14 @@ same reason.
 #### Plugin settings and plugin-side eviction
 
 - `CacheStorePluginConfig.properties` (a string-to-string map; `"properties": {...}` under `plugin` in the `llm_bench`
-  cache offload JSON) reaches the plugin in `OvKVCacheStoreOpenOptions.properties`, after the entries the host
-  always adds: `block_size_bytes`, `device`, `dram_cache_capacity_gb` and `reuse_ssd_cache`, plus `debug_log_path`
-  when `CacheStorePluginConfig.debug_log_path` is set. The host ignores attempts to override those. The host
-  does not interpret the rest. The sample plugin logs every extra property it receives when it opens a store.
+  cache offload JSON) reaches the plugin unchanged in `OvKVCacheStoreOpenOptions.properties`; the host adds nothing
+  and does not interpret them. The settings of the host are typed fields instead: `device`, `debug_log_path` (when
+  `CacheStorePluginConfig.debug_log_path` is set) and `dram_capacity_bytes` (only for a provider with
+  `OV_KVCACHE_CAP_DRAM_TIER`). The sample plugin logs every property it receives when it opens a store.
 - `CacheOffloadConfig.kv_cache_dir` reaches the plugin as `OvKVCacheStoreOpenOptions.directory`, and
-  `ssd_cache_capacity_gb` converted to bytes as `OvKVCacheStoreOpenOptions.capacity_bytes`. `dram_cache_capacity_gb` is a decimal string, `0` meaning no DRAM budget.
-- `reuse_ssd_cache` is `true` by default. With `false` the plugin has to purge what it holds for the opened namespace
-  (one per model and cache kind) before serving requests; `sample-persistent-file` deletes that namespace's block
+  `ssd_cache_capacity_gb` converted to bytes as `OvKVCacheStoreOpenOptions.capacity_bytes`. `dram_cache_capacity_gb` reaches a provider with `OV_KVCACHE_CAP_DRAM_TIER` as `dram_capacity_bytes`.
+- `reuse_ssd_cache` is `true` by default. With `false` the host calls `provider->purge(ns)` for the opened namespace
+  (one per model and cache kind) right after the open, and a failing purge fails the construction; `sample-persistent-file` deletes that namespace's block
   files, so a restart finds nothing.
 - A provider that advertises `OV_KVCACHE_CAP_SELF_EVICT` owns eviction. The host then does not drop blocks to free
   capacity and does not count blocks against the budget; it asks the plugin (`has_blocks`, reads) whenever

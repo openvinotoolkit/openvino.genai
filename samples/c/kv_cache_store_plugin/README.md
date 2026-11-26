@@ -94,20 +94,22 @@ Once the plugin is open, a failing read or write is only a cache miss: offload s
 
 ### Settings the host hands to the plugin
 
-`CacheOffloadConfig` carries the settings of an SSD-backed store. The host passes them to `open` as follows; the
-property keys below cannot be overridden through `plugin.properties`:
+`CacheOffloadConfig` carries the settings of an SSD-backed store. The host passes them to `open` in typed fields of
+`OvKVCacheStoreOpenOptions`; `plugin.properties` reaches the plugin unchanged in `properties` and the host adds
+nothing to it:
 
 | `CacheOffloadConfig` field | Reaches the plugin as |
 |---|---|
 | `kv_cache_dir` | `OvKVCacheStoreOpenOptions.directory` |
 | `ssd_cache_capacity_gb` | `OvKVCacheStoreOpenOptions.capacity_bytes`, in bytes (GiB * 2^30), split over the KV and the linear attention group by the host so that both reach the same number of tokens |
-| `dram_cache_capacity_gb` | property `dram_cache_capacity_gb` (decimal string, `0` for no budget) |
-| `reuse_ssd_cache` | property `reuse_ssd_cache` (`true` or `false`) |
-| `plugin.debug_log_path` | property `debug_log_path`, only when not empty |
+| `dram_cache_capacity_gb` | `OvKVCacheStoreOpenOptions.dram_capacity_bytes`, only for a provider that advertises `OV_KVCACHE_CAP_DRAM_TIER` (0 otherwise) |
+| `reuse_ssd_cache` | `provider->purge(ns)`, called right after `open` when it is `false`; anything but `OV_KVCACHE_OK` fails the pipeline construction |
+| `plugin.debug_log_path` | `OvKVCacheStoreOpenOptions.debug_log_path` (NULL when empty) |
+| the inference device | `OvKVCacheStoreOpenOptions.device` |
 
-With `reuse_ssd_cache` set to `false` a plugin must purge what it holds for the opened namespace before serving
-requests; `sample-persistent-file` deletes the block files of that namespace. The in-tree file store ignores
-`dram_cache_capacity_gb` and `reuse_ssd_cache`.
+With `reuse_ssd_cache` set to `false` the host calls `purge` for the opened namespace before any block I/O, so the
+plugin has to purge what it holds for it; `sample-persistent-file` deletes the block files of that namespace. The
+in-tree file store ignores `dram_cache_capacity_gb`.
 
 `CacheStorePluginConfig.timeout_ms` (default 10000) bounds how long the host waits for one asynchronous batch.
 A batch that is not terminal by then is cancelled through the `cancel` entry, which belongs to the async capability:
