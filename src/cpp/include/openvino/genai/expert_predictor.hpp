@@ -30,9 +30,10 @@ class ExpertPredictorImpl;
  * selection_bias, input_mode_code}`, where `<i>` is the 1-based number of the decoder layer, so MoE layer L
  * (0-based) uses `expert_predictors.<L+1>`.
  *
- * GenAI builds the heads inside the language model, like LoRA adapters, and exposes the predicted expert indices
- * as model outputs `les_predicted_experts.<L>`. The model itself still computes with its own router: the
- * predictions only tell a device plugin which offloaded experts it can start loading early.
+ * GenAI builds every head as a separate small ov::Model and passes them to the device plugin that supports it
+ * (GPU property MOE_LES_PREDICTORS); the language model itself is not changed. The plugin runs the heads only if
+ * MoE experts are offloaded (OFFLOAD_RATIO > 0): the predictions tell it which offloaded experts it can start
+ * loading early, the model still computes with its own router.
  */
 class OPENVINO_GENAI_EXPORTS ExpertPredictor {
 public:

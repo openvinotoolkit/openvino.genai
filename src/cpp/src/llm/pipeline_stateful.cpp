@@ -74,9 +74,13 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     std::optional<les::GraphInfo> expert_predictor_info;
     if (les::extract_from_properties(filtered_properties, expert_predictor)) {
         OPENVINO_ASSERT(!m_is_npu, "The expert predictor is not supported on NPU");
-        expert_predictor_info =
-            les::apply(model, *expert_predictor, les::GraphMode::STATEFUL);
-        les::add_plugin_properties(filtered_properties, device);
+        if (les::stats_enabled()) {
+            // recall measurement: the heads and the router choices as outputs of the model
+            expert_predictor_info = les::apply(model, *expert_predictor, les::GraphMode::STATEFUL);
+        } else {
+            // the heads run in the device plugin, apart from the model
+            les::add_plugin_properties(filtered_properties, device, model, *expert_predictor);
+        }
     }
     ov::CompiledModel compiled_model;
     if (m_is_npu) {

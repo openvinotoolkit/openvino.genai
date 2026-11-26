@@ -34,6 +34,7 @@
 #include "openvino/op/util/topk_base.hpp"
 #include "openvino/op/util/variable.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "logger.hpp"
 
 extern "C" {
 #include "safetensors.h"
@@ -222,6 +223,44 @@ NodeOutput build_head(const ExpertPredictorImpl::Head& head,
     return topk->output(1);
 }
 
+// Checks the predictor heads against the MoE layers of the model and fills the GraphInfo, and the router TopK of
+// every layer with a head
+les::GraphInfo analyze_impl(const std::map<size_t, NodeOutput>& router_inputs,
+                            const ExpertPredictor& predictor,
+                            std::map<size_t, std::shared_ptr<ov::op::util::TopKBase>>& routers) {
+    OPENVINO_ASSERT(predictor, "Expert predictor: the predictor is empty");
+    const ExpertPredictorImpl& impl = *predictor.get_impl();
+    const auto hidden = static_cast<int64_t>(impl.hidden_size);
+
+    les::GraphInfo info;
+    info.hidden_size = impl.hidden_size;
+    info.use_previous_token = predictor.get_use_previous_token();
+    info.router_outputs = les::stats_enabled();
+    for (const auto& [layer, head] : impl.heads) {
+        OPENVINO_ASSERT(router_inputs.count(layer - 1) && router_inputs.count(layer),
+                        "Expert predictor: cannot find the post_attention_layernorm outputs of decoder layers ",
+                        layer - 1, " and ", layer, " in the model");
+        const auto& shape = router_inputs.at(layer).get_partial_shape();
+        OPENVINO_ASSERT(shape[2].compatible(hidden), "Expert predictor: the model hidden size ", shape[2],
+                        " differs from the predictor hidden size ", hidden);
+        auto topk = find_router_topk(router_inputs.at(layer));
+        OPENVINO_ASSERT(topk, "Expert predictor: decoder layer ", layer, " has no MoE router (TopK) in the model");
+        const size_t router_k = topk->get_k();
+        OPENVINO_ASSERT(router_k > 0, "Expert predictor: the router TopK of layer ", layer, " has no constant k");
+        OPENVINO_ASSERT(info.router_top_k == 0 || info.router_top_k == router_k,
+                        "Expert predictor: the routers select different numbers of experts");
+        info.router_top_k = router_k;
+        OPENVINO_ASSERT(!predictor.get_use_previous_token() || head.previous_weight,
+                        "Expert predictor: use_previous_token needs previous_weight in expert_predictors.", layer + 1);
+        routers[layer] = topk;
+        info.layers.push_back(layer);
+    }
+    info.top_k = predictor.get_top_k() ? predictor.get_top_k() : info.router_top_k;
+    OPENVINO_ASSERT(info.top_k <= impl.num_experts, "Expert predictor: top_k ", info.top_k, " exceeds the ",
+                    impl.num_experts, " experts");
+    return info;
+}
+
 int64_t index_at(const ov::Tensor& tensor, size_t i) {
     if (tensor.get_element_type() == ov::element::i32) {
         return tensor.data<const int32_t>()[i];
@@ -307,55 +346,76 @@ bool extract_from_properties(utils::SharedOptional<const ov::AnyMap>& properties
     return true;
 }
 
-void add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties, const std::string& device) {
+GraphInfo analyze(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor) {
+    std::map<size_t, std::shared_ptr<ov::op::util::TopKBase>> routers;
+    return analyze_impl(find_router_inputs(model), predictor, routers);
+}
+
+std::vector<std::shared_ptr<ov::Model>> build_predictor_models(const ExpertPredictor& predictor, const GraphInfo& info) {
+    const ExpertPredictorImpl& impl = *predictor.get_impl();
+    const auto hidden = static_cast<int64_t>(impl.hidden_size);
+    std::vector<std::shared_ptr<ov::Model>> models;
+    for (size_t layer : info.layers) {
+        auto cur = std::make_shared<v0::Parameter>(ov::element::f32, ov::PartialShape{-1, hidden});
+        cur->set_friendly_name(MODEL_HIDDEN_INPUT);
+        cur->output(0).get_tensor().set_names({MODEL_HIDDEN_INPUT});
+        ov::ParameterVector parameters{cur};
+        std::optional<NodeOutput> prev;
+        if (info.use_previous_token) {
+            auto prev_input = std::make_shared<v0::Parameter>(ov::element::f32, ov::PartialShape{1, hidden});
+            prev_input->set_friendly_name(MODEL_PREV_HIDDEN_INPUT);
+            prev_input->output(0).get_tensor().set_names({MODEL_PREV_HIDDEN_INPUT});
+            parameters.push_back(prev_input);
+            prev = prev_input->output(0);
+        }
+        auto result = std::make_shared<v0::Result>(build_head(impl.heads.at(layer), cur, prev, info.top_k));
+        result->set_friendly_name(MODEL_OUTPUT);
+        result->output(0).get_tensor().set_names({MODEL_OUTPUT});
+        auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, parameters, "les_predictor." + std::to_string(layer));
+        model->set_rt_info(static_cast<int64_t>(layer), MODEL_LAYER_KEY);
+        models.push_back(std::move(model));
+    }
+    return models;
+}
+
+bool add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties,
+                           const std::string& device,
+                           const std::shared_ptr<ov::Model>& model,
+                           const ExpertPredictor& predictor) {
     if (properties->count(PLUGIN_PROPERTY)) {
-        return;
+        return true;  // set by the user
     }
     std::vector<ov::PropertyName> supported;
     try {
         supported = utils::singleton_core().get_property(device, ov::supported_properties);
     } catch (const ov::Exception&) {
-        return;
+        return false;
     }
-    if (std::find(supported.begin(), supported.end(), PLUGIN_PROPERTY) != supported.end()) {
-        properties.fork()[PLUGIN_PROPERTY] = std::string(PREDICTED_EXPERTS_PREFIX);
+    if (std::find(supported.begin(), supported.end(), PLUGIN_PROPERTY) == supported.end()) {
+        GENAI_WARN("Expert predictor: device %s does not support %s, the predictor is not used", device.c_str(),
+                   PLUGIN_PROPERTY);
+        return false;
     }
+    const GraphInfo info = analyze(model, predictor);
+    auto& forked = properties.fork();
+    forked[PLUGIN_PROPERTY] = build_predictor_models(predictor, info);
+    auto cache_dir = forked.find(ov::cache_dir.name());
+    if (cache_dir != forked.end()) {
+        if (!cache_dir->second.as<std::string>().empty()) {
+            GENAI_WARN("Expert predictor: the model cache (%s) is disabled, it does not keep the predictor models",
+                       ov::cache_dir.name());
+        }
+        forked.erase(cache_dir);
+    }
+    return true;
 }
 
 GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor, GraphMode mode) {
-    OPENVINO_ASSERT(predictor, "Expert predictor: the predictor is empty");
     const ExpertPredictorImpl& impl = *predictor.get_impl();
     const auto router_inputs = find_router_inputs(model);
     const auto hidden = static_cast<int64_t>(impl.hidden_size);
-
-    GraphInfo info;
-    info.hidden_size = impl.hidden_size;
-    info.use_previous_token = predictor.get_use_previous_token();
-    info.router_outputs = stats_enabled();
-
     std::map<size_t, std::shared_ptr<ov::op::util::TopKBase>> routers;
-    for (const auto& [layer, head] : impl.heads) {
-        OPENVINO_ASSERT(router_inputs.count(layer - 1) && router_inputs.count(layer),
-                        "Expert predictor: cannot find the post_attention_layernorm outputs of decoder layers ",
-                        layer - 1, " and ", layer, " in the model");
-        const auto& shape = router_inputs.at(layer).get_partial_shape();
-        OPENVINO_ASSERT(shape[2].compatible(hidden), "Expert predictor: the model hidden size ", shape[2],
-                        " differs from the predictor hidden size ", hidden);
-        auto topk = find_router_topk(router_inputs.at(layer));
-        OPENVINO_ASSERT(topk, "Expert predictor: decoder layer ", layer, " has no MoE router (TopK) in the model");
-        const size_t router_k = topk->get_k();
-        OPENVINO_ASSERT(router_k > 0, "Expert predictor: the router TopK of layer ", layer, " has no constant k");
-        OPENVINO_ASSERT(info.router_top_k == 0 || info.router_top_k == router_k,
-                        "Expert predictor: the routers select different numbers of experts");
-        info.router_top_k = router_k;
-        OPENVINO_ASSERT(!predictor.get_use_previous_token() || head.previous_weight,
-                        "Expert predictor: use_previous_token needs previous_weight in expert_predictors.", layer + 1);
-        routers[layer] = topk;
-        info.layers.push_back(layer);
-    }
-    info.top_k = predictor.get_top_k() ? predictor.get_top_k() : info.router_top_k;
-    OPENVINO_ASSERT(info.top_k <= impl.num_experts, "Expert predictor: top_k ", info.top_k, " exceeds the ",
-                    impl.num_experts, " experts");
+    GraphInfo info = analyze_impl(router_inputs, predictor, routers);
 
     // The previous token input of a head is the router input of its layer saved at the last token of the previous
     // inference, for every token of the current one. So in decode (one token) it is exactly the previous token, and

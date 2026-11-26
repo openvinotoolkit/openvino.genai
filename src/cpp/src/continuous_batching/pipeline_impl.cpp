@@ -191,13 +191,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                                       m_inputs_embedder ? m_inputs_embedder->get_lora_tensor_prefix() : std::nullopt);
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);
     }
-    // lookahead expert scheduling: build the expert predictor heads in the PA model
+    // lookahead expert scheduling: the expert predictor heads run in the device plugin, apart from the model
     std::optional<ExpertPredictor> expert_predictor;
     std::optional<les::GraphInfo> expert_predictor_info;
     if (les::extract_from_properties(filtered_properties, expert_predictor)) {
-        expert_predictor_info =
-            les::apply(model, *expert_predictor, les::GraphMode::PAGED);
-        les::add_plugin_properties(filtered_properties, device);
+        if (les::stats_enabled()) {
+            // recall measurement: the heads and the router choices as outputs of the PA model
+            expert_predictor_info = les::apply(model, *expert_predictor, les::GraphMode::PAGED);
+        } else {
+            les::add_plugin_properties(filtered_properties, device, model, *expert_predictor);
+        }
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();

@@ -41,7 +41,13 @@ public:
 
 namespace les {
 
-// Names of the tensors GenAI adds to the language model
+// Names of the tensors of the predictor models passed to the device plugin (PLUGIN_PROPERTY)
+inline constexpr const char* MODEL_LAYER_KEY = "les_moe_layer";            // rt_info: 0-based MoE layer of the head
+inline constexpr const char* MODEL_HIDDEN_INPUT = "les_hidden";            // [?, hidden]: router input of layer L-1
+inline constexpr const char* MODEL_PREV_HIDDEN_INPUT = "les_prev_hidden";  // [1, hidden]: router input of layer L, previous token
+inline constexpr const char* MODEL_OUTPUT = "les_predicted_experts";       // [?, top_k] i32
+
+// Names of the tensors GenAI adds to the language model when it builds the heads in it (stats_enabled())
 inline constexpr const char* STATE_NAME = "les_prev_hidden";             // stateful model: [batch, num_heads, hidden]
 inline constexpr const char* PREV_HIDDEN_INPUT = "les_prev_hidden";      // PA model: [num_heads, num_sequences, hidden]
 inline constexpr const char* LAST_HIDDEN_OUTPUT = "les_last_hidden";     // PA model: [num_heads, num_sequences, hidden]
@@ -74,14 +80,28 @@ struct GraphInfo {
 bool extract_from_properties(utils::SharedOptional<const ov::AnyMap>& properties,
                              std::optional<ExpertPredictor>& predictor);
 
-// GPU plugin property naming the predicted experts outputs (value: their name prefix, PREDICTED_EXPERTS_PREFIX), so
-// that the plugin can prefetch the predicted experts of MoE offloading (OFFLOAD_RATIO).
-inline constexpr const char* PLUGIN_PROPERTY = "MOE_LES_PREDICTED_EXPERTS";
+// GPU plugin property with the predictor heads as separate models, one per MoE layer (value:
+// std::vector<std::shared_ptr<ov::Model>>, see build_predictor_models). The plugin runs them apart from the language
+// model, only if MoE experts are offloaded (OFFLOAD_RATIO > 0), and prefetches the predicted experts.
+inline constexpr const char* PLUGIN_PROPERTY = "MOE_LES_PREDICTORS";
 
-// Adds PLUGIN_PROPERTY to `properties` if `device` supports it.
-void add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties, const std::string& device);
+// Checks the predictor against the MoE layers of `model`, which it does not change.
+GraphInfo analyze(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor);
 
-// Builds the predictor heads inside `model` and connects them to the router inputs of the MoE layers.
+// The head of every layer of `info` as a model: input MODEL_HIDDEN_INPUT and, with use_previous_token,
+// MODEL_PREV_HIDDEN_INPUT, output MODEL_OUTPUT, the MoE layer in rt_info MODEL_LAYER_KEY.
+std::vector<std::shared_ptr<ov::Model>> build_predictor_models(const ExpertPredictor& predictor, const GraphInfo& info);
+
+// Adds PLUGIN_PROPERTY with the predictor models of `model` to `properties` if `device` supports it; returns whether
+// it did. The predictor models are not part of a compiled model blob, so the model cache (CACHE_DIR) is disabled then.
+bool add_plugin_properties(utils::SharedOptional<const ov::AnyMap>& properties,
+                           const std::string& device,
+                           const std::shared_ptr<ov::Model>& model,
+                           const ExpertPredictor& predictor);
+
+// Builds the predictor heads inside `model` and connects them to the router inputs of the MoE layers, with the router
+// choices as additional outputs if stats_enabled(): it is used to measure the recall of the predictor, the device
+// plugin does not use these heads.
 GraphInfo apply(const std::shared_ptr<ov::Model>& model, const ExpertPredictor& predictor, GraphMode mode);
 
 // Recall of the predicted experts against the router choices, needs GraphInfo::router_outputs.
