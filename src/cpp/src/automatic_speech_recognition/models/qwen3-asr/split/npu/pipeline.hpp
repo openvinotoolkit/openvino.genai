@@ -11,8 +11,6 @@ class Qwen3ASRNPUVLMPipelineAdapter final : public Qwen3ASRVLMPipelineAdapter {
 public:
     Qwen3ASRNPUVLMPipelineAdapter(const std::filesystem::path& models_path, const ov::AnyMap& properties);
 
-private:
-    void validate_generation_config(const ASRGenerationConfig& config) const override;
 };
 
 }  // namespace ov::genai

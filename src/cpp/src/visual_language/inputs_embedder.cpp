@@ -518,18 +518,6 @@ const std::set<int64_t>& InputsEmbedder::get_suppressed_token_ids() const {
     return m_impl->get_suppressed_token_ids();
 }
 
-InputsEmbedder::GenerationPolicy InputsEmbedder::prepare_generation(size_t prompt_len,
-                                                                    GenerationConfig& config,
-                                                                    size_t max_prompt_len,
-                                                                    size_t kv_cache_capacity) const {
-    return m_impl->prepare_generation(prompt_len, config, max_prompt_len, kv_cache_capacity);
-}
-
-void InputsEmbedder::finish_generation(const GenerationPolicy& policy,
-                                       const std::vector<GenerationFinishReason>& finish_reasons) const {
-    m_impl->finish_generation(policy, finish_reasons);
-}
-
 std::function<ov::Tensor(const ov::Tensor& new_input_ids)> InputsEmbedder::get_per_layer_embeddings_callback() {
     return m_impl->get_per_layer_embeddings_callback();
 }

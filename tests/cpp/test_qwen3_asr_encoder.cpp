@@ -21,6 +21,7 @@
 #include "automatic_speech_recognition/models/qwen3-asr/split/npu/properties.hpp"
 #include "openvino/op/ops.hpp"
 #include "openvino/openvino.hpp"
+#include "visual_language/npu_generation.hpp"
 
 namespace {
 
@@ -436,6 +437,15 @@ TEST(Qwen3ASRNPUGenerationTest, RejectsInvalidPromptsAndBeamSearch) {
     EXPECT_THROW(ov::genai::limit_qwen3_asr_npu_generation(129, config, 128, 191), ov::Exception);
     config.num_beams = 2;
     EXPECT_THROW(ov::genai::limit_qwen3_asr_npu_generation(2, config, 128, 191), ov::Exception);
+}
+
+TEST(Qwen3ASRNPUGenerationTest, AppliesOnlyToQwen3ASR) {
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = SIZE_MAX;
+    EXPECT_FALSE(ov::genai::prepare_npu_vlm_generation(ov::genai::VLMModelType::QWEN3_VL, 0, config, 0, 0));
+    EXPECT_EQ(config.max_new_tokens, SIZE_MAX);
+    EXPECT_TRUE(ov::genai::prepare_npu_vlm_generation(ov::genai::VLMModelType::QWEN3_ASR, 128, config, 128, 192));
+    EXPECT_EQ(config.max_new_tokens, 65u);
 }
 
 }  // namespace

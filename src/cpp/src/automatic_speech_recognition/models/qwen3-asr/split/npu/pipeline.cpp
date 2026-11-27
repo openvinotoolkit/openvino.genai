@@ -37,8 +37,4 @@ Qwen3ASRNPUVLMPipelineAdapter::Qwen3ASRNPUVLMPipelineAdapter(const std::filesyst
     m_max_asr_input_seconds = 60;
 }
 
-void Qwen3ASRNPUVLMPipelineAdapter::validate_generation_config(const ASRGenerationConfig& config) const {
-    OPENVINO_ASSERT(!config.is_beam_search(), "Qwen3-ASR NPU decoder does not support beam search.");
-}
-
 }  // namespace ov::genai

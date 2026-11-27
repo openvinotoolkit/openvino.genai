@@ -42,9 +42,6 @@ public:
                                const std::string& device,
                                const ov::AnyMap& properties);
 
-protected:
-    virtual void validate_generation_config(const ASRGenerationConfig&) const {}
-
 private:
     // VLMPipeline is created before Qwen3ASRPipelineBase to share its tokenizer.
     Qwen3ASRVLMPipelineAdapter(const std::filesystem::path& models_path,

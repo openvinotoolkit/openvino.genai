@@ -138,7 +138,6 @@ std::vector<std::string> Qwen3ASRVLMPipelineAdapter::infer(const std::vector<Aud
                                                            const ASRGenerationConfig& config,
                                                            ASRPerfMetrics& perf_metrics,
                                                            const std::shared_ptr<StreamerBase>& streamer) {
-    validate_generation_config(config);
     const std::string prompt = build_text_prompt(config);
     const GenerationConfig chunk_config = create_chunk_generation_config(config);
     // Qwen3ASRPipelineBase::generate() allows a streamer only for a single chunk.

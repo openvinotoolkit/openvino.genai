@@ -8,22 +8,23 @@
 
 namespace ov::genai {
 
-enum class Qwen3ASRInputModelMode { NPUW, Standard };
-
 class InputsEmbedderQwen3ASR : public InputsEmbedder::IInputsEmbedder {
 public:
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const std::filesystem::path& model_dir,
                            const Tokenizer& tokenizer,
                            const std::string& device,
-                           const ov::AnyMap& properties,
-                           Qwen3ASRInputModelMode mode = Qwen3ASRInputModelMode::NPUW);
+                           const ov::AnyMap& properties);
     InputsEmbedderQwen3ASR(const VLMConfig& config,
                            const ModelsMap& models_map,
                            const Tokenizer& tokenizer,
                            const std::filesystem::path& config_dir,
                            const std::string& device,
                            const ov::AnyMap& properties);
+    InputsEmbedderQwen3ASR(const VLMConfig& config,
+                           const Tokenizer& tokenizer,
+                           EmbeddingsModel::Ptr embedding,
+                           std::unique_ptr<AudioEncoderQwen3ASR> audio_encoder);
 
     std::vector<EncodedAudio> encode_audios(const std::vector<ov::Tensor>& audios) override;
     std::vector<EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
@@ -59,23 +60,7 @@ public:
                                                                    size_t history_size) override;
     void start_chat(const std::string& system_message) override;
 
-    InputsEmbedder::GenerationPolicy prepare_generation(size_t prompt_len,
-                                                        GenerationConfig& config,
-                                                        size_t max_prompt_len,
-                                                        size_t kv_cache_capacity) const override;
-    void finish_generation(const InputsEmbedder::GenerationPolicy& policy,
-                           const std::vector<GenerationFinishReason>& finish_reasons) const override;
-
 private:
-    InputsEmbedderQwen3ASR(const VLMConfig& config,
-                           const Tokenizer& tokenizer,
-                           EmbeddingsModel::Ptr embedding,
-                           const std::shared_ptr<ov::Model>& audio_model,
-                           const std::filesystem::path& config_dir,
-                           const std::string& device,
-                           const ov::AnyMap& properties,
-                           Qwen3ASRInputModelMode mode);
-
     void merge_audio_embeddings(ov::Tensor& inputs_embeds,
                                 const ov::Tensor& input_ids,
                                 const std::vector<EncodedAudio>& audios,

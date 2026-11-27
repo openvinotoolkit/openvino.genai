@@ -46,11 +46,6 @@ struct NormalizedPrompt {
 
 class InputsEmbedder {
 public:
-    struct GenerationPolicy {
-        bool preserve_finished_at_capacity = false;
-        bool capacity_limited = false;
-    };
-
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const Tokenizer& tokenizer,
                    const std::string& device,
@@ -88,14 +83,6 @@ public:
 
     // Token ids the text decode must never sample, for example media placeholders.
     const std::set<int64_t>& get_suppressed_token_ids() const;
-
-    GenerationPolicy prepare_generation(size_t prompt_len,
-                                        GenerationConfig& config,
-                                        size_t max_prompt_len,
-                                        size_t kv_cache_capacity) const;
-
-    void finish_generation(const GenerationPolicy& policy,
-                           const std::vector<GenerationFinishReason>& finish_reasons) const;
 
     // returns per-layer embeddings callback, or nullptr if not available
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
@@ -251,12 +238,6 @@ private:
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
         virtual const std::set<int64_t>& get_suppressed_token_ids() const;
-
-        virtual GenerationPolicy prepare_generation(size_t, GenerationConfig&, size_t, size_t) const {
-            return {};
-        }
-
-        virtual void finish_generation(const GenerationPolicy&, const std::vector<GenerationFinishReason>&) const {}
 
         virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
             return nullptr;

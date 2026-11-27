@@ -29,8 +29,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs = {},
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback = nullptr,
     std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)> ngram_embeddings_callback =
-        nullptr,
-    const bool preserve_finished_at_capacity = false);
+        nullptr);
 
 void align_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state);
 

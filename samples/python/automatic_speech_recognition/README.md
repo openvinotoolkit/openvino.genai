@@ -82,7 +82,6 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 ```sh
 python automatic_speech_recognition.py whisper-base how_are_you_doing_today.wav
 ```
-An optional third positional argument selects the device. GPU and NPU runs cache compiled models in `asr_cache`.
 
 Output:
 
@@ -91,8 +90,6 @@ Output:
 ```
 
 ### Standalone Forced-aligner word timestamps
-
-The optional device argument applies to both ASR and the forced aligner. Forced-aligner NPU execution has not been validated.
 
 ```sh
 python forced_aligner_timestamps_generation.py fun-asr-nano-ov qwen3-forced-aligner-ov zh_sample.wav --language Chinese
@@ -172,10 +169,6 @@ for chunk in result.chunks[0]:
 ```
 
 Qwen3-ASR can produce word-level timestamps if integrated with its forced aligner into ASRPipeline:
-
-The forced aligner is a separate pipeline with its own device. Qwen3-ASR's NPU-specific input-model
-handling does not apply to the forced aligner; its NPU execution has not been validated by
-this change. For example, an NPU ASR pipeline can use a CPU forced aligner.
 
 ```python
 aligner = openvino_genai.ASRForcedAligner(forced_aligner_model_dir, "CPU")

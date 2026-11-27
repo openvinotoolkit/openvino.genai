@@ -70,8 +70,6 @@ Output:
 
 ### Standalone Forced-aligner word timestamps
 
-The optional device argument applies to both ASR and the forced aligner. Forced-aligner NPU execution has not been validated.
-
 ```sh
 forced_aligner_timestamps_generation fun-asr-nano-ov qwen3-forced-aligner-ov zh_sample.wav --language Chinese
 ```
@@ -146,10 +144,6 @@ for (auto& chunk : (*result.chunks)[0]) {
 ```
 
 Qwen3-ASR can produce word-level timestamps if integrated with its forced aligner into ASRPipeline:
-
-The forced aligner is a separate pipeline with its own device. Qwen3-ASR's NPU-specific input-model
-handling does not apply to the forced aligner; its NPU execution has not been validated by
-this change. For example, an NPU ASR pipeline can use a CPU forced aligner.
 
 ```c++
 #include "openvino/genai/automatic_speech_recognition/forced_aligner.hpp"

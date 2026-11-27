@@ -35,6 +35,7 @@
 - 'src/cpp/src/lm_encoding.hpp'
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/python/py_llm_pipeline.cpp'
+- 'tests/cpp/test_lm_encoding_capacity.cpp'
 - 'tests/python_tests/test_llm_pipeline.py'
 - 'tests/python_tests/test_llm_pipeline_static.py'
 - 'tests/python_tests/test_structured_output.py'
@@ -45,6 +46,7 @@
 - 'src/cpp/src/lm_encoding.hpp'
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/python/py_vlm_pipeline.cpp'
+- 'tests/cpp/test_lm_encoding_capacity.cpp'
 - 'tests/python_tests/test_vlm_pipeline.py'
 
 'category: omni':
@@ -154,7 +156,9 @@
 - 'src/cpp/src/whisper/**/*'
 - 'src/python/py_asr_pipeline.cpp'
 - 'src/python/py_whisper_pipeline.cpp'
+- 'tests/cpp/test_qwen3_asr_encoder.cpp'
 - 'tests/python_tests/test_asr_pipeline.py'
+- 'tests/python_tests/test_asr_pipeline_npu.py'
 - 'tests/python_tests/test_whisper_pipeline_static.py'
 - 'tests/python_tests/test_asr_forced_aligner.py'
 - 'tests/python_tests/test_llm_bench_speech_to_text.py'
