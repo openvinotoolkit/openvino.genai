@@ -900,12 +900,12 @@ jobs:
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
 
-      - name: Qwen3-ASR and LM capacity gtests
-        if: ${{ (fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test) && !fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
+      - name: Qwen3-ASR gtests
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test && !fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
-          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="*Qwen3ASR*:LMEncodingCapacityTest.*"
+          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="*Qwen3ASR*"
         env:
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
 

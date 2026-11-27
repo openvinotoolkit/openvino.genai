@@ -233,16 +233,12 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 
 ## Qwen3-ASR on NPU
 
-The current Qwen3-ASR split export contains an audio encoder, text embeddings and a language model.
-`ASRPipeline` on NPU runs all three models on NPU. GenAI splits text-embedding lookups into fixed-size
-windows and runs them through NPUW. Setting `NPU_USE_NPUW=NO` for either the audio encoder or
-text-embedding model is not supported. Both input models default to `NPUW_ONLINE_PIPELINE=NONE`;
-an explicitly supplied partitioning policy is respected.
+`ASRPipeline` supports Qwen3-ASR split exports on NPU using the SDPA backend and NPUW. The audio encoder,
+text embeddings and language model run on NPU; disabling NPUW for either input model is not supported.
 Audio is split into nominal 60-second segments, with up to five additional seconds for boundary selection.
-The audio encoder processes fixed-size windows sequentially; short windows are zero-padded. CPU/GPU retain
-dynamic batched encoder inference. Padding can introduce numerical differences for sub-window audio; check
-transcription accuracy on the intended model and inputs. NPU uses the SDPA backend and supports greedy and
-multinomial decoding, but not beam search.
+The audio encoder and text embeddings use fixed-size windows. Short audio windows are zero-padded, which
+can affect numerical results; check transcription accuracy for the intended inputs. Greedy and multinomial
+decoding are supported, but beam search is not.
 
 The model-directory `VLMPipeline` constructor retains its existing default input-model device selection.
 To run both the audio encoder and text embeddings on NPU through that constructor, set
@@ -252,7 +248,7 @@ On NPU, an explicit output limit must fit the compiled KV cache; adjust `MAX_PRO
 if needed. For a weightless decoder blob imported with `BLOB_PATH`, set `WEIGHTS_PATH` to the original
 `openvino_language_model.bin` from the split export.
 
-## Qwen3-ASR continuous batching
+## Continuous batching with Qwen3-ASR
 
 Qwen3-ASR model supports `ContinuousBatchingPipeline` API. The model's chat template is designed for transcription: it discards user text and assistant turns, so questions about earlier audio, translation instructions, and multi-turn audio conversations are not supported.
 

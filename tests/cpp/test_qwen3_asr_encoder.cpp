@@ -19,6 +19,7 @@
 #include "automatic_speech_recognition/models/qwen3-asr/split/npu/embedding_model.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/split/npu/generation.hpp"
 #include "automatic_speech_recognition/models/qwen3-asr/split/npu/properties.hpp"
+#include "lm_encoding.hpp"
 #include "openvino/op/ops.hpp"
 #include "openvino/openvino.hpp"
 #include "visual_language/npu_generation.hpp"
@@ -446,6 +447,58 @@ TEST(Qwen3ASRNPUGenerationTest, AppliesOnlyToQwen3ASR) {
     EXPECT_EQ(config.max_new_tokens, SIZE_MAX);
     EXPECT_TRUE(ov::genai::prepare_npu_vlm_generation(ov::genai::VLMModelType::QWEN3_ASR, 128, config, 128, 192));
     EXPECT_EQ(config.max_new_tokens, 65u);
+}
+
+ov::InferRequest make_capacity_request() {
+    auto ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, -1});
+    ids->output(0).set_names({"input_ids"});
+    auto mask = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, -1});
+    mask->output(0).set_names({"attention_mask"});
+    auto beams = std::make_shared<ov::op::v0::Parameter>(ov::element::i32, ov::PartialShape{1});
+    beams->output(0).set_names({"beam_idx"});
+    auto logits = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1, 1, 4}, {0.f, 1.f, 0.f, 0.f});
+    logits->output(0).set_names({"logits"});
+    auto model = std::make_shared<ov::Model>(ov::OutputVector{logits}, ov::ParameterVector{ids, mask, beams});
+    ov::Core core;
+    return core.compile_model(model, "CPU").create_infer_request();
+}
+
+void check_capacity_boundary(size_t max_new_tokens, bool expected_finished) {
+    auto request = make_capacity_request();
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = max_new_tokens;
+    config.ignore_eos = true;
+    auto group = std::make_shared<ov::genai::SequenceGroup>(0, ov::genai::TokenIds{0}, config);
+    ov::Tensor ids{ov::element::i64, {1, 1}};
+    ov::Tensor mask{ov::element::i64, {1, 1}};
+    ids.data<int64_t>()[0] = 0;
+    mask.data<int64_t>()[0] = 1;
+    ov::genai::Sampler sampler;
+    ov::genai::utils::CacheState cache_state;
+    auto result = ov::genai::get_lm_encoded_results(request,
+                                                    ids,
+                                                    mask,
+                                                    nullptr,
+                                                    sampler,
+                                                    {group},
+                                                    std::nullopt,
+                                                    cache_state,
+                                                    nullptr,
+                                                    std::nullopt,
+                                                    1);
+    ASSERT_EQ(result.results.tokens.size(), 1u);
+    ASSERT_EQ(result.results.tokens[0].size(), 1u);
+    const auto sequence = group->get_sequences().front();
+    EXPECT_EQ(sequence->has_finished(), expected_finished);
+    EXPECT_EQ(sequence->out_of_memory(), !expected_finished);
+}
+
+TEST(Qwen3ASRNPUGenerationTest, KeepsFinishedSequenceAtCapacity) {
+    check_capacity_boundary(1, true);
+}
+
+TEST(Qwen3ASRNPUGenerationTest, StopsRunningSequenceAtCapacity) {
+    check_capacity_boundary(2, false);
 }
 
 }  // namespace

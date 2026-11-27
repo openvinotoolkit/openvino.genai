@@ -10,7 +10,6 @@ namespace ov::genai {
 class Qwen3ASRNPUVLMPipelineAdapter final : public Qwen3ASRVLMPipelineAdapter {
 public:
     Qwen3ASRNPUVLMPipelineAdapter(const std::filesystem::path& models_path, const ov::AnyMap& properties);
-
 };
 
 }  // namespace ov::genai

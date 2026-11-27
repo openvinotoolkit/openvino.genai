@@ -120,7 +120,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     const bool use_intermediate_remote_tensor,
     const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback,
-    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)> ngram_embeddings_callback) {
+    std::function<ov::Tensor(const ov::Tensor& input_ids, const ov::Tensor& ngram_history)> ngram_embeddings_callback
+) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
         generations.push_back(std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters()));
@@ -146,10 +147,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         }
     };
 
-    auto free_non_running_requests = [&streamer_ptr,
-                                      &generations,
-                                      &active_sequence_groups,
-                                      &max_kv_cache_size]() {
+    auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups, &max_kv_cache_size]() {
         for (auto& sg : active_sequence_groups) {
             for (auto& seq : sg->get_sequences()) {
                 if (seq->is_running() &&
@@ -417,6 +415,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     return finish_info;
 }
+
 
 TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state) {
     TokenizedInputs encoded_input;

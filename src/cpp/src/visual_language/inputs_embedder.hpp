@@ -3,24 +3,23 @@
 
 #pragma once
 
-#include <filesystem>
-#include <functional>
-#include <optional>
-#include <regex>
-#include <set>
 #include <string>
 #include <vector>
+#include <filesystem>
+#include <regex>
+#include <functional>
+#include <set>
 
+#include "utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
-#include "utils.hpp"
+#include "openvino/runtime/infer_request.hpp"
+#include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/vision_token_pruning_processor.hpp"
-#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
