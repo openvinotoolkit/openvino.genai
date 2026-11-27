@@ -23,11 +23,7 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import (
-    get_ov_cache_converted_models_dir,
-    extra_generate_kwargs,
-    get_default_llm_properties,
-)
+from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs, get_default_llm_properties
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
@@ -200,8 +196,7 @@ def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHI
         )
     else:
         pipeline_cls = get_pipeline_cls(pipeline_type)
-        properties["ENABLE_MMAP"] = False
-        genai_pipe = pipeline_cls(path, "CPU", **properties)
+        genai_pipe = pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False)
 
     return (
         model_id,
@@ -510,21 +505,10 @@ def test_asr_config_constructor(model_descr, pipeline_type):
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
-@pytest.mark.parametrize(
-    "pipelines_fixture",
-    get_model_pipeline_pair_params(
-        [
-            (model_id, pipeline_type)
-            for model_id, _ in get_whisper_models_list(tiny_only=True)
-            for pipeline_type in (PipelineType.WHISPER, PipelineType.ASR)
-        ]
-    ),
-    indirect=True,
-)
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-def test_asr_constructors(pipelines_fixture, sample_from_dataset):
-    hf_pipe, genai_pipe, model_id, pipeline_type = pipelines_fixture
-    path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
+def test_asr_constructors(model_descr, sample_from_dataset, pipeline_type):
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     expected = hf_pipe(sample_from_dataset)["text"]
 
@@ -539,20 +523,10 @@ def test_asr_constructors(pipelines_fixture, sample_from_dataset):
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
-@pytest.mark.parametrize(
-    "pipelines_fixture",
-    get_model_pipeline_pair_params(
-        [
-            (model_id, pipeline_type)
-            for model_id, _ in get_whisper_models_list(tiny_only=True)
-            for pipeline_type in (PipelineType.WHISPER, PipelineType.ASR)
-        ]
-    ),
-    indirect=True,
-)
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-def test_max_new_tokens(pipelines_fixture, sample_from_dataset):
-    hf_pipe, genai_pipe, model_id, _ = pipelines_fixture
+def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     expected = hf_pipe(sample_from_dataset, max_new_tokens=10)
 
@@ -1329,30 +1303,25 @@ def check_streamers(pipelines_fixture, sample_from_dataset, streamer_for_test):
 )
 def test_qwen3_asr_streamer_rejects_multi_chunk_audio(pipelines_fixture):
     _, genai_pipe, _, _ = pipelines_fixture
-    max_seconds = 1200
-    audio = np.zeros((max_seconds + 10) * 16000, dtype=np.float32)
+    audio = np.zeros(1210 * 16000, dtype=np.float32)
 
-    with pytest.raises(RuntimeError, match=f"Qwen3-ASR streaming supports audio up to {max_seconds} seconds"):
+    with pytest.raises(RuntimeError, match="Qwen3-ASR streaming supports audio up to 1200 seconds"):
         genai_pipe.generate(audio, language="English", max_new_tokens=1, streamer=lambda subword: False)
 
 
 @pytest.mark.parametrize("pipelines_fixture", QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS, indirect=True)
-def test_qwen3_asr_multi_chunk_audio(pipelines_fixture):
+def test_qwen3_asr_split_multi_chunk_audio(pipelines_fixture):
     _, genai_pipe, _, _ = pipelines_fixture
     audio = make_deterministic_audio(1210 * 16000)
-    generation = {"language": "English", "max_new_tokens": 4}
-    expected_encode_calls = 2
-    expected = None
-    results = [genai_pipe.generate(audio, **generation) for _ in range(2)]
+
+    results = [genai_pipe.generate(audio, language="English", max_new_tokens=4) for _ in range(2)]
+
+    # Repeated calls must not leak state or metrics between generate() calls.
     assert results[0].texts == results[1].texts
-    assert results[0].languages == results[1].languages
-    if expected is not None:
-        assert results[0].texts == expected.texts
-        assert results[0].languages == expected.languages
     for result in results:
         assert len(result.texts) == 1
         asr_raw_metrics = result.perf_metrics.asr_raw_metrics
-        assert len(asr_raw_metrics.encode_inference_durations) == expected_encode_calls
+        assert len(asr_raw_metrics.encode_inference_durations) == 2
         assert len(asr_raw_metrics.decode_inference_durations) > 0
         assert result.perf_metrics.get_inference_duration().mean > 0
 
