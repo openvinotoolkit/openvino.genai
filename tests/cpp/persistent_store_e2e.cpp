@@ -13,6 +13,7 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "store_plugin_locator.hpp"
 
 using namespace ov::genai;
@@ -243,4 +244,95 @@ TEST(TestPersistentStoreEndToEnd, HybridModelNewPipelineReusesBlocksOfTheInTreeS
         GTEST_SKIP() << VLM_MODEL_PATH_ENV << " is not set, skipping hybrid persistent store end-to-end test.";
     }
     run_restart_reuses_stored_blocks(model_path, /*plugin_path=*/"", /*hybrid=*/true);
+}
+
+namespace {
+
+constexpr size_t IMAGE_SIZE = 448;
+
+/// A deterministic picture; @p changed_corner inverts its lower-right 64x64 pixels and nothing else.
+ov::Tensor make_image(bool changed_corner) {
+    ov::Tensor image(ov::element::u8, ov::Shape{1, IMAGE_SIZE, IMAGE_SIZE, 3});
+    auto* pixels = image.data<uint8_t>();
+    for (size_t y = 0; y < IMAGE_SIZE; ++y) {
+        for (size_t x = 0; x < IMAGE_SIZE; ++x) {
+            const bool corner = changed_corner && y >= IMAGE_SIZE - 64 && x >= IMAGE_SIZE - 64;
+            for (size_t channel = 0; channel < 3; ++channel) {
+                uint8_t value = static_cast<uint8_t>((x * (channel + 1) + y * (3 - channel) + ((x / 32 + y / 32) % 2) * 90) % 256);
+                pixels[(y * IMAGE_SIZE + x) * 3 + channel] = corner ? static_cast<uint8_t>(255 - value) : value;
+            }
+        }
+    }
+    return image;
+}
+
+struct VlmRun {
+    std::string text;
+    size_t hit_tokens = 0;
+};
+
+VlmRun vlm_generate(VLMPipeline& pipeline, const ov::Tensor& image) {
+    auto result = pipeline.generate("Describe the picture.",
+                                    ov::genai::image(image),
+                                    ov::genai::generation_config(make_greedy_config(16)));
+    EXPECT_FALSE(result.texts.empty());
+    return {result.texts.at(0), result.perf_metrics.get_num_prefix_cache_hit_tokens()};
+}
+
+VLMPipeline make_vlm_pipeline(const std::string& model_path, const SchedulerConfig& config) {
+    ov::AnyMap properties;
+    properties.insert(ov::genai::scheduler_config(config));
+    return VLMPipeline(model_path, e2e_device(), properties);
+}
+
+}  // namespace
+
+// Blocks that hold image embeddings are keyed by the whole embedding, so a picture that differs from a stored one in a
+// corner never reads the stored picture's blocks, and the same picture does.
+TEST(TestPersistentStoreEndToEnd, VlmNewPipelineReusesBlocksOfTheSamePictureOnly) {
+    const char* model_path = std::getenv(VLM_MODEL_PATH_ENV);
+    if (model_path == nullptr || *model_path == '\0' ||
+        !std::filesystem::exists(std::filesystem::path(model_path) / "openvino_vision_embeddings_model.xml")) {
+        GTEST_SKIP() << VLM_MODEL_PATH_ENV << " does not point at a visual-language model, skipping.";
+    }
+    const ov::Tensor picture = make_image(/*changed_corner=*/false);
+    const ov::Tensor other_picture = make_image(/*changed_corner=*/true);
+
+    auto baseline_config = make_restart_scheduler_config();
+    baseline_config.cache_interval_multiplier = 1;
+    VlmRun baseline_picture;
+    VlmRun baseline_other;
+    {
+        auto pipeline = make_vlm_pipeline(model_path, baseline_config);
+        baseline_picture = vlm_generate(pipeline, picture);
+    }
+    {
+        auto pipeline = make_vlm_pipeline(model_path, baseline_config);
+        baseline_other = vlm_generate(pipeline, other_picture);
+    }
+
+    const auto store_dir = std::filesystem::temp_directory_path() / "openvino_genai_vlm_picture_store_e2e";
+    std::filesystem::remove_all(store_dir);
+    std::filesystem::create_directories(store_dir);
+    auto config = make_persistent_store_config(/*plugin_path=*/"", store_dir.string(), /*hybrid=*/true);
+    config.cache_interval_multiplier = 1;
+
+    {
+        auto pipeline = make_vlm_pipeline(model_path, config);
+        const VlmRun written = vlm_generate(pipeline, picture);
+        EXPECT_EQ(written.text, baseline_picture.text);
+        EXPECT_EQ(written.hit_tokens, 0u) << "nothing is stored yet";
+    }
+    {
+        auto pipeline = make_vlm_pipeline(model_path, config);
+        const VlmRun same = vlm_generate(pipeline, picture);
+        const VlmRun other = vlm_generate(pipeline, other_picture);
+        std::cout << "[ INFO     ] prefix cache hit tokens after a restart: same picture " << same.hit_tokens
+                  << ", picture with another corner " << other.hit_tokens << std::endl;
+        EXPECT_EQ(same.text, baseline_picture.text) << "the stored blocks of the same picture changed the output";
+        EXPECT_EQ(other.text, baseline_other.text) << "another picture read the blocks of the stored one";
+        EXPECT_GT(same.hit_tokens, 0u) << "the same picture has to be served from the store";
+        EXPECT_LT(other.hit_tokens, same.hit_tokens) << "another picture shares only the text before the image";
+    }
+    std::filesystem::remove_all(store_dir);
 }
