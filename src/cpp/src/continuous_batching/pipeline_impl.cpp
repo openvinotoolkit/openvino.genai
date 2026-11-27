@@ -1549,6 +1549,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
             }
         }
         _end_step_state(request, GenerationStatus::FAILED);
+        // Another caller may have queued it, so its handle must end instead of waiting for a step.
+        request->fail_generation(std::make_exception_ptr(std::runtime_error(
+            "Request " + std::to_string(request->get_request_id()) + " was dropped because generation failed")));
     }
     m_awaiting_requests.clear();
 }

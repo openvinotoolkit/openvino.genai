@@ -550,6 +550,17 @@ TEST_F(CBStepHookRemoveRequestTest, dropped_awaiting_request_is_never_pulled) {
     EXPECT_EQ(hook->remove_count(1), 1);
 }
 
+TEST_F(CBStepHookRemoveRequestTest, dropped_awaiting_request_fails_its_handle) {
+    // Another caller may have queued it, so its handle must not wait for a step that never comes.
+    PipelineTestInstance pipeline(hook);
+    const auto handle = pipeline.add(0, {1}, make_config(4));
+
+    pipeline.drop_requests();
+
+    EXPECT_EQ(handle->get_status(), GenerationStatus::FAILED);
+    EXPECT_THROW(handle->read_all(), std::runtime_error);
+}
+
 TEST_F(CBStepHookRemoveRequestTest, drop_frees_blocks_restored_for_awaiting_request) {
     PipelineTestInstance pipeline(hook, 16, /*enable_prefix_caching=*/true);
     const std::vector<int64_t> prompt{1, 2, 3, 4, 5, 6, 7, 8, 9};
