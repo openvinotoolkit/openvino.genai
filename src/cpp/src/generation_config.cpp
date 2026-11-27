@@ -340,6 +340,7 @@ void GenerationConfig::validate() const {
         OPENVINO_ASSERT(frequency_penalty >= -2.0f && frequency_penalty <= 2.0f, "'frequence_penalty' penalty must be within [-2.0; 2.0], but got ", frequency_penalty);
         OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "'presence_penalty' penalty must be within [-2.0; 2.0], but got ", presence_penalty);
         OPENVINO_ASSERT(repetition_penalty > 0.0f, "'repetition_penalty' must be a strictly positive float, but got ", repetition_penalty);
+        OPENVINO_ASSERT(std::isfinite(repetition_penalty), "'repetition_penalty' must be a finite float, but got ", repetition_penalty);
     } else {
         OPENVINO_ASSERT(frequency_penalty == 0.0f, "'frequency_penalty' is not currently supported by beam search and should be 0.0f, but got ", frequency_penalty);
         OPENVINO_ASSERT(presence_penalty == 0.0f, "'presence_penalty' is not currently supported by beam search and should be 0.0f, but got ", presence_penalty);
@@ -353,6 +354,7 @@ void GenerationConfig::validate() const {
     if (is_multinomial()) {
         OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ", top_p);
         OPENVINO_ASSERT(temperature > 0, "When 'do_sample' is true, temperature must be a strictly positive float, but got ", temperature);
+        OPENVINO_ASSERT(std::isfinite(temperature), "When 'do_sample' is true, temperature must be a finite float, but got ", temperature);
         OPENVINO_ASSERT(min_p >= 0.0f && min_p < 1.0f, "When 'do_sample' is true, min_p must be in [0.0, 1.0), but got ", min_p);
     } else {
         // parameters requiring multinomial

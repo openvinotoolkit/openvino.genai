@@ -101,12 +101,16 @@ invalid_configs = [
     dict(max_new_tokens=1, repetition_penalty=-1.0), # invalid repetition_penalty
     dict(max_new_tokens=1, presence_penalty=-3.0), # invalid presence_penalty
     dict(max_new_tokens=1, frequency_penalty=3.0), # invalid frequency_penalty
+    dict(max_new_tokens=1, repetition_penalty=float("nan")),  # 'repetition_penalty' must be finite
+    dict(max_new_tokens=1, repetition_penalty=float("inf")),  # 'repetition_penalty' must be finite
     # multinomial sampling
     dict(max_new_tokens=1, do_sample=True, top_p=1.1),  # 'top_p' must be within (0, 1] when 'do_sample' is True
     dict(max_new_tokens=1, do_sample=True, top_p=0),  # 'top_p' must be within (0, 1] when 'do_sample' is True
     dict(max_new_tokens=1, do_sample=True, temperature=-1.0),  # invalid temp
     dict(max_new_tokens=1, do_sample=True, min_p=-0.1),  # min_p must be >= 0.0
     dict(max_new_tokens=1, do_sample=True, min_p=1.0),  # min_p must be < 1.0
+    dict(max_new_tokens=1, do_sample=True, temperature=float("nan")),  # 'temperature' must be finite
+    dict(max_new_tokens=1, do_sample=True, temperature=float("inf")),  # 'temperature' must be finite
     # beam search
     dict(max_new_tokens=1, num_beams=2, num_return_sequences=3),  # 'num_beams' must be >= 'num_return_sequences'
     dict(max_new_tokens=1, num_beams=3, num_beam_groups=2),  # 'num_beams' must be divisible by 'num_beam_groups'
