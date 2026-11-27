@@ -405,8 +405,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_reques
     SamplingOverrides sampling_overrides;
     std::unique_ptr<StepRequestState> step_state;
     if (m_step_hook) {
-        step_state = m_step_hook->create_request_state(
-            {sampling_params_copy, inputs, prompt_ids, m_inputs_embedder.get(), sampling_overrides, step_payload});
+        step_state = m_step_hook->before_add_request(inputs, prompt_ids, sampling_overrides, step_payload);
     }
     // Step work assumes one running sequence per request, and forced tokens reach only greedy or multinomial sampling.
     OPENVINO_ASSERT(!step_state ||
@@ -459,7 +458,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_reques
                                                          sampling_params_copy);
     }
     sequence_group->set_sampling_overrides(std::move(sampling_overrides));
-    // Until the queue push below, a throw destroys the state without on_request_done().
+    // Until the queue push below, a throw destroys the state without after_remove_request().
     sequence_group->set_step_state(std::move(step_state));
 
     // Enable hidden state accumulation for speech output (Qwen3-Omni).
@@ -519,7 +518,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::discard_awaiting_reques
         for (const auto& sequence : (*request)->get_sequences()) {
             m_scheduler->free_sequence(sequence->get_id());
         }
-        _end_step_state(*request, {GenerationStatus::FAILED, nullptr});
+        _end_step_state(*request, GenerationStatus::FAILED);
         m_awaiting_requests.erase(request);
         return;
     }
@@ -840,9 +839,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         return;
     }
 
-    std::vector<IStepHook::Row> step_rows;
+    std::vector<SequenceGroup::Ptr> step_requests;
     if (m_step_hook) {
-        step_rows = _collect_step_rows();
+        step_requests = _collect_step_requests();
     }
 
     // Return borrowed rows if forward or sampling fails before commit.
@@ -875,7 +874,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
         static ManualTimer timer("forward");
         // The step hook reads hidden states only in steps where one of its requests samples.
         std::optional<HiddenStateExportGuard> step_hook_export;
-        if (!step_rows.empty() && !m_model_runner->is_hidden_state_export_enabled()) {
+        if (!step_requests.empty() && !m_model_runner->is_hidden_state_export_enabled()) {
             step_hook_export.emplace(m_model_runner);
         }
         const auto infer_start = std::chrono::steady_clock::now();
@@ -923,17 +922,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
 
     std::vector<std::optional<int64_t>> forced_tokens;
     std::optional<ForcedTokens> forced_tokens_by_sequence;
-    if (!step_rows.empty()) {
-        forced_tokens = m_step_hook->force_tokens(step_rows);
-        OPENVINO_ASSERT(forced_tokens.size() == step_rows.size(),
-                        "A step hook must select one token or none per row, got ",
+    if (!step_requests.empty()) {
+        forced_tokens = m_step_hook->before_sampling(step_requests);
+        OPENVINO_ASSERT(forced_tokens.size() == step_requests.size(),
+                        "A step hook must select one token or none per request, got ",
                         forced_tokens.size(),
                         " for ",
-                        step_rows.size());
+                        step_requests.size());
         forced_tokens_by_sequence.emplace();
-        for (size_t i = 0; i < step_rows.size(); ++i) {
+        for (size_t i = 0; i < step_requests.size(); ++i) {
             if (forced_tokens[i]) {
-                forced_tokens_by_sequence->emplace(step_rows[i].sequence->get_id(), *forced_tokens[i]);
+                forced_tokens_by_sequence->emplace(step_requests[i]->get_sequences().front()->get_id(),
+                                                   *forced_tokens[i]);
             }
         }
     }
@@ -960,11 +960,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     }
 
     // Requests a step hook failed stay in m_requests until the end of the step, which scheduler_output indexes.
-    std::vector<std::pair<SequenceGroup::Ptr, std::exception_ptr>> failed_requests;
-    if (!step_rows.empty()) {
+    std::vector<SequenceGroup::Ptr> failed_requests;
+    if (!step_requests.empty()) {
         // Next inputs land before append_embeddings() below, which then skips them, and endings before notifications.
-        failed_requests =
-            _apply_row_outcomes(step_rows, forced_tokens, m_step_hook->after_sampling(step_rows), sampler_output);
+        failed_requests = _apply_request_outcomes(step_requests,
+                                                  forced_tokens,
+                                                  m_step_hook->after_sampling(step_requests),
+                                                  sampler_output);
     }
 
     std::vector<std::pair<SequenceGroup::Ptr, SequenceGroup::PendingNotification>> deferred_notifications;
@@ -1060,6 +1062,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_step_hook(std::shar
     OPENVINO_ASSERT(hook, "A step hook must not be null");
     m_model_runner->use_hidden_states_output();
     m_step_hook = std::move(hook);
+}
+
+EmbeddingsModel::Ptr ContinuousBatchingPipeline::ContinuousBatchingImpl::get_embedding_model() const {
+    return m_inputs_embedder ? m_inputs_embedder->get_embedding_model() : nullptr;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std::optional<AdapterConfig>& adapters) {
@@ -1496,7 +1502,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
                                 : is_stopped       ? GenerationStatus::STOP
                                 : is_out_of_memory ? GenerationStatus::IGNORED
                                                    : GenerationStatus::FINISHED;
-            _end_step_state(request, {status, nullptr});
+            _end_step_state(request, status);
             if (!request->notified_terminal()) {
                 _commit_perf_metrics(request);
                 if (is_finished) {
@@ -1551,7 +1557,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
                 m_scheduler->free_sequence(sequence->get_id());
             }
         }
-        _end_step_state(request, {GenerationStatus::FAILED, nullptr});
+        _end_step_state(request, GenerationStatus::FAILED);
         m_sampler->clear_request_info(request->get_request_id());
     }
     m_requests.clear();
@@ -1564,13 +1570,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
                 m_scheduler->free_sequence(sequence->get_id());
             }
         }
-        _end_step_state(request, {GenerationStatus::FAILED, nullptr});
+        _end_step_state(request, GenerationStatus::FAILED);
     }
     m_awaiting_requests.clear();
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_end_step_state(const SequenceGroup::Ptr& request,
-                                                                         const IStepHook::RequestDone& done) {
+                                                                         GenerationStatus status) {
     const auto state = request->take_step_state();
     if (!state) {
         return;
@@ -1578,9 +1584,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_end_step_state(const S
     OPENVINO_ASSERT(m_step_hook,
                     "Request ", request->get_request_id(), " has step state but the pipeline has no step hook");
     try {
-        m_step_hook->on_request_done(*state, done);
+        m_step_hook->after_remove_request(*state, status);
     } catch (...) {
-        if (done.status == GenerationStatus::FAILED) {
+        if (status == GenerationStatus::FAILED) {
             throw;
         }
         request->fail_generation(std::current_exception());
@@ -1596,88 +1602,91 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_end_step_state(const S
         } catch (...) {
             message = "unknown exception";
         }
-        GENAI_WARN("Request %lu failed in the step hook's on_request_done, status %d: %s",
+        GENAI_WARN("Request %lu failed in the step hook's after_remove_request, status %d: %s",
                    static_cast<unsigned long>(request->get_request_id()),
-                   static_cast<int>(done.status),
+                   static_cast<int>(status),
                    message.c_str());
     }
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_failed_requests(
-    const std::vector<std::pair<SequenceGroup::Ptr, std::exception_ptr>>& failed) {
-    for (const auto& [request, error] : failed) {
+    const std::vector<SequenceGroup::Ptr>& failed) {
+    for (const auto& request : failed) {
         for (const auto& sequence : request->get_sequences()) {
             if (m_scheduler->has_block_table(sequence->get_id())) {
                 m_scheduler->free_sequence(sequence->get_id());
             }
         }
-        _end_step_state(request, {GenerationStatus::FAILED, error});
+        _end_step_state(request, GenerationStatus::FAILED);
         m_sampler->clear_request_info(request->get_request_id());
         m_requests.erase(std::remove(m_requests.begin(), m_requests.end(), request), m_requests.end());
     }
 }
 
-std::vector<IStepHook::Row> ContinuousBatchingPipeline::ContinuousBatchingImpl::_collect_step_rows() const {
-    std::vector<IStepHook::Row> rows;
+std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingImpl::_collect_step_requests() const {
+    std::vector<SequenceGroup::Ptr> requests;
     for (const SequenceGroup::Ptr& request : m_requests) {
-        auto* const state = request->get_step_state();
-        if (!state || !request->is_scheduled() || !request->requires_sampling() || request->handle_stopped() ||
-            request->handle_cancelled()) {
+        if (!request->get_step_state() || !request->is_scheduled() || !request->requires_sampling() ||
+            request->handle_stopped() || request->handle_cancelled()) {
             continue;
         }
-        OPENVINO_ASSERT(request->num_running_seqs() == 1,
-                        "A request with step state must have one running sequence, request ",
+        OPENVINO_ASSERT(request->num_total_seqs() == 1 && request->num_running_seqs() == 1,
+                        "A request with step state must have one sequence, and it must be running, request ",
                         request->get_request_id(),
                         " has ",
-                        request->num_running_seqs());
-        rows.push_back({request, request->get_running_sequences().front(), *state});
+                        request->num_total_seqs(),
+                        " sequences, ",
+                        request->num_running_seqs(),
+                        " running");
+        requests.push_back(request);
     }
-    return rows;
+    return requests;
 }
 
-std::vector<std::pair<SequenceGroup::Ptr, std::exception_ptr>>
-ContinuousBatchingPipeline::ContinuousBatchingImpl::_apply_row_outcomes(
-    const std::vector<IStepHook::Row>& rows,
+std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingImpl::_apply_request_outcomes(
+    const std::vector<SequenceGroup::Ptr>& requests,
     const std::vector<std::optional<int64_t>>& forced_tokens,
-    std::vector<IStepHook::RowOutcome> outcomes,
+    std::vector<IStepHook::RequestOutcome> outcomes,
     SamplerOutput& sampler_output) {
-    OPENVINO_ASSERT(outcomes.size() == rows.size(),
-                    "A step hook must return one outcome per row, got ",
+    OPENVINO_ASSERT(outcomes.size() == requests.size(),
+                    "A step hook must return one outcome per request, got ",
                     outcomes.size(),
                     " for ",
-                    rows.size());
-    std::vector<std::pair<SequenceGroup::Ptr, std::exception_ptr>> failed;
-    for (size_t i = 0; i < rows.size(); ++i) {
-        const auto& row = rows[i];
+                    requests.size());
+    std::vector<SequenceGroup::Ptr> failed;
+    for (size_t i = 0; i < requests.size(); ++i) {
+        const auto& request = requests[i];
         const auto& outcome = outcomes[i];
-        const auto request_id = row.sequence_group->get_request_id();
+        const auto request_id = request->get_request_id();
         if (outcome.error) {
             OPENVINO_ASSERT(!outcome.next_embedding && !outcome.position_ids && !outcome.ending,
-                            "A failed row must return nothing else, request ",
+                            "A failed request must return nothing else, request ",
                             request_id);
             GENAI_DEBUG("A step hook failed request %lu", static_cast<unsigned long>(request_id));
-            row.sequence_group->fail_generation(outcome.error);
-            failed.emplace_back(row.sequence_group, outcome.error);
+            request->fail_generation(outcome.error);
+            failed.push_back(request);
             continue;
         }
+        // The sampler may have finished the only sequence, so it is no longer among the running ones.
+        const auto& sequence = request->get_sequences().front();
         OPENVINO_ASSERT(!(outcome.ending && outcome.next_embedding),
-                        "A row that ends must not return a next input, request ",
+                        "A request that ends must not return a next input, request ",
                         request_id);
         OPENVINO_ASSERT(!outcome.position_ids || outcome.next_embedding,
                         "Position ids need a next input, request ",
                         request_id);
-        OPENVINO_ASSERT(!forced_tokens[i] || outcome.ending || row.sequence->has_finished() || outcome.next_embedding,
-                        "A row with a forced token that goes on needs its next input; its placeholder token would be "
-                        "embedded, request ",
+        OPENVINO_ASSERT(!forced_tokens[i] || outcome.ending || sequence->has_finished() || outcome.next_embedding,
+                        "A request with a forced token that goes on needs its next input; its placeholder token would "
+                        "be embedded, request ",
                         request_id);
         if (outcome.next_embedding) {
-            m_model_runner->append_generated_embedding(row.sequence_group,
-                                                       row.sequence,
+            m_model_runner->append_generated_embedding(request,
+                                                       sequence,
                                                        *outcome.next_embedding,
                                                        outcome.position_ids);
         }
         if (outcome.ending) {
-            _apply_model_ending(row.sequence_group, *outcome.ending, sampler_output);
+            _apply_model_ending(request, *outcome.ending, sampler_output);
         }
     }
     return failed;
@@ -1751,7 +1760,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fail_pipeline(std::exc
             }
         }
         try {
-            _end_step_state(request, {GenerationStatus::FAILED, m_failure});
+            _end_step_state(request, GenerationStatus::FAILED);
             m_sampler->clear_request_info(request->get_request_id());
         } catch (...) {
             released = false;

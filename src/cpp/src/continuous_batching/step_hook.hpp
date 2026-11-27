@@ -11,11 +11,10 @@
 #include "openvino/runtime/tensor.hpp"
 #include "sampling/sampling_overrides.hpp"
 #include "sequence_group.hpp"
-#include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
 
-/// @brief Per-request input of a step hook, passed through generate() to IStepHook::create_request_state();
+/// @brief Per-request input of a step hook, passed through generate() to IStepHook::before_add_request();
 /// opaque to the pipeline.
 class StepRequestPayload {
 public:
@@ -26,27 +25,6 @@ public:
 /// embedding of a sampled token: LFM3-Omni feeds back speech frames.
 class IStepHook {
 public:
-    /// @brief A request as add_request() is about to queue it. Prompt rows appended to inputs must also extend
-    /// prompt_ids; sampling_overrides is an output.
-    struct Admission {
-        const GenerationConfig& config;
-        /// @brief Embeddings [1, n, hidden_size], or token ids for token inputs.
-        ov::Tensor& inputs;
-        std::optional<ov::Tensor>& prompt_ids;
-        /// @brief Null for token inputs.
-        InputsEmbedder* inputs_embedder;
-        SamplingOverrides& sampling_overrides;
-        /// @brief May be null.
-        const std::shared_ptr<StepRequestPayload>& payload;
-    };
-
-    /// @brief How a request ended. error is set for a failure and null for a dropped request.
-    struct RequestDone {
-        /// @brief FINISHED, IGNORED, STOP, CANCEL or FAILED.
-        GenerationStatus status;
-        std::exception_ptr error;
-    };
-
     /// @brief A model's end of a request; the pipeline resolves it against the sampler's end.
     struct Ending {
         /// @brief FINISHED, STOP or CANCEL.
@@ -54,17 +32,10 @@ public:
         GenerationFinishReason reason;
     };
 
-    /// @brief A request that samples in this step; the pipeline gives its one running sequence.
-    struct Row {
-        SequenceGroup::Ptr sequence_group;
-        Sequence::Ptr sequence;
-        StepRequestState& state;
-    };
-
-    /// @brief What a step hook did with a row after sampling; all fields empty to go on with the sampled token.
-    struct RowOutcome {
+    /// @brief What a step hook did with a request after sampling; all fields empty to go on with the sampled token.
+    struct RequestOutcome {
         /// @brief Next input [1, 1, hidden_size] instead of the sampled token's embedding; required after a forced
-        /// token unless the row ends.
+        /// token unless the request ends.
         std::optional<ov::Tensor> next_embedding;
         /// @brief Position ids of that input, copied; computed by the inputs embedder when absent.
         std::optional<ov::Tensor> position_ids;
@@ -76,19 +47,28 @@ public:
 
     virtual ~IStepHook() = default;
 
-    /// @brief Called by add_request() on the caller's thread.
+    /// @brief Called by add_request() on the caller's thread, before the request is built. inputs are embeddings
+    /// [1, n, hidden_size] or token ids; appended prompt rows must also extend prompt_ids.
+    /// @param sampling_overrides Output: sampling rules of this request only.
+    /// @param payload May be null.
     /// @return The state of a request the hook takes, else null.
-    virtual std::unique_ptr<StepRequestState> create_request_state(const Admission& admission) = 0;
+    virtual std::unique_ptr<StepRequestState> before_add_request(
+        ov::Tensor& inputs,
+        std::optional<ov::Tensor>& prompt_ids,
+        SamplingOverrides& sampling_overrides,
+        const std::shared_ptr<StepRequestPayload>& payload) = 0;
 
-    /// @brief Called once per queued request with state, on the step thread or under the queue lock; for FAILED no
+    /// @brief Called once per removed request with state, on the step thread or under the queue lock; for FAILED no
     /// model or user callback may run. A throw fails this request, or the step for FAILED or a FINISHED/IGNORED handle.
-    virtual void on_request_done(StepRequestState& state, const RequestDone& done) = 0;
+    /// @param status FINISHED, IGNORED, STOP, CANCEL or FAILED.
+    virtual void after_remove_request(StepRequestState& state, GenerationStatus status) = 0;
 
-    /// @brief After forward, before sampling: a forced token per row, or none to sample it.
-    virtual std::vector<std::optional<int64_t>> force_tokens(const std::vector<Row>& rows) = 0;
+    /// @brief After forward, before sampling: a forced token per request, or none to sample it. requests have state,
+    /// sample in this step and have exactly one sequence, get_sequences().front(), which may finish in sampling.
+    virtual std::vector<std::optional<int64_t>> before_sampling(const std::vector<SequenceGroup::Ptr>& requests) = 0;
 
-    /// @brief After sampling, before handles are notified: one outcome per row, in row order.
-    virtual std::vector<RowOutcome> after_sampling(const std::vector<Row>& rows) = 0;
+    /// @brief After sampling, before handles are notified: one outcome per request, in order.
+    virtual std::vector<RequestOutcome> after_sampling(const std::vector<SequenceGroup::Ptr>& requests) = 0;
 };
 
 }  // namespace ov::genai

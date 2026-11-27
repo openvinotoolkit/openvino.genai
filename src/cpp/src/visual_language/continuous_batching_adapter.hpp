@@ -342,7 +342,7 @@ private:
             GENAI_DEBUG("LFM3-Omni speech output is unavailable: the export has no speech models");
             return;
         }
-        m_speech_hook = std::make_shared<LFM3SpeechStepHook>(make_models());
+        m_speech_hook = std::make_shared<LFM3SpeechStepHook>(make_models(), impl->get_embedding_model());
         impl->set_step_hook(m_speech_hook);
         GENAI_DEBUG("LFM3-Omni speech output is decoded on continuous batching");
     }

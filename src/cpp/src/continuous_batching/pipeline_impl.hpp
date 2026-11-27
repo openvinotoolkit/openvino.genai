@@ -145,21 +145,20 @@ protected:
     virtual void drop_requests();
 
     /// Ends the step state of request once, if it has one.
-    void _end_step_state(const SequenceGroup::Ptr& request, const IStepHook::RequestDone& done);
+    void _end_step_state(const SequenceGroup::Ptr& request, GenerationStatus status);
 
     /// Requests with step state that sample in this step, without a stopped or cancelled handle.
-    std::vector<IStepHook::Row> _collect_step_rows() const;
+    std::vector<SequenceGroup::Ptr> _collect_step_requests() const;
 
-    /// Checks the step hook's outcomes against its rows and applies their next inputs and endings.
-    /// @return Requests failed by rows with an error, kept until the end of the step.
-    std::vector<std::pair<SequenceGroup::Ptr, std::exception_ptr>> _apply_row_outcomes(
-        const std::vector<IStepHook::Row>& rows,
-        const std::vector<std::optional<int64_t>>& forced_tokens,
-        std::vector<IStepHook::RowOutcome> outcomes,
-        SamplerOutput& sampler_output);
+    /// Checks the step hook's outcomes against its requests and applies their next inputs and endings.
+    /// @return Requests failed by an outcome with an error, kept until the end of the step.
+    std::vector<SequenceGroup::Ptr> _apply_request_outcomes(const std::vector<SequenceGroup::Ptr>& requests,
+                                                            const std::vector<std::optional<int64_t>>& forced_tokens,
+                                                            std::vector<IStepHook::RequestOutcome> outcomes,
+                                                            SamplerOutput& sampler_output);
 
     /// Frees and removes the requests a step hook failed in this step; the pipeline stays usable.
-    void _release_failed_requests(const std::vector<std::pair<SequenceGroup::Ptr, std::exception_ptr>>& failed);
+    void _release_failed_requests(const std::vector<SequenceGroup::Ptr>& failed);
 
     /// Applies a model's ending to request; finished sequences go to sampler_output.m_dropped_sequences.
     void _apply_model_ending(const SequenceGroup::Ptr& request,
@@ -235,6 +234,9 @@ public:
     /// @brief Installs model-specific step work. The "hidden_states" output is exported for the steps the hook needs.
     /// @throws ov::Exception if the language model has no "hidden_states" output.
     void set_step_hook(std::shared_ptr<IStepHook> hook);
+
+    /// @brief The token embedding of a model with embedding inputs, else null.
+    EmbeddingsModel::Ptr get_embedding_model() const;
 
     /**
      * input_ids is a batch of input ids for generation, which can be either raw prompts or already encoded token ids,

@@ -100,44 +100,48 @@ public:
         const int tag;
     };
 
-    struct DoneCall {
+    struct RemoveCall {
         int tag;
         GenerationStatus status;
-        std::exception_ptr error;
     };
 
-    using Forcer = std::function<std::vector<std::optional<int64_t>>(const std::vector<Row>&)>;
-    using Outcomes = std::function<std::vector<RowOutcome>(const std::vector<Row>&)>;
+    using Requests = std::vector<SequenceGroup::Ptr>;
+    using Forcer = std::function<std::vector<std::optional<int64_t>>(const Requests&)>;
+    using Outcomes = std::function<std::vector<RequestOutcome>(const Requests&)>;
 
-    std::unique_ptr<StepRequestState> create_request_state(const Admission& admission) override {
-        created_payloads.push_back(admission.payload);
-        const auto payload = std::dynamic_pointer_cast<Payload>(admission.payload);
+    std::unique_ptr<StepRequestState> before_add_request(
+        ov::Tensor&,
+        std::optional<ov::Tensor>&,
+        SamplingOverrides& sampling_overrides,
+        const std::shared_ptr<StepRequestPayload>& step_payload) override {
+        created_payloads.push_back(step_payload);
+        const auto payload = std::dynamic_pointer_cast<Payload>(step_payload);
         if (decline || !payload) {
             return nullptr;
         }
-        admission.sampling_overrides = overrides;
+        sampling_overrides = overrides;
         return std::make_unique<CountedState>(payload->tag, destroyed);
     }
 
-    std::vector<std::optional<int64_t>> force_tokens(const std::vector<Row>& rows) override {
-        force_calls.push_back(request_ids(rows));
-        return force ? force(rows) : std::vector<std::optional<int64_t>>(rows.size());
+    std::vector<std::optional<int64_t>> before_sampling(const Requests& requests) override {
+        before_sampling_calls.push_back(request_ids(requests));
+        return force ? force(requests) : std::vector<std::optional<int64_t>>(requests.size());
     }
 
-    std::vector<RowOutcome> after_sampling(const std::vector<Row>& rows) override {
-        after_sampling_calls.push_back(request_ids(rows));
-        return outcomes ? outcomes(rows) : std::vector<RowOutcome>(rows.size());
+    std::vector<RequestOutcome> after_sampling(const Requests& requests) override {
+        after_sampling_calls.push_back(request_ids(requests));
+        return outcomes ? outcomes(requests) : std::vector<RequestOutcome>(requests.size());
     }
 
-    void on_request_done(StepRequestState& state, const RequestDone& done) override {
-        done_calls.push_back({static_cast<CountedState&>(state).tag, done.status, done.error});
-        if (done_failure && done.status == failing_status) {
-            std::rethrow_exception(done_failure);
+    void after_remove_request(StepRequestState& state, GenerationStatus status) override {
+        remove_calls.push_back({static_cast<CountedState&>(state).tag, status});
+        if (remove_failure && status == failing_status) {
+            std::rethrow_exception(remove_failure);
         }
     }
 
-    size_t done_count(int tag) const {
-        return std::count_if(done_calls.begin(), done_calls.end(), [tag](const DoneCall& call) {
+    size_t remove_count(int tag) const {
+        return std::count_if(remove_calls.begin(), remove_calls.end(), [tag](const RemoveCall& call) {
             return call.tag == tag;
         });
     }
@@ -147,19 +151,19 @@ public:
     Forcer force;
     Outcomes outcomes;
     GenerationStatus failing_status = GenerationStatus::RUNNING;
-    std::exception_ptr done_failure;
+    std::exception_ptr remove_failure;
 
     const std::shared_ptr<size_t> destroyed = std::make_shared<size_t>(0);
     std::vector<std::shared_ptr<StepRequestPayload>> created_payloads;
-    std::vector<std::vector<uint64_t>> force_calls;
+    std::vector<std::vector<uint64_t>> before_sampling_calls;
     std::vector<std::vector<uint64_t>> after_sampling_calls;
-    std::vector<DoneCall> done_calls;
+    std::vector<RemoveCall> remove_calls;
 
 private:
-    static std::vector<uint64_t> request_ids(const std::vector<Row>& rows) {
+    static std::vector<uint64_t> request_ids(const Requests& requests) {
         std::vector<uint64_t> ids;
-        for (const auto& row : rows) {
-            ids.push_back(row.sequence_group->get_request_id());
+        for (const auto& request : requests) {
+            ids.push_back(request->get_request_id());
         }
         return ids;
     }
@@ -169,23 +173,23 @@ std::shared_ptr<StepRequestPayload> payload(int tag) {
     return std::make_shared<FakeStepHook::Payload>(tag);
 }
 
-IStepHook::RowOutcome ending_outcome(GenerationStatus status, GenerationFinishReason reason) {
-    IStepHook::RowOutcome outcome;
+IStepHook::RequestOutcome ending_outcome(GenerationStatus status, GenerationFinishReason reason) {
+    IStepHook::RequestOutcome outcome;
     outcome.ending = IStepHook::Ending{status, reason};
     return outcome;
 }
 
-FakeStepHook::Outcomes every_row(const IStepHook::RowOutcome& outcome) {
-    return [outcome](const std::vector<IStepHook::Row>& rows) {
-        return std::vector<IStepHook::RowOutcome>(rows.size(), outcome);
+FakeStepHook::Outcomes every_request(const IStepHook::RequestOutcome& outcome) {
+    return [outcome](const FakeStepHook::Requests& requests) {
+        return std::vector<IStepHook::RequestOutcome>(requests.size(), outcome);
     };
 }
 
 FakeStepHook::Outcomes fail_request(uint64_t request_id, const std::exception_ptr& error) {
-    return [request_id, error](const std::vector<IStepHook::Row>& rows) {
-        std::vector<IStepHook::RowOutcome> outcomes(rows.size());
-        for (size_t i = 0; i < rows.size(); ++i) {
-            if (rows[i].sequence_group->get_request_id() == request_id) {
+    return [request_id, error](const FakeStepHook::Requests& requests) {
+        std::vector<IStepHook::RequestOutcome> outcomes(requests.size());
+        for (size_t i = 0; i < requests.size(); ++i) {
+            if (requests[i]->get_request_id() == request_id) {
                 outcomes[i].error = error;
             }
         }
@@ -193,14 +197,14 @@ FakeStepHook::Outcomes fail_request(uint64_t request_id, const std::exception_pt
     };
 }
 
-FakeStepHook::Forcer force_every_row(int64_t token) {
-    return [token](const std::vector<IStepHook::Row>& rows) {
-        return std::vector<std::optional<int64_t>>(rows.size(), token);
+FakeStepHook::Forcer force_every_request(int64_t token) {
+    return [token](const FakeStepHook::Requests& requests) {
+        return std::vector<std::optional<int64_t>>(requests.size(), token);
     };
 }
 
-std::exception_ptr row_failure() {
-    return std::make_exception_ptr(std::runtime_error("row failure"));
+std::exception_ptr request_failure() {
+    return std::make_exception_ptr(std::runtime_error("request failure"));
 }
 
 class CountingStreamer : public StreamerBase {
@@ -385,9 +389,9 @@ struct UnsupportedMode {
 
 }  // namespace
 
-class CBStepHookAdmissionTest : public CBStepHookTest, public testing::WithParamInterface<UnsupportedMode> {};
+class CBStepHookAddRequestTest : public CBStepHookTest, public testing::WithParamInterface<UnsupportedMode> {};
 
-TEST_F(CBStepHookAdmissionTest, payload_reaches_hook_and_state_attaches) {
+TEST_F(CBStepHookAddRequestTest, payload_reaches_hook_and_state_attaches) {
     PipelineTestInstance pipeline(hook);
     const auto step_payload = payload(3);
 
@@ -401,7 +405,7 @@ TEST_F(CBStepHookAdmissionTest, payload_reaches_hook_and_state_attaches) {
     EXPECT_EQ(hook->created_payloads.front(), step_payload);
 }
 
-TEST_F(CBStepHookAdmissionTest, request_without_payload_gets_no_state) {
+TEST_F(CBStepHookAddRequestTest, request_without_payload_gets_no_state) {
     PipelineTestInstance pipeline(hook);
     auto beam_config = make_config(4);
     beam_config.num_beams = 2;
@@ -413,7 +417,7 @@ TEST_F(CBStepHookAdmissionTest, request_without_payload_gets_no_state) {
     EXPECT_EQ(pipeline.awaiting().front()->get_step_state(), nullptr);
 }
 
-TEST_F(CBStepHookAdmissionTest, overrides_from_hook_reach_sampler) {
+TEST_F(CBStepHookAddRequestTest, overrides_from_hook_reach_sampler) {
     PipelineTestInstance pipeline(hook);
     hook->overrides.suppressed_token_ids = std::set<int64_t>{7};
     pipeline.add(0, {1}, make_config(4), payload(1));
@@ -424,7 +428,7 @@ TEST_F(CBStepHookAdmissionTest, overrides_from_hook_reach_sampler) {
     EXPECT_EQ(pipeline.requests().front()->get_sequences().front()->get_generated_ids(), TokenIds({6}));
 }
 
-TEST_P(CBStepHookAdmissionTest, rejects_unsupported_mode) {
+TEST_P(CBStepHookAddRequestTest, rejects_unsupported_mode) {
     PipelineTestInstance pipeline(hook);
     auto config = make_config(4);
     GetParam().apply(config);
@@ -433,11 +437,11 @@ TEST_P(CBStepHookAdmissionTest, rejects_unsupported_mode) {
 
     EXPECT_TRUE(pipeline.awaiting().empty());
     EXPECT_EQ(*hook->destroyed, 1);
-    EXPECT_TRUE(hook->done_calls.empty());
+    EXPECT_TRUE(hook->remove_calls.empty());
 }
 
 INSTANTIATE_TEST_SUITE_P(StepHook,
-                         CBStepHookAdmissionTest,
+                         CBStepHookAddRequestTest,
                          testing::Values(UnsupportedMode{"beam_search",
                                                          [](GenerationConfig& config) {
                                                              config.num_beams = 2;
@@ -456,7 +460,7 @@ INSTANTIATE_TEST_SUITE_P(StepHook,
                              return info.param.name;
                          });
 
-TEST_F(CBStepHookAdmissionTest, rejects_payload_no_hook_took) {
+TEST_F(CBStepHookAddRequestTest, rejects_payload_no_hook_took) {
     PipelineTestInstance pipeline(hook);
     hook->decline = true;
 
@@ -465,7 +469,7 @@ TEST_F(CBStepHookAdmissionTest, rejects_payload_no_hook_took) {
     EXPECT_TRUE(pipeline.awaiting().empty());
 }
 
-TEST_F(CBStepHookAdmissionTest, plain_request_keeps_no_hidden_state) {
+TEST_F(CBStepHookAddRequestTest, plain_request_keeps_no_hidden_state) {
     PipelineTestInstance pipeline(hook);
     pipeline.add(0, {1, 2, 3}, make_config(4));
     const auto sequence = pipeline.awaiting().front()->get_sequences().front();
@@ -475,7 +479,7 @@ TEST_F(CBStepHookAdmissionTest, plain_request_keeps_no_hidden_state) {
     EXPECT_FALSE(static_cast<bool>(sequence->get_hidden_state()));
 }
 
-TEST_F(CBStepHookAdmissionTest, hooked_request_keeps_hidden_state) {
+TEST_F(CBStepHookAddRequestTest, hooked_request_keeps_hidden_state) {
     PipelineTestInstance pipeline(hook);
     pipeline.add(0, {1, 2, 5}, make_config(4), payload(1));
     const auto sequence = pipeline.awaiting().front()->get_sequences().front();
@@ -486,26 +490,25 @@ TEST_F(CBStepHookAdmissionTest, hooked_request_keeps_hidden_state) {
     EXPECT_EQ(last_hidden_value(sequence), 5.0f);
 }
 
-class CBStepHookDoneTest : public CBStepHookTest, public testing::WithParamInterface<GenerationStatus> {};
+class CBStepHookRemoveRequestTest : public CBStepHookTest, public testing::WithParamInterface<GenerationStatus> {};
 
-TEST_F(CBStepHookDoneTest, finished_request_ends_once) {
+TEST_F(CBStepHookRemoveRequestTest, finished_request_ends_once) {
     PipelineTestInstance pipeline(hook);
     pipeline.add(0, {1}, make_config(1), payload(5));
 
     pipeline.step();
 
-    ASSERT_EQ(hook->done_calls.size(), 1);
-    EXPECT_EQ(hook->done_calls[0].tag, 5);
-    EXPECT_EQ(hook->done_calls[0].status, GenerationStatus::FINISHED);
-    EXPECT_EQ(hook->done_calls[0].error, nullptr);
+    ASSERT_EQ(hook->remove_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls[0].tag, 5);
+    EXPECT_EQ(hook->remove_calls[0].status, GenerationStatus::FINISHED);
 
     pipeline.step();
 
-    EXPECT_EQ(hook->done_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls.size(), 1);
     EXPECT_EQ(*hook->destroyed, 1);
 }
 
-TEST_P(CBStepHookDoneTest, handle_end_maps_to_status) {
+TEST_P(CBStepHookRemoveRequestTest, handle_end_maps_to_status) {
     PipelineTestInstance pipeline(hook);
     const auto handle = pipeline.add(0, {1}, make_config(4), payload(1));
     if (GetParam() == GenerationStatus::STOP) {
@@ -516,22 +519,21 @@ TEST_P(CBStepHookDoneTest, handle_end_maps_to_status) {
 
     pipeline.step();
 
-    // A request whose handle ended before it samples is not a row.
-    EXPECT_TRUE(hook->force_calls.empty());
+    // A request whose handle ended before it samples reaches no hook call.
+    EXPECT_TRUE(hook->before_sampling_calls.empty());
     EXPECT_TRUE(hook->after_sampling_calls.empty());
-    ASSERT_EQ(hook->done_calls.size(), 1);
-    EXPECT_EQ(hook->done_calls[0].status, GetParam());
-    EXPECT_EQ(hook->done_calls[0].error, nullptr);
+    ASSERT_EQ(hook->remove_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls[0].status, GetParam());
 }
 
 INSTANTIATE_TEST_SUITE_P(StepHook,
-                         CBStepHookDoneTest,
+                         CBStepHookRemoveRequestTest,
                          testing::Values(GenerationStatus::STOP, GenerationStatus::CANCEL),
                          [](const testing::TestParamInfo<GenerationStatus>& info) {
                              return info.param == GenerationStatus::STOP ? std::string{"stop"} : std::string{"cancel"};
                          });
 
-TEST_F(CBStepHookDoneTest, drop_ends_running_and_awaiting_once) {
+TEST_F(CBStepHookRemoveRequestTest, drop_ends_running_and_awaiting_once) {
     PipelineTestInstance pipeline(hook);
     pipeline.add(0, {1}, make_config(4), payload(1));
     pipeline.step();
@@ -542,16 +544,15 @@ TEST_F(CBStepHookDoneTest, drop_ends_running_and_awaiting_once) {
     pipeline.drop_requests();
     pipeline.drop_requests();
 
-    ASSERT_EQ(hook->done_calls.size(), 2);
-    for (const auto& call : hook->done_calls) {
+    ASSERT_EQ(hook->remove_calls.size(), 2);
+    for (const auto& call : hook->remove_calls) {
         EXPECT_EQ(call.status, GenerationStatus::FAILED);
-        EXPECT_EQ(call.error, nullptr);
     }
-    EXPECT_EQ(hook->done_count(1), 1);
-    EXPECT_EQ(hook->done_count(2), 1);
+    EXPECT_EQ(hook->remove_count(1), 1);
+    EXPECT_EQ(hook->remove_count(2), 1);
 }
 
-TEST_F(CBStepHookDoneTest, dropped_awaiting_request_is_never_pulled) {
+TEST_F(CBStepHookRemoveRequestTest, dropped_awaiting_request_is_never_pulled) {
     PipelineTestInstance pipeline(hook);
     pipeline.add(0, {1}, make_config(4), payload(1));
 
@@ -560,11 +561,11 @@ TEST_F(CBStepHookDoneTest, dropped_awaiting_request_is_never_pulled) {
 
     EXPECT_TRUE(pipeline.awaiting().empty());
     EXPECT_TRUE(pipeline.requests().empty());
-    EXPECT_TRUE(hook->force_calls.empty());
-    EXPECT_EQ(hook->done_count(1), 1);
+    EXPECT_TRUE(hook->before_sampling_calls.empty());
+    EXPECT_EQ(hook->remove_count(1), 1);
 }
 
-TEST_F(CBStepHookDoneTest, drop_frees_blocks_restored_for_awaiting_request) {
+TEST_F(CBStepHookRemoveRequestTest, drop_frees_blocks_restored_for_awaiting_request) {
     PipelineTestInstance pipeline(hook, 16, /*enable_prefix_caching=*/true);
     const std::vector<int64_t> prompt{1, 2, 3, 4, 5, 6, 7, 8, 9};
     pipeline.add(0, prompt, make_config(1));
@@ -581,31 +582,29 @@ TEST_F(CBStepHookDoneTest, drop_frees_blocks_restored_for_awaiting_request) {
     EXPECT_FALSE(pipeline.has_block_table(sequence_id));
 }
 
-TEST_F(CBStepHookDoneTest, pipeline_failure_carries_its_error) {
+TEST_F(CBStepHookRemoveRequestTest, pipeline_failure_removes_request_as_failed) {
     PipelineTestInstance pipeline(hook);
     pipeline.add(0, {1}, make_config(4), payload(1));
     pipeline.fail_next_pull();
 
     EXPECT_THROW(pipeline.step(), std::runtime_error);
 
-    ASSERT_EQ(hook->done_calls.size(), 1);
-    EXPECT_EQ(hook->done_calls[0].status, GenerationStatus::FAILED);
-    expect_same_exception(hook->done_calls[0].error, pipeline.pull_failure());
+    ASSERT_EQ(hook->remove_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls[0].status, GenerationStatus::FAILED);
 }
 
-TEST_F(CBStepHookDoneTest, discarded_request_ends_once) {
+TEST_F(CBStepHookRemoveRequestTest, discarded_request_ends_once) {
     PipelineTestInstance pipeline(hook);
     pipeline.add(0, {1}, make_config(4), payload(1));
 
     pipeline.discard_awaiting_request(0);
 
     EXPECT_TRUE(pipeline.awaiting().empty());
-    ASSERT_EQ(hook->done_calls.size(), 1);
-    EXPECT_EQ(hook->done_calls[0].status, GenerationStatus::FAILED);
-    EXPECT_EQ(hook->done_calls[0].error, nullptr);
+    ASSERT_EQ(hook->remove_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls[0].status, GenerationStatus::FAILED);
 }
 
-TEST_F(CBStepHookDoneTest, out_of_memory_ends_with_ignored) {
+TEST_F(CBStepHookRemoveRequestTest, out_of_memory_ends_with_ignored) {
     PipelineTestInstance pipeline(hook);
     const auto handle = pipeline.add(0, {1}, make_config(4), payload(4));
     pipeline.step();
@@ -616,10 +615,9 @@ TEST_F(CBStepHookDoneTest, out_of_memory_ends_with_ignored) {
     pipeline.requests().front()->set_out_of_memory();
     pipeline.free_non_running();
 
-    ASSERT_EQ(hook->done_calls.size(), 1);
-    EXPECT_EQ(hook->done_calls[0].tag, 4);
-    EXPECT_EQ(hook->done_calls[0].status, GenerationStatus::IGNORED);
-    EXPECT_EQ(hook->done_calls[0].error, nullptr);
+    ASSERT_EQ(hook->remove_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls[0].tag, 4);
+    EXPECT_EQ(hook->remove_calls[0].status, GenerationStatus::IGNORED);
     EXPECT_TRUE(pipeline.requests().empty());
     EXPECT_EQ(handle->get_status(), GenerationStatus::IGNORED);
 }
@@ -720,7 +718,7 @@ TEST_F(CBStepHookEndingTest, rejects_non_terminal_status) {
 
 TEST_F(CBStepHookEndingTest, model_finish_is_notified_in_same_step) {
     PipelineTestInstance pipeline(hook);
-    hook->outcomes = every_row(ending_outcome(GenerationStatus::FINISHED, GenerationFinishReason::STOP));
+    hook->outcomes = every_request(ending_outcome(GenerationStatus::FINISHED, GenerationFinishReason::STOP));
     const auto handle = pipeline.add(0, {1}, make_config(10), payload(1));
 
     pipeline.step();
@@ -740,16 +738,16 @@ TEST_F(CBStepHookStepTest, chunked_prefill_calls_hook_only_when_sampling) {
 
     pipeline.step();
 
-    EXPECT_TRUE(hook->force_calls.empty());
+    EXPECT_TRUE(hook->before_sampling_calls.empty());
     EXPECT_TRUE(hook->after_sampling_calls.empty());
 
     pipeline.step();
 
-    EXPECT_EQ(hook->force_calls, (std::vector<std::vector<uint64_t>>{{0}}));
+    EXPECT_EQ(hook->before_sampling_calls, (std::vector<std::vector<uint64_t>>{{0}}));
     EXPECT_EQ(hook->after_sampling_calls, (std::vector<std::vector<uint64_t>>{{0}}));
 }
 
-TEST_F(CBStepHookStepTest, plain_request_is_not_a_row) {
+TEST_F(CBStepHookStepTest, plain_request_reaches_no_hook_call) {
     PipelineTestInstance pipeline(hook);
     pipeline.add(0, {1}, make_config(2), payload(1));
     pipeline.add(1, {2}, make_config(2));
@@ -757,15 +755,15 @@ TEST_F(CBStepHookStepTest, plain_request_is_not_a_row) {
     pipeline.step();
     pipeline.step();
 
-    EXPECT_EQ(hook->force_calls, (std::vector<std::vector<uint64_t>>{{0}, {0}}));
+    EXPECT_EQ(hook->before_sampling_calls, (std::vector<std::vector<uint64_t>>{{0}, {0}}));
     EXPECT_EQ(hook->after_sampling_calls, (std::vector<std::vector<uint64_t>>{{0}, {0}}));
 }
 
-TEST_F(CBStepHookStepTest, forced_token_is_recorded_and_row_ends) {
+TEST_F(CBStepHookStepTest, forced_token_is_recorded_and_request_ends) {
     PipelineTestInstance pipeline(hook);
-    hook->force = force_every_row(3);
-    // A forced row that goes on needs a next input, which token groups cannot take, so the row ends.
-    hook->outcomes = every_row(ending_outcome(GenerationStatus::FINISHED, GenerationFinishReason::STOP));
+    hook->force = force_every_request(3);
+    // A forced request that goes on needs a next input, which token groups cannot take, so the request ends.
+    hook->outcomes = every_request(ending_outcome(GenerationStatus::FINISHED, GenerationFinishReason::STOP));
     const auto handle = pipeline.add(0, {1}, make_config(4), payload(1));
 
     pipeline.step();
@@ -777,14 +775,14 @@ TEST_F(CBStepHookStepTest, forced_token_is_recorded_and_row_ends) {
     EXPECT_EQ(outputs[0].finish_reason, GenerationFinishReason::STOP);
 }
 
-TEST_F(CBStepHookStepTest, after_sampling_runs_once_for_all_rows) {
+TEST_F(CBStepHookStepTest, after_sampling_runs_once_for_all_requests) {
     PipelineTestInstance pipeline(hook);
     std::map<uint64_t, float> last_hidden_values;
-    hook->outcomes = [&last_hidden_values](const std::vector<IStepHook::Row>& rows) {
-        for (const auto& row : rows) {
-            last_hidden_values[row.sequence_group->get_request_id()] = last_hidden_value(row.sequence);
+    hook->outcomes = [&last_hidden_values](const FakeStepHook::Requests& requests) {
+        for (const auto& request : requests) {
+            last_hidden_values[request->get_request_id()] = last_hidden_value(request->get_sequences().front());
         }
-        return std::vector<IStepHook::RowOutcome>(rows.size());
+        return std::vector<IStepHook::RequestOutcome>(requests.size());
     };
     pipeline.add(0, {1, 2, 5}, make_config(2), payload(1));
     pipeline.add(1, {4}, make_config(2), payload(2));
@@ -793,48 +791,49 @@ TEST_F(CBStepHookStepTest, after_sampling_runs_once_for_all_rows) {
 
     ASSERT_EQ(hook->after_sampling_calls.size(), 1);
     EXPECT_EQ(hook->after_sampling_calls[0].size(), 2);
-    ASSERT_EQ(hook->force_calls.size(), 1);
-    EXPECT_EQ(hook->after_sampling_calls[0], hook->force_calls[0]);
+    ASSERT_EQ(hook->before_sampling_calls.size(), 1);
+    EXPECT_EQ(hook->after_sampling_calls[0], hook->before_sampling_calls[0]);
     EXPECT_EQ(last_hidden_values, (std::map<uint64_t, float>{{0, 5.0f}, {1, 4.0f}}));
 }
 
 TEST_F(CBStepHookStepTest, replayed_tokens_reach_no_hook_call) {
     PipelineTestInstance pipeline(hook, 2);
     std::vector<size_t> generated_lens;
-    hook->outcomes = [&generated_lens](const std::vector<IStepHook::Row>& rows) {
-        for (const auto& row : rows) {
-            generated_lens.push_back(row.sequence->get_generated_len());
+    hook->outcomes = [&generated_lens](const FakeStepHook::Requests& requests) {
+        for (const auto& request : requests) {
+            generated_lens.push_back(request->get_sequences().front()->get_generated_len());
         }
-        return std::vector<IStepHook::RowOutcome>(rows.size());
+        return std::vector<IStepHook::RequestOutcome>(requests.size());
     };
     const auto handle = pipeline.add(0, {1, 2, 3}, make_config(4), payload(1));
     const auto sequence = pipeline.awaiting().front()->get_sequences().front();
-    const auto rows_per_step = [&pipeline, this](size_t num_steps) {
-        std::vector<size_t> rows;
+    const auto requests_per_step = [&pipeline, this](size_t num_steps) {
+        std::vector<size_t> counts;
         for (size_t step = 0; step < num_steps; ++step) {
             const auto calls_before = hook->after_sampling_calls.size();
             pipeline.step();
-            rows.push_back(hook->after_sampling_calls.size() == calls_before ? 0
-                                                                             : hook->after_sampling_calls.back().size());
+            counts.push_back(hook->after_sampling_calls.size() == calls_before
+                                 ? 0
+                                 : hook->after_sampling_calls.back().size());
         }
-        return rows;
+        return counts;
     };
 
-    const std::vector<size_t> expected_rows_before_preemption{0, 1, 1};
-    EXPECT_EQ(rows_per_step(expected_rows_before_preemption.size()), expected_rows_before_preemption);
+    const std::vector<size_t> expected_requests_before_preemption{0, 1, 1};
+    EXPECT_EQ(requests_per_step(expected_requests_before_preemption.size()), expected_requests_before_preemption);
 
     ASSERT_EQ(pipeline.requests().size(), 1);
     pipeline.preempt(pipeline.requests().front());
     // Replaying 1,2 then 3,7 stays within the context already sampled, so only the window past it samples.
-    const std::vector<size_t> expected_rows_after_preemption{0, 0, 1, 1};
-    EXPECT_EQ(rows_per_step(expected_rows_after_preemption.size()), expected_rows_after_preemption);
+    const std::vector<size_t> expected_requests_after_preemption{0, 0, 1, 1};
+    EXPECT_EQ(requests_per_step(expected_requests_after_preemption.size()), expected_requests_after_preemption);
 
     EXPECT_EQ(generated_lens, (std::vector<size_t>{1, 2, 3, 4}));
     EXPECT_EQ(sequence->get_generated_ids(), TokenIds({7, 7, 7, 7}));
     EXPECT_EQ(sequence->get_finish_reason(), GenerationFinishReason::LENGTH);
     EXPECT_EQ(handle->get_status(), GenerationStatus::FINISHED);
-    ASSERT_EQ(hook->done_calls.size(), 1);
-    EXPECT_EQ(hook->done_calls[0].status, GenerationStatus::FINISHED);
+    ASSERT_EQ(hook->remove_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls[0].status, GenerationStatus::FINISHED);
 }
 
 namespace {
@@ -865,31 +864,31 @@ TEST_P(CBStepHookContractTest, rejects_bad_outcomes) {
 INSTANTIATE_TEST_SUITE_P(
     StepHook,
     CBStepHookContractTest,
-    testing::Values(BadOutcomeCase{"no_outcome_for_row",
+    testing::Values(BadOutcomeCase{"no_outcome_for_request",
                                    [](FakeStepHook& fake) {
-                                       fake.outcomes = [](const std::vector<IStepHook::Row>&) {
-                                           return std::vector<IStepHook::RowOutcome>{};
+                                       fake.outcomes = [](const FakeStepHook::Requests&) {
+                                           return std::vector<IStepHook::RequestOutcome>{};
                                        };
                                    },
-                                   "one outcome per row"},
+                                   "one outcome per request"},
                     BadOutcomeCase{"ending_with_next_input",
                                    [](FakeStepHook& fake) {
                                        auto outcome = ending_outcome(GenerationStatus::FINISHED,
                                                                      GenerationFinishReason::STOP);
                                        outcome.next_embedding = ov::Tensor(ov::element::f32, {1, 1, 1});
-                                       fake.outcomes = every_row(outcome);
+                                       fake.outcomes = every_request(outcome);
                                    },
                                    "must not return a next input"},
                     BadOutcomeCase{"position_ids_without_next_input",
                                    [](FakeStepHook& fake) {
-                                       IStepHook::RowOutcome outcome;
+                                       IStepHook::RequestOutcome outcome;
                                        outcome.position_ids = token_tensor({1}, {1, 1});
-                                       fake.outcomes = every_row(outcome);
+                                       fake.outcomes = every_request(outcome);
                                    },
                                    "Position ids need a next input"},
-                    BadOutcomeCase{"forced_row_goes_on_without_next_input",
+                    BadOutcomeCase{"forced_request_goes_on_without_next_input",
                                    [](FakeStepHook& fake) {
-                                       fake.force = force_every_row(3);
+                                       fake.force = force_every_request(3);
                                    },
                                    "needs its next input"}),
     [](const testing::TestParamInfo<BadOutcomeCase>& info) {
@@ -900,8 +899,8 @@ class CBStepHookFailureTest : public CBStepHookTest {
 protected:
     // Fails the only request at its second sampling step, after one token was already streamed.
     void fail_second_sampling_step(const std::exception_ptr& error) {
-        hook->outcomes = [this, error](const std::vector<IStepHook::Row>& rows) {
-            std::vector<IStepHook::RowOutcome> outcomes(rows.size());
+        hook->outcomes = [this, error](const FakeStepHook::Requests& requests) {
+            std::vector<IStepHook::RequestOutcome> outcomes(requests.size());
             if (hook->after_sampling_calls.size() == 2) {
                 outcomes.front().error = error;
             }
@@ -922,9 +921,9 @@ protected:
     }
 };
 
-TEST_F(CBStepHookFailureTest, row_error_fails_only_its_request) {
+TEST_F(CBStepHookFailureTest, outcome_error_fails_only_its_request) {
     PipelineTestInstance pipeline(hook);
-    const auto error = row_failure();
+    const auto error = request_failure();
     hook->outcomes = fail_request(0, error);
     const auto failed_handle = pipeline.add(0, {1}, make_config(3), payload(1));
     const auto failed_sequence_id = pipeline.awaiting().front()->get_sequences().front()->get_id();
@@ -937,9 +936,8 @@ TEST_F(CBStepHookFailureTest, row_error_fails_only_its_request) {
                               std::ignore = failed_handle->read_all();
                           }),
                           error);
-    ASSERT_EQ(hook->done_count(1), 1);
-    EXPECT_EQ(hook->done_calls[0].status, GenerationStatus::FAILED);
-    expect_same_exception(hook->done_calls[0].error, error);
+    ASSERT_EQ(hook->remove_count(1), 1);
+    EXPECT_EQ(hook->remove_calls[0].status, GenerationStatus::FAILED);
     EXPECT_FALSE(pipeline.has_block_table(failed_sequence_id));
     ASSERT_EQ(pipeline.requests().size(), 1);
     EXPECT_EQ(pipeline.requests().front()->get_request_id(), 1);
@@ -948,12 +946,12 @@ TEST_F(CBStepHookFailureTest, row_error_fails_only_its_request) {
     pipeline.step();
 
     EXPECT_EQ(other_handle->get_status(), GenerationStatus::FINISHED);
-    EXPECT_EQ(hook->done_count(1), 1);
+    EXPECT_EQ(hook->remove_count(1), 1);
 }
 
-TEST_F(CBStepHookFailureTest, pipeline_stays_usable_after_row_error) {
+TEST_F(CBStepHookFailureTest, pipeline_stays_usable_after_outcome_error) {
     PipelineTestInstance pipeline(hook);
-    hook->outcomes = fail_request(0, row_failure());
+    hook->outcomes = fail_request(0, request_failure());
     pipeline.add(0, {1}, make_config(3), payload(1));
     pipeline.step();
     hook->outcomes = nullptr;
@@ -968,17 +966,17 @@ TEST_F(CBStepHookFailureTest, pipeline_stays_usable_after_row_error) {
     EXPECT_FALSE(pipeline.has_non_finished_requests());
 }
 
-TEST_F(CBStepHookFailureTest, generate_rethrows_row_error) {
+TEST_F(CBStepHookFailureTest, generate_rethrows_outcome_error) {
     PipelineTestInstance pipeline(hook);
-    const auto error = row_failure();
+    const auto error = request_failure();
     fail_second_sampling_step(error);
 
     expect_same_exception(capture_failure([&pipeline] {
                               std::ignore = run_generate(pipeline, std::monostate{});
                           }),
                           error);
-    ASSERT_EQ(hook->done_calls.size(), 1);
-    EXPECT_EQ(hook->done_calls[0].status, GenerationStatus::FAILED);
+    ASSERT_EQ(hook->remove_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls[0].status, GenerationStatus::FAILED);
 
     hook->outcomes = nullptr;
     const auto results = run_generate(pipeline, std::monostate{});
@@ -986,9 +984,9 @@ TEST_F(CBStepHookFailureTest, generate_rethrows_row_error) {
     EXPECT_EQ(results[0].m_status, GenerationStatus::FINISHED);
 }
 
-TEST_F(CBStepHookFailureTest, generate_with_text_streamer_rethrows_row_error) {
+TEST_F(CBStepHookFailureTest, generate_with_text_streamer_rethrows_outcome_error) {
     PipelineTestInstance pipeline(hook);
-    const auto error = row_failure();
+    const auto error = request_failure();
     fail_second_sampling_step(error);
     const auto streamer = std::make_shared<CountingStreamer>();
 
@@ -999,8 +997,8 @@ TEST_F(CBStepHookFailureTest, generate_with_text_streamer_rethrows_row_error) {
     EXPECT_EQ(streamer->writes.load(), 1);
     EXPECT_EQ(streamer->ends.load(), 1);
     // drop_requests() in the generate loop's catch must not end the released request again.
-    ASSERT_EQ(hook->done_calls.size(), 1);
-    EXPECT_EQ(hook->done_calls[0].status, GenerationStatus::FAILED);
+    ASSERT_EQ(hook->remove_calls.size(), 1);
+    EXPECT_EQ(hook->remove_calls[0].status, GenerationStatus::FAILED);
 
     hook->outcomes = nullptr;
     const auto next_streamer = std::make_shared<CountingStreamer>();
@@ -1010,11 +1008,11 @@ TEST_F(CBStepHookFailureTest, generate_with_text_streamer_rethrows_row_error) {
     EXPECT_EQ(next_streamer->ends.load(), 1);
 }
 
-TEST_F(CBStepHookFailureTest, done_error_fails_stopped_request) {
+TEST_F(CBStepHookFailureTest, remove_error_fails_stopped_request) {
     PipelineTestInstance pipeline(hook);
-    const auto error = std::make_exception_ptr(std::runtime_error("on_request_done failure"));
+    const auto error = std::make_exception_ptr(std::runtime_error("after_remove_request failure"));
     hook->failing_status = GenerationStatus::STOP;
-    hook->done_failure = error;
+    hook->remove_failure = error;
     const auto handle = pipeline.add(0, {1}, make_config(4), payload(1));
     handle->stop();
 
@@ -1027,11 +1025,11 @@ TEST_F(CBStepHookFailureTest, done_error_fails_stopped_request) {
                           error);
 }
 
-TEST_F(CBStepHookFailureTest, done_error_after_final_notification_fails_step) {
+TEST_F(CBStepHookFailureTest, remove_error_after_final_notification_fails_step) {
     PipelineTestInstance pipeline(hook);
-    const auto error = std::make_exception_ptr(std::runtime_error("on_request_done failure"));
+    const auto error = std::make_exception_ptr(std::runtime_error("after_remove_request failure"));
     hook->failing_status = GenerationStatus::FINISHED;
-    hook->done_failure = error;
+    hook->remove_failure = error;
     pipeline.add(0, {1}, make_config(1), payload(1));
 
     // The handle already reported FINISHED, so only the step can carry the error.
@@ -1043,15 +1041,15 @@ TEST_F(CBStepHookFailureTest, done_error_after_final_notification_fails_step) {
 
 TEST_F(CBStepHookFailureTest, rejects_error_with_other_fields) {
     auto with_ending = ending_outcome(GenerationStatus::FINISHED, GenerationFinishReason::STOP);
-    with_ending.error = row_failure();
-    IStepHook::RowOutcome with_next_input;
+    with_ending.error = request_failure();
+    IStepHook::RequestOutcome with_next_input;
     with_next_input.next_embedding = ov::Tensor(ov::element::f32, {1, 1, 1});
-    with_next_input.error = row_failure();
+    with_next_input.error = request_failure();
 
     for (const auto& outcome : {with_ending, with_next_input}) {
         SCOPED_TRACE(outcome.ending ? "error with ending" : "error with next input");
         PipelineTestInstance pipeline(hook);
-        hook->outcomes = every_row(outcome);
+        hook->outcomes = every_request(outcome);
         pipeline.add(0, {1}, make_config(4), payload(1));
 
         expect_ov_failure_mentioning(capture_failure([&pipeline] {
@@ -1075,5 +1073,5 @@ TEST_F(CBStepHookFailureTest, generate_rejects_payload_count_mismatch) {
                                                                           {payload(1), payload(2)});
                                  }),
                                  "one step payload per request");
-    EXPECT_TRUE(hook->done_calls.empty());
+    EXPECT_TRUE(hook->remove_calls.empty());
 }

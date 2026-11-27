@@ -13,7 +13,7 @@
 
 namespace ov::genai {
 
-/// @brief Speech settings of one request, built by the caller of generate(); on_request_done() stores its result here.
+/// @brief Speech settings of one request, built by the caller of generate(); after_remove_request() stores the result.
 struct LFM3SpeechPayload final : StepRequestPayload {
     LFM3SpeechPayload(LFM3SpeechRequest request,
                       const OmniSpeechStreamerVariant& speech_streamer,
@@ -33,26 +33,31 @@ struct LFM3SpeechPayload final : StepRequestPayload {
 /// with the depth decoder and feeds them back as <|audio_out|>. Requests without an LFM3SpeechPayload are untouched.
 class LFM3SpeechStepHook : public IStepHook {
 public:
-    explicit LFM3SpeechStepHook(std::unique_ptr<LFM3SpeechModels> models);
+    /// @param embedding The language model's token embedding, for the prompt mode marker.
+    LFM3SpeechStepHook(std::unique_ptr<LFM3SpeechModels> models, EmbeddingsModel::Ptr embedding);
 
     /// @brief Speech settings of the model.
     const LFM3SpeechModelConfig& config() const {
         return m_models->config();
     }
 
-    std::unique_ptr<StepRequestState> create_request_state(const Admission& admission) override;
-    void on_request_done(StepRequestState& state, const RequestDone& done) override;
-    std::vector<std::optional<int64_t>> force_tokens(const std::vector<Row>& rows) override;
-    std::vector<RowOutcome> after_sampling(const std::vector<Row>& rows) override;
+    std::unique_ptr<StepRequestState> before_add_request(ov::Tensor& inputs_embeds,
+                                                         std::optional<ov::Tensor>& prompt_ids,
+                                                         SamplingOverrides& sampling_overrides,
+                                                         const std::shared_ptr<StepRequestPayload>& payload) override;
+    void after_remove_request(StepRequestState& state, GenerationStatus status) override;
+    std::vector<std::optional<int64_t>> before_sampling(const std::vector<SequenceGroup::Ptr>& requests) override;
+    std::vector<RequestOutcome> after_sampling(const std::vector<SequenceGroup::Ptr>& requests) override;
 
 private:
     struct RequestState;
 
     static RequestState& as_request_state(StepRequestState& state);
+    static RequestState& as_request_state(const SequenceGroup& request);
 
-    /// @brief Records the slot of row sampled this step, and ends the request once its speech state or the sampler
-    /// ended it. A speech model or streamer exception fails only this request.
-    RowOutcome after_slot(const Row& row);
+    /// @brief Records the slot of request sampled this step, and ends the request once its speech state or the
+    /// sampler ended it. A speech model or streamer exception fails only this request.
+    RequestOutcome after_slot(const SequenceGroup& request);
 
     /// @brief Records a speech frame sampled from the last hidden state of sequence.
     /// @return The codes of the frame.
@@ -62,6 +67,7 @@ private:
     void accept_text_slot(RequestState& state, const Sequence& sequence);
 
     std::unique_ptr<LFM3SpeechModels> m_models;
+    EmbeddingsModel::Ptr m_embedding;
 };
 
 }  // namespace ov::genai
