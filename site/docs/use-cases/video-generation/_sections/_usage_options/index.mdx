@@ -200,6 +200,17 @@ Compilation and release of deferred components are included in the generation
 duration. The reported decoder duration includes video VAE, audio VAE and vocoder
 compilation, inference and release when those stages are deferred.
 
+#### LTX-Video Component Inference
+
+`LTXVideoTransformer3DModel.infer(latent, timestep)` accepts either a tensor or a
+float timestep. A float timestep is shared by all tokens: for a rank-2 timestep
+input, the transformer receives `[B, 1]` and broadcasts it, avoiding repeated
+modulation of identical timesteps across tokens. If the model was reshaped to a
+static `[B, video_sequence_length]` timestep, it receives that shape instead;
+rank-1 exports receive `[1]`. To condition tokens with different timesteps, as
+image-to-video does for the first frame, pass a timestep tensor instead.
+`Text2VideoPipeline` uses the float overload automatically.
+
 ### Working with LoRA Adapters
 
 For video generation models like LTX-Video, LoRA adapters can modify the generation process to produce videos with specific artistic styles, content types, or quality enhancements.
