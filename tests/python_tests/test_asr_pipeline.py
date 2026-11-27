@@ -1102,7 +1102,8 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
 )
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_perf_metrics(pipelines_fixture, sample_from_dataset, request):
+def test_perf_metrics(sample_from_dataset, pipelines_fixture, request):
+    # Qwen3-ASR split export extracts mel features inside the audio encoding stage.
     has_features_extraction = request.node.get_closest_marker("qwen3_asr_split_export") is None
     check_perf_metrics(pipelines_fixture, sample_from_dataset, has_features_extraction)
 
@@ -1250,7 +1251,7 @@ def streamer_for_test(request):
     + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
-def test_streamers(pipelines_fixture, sample_from_dataset, streamer_for_test):
+def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
     check_streamers(pipelines_fixture, sample_from_dataset, streamer_for_test)
 
 
