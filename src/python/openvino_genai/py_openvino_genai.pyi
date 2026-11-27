@@ -1353,18 +1353,11 @@ class ClassificationActivation:
 class ClassificationPipeline:
     """
     
-    Classification pipeline for vision-language models with a sequence-classification head.
+    Classifies a prompt with optional images using a vision-language model exported as
+    `*ForSequenceClassification` (text-classification task).
     
-    Uses models exported with `--task text-classification` as vision, text embeddings and language model
-    parts. The language model must end in a classification head, not a token-generation head.
-    
-    The pipeline returns the logits of the last prompt token and applies the configured activation.
-    It does not generate text, apply a chat template or add extra special tokens.
-    Model-specific prompt construction and input preparation are the caller's responsibility.
-    Native image tags and zero-based `<ov_genai_image_N>` tags are accepted.
-    
-    Results contain owned logits [1, num_labels] and activated scores [1][num_labels], both in label ID order:
-    `scores[0][i]` belongs to label ID `i`.
+    The scores are computed from the logits of the last prompt token. No text is generated, and no chat template or
+    special tokens are added: the caller builds the complete model prompt.
     """
     class Config:
         """
@@ -1373,9 +1366,8 @@ class ClassificationPipeline:
         
         Attributes:
             classification_activation (ClassificationActivation, optional):
-                Activation applied to the logits. Derived from config.json when not set: NONE for
-                `problem_type == regression`, SIGMOID for `multi_label_classification` or a single label,
-                SOFTMAX otherwise.
+                Activation applied to the logits. If not set, it is derived from `problem_type` in config.json:
+                NONE for `regression`, SIGMOID for `multi_label_classification` or a single label, SOFTMAX otherwise.
         """
         classification_activation: openvino_genai.py_openvino_genai.ClassificationActivation | None
         @typing.overload
@@ -1387,22 +1379,20 @@ class ClassificationPipeline:
     def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: openvino_genai.py_openvino_genai.ClassificationPipeline.Config | None = None, **kwargs) -> None:
         """
                     ClassificationPipeline class constructor.
-                    models_path (os.PathLike): Path to the model directory.
+                    models_path (os.PathLike): Directory with the exported model, tokenizer and config.json.
                     device (str): Device to run the model on (e.g., CPU, GPU).
-                    config (ClassificationPipeline.Config): Optional pipeline configuration.
-                    kwargs: Plugin and/or config properties, e.g. CACHE_DIR=/tmp/, classification_activation=ClassificationActivation.SIGMOID.
+                    config (ClassificationPipeline.Config): Pipeline configuration.
+                    kwargs: Plugin and configuration properties, e.g. CACHE_DIR=/tmp/, classification_activation=ClassificationActivation.SIGMOID.
         """
     def classify(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = []) -> ClassificationResult:
         """
-        Classifies one already-formatted prompt.
+        Classifies a prompt.
         
-        :param text: Complete model prompt, including any suffix required by the model. No chat template or extra
-            special tokens are added. Images may use native tags or zero-based `<ov_genai_image_N>` tags.
+        :param text: Complete model prompt. Images are referenced by native or zero-based `<ov_genai_image_N>` tags.
         :type text: str
-        :param images: Optional RGB uint8 tensors of shape [H, W, 3] or [1, H, W, 3], one image per tensor.
-            The number, order and content of the images must match the model's input requirements.
+        :param images: RGB uint8 tensors [H, W, 3] or [1, H, W, 3], one image per tensor.
         :type images: list[openvino.Tensor]
-        :return: Owned logits [1, num_labels] and activated scores [1][num_labels], both in label ID order.
+        :return: Logits and activated scores, both in label ID order.
         :rtype: ClassificationResult
         """
 class ClassificationResult:
@@ -1414,7 +1404,7 @@ class ClassificationResult:
     @property
     def logits(self) -> openvino._pyopenvino.Tensor:
         """
-        Owned raw logits of shape [1, num_labels] in label ID order, before activation
+        Raw logits [1, num_labels] in label ID order
         """
     @logits.setter
     def logits(self, arg0: openvino._pyopenvino.Tensor) -> None:
@@ -1422,7 +1412,7 @@ class ClassificationResult:
     @property
     def scores(self) -> list[list[float]]:
         """
-        Scores after the activation in label ID order: scores[0][i] belongs to label ID i
+        Logits after the activation. scores[0][i] is the score of label ID i
         """
     @scores.setter
     def scores(self, arg0: collections.abc.Sequence[collections.abc.Sequence[typing.SupportsFloat]]) -> None:

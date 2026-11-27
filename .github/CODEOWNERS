@@ -9,6 +9,7 @@
 
 # samples
 /samples/cpp/automatic_speech_recognition/ @as-suvorov
+/samples/cpp/classification/ @as-suvorov
 /samples/cpp/image_generation/ @likholat
 /samples/cpp/omni/ @sgonorov
 /samples/cpp/rag/ @as-suvorov
@@ -18,6 +19,7 @@
 /samples/cpp/visual_language_chat/ @yatarkan
 
 /samples/python/automatic_speech_recognition/ @as-suvorov
+/samples/python/classification/ @as-suvorov
 /samples/python/image_generation/ @likholat
 /samples/python/omni/ @sgonorov
 /samples/python/rag/ @as-suvorov
@@ -31,6 +33,7 @@
 
 # C++
 /src/cpp/include/openvino/genai/automatic_speech_recognition/ @as-suvorov
+/src/cpp/include/openvino/genai/classification/ @as-suvorov
 /src/cpp/include/openvino/genai/image_generation/ @likholat
 /src/cpp/include/openvino/genai/omni/ @sgonorov
 /src/cpp/include/openvino/genai/rag/ @as-suvorov
@@ -41,6 +44,7 @@
 
 
 /src/cpp/src/automatic_speech_recognition/ @as-suvorov
+/src/cpp/src/classification/ @as-suvorov
 /src/cpp/src/continuous_batching/ @apaniukov
 /src/cpp/src/gguf_utils/ @apaniukov
 /src/cpp/src/image_generation/ @likholat

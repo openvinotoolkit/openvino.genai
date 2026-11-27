@@ -26,7 +26,7 @@ def main():
 
     pipeline = openvino_genai.ClassificationPipeline(args.model_dir, device)
 
-    # Images are referenced in the text by <ov_genai_image_N> tags; untagged images are placed as in VLMPipeline.
+    # Images are referenced in the text by <ov_genai_image_N> tags; untagged images are prepended to the prompt.
     result = pipeline.classify(args.text, images=[read_image(path) for path in args.images])
 
     for label_id, score in enumerate(result.scores[0]):

@@ -17,22 +17,16 @@ int main(int argc, char* argv[]) try {
 
     const std::string models_path = argv[1];
     const std::string text = argv[2];
-    std::vector<ov::Tensor> source_images;
     std::vector<ov::Tensor> images;
     for (int arg_idx = 3; arg_idx < argc; ++arg_idx) {
-        source_images.push_back(utils::load_image(argv[arg_idx]));
-        const ov::Tensor& image = source_images.back();
-        // Diagnostic: match the owned image copy made by the VLM embeddings registry.
-        ov::Tensor owned_image(image.get_element_type(), image.get_shape());
-        image.copy_to(owned_image);
-        images.push_back(std::move(owned_image));
+        images.push_back(utils::load_image(argv[arg_idx]));
     }
 
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::ClassificationPipeline pipeline(models_path, device);
 
-    // Images are referenced in the text by <ov_genai_image_N> tags; untagged images are placed as in VLMPipeline.
+    // Images are referenced in the text by <ov_genai_image_N> tags; untagged images are prepended to the prompt.
     const ov::genai::ClassificationResult result = pipeline.classify(text, images);
 
     std::cout << std::fixed << std::setprecision(4);

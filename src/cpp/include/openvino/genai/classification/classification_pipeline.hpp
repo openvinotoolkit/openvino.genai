@@ -29,52 +29,41 @@ enum class ClassificationActivation {
  * @brief Result of classifying one item.
  */
 struct OPENVINO_GENAI_EXPORTS ClassificationResult {
-    // Owned raw logits of shape [1, num_labels] in label ID order, before activation.
+    // Raw logits [1, num_labels] in label ID order.
     ov::Tensor logits;
-    // Scores after the activation, one per label in label ID order: scores[0][i] belongs to label ID i.
+    // Logits after the activation. scores[0][i] is the score of label ID i.
     std::vector<std::vector<float>> scores;
 };
 
 /**
- * @brief Classification pipeline for vision-language models with a sequence-classification head.
+ * @brief Classifies a prompt with optional images using a vision-language model exported as
+ * `*ForSequenceClassification` (text-classification task).
  *
- * Uses models exported with the text-classification task as vision, text embeddings and language
- * model parts. The language model must end in a classification head, not a token-generation head.
- *
- * The pipeline pools the logits of the last prompt token and applies the configured activation.
- * It does not generate text, apply a chat template or add extra special tokens.
- * Model-specific prompt construction and input preparation are the caller's responsibility.
+ * The scores are computed from the logits of the last prompt token. No text is generated, and no chat template or
+ * special tokens are added: the caller builds the complete model prompt.
  */
 class OPENVINO_GENAI_EXPORTS ClassificationPipeline {
 public:
     struct OPENVINO_GENAI_EXPORTS Config {
         /**
-         * @brief Activation applied to the logits. When not set, it is derived from config.json:
-         * NONE for `problem_type == regression`, SIGMOID for `multi_label_classification` or a single label,
-         * SOFTMAX otherwise.
+         * @brief Activation applied to the logits. If not set, it is derived from `problem_type` in config.json:
+         * NONE for `regression`, SIGMOID for `multi_label_classification` or a single label, SOFTMAX otherwise.
          */
         std::optional<ClassificationActivation> classification_activation;
 
-        /**
-         * @brief Constructs classification pipeline configuration
-         */
         Config() = default;
 
         /**
-         * @brief Constructs classification pipeline configuration
-         *
-         * @param properties configuration options, e.g. {{"classification_activation", ClassificationActivation::SIGMOID}}
+         * @param properties e.g. {{"classification_activation", ClassificationActivation::SIGMOID}}
          */
         explicit Config(const ov::AnyMap& properties);
     };
 
     /**
-     * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same directory.
-     *
      * @param models_path Directory with the exported model, tokenizer and config.json
      * @param device Device
      * @param config Pipeline configuration
-     * @param properties Optional plugin properties to pass to ov::Core::compile_model().
+     * @param properties Optional plugin properties for ov::Core::compile_model()
      */
     ClassificationPipeline(const std::filesystem::path& models_path,
                            const std::string& device,
@@ -82,23 +71,19 @@ public:
                            const ov::AnyMap& properties = {});
 
     /**
-     * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same directory.
-     *
      * @param models_path Directory with the exported model, tokenizer and config.json
      * @param device Device
-     * @param properties Optional plugin properties to pass to ov::Core::compile_model() mixed with
-     * configuration properties (ov::genai::classification_activation).
+     * @param properties Plugin properties for ov::Core::compile_model() and configuration properties
+     * (ov::genai::classification_activation)
      */
     ClassificationPipeline(const std::filesystem::path& models_path,
                            const std::string& device,
                            const ov::AnyMap& properties = {});
 
     /**
-     * @brief Constructs a pipeline using configuration properties.
-     *
      * @param models_path Directory with the exported model, tokenizer and config.json
      * @param device Device
-     * @param properties Configuration and plugin properties, e.g.
+     * @param properties Plugin and configuration properties, e.g.
      * ov::genai::classification_activation(ClassificationActivation::SIGMOID)
      */
     template <typename... Properties,
@@ -109,13 +94,11 @@ public:
         : ClassificationPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     /**
-     * @brief Classifies one already-formatted prompt.
+     * @brief Classifies a prompt.
      *
-     * @param text Complete model prompt, including any suffix required by the model. No chat template or extra
-     * special tokens are added. Images may use native tags or zero-based <ov_genai_image_N> tags.
-     * @param images Optional RGB uint8 tensors of shape [H, W, 3] or [1, H, W, 3], one image per tensor.
-     * The number, order and content of the images must match the model's input requirements.
-     * @return Owned logits [1, num_labels] and activated scores [1][num_labels], both in label ID order.
+     * @param text Complete model prompt. Images are referenced by native or zero-based <ov_genai_image_N> tags.
+     * @param images RGB uint8 tensors [H, W, 3] or [1, H, W, 3], one image per tensor.
+     * @return Logits and activated scores, both in label ID order.
      */
     ClassificationResult classify(const std::string& text, const std::vector<ov::Tensor>& images = {});
 
