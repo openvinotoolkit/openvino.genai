@@ -333,13 +333,13 @@ class OptimumWWBTargetEvaluationTool(ToolWrapper):
                 err_msg=f"{self.logger_prefix}: Failed to parse WWB metrics value from output.",
             )
 
-        if not math.isfinite(metrics_value):
+        if math.isnan(metrics_value):
             return ToolResult(
                 name=self.name,
                 success=False,
                 err_msg=(
-                    f"{self.logger_prefix}: WWB similarity {metrics_value} is not finite; "
-                    f"expected a finite similarity >= {WWB_SIMILARITY_THRESHOLD:.2f}."
+                    f"{self.logger_prefix}: WWB similarity is NaN; "
+                    f"expected a similarity >= {WWB_SIMILARITY_THRESHOLD:.2f}."
                 ),
             )
 
@@ -393,13 +393,13 @@ class GenAIWWBTargetEvaluationTool(ToolWrapper):
                 err_msg=f"{self.logger_prefix}: Failed to parse WWB metrics value from output.",
             )
 
-        if not math.isfinite(metrics_value):
+        if math.isnan(metrics_value):
             return ToolResult(
                 name=self.name,
                 success=False,
                 err_msg=(
-                    f"{self.logger_prefix}: WWB similarity {metrics_value} is not finite; "
-                    f"expected a finite similarity >= {WWB_SIMILARITY_THRESHOLD:.2f}."
+                    f"{self.logger_prefix}: WWB similarity is NaN; "
+                    f"expected a similarity >= {WWB_SIMILARITY_THRESHOLD:.2f}."
                 ),
             )
 
