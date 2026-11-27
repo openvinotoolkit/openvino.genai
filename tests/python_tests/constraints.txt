@@ -1,0 +1,2 @@
+# filelock 4.3 fails with EIO while probing flock support on the blobfuse2 CI cache mount.
+filelock==4.2.12
