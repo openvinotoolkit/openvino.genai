@@ -826,7 +826,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching || fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition }}
+    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
     timeout-minutes: 90
     defaults:
       run:
@@ -902,15 +902,6 @@ jobs:
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
 
-      - name: Qwen3-ASR gtests
-        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test && !fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
-        run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
-          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="*Qwen3ASR*"
-        env:
-          OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/intel64/libopenvino_tokenizers.so"
-
       - name: Test Continuous Batching Tools
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
@@ -935,18 +926,7 @@ jobs:
           # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
           python -m pip install transformers==5.0.0
           python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1 and not llm_bench_qwen3_tts and not llm_bench_qwen3_asr and not sensevoice" -k "not image2video"
-        env:
-          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
-      - name: Test LLM Benchmark Tools with Qwen3-ASR model
-        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench.test || fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
-        run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m venv --system-site-packages "${{ runner.temp }}/qwen-asr-bench"
-          source "${{ runner.temp }}/qwen-asr-bench/bin/activate"
-          python -m pip install qwen-asr==0.0.6
-          python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@d304fb56602d878547c3d416e875c02cfd5e5479"
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and llm_bench_qwen3_asr"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1 and not llm_bench_qwen3_tts and not sensevoice" -k "not image2video"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
       - name: Test LLM Benchmark Tools transformers under 5.0

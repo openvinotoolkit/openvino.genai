@@ -22,7 +22,6 @@
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/lfm3_omni/speech_engine.hpp"
-#include "visual_language/npu_generation.hpp"
 #include "visual_language/pipeline_base.hpp"
 #include "visual_language/embeddings_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
@@ -1133,16 +1132,6 @@ private:
         // Update perf metrics with num_input_tokens
         perf_metrics.num_input_tokens = prompt_ids.get_size();
 
-        size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
-        bool capacity_limited = false;
-        if (m_is_npu) {
-            max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
-            capacity_limited = prepare_npu_vlm_generation(m_vlm_config.model_type,
-                                                          prompt_ids.get_size(),
-                                                          generation_config,
-                                                          m_max_prompt_len,
-                                                          max_kv_cache_size);
-        }
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config);
         requests.push_back(std::move(sequence_group));
 
@@ -1181,7 +1170,11 @@ private:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        auto result = ov::genai::get_lm_encoded_results(
+        size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
+        if (m_is_npu) {
+            max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
+        }
+        return ov::genai::get_lm_encoded_results(
             m_language,
             inputs_embeds,
             new_atten_mask,
@@ -1196,11 +1189,8 @@ private:
             use_intermediate_remote_tensor,
             lm_extra_inputs,
             std::move(per_layer_callback),
-            std::move(ngram_embeddings_callback));
-        if (m_is_npu) {
-            report_npu_vlm_generation_limit(capacity_limited, result.results.finish_reasons);
-        }
-        return result;
+            std::move(ngram_embeddings_callback)
+        );
     }
 
     void check_speech_in_stream(const OmniTalkerSpeechConfig& speech_config) const override {

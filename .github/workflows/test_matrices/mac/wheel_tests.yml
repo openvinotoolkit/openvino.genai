@@ -7,25 +7,6 @@
   components:
     - automatic_speech_recognition
 
-- name: LLM benchmark speech-to-text unit
-  cmd: python -m pytest -v ./tests/python_tests/test_llm_bench_speech_to_text.py
-  timeout: 20
-  components:
-    - llm_bench
-    - automatic_speech_recognition
-
-- name: LLM benchmark Qwen3-ASR
-  cmd: |-
-    python -m pip install -r tools/llm_bench/requirements.txt
-    python -m pip install qwen-asr==0.0.6
-    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@d304fb56602d878547c3d416e875c02cfd5e5479"
-    export SAMPLES_PY_DIR="$SRC_DIR/tools"
-    python -m pytest -v ./tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and llm_bench_qwen3_asr"
-  timeout: 120
-  components:
-    - llm_bench
-    - automatic_speech_recognition
-
 - name: ASR (Qwen3-ASR)
   cmd: |-
     python -m pip install transformers==4.57.6 nagisa==0.2.11 soynlp==0.0.493 accelerate==1.12.0 qwen-omni-utils librosa soundfile sox flask pytz

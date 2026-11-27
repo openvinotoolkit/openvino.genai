@@ -21,10 +21,6 @@ public:
                            const std::filesystem::path& config_dir,
                            const std::string& device,
                            const ov::AnyMap& properties);
-    InputsEmbedderQwen3ASR(const VLMConfig& config,
-                           const Tokenizer& tokenizer,
-                           EmbeddingsModel::Ptr embedding,
-                           std::unique_ptr<AudioEncoderQwen3ASR> audio_encoder);
 
     std::vector<EncodedAudio> encode_audios(const std::vector<ov::Tensor>& audios) override;
     std::vector<EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
@@ -61,12 +57,20 @@ public:
     void start_chat(const std::string& system_message) override;
 
 private:
+    InputsEmbedderQwen3ASR(const VLMConfig& config,
+                           const Tokenizer& tokenizer,
+                           EmbeddingsModel::Ptr embedding,
+                           const std::shared_ptr<ov::Model>& audio_model,
+                           const std::filesystem::path& config_dir,
+                           const std::string& device,
+                           const ov::AnyMap& properties);
+
     void merge_audio_embeddings(ov::Tensor& inputs_embeds,
                                 const ov::Tensor& input_ids,
                                 const std::vector<EncodedAudio>& audios,
                                 const std::vector<size_t>& audios_sequence) const;
 
-    std::unique_ptr<AudioEncoderQwen3ASR> m_audio_encoder;
+    AudioEncoderQwen3ASR m_audio_encoder;
 };
 
 }  // namespace ov::genai

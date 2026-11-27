@@ -7,7 +7,6 @@
 #include <cstring>
 #include <numeric>
 
-#include "npu/embedding_model.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 
 namespace ov::genai {
@@ -74,13 +73,11 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const ov::AnyMap& properties)
     : InputsEmbedderQwen3ASR(config,
                              tokenizer,
-                             create_qwen3_asr_embeddings(model_dir, config.scale_emb, device, properties),
-                             create_qwen3_asr_audio_encoder(
-                                 config,
-                                 utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
-                                 model_dir,
-                                 device,
-                                 properties)) {}
+                             EmbeddingsModel::create(model_dir, config.scale_emb, device, properties),
+                             utils::singleton_core().read_model(model_dir / "openvino_audio_encoder_model.xml"),
+                             model_dir,
+                             device,
+                             properties) {}
 
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const ModelsMap& models_map,
@@ -91,26 +88,26 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
     : InputsEmbedderQwen3ASR(
           config,
           tokenizer,
-          create_qwen3_asr_embeddings(utils::get_model_weights_pair(models_map, "text_embeddings").first,
-                                      utils::get_model_weights_pair(models_map, "text_embeddings").second,
-                                      config.scale_emb,
-                                      device,
-                                      properties),
-          create_qwen3_asr_audio_encoder(
-              config,
-              utils::singleton_core().read_model(utils::get_model_weights_pair(models_map, "audio_encoder").first,
-                                                 utils::get_model_weights_pair(models_map, "audio_encoder").second),
-              config_dir,
-              device,
-              properties)) {}
+          EmbeddingsModel::create(utils::get_model_weights_pair(models_map, "text_embeddings").first,
+                                  utils::get_model_weights_pair(models_map, "text_embeddings").second,
+                                  config.scale_emb,
+                                  device,
+                                  properties),
+          utils::singleton_core().read_model(utils::get_model_weights_pair(models_map, "audio_encoder").first,
+                                             utils::get_model_weights_pair(models_map, "audio_encoder").second),
+          config_dir,
+          device,
+          properties) {}
 
 InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
                                                const Tokenizer& tokenizer,
                                                EmbeddingsModel::Ptr embedding,
-                                               std::unique_ptr<AudioEncoderQwen3ASR> audio_encoder)
+                                               const std::shared_ptr<ov::Model>& audio_model,
+                                               const std::filesystem::path& config_dir,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties)
     : IInputsEmbedder(config, tokenizer, std::move(embedding)),
-      m_audio_encoder(std::move(audio_encoder)) {
-    OPENVINO_ASSERT(m_audio_encoder, "Qwen3-ASR audio encoder must not be null.");
+      m_audio_encoder(config, audio_model, config_dir, device, properties) {
     const auto vocab = tokenizer.get_vocab();
     const auto audio_token = vocab.find(AUDIO_PAD);
     OPENVINO_ASSERT(audio_token != vocab.end() && audio_token->second == config.audio_token_id,
@@ -119,7 +116,7 @@ InputsEmbedderQwen3ASR::InputsEmbedderQwen3ASR(const VLMConfig& config,
 }
 
 std::vector<EncodedAudio> InputsEmbedderQwen3ASR::encode_audios(const std::vector<ov::Tensor>& audios) {
-    return m_audio_encoder->encode(audios);
+    return m_audio_encoder.encode(audios);
 }
 
 std::vector<EncodedImage> InputsEmbedderQwen3ASR::encode_images(const std::vector<ov::Tensor>& images) {

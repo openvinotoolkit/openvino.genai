@@ -254,11 +254,7 @@ InputsEmbedderQwen3ASR create_inputs_embedder(const std::filesystem::path& model
                     "but openvino_audio_encoder_model.xml is missing in ",
                     models_path,
                     ". Re-export the forced aligner with an Optimum Intel version that produces this format.");
-    const VLMConfig config{models_path / "config.json"};
-    auto embedding = EmbeddingsModel::create(models_path, config.scale_emb, device, properties);
-    auto audio_model = utils::singleton_core().read_model(models_path / "openvino_audio_encoder_model.xml");
-    auto audio_encoder = std::make_unique<AudioEncoderQwen3ASR>(config, audio_model, models_path, device, properties);
-    return InputsEmbedderQwen3ASR{config, tokenizer, std::move(embedding), std::move(audio_encoder)};
+    return InputsEmbedderQwen3ASR{VLMConfig{models_path / "config.json"}, models_path, tokenizer, device, properties};
 }
 
 ov::InferRequest create_language_model_request(const std::filesystem::path& models_path,

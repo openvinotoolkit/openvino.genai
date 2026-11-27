@@ -640,35 +640,6 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.llm_bench_qwen3_asr
-    @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
-    def test_python_tool_llm_benchmark_qwen3_asr(self, download_test_content):
-        from utils.asr_utils.qwen3_asr import check_qwen3_asr_package, qwen3_asr_split_model_path
-
-        check_qwen3_asr_package()
-        model_path = Path(qwen3_asr_split_model_path())
-        assert (model_path / "openvino_audio_encoder_model.xml").is_file()
-        assert (model_path / "openvino_language_model.xml").is_file()
-        benchmark_py_command = [
-            sys.executable,
-            SAMPLES_PY_DIR / "llm_bench/benchmark.py",
-            "-m",
-            model_path,
-            "--media",
-            download_test_content,
-            "-d",
-            "cpu",
-            "-n",
-            "1",
-            "-ic",
-            "8",
-            "--model-type",
-            "speech-recognition",
-            "--genai",
-        ]
-        run_sample(benchmark_py_command)
-
-    @pytest.mark.samples
     @pytest.mark.sensevoice
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
     @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])

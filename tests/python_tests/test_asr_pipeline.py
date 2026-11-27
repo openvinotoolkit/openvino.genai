@@ -1103,13 +1103,9 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_perf_metrics(sample_from_dataset, pipelines_fixture, request):
+    _, genai_pipe, model_id, pipeline_type = pipelines_fixture
     # Qwen3-ASR split export extracts mel features inside the audio encoding stage.
     has_features_extraction = request.node.get_closest_marker("qwen3_asr_split_export") is None
-    check_perf_metrics(pipelines_fixture, sample_from_dataset, has_features_extraction)
-
-
-def check_perf_metrics(pipelines_fixture, sample_from_dataset, has_features_extraction):
-    _, genai_pipe, model_id, pipeline_type = pipelines_fixture
 
     if model_id in (QWEN3_ASR_MODEL_ID, FUN_ASR_MODEL_ID):
         generate_kwargs = {"language": "English", "max_new_tokens": 200}
@@ -1252,10 +1248,6 @@ def streamer_for_test(request):
     indirect=True,
 )
 def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
-    check_streamers(pipelines_fixture, sample_from_dataset, streamer_for_test)
-
-
-def check_streamers(pipelines_fixture, sample_from_dataset, streamer_for_test):
     _, genai_pipe, model_id, pipeline_type = pipelines_fixture
 
     generate_kwargs = {}
