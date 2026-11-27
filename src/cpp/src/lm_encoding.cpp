@@ -359,8 +359,14 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         const auto infer_start = std::chrono::steady_clock::now();
         m_llm.start_async();
 
-        stream_generated_tokens();
-        free_non_running_requests(); // to handle streaming response
+        try {
+            stream_generated_tokens();
+            free_non_running_requests();  // to handle streaming response
+        } catch (...) {
+            // A busy request would fail the next call and keep the caller from rolling back the KV cache.
+            m_llm.wait();
+            throw;
+        }
 
         m_llm.wait();
 
