@@ -7,7 +7,6 @@
 #include <set>
 #include <map>
 #include <string>
-#include <string_view>
 #include <vector>
 #include <fstream>
 #include <optional>
@@ -1562,6 +1561,14 @@ struct AdapterControllerImpl {
         return adapter.m_pimpl->get_id();
     }
 
+    static bool has_constant_tensors(const Adapter& adapter) {
+        return !adapter.m_pimpl->get_constant_tensors().empty();
+    }
+
+    static const AdapterConfig& get_current_config(const AdapterController& controller) {
+        return controller.m_pimpl->current_config;
+    }
+
     LoRAVarMap variable_ids;
     std::map<std::string, ov::op::util::VariableInfo> constant_variable_ids;
     std::unordered_set<std::string> variable_names;
@@ -2316,8 +2323,12 @@ size_t get_prefix_cache_namespace(const std::optional<AdapterConfig>& config) {
         return 0;
     }
     std::vector<std::pair<uint64_t, uint32_t>> applied;
-    for (const auto& [adapter, alpha] : config->get_adapters_and_alphas()) {
-        if (alpha == 0.0f) {
+    // Tensor preparation applies the first alpha of a duplicated adapter to every occurrence, so hash that alpha
+    // for each occurrence.
+    for (const auto& adapter : config->get_adapters()) {
+        const float alpha = config->get_alpha(adapter);
+        // A zero alpha cancels the LoRA term, but constant replacements apply regardless of alpha.
+        if (alpha == 0.0f && !AdapterControllerImpl::has_constant_tensors(adapter)) {
             continue;
         }
         uint32_t alpha_bits;
@@ -2328,16 +2339,21 @@ size_t get_prefix_cache_namespace(const std::optional<AdapterConfig>& config) {
         return 0;
     }
     std::sort(applied.begin(), applied.end());
-    std::vector<uint64_t> content;
-    content.reserve(applied.size() * 2);
+    // The prefix selects which adapter tensors match the model, so it is part of the namespace.
+    std::string content = config->get_tensor_name_prefix().value_or("");
+    content.push_back('\0');
     for (const auto& [id, alpha_bits] : applied) {
-        content.push_back(id);
-        content.push_back(alpha_bits);
+        content.append(reinterpret_cast<const char*>(&id), sizeof(id));
+        content.append(reinterpret_cast<const char*>(&alpha_bits), sizeof(alpha_bits));
     }
-    const size_t result = std::hash<std::string_view>{}(
-        std::string_view(reinterpret_cast<const char*>(content.data()), content.size() * sizeof(content[0])));
+    const size_t result = std::hash<std::string>{}(content);
     // 0 is reserved for requests without adapters.
     return result == 0 ? 1 : result;
+}
+
+
+AdapterConfig get_applied_adapters(const AdapterController& controller) {
+    return AdapterControllerImpl::get_current_config(controller);
 }
 
 

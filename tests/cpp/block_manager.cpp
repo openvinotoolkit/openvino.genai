@@ -634,6 +634,15 @@ TEST(TestBlockManager, SequenceHashSeparatesLoraAdapters) {
     EXPECT_EQ(hashes(ov::genai::AdapterConfig(Adapters{{first, 1.0f}, {second, 0.0f}})), first_only);
     EXPECT_EQ(hashes(ov::genai::AdapterConfig(Adapters{{first, 1.0f}, {second, 0.5f}})),
               hashes(ov::genai::AdapterConfig(Adapters{{second, 0.5f}, {first, 1.0f}})));
+
+    // Every occurrence of a duplicated adapter is applied with its first alpha.
+    EXPECT_NE(hashes(ov::genai::AdapterConfig(Adapters{{first, 1.0f}, {first, 0.5f}})),
+              hashes(ov::genai::AdapterConfig(Adapters{{first, 0.5f}, {first, 1.0f}})));
+
+    // The prefix selects which tensors are applied.
+    ov::genai::AdapterConfig prefixed(first, 1.0f);
+    prefixed.set_tensor_name_prefix("base_model.model.");
+    EXPECT_NE(hashes(prefixed), first_only);
 }
 
 TEST(TestBlockManager, SequenceHashRollbackAndForkMatchFreshSequences) {

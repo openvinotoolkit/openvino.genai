@@ -43,10 +43,15 @@ std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, con
 // but are applied by another AdapterController of the same pipeline.
 void set_foreign_tensor_name_prefix(AdapterConfig& config, const std::optional<std::string>& prefix);
 
-// Identifies the adapters and alphas that `config` applies, so that prefix cache blocks computed with different
-// adapters are not shared. Adapters with zero alpha and the order of adapters are ignored. No config, an empty config
-// and a config with all alphas equal to zero return 0, the namespace of requests without adapters.
+// Identifies the adapters, alphas and tensor name prefix that `config` applies, so that prefix cache blocks computed
+// with different adapters are not shared. Adapters with zero alpha and no constant replacements, and the order of
+// adapters are ignored. No config, an empty config and a config with all such alphas equal to zero return 0, the
+// namespace of requests without adapters.
 size_t get_prefix_cache_namespace(const std::optional<AdapterConfig>& config);
+
+// Returns the config `controller` currently applies: the last config passed to apply(), merged with the earlier ones,
+// including a config whose upload failed and is retried by the next apply().
+AdapterConfig get_applied_adapters(const AdapterController& controller);
 
 }
 }
