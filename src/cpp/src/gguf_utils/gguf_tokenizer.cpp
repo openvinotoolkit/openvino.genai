@@ -129,16 +129,33 @@ ov::OutputVector add_ragged_dimension(const ov::OutputVector& inputs) {
     return res;
 }
 
-bool is_special_token(int32_t token_type) {
-    return token_type == 3 || token_type == 4;
+// GGUF token_type values (llama_token_type), used as stored in the file.
+enum GGUFTokenType : int32_t {
+    GGUF_TOKEN_NORMAL = 1,
+    GGUF_TOKEN_UNKNOWN = 2,
+    GGUF_TOKEN_CONTROL = 3,
+    GGUF_TOKEN_USER_DEFINED = 4,
+    GGUF_TOKEN_UNUSED = 5,
+    GGUF_TOKEN_BYTE = 6,
+};
+
+// Tokens matched as a whole during encoding instead of being split by the model.
+bool is_atomic_token(int32_t token_type) {
+    return token_type == GGUF_TOKEN_CONTROL || token_type == GGUF_TOKEN_USER_DEFINED;
+}
+
+// Tokens removed by skip_special_tokens. USER_DEFINED tokens such as </think> stay visible.
+// Unlike llama.cpp, known EOG/FIM tokens are not promoted to CONTROL at load time.
+bool is_skipped_on_decode(int32_t token_type) {
+    return token_type == GGUF_TOKEN_CONTROL;
 }
 
 std::string quote_meta(const std::string& str) {
     std::string result = "(";
-    
-    // todo: add also utf validate
     for (char c : str) {
-        if (!std::isalnum(c) && c != '_') {
+        const auto byte = static_cast<unsigned char>(c);
+        // Escaping UTF-8 bytes of non-ASCII characters would break the regex.
+        if (byte < 0x80 && !std::isalnum(byte) && c != '_') {
             result += '\\';
         }
         result += c;
@@ -371,12 +388,17 @@ std::vector<uint8_t> apply_unicode_to_bytes(const std::string& token) {
     return res;
 }
 
-std::vector<std::vector<uint8_t>> parse_bbpe_vocab(const std::vector<std::string>& vocab, bool byte_encode = true) {
+std::vector<std::vector<uint8_t>> parse_bbpe_vocab(const std::vector<std::string>& vocab,
+                                                   const ov::Tensor& token_types,
+                                                   bool byte_encode = true) {
     std::vector<std::vector<uint8_t>> res;
-    for (const auto& token : vocab) {
+    const int32_t* types = token_types.data<int32_t>();
+    for (size_t i = 0; i < vocab.size(); ++i) {
+        const auto& token = vocab[i];
         // gpt2 uses GPT-2 unicode->byte decoding; gemma4's raw-UTF8 vocab is taken verbatim.
-        res.push_back(byte_encode ? apply_unicode_to_bytes(token)
-                                  : std::vector<uint8_t>(token.begin(), token.end()));
+        // Atomic tokens are stored as literal UTF-8 text, as in llama.cpp.
+        const bool literal = !byte_encode || is_atomic_token(types[i]);
+        res.push_back(literal ? std::vector<uint8_t>(token.begin(), token.end()) : apply_unicode_to_bytes(token));
     }
     return res;
 }
@@ -390,7 +412,11 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
     if (auto val = std::get_if<std::vector<std::string>>(&tokenizer_config.at("tokens"))) {
         vocab_from_config = *val;
     }
-    auto vocab = parse_bbpe_vocab(vocab_from_config, byte_encode);
+    ov::Tensor token_types{};
+    if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("token_type"))) {
+        token_types = *val;
+    }
+    auto vocab = parse_bbpe_vocab(vocab_from_config, token_types, byte_encode);
     auto vocab_const = create_string_constant(vocab);
 
     inputs.insert(inputs.end(), vocab_const.begin(), vocab_const.end());
@@ -423,20 +449,11 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
     inputs.insert(inputs.end(), right_merges_const.begin(), right_merges_const.end());
 
     // 3. Extract special tokens
-    ov::Tensor token_types{};
-    std::vector<std::string> tokens{};
-    if (auto val = std::get_if<std::vector<std::string>>(&tokenizer_config.at("tokens"))) {
-        tokens = *val;
-    }
-    if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("token_type"))) {
-        token_types = *val;
-    }
-
     std::vector<std::vector<uint8_t>> special_tokens;
     std::vector<int32_t> special_token_indices;
 
     for (size_t i = 0; i < vocab.size(); ++i) {
-        if (is_special_token(token_types.data<int32_t>()[i])) {
+        if (is_atomic_token(token_types.data<int32_t>()[i])) {
             special_tokens.push_back(vocab[i]);
             special_token_indices.push_back(static_cast<int32_t>(i));
         }
@@ -738,7 +755,7 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
     std::vector<std::vector<uint8_t>> special_pieces;
     std::vector<int32_t> special_ids;
     for (size_t i = 0; i < vocab.size(); ++i) {
-        if (is_special_token(token_types[i])) {
+        if (is_atomic_token(token_types[i])) {
             special_pieces.emplace_back(vocab[i].begin(), vocab[i].end());
             special_ids.push_back(static_cast<int32_t>(i));
         }
@@ -815,10 +832,11 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         token_types = *val;
     }
 
+    OPENVINO_ASSERT(token_types.get_size() == tokens.size(), "[gguf tokenizer] 'token_type' array size != vocab size");
     const auto token_types_data = token_types.data<int32_t>();
 
     for (size_t i = 0; i < tokens.size(); ++i) {
-        if (is_special_token(token_types_data[i])) {
+        if (is_atomic_token(token_types_data[i])) {
             special_tokens.push_back(tokens[i]);
         }
     }
@@ -989,18 +1007,35 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         packed[0].get_tensor().add_names({"string_output"});
         detokenizer = std::make_shared<Model>(packed, ParameterVector{detokenizer_input}, "detokenizer");
     } else {
-        // BPE detokenizer: VocabDecoder + FuzeRagged + UTF8Validate. gpt2 uses GPT-2 byte
-        // decoding of the vocab; gemma4 uses the raw-UTF8 vocab (and undoes the metaspace
-        // afterwards, below).
+        // BPE detokenizer: VocabDecoder + FuzeRagged + UTF8Validate.
         const bool byte_encode = (effective_model != "gemma4");
-        auto vocab = parse_bbpe_vocab(tokens, byte_encode);
+        auto vocab = parse_bbpe_vocab(tokens, token_types, byte_encode);
+        if (effective_model == "gemma4") {
+            // Unescape ordinary pieces before concatenation, preserving literal atomic tokens.
+            const std::string metaspace = "\xe2\x96\x81";
+            for (size_t i = 0; i < tokens.size(); ++i) {
+                if (is_atomic_token(token_types_data[i])) {
+                    continue;
+                }
+                auto pos = tokens[i].find(metaspace);
+                if (pos == std::string::npos) {
+                    continue;
+                }
+                auto piece = tokens[i];
+                do {
+                    piece.replace(pos, metaspace.size(), " ");
+                    pos = piece.find(metaspace, pos + 1);
+                } while (pos != std::string::npos);
+                vocab[i].assign(piece.begin(), piece.end());
+            }
+        }
         ov::OutputVector const_vocab = create_string_constant(vocab);
         OutputVector detokenizer_outputs = {detokenizer_input};
         detokenizer_outputs.insert(detokenizer_outputs.end(), const_vocab.begin(), const_vocab.end());
 
         std::vector<int32_t> special_token_ids;
         for (size_t i = 0; i < token_types.get_size(); ++i) {
-            if (is_special_token(token_types.data<int32_t>()[i]))
+            if (is_skipped_on_decode(token_types.data<int32_t>()[i]))
                 special_token_ids.push_back(static_cast<int32_t>(i));
         }
 
@@ -1021,15 +1056,6 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         ov::OutputVector inputs_for_utf8_validate(outputs_fused_ragged.begin(), outputs_fused_ragged.end());
         auto outputs_utf8_validate =
             create_func("UTF8Validate", inputs_for_utf8_validate, {{"replace_mode", true}});
-        if (effective_model == "gemma4") {
-            // Undo the metaspace: U+2581 -> space, on the decoded ragged string.
-            const std::string metaspace = "\xe2\x96\x81";
-            ov::OutputVector norm_inputs(outputs_utf8_validate.begin(),
-                                         outputs_utf8_validate.begin() + 3);
-            norm_inputs.push_back(u8_string_constant(metaspace));
-            norm_inputs.push_back(u8_string_constant(" "));
-            outputs_utf8_validate = create_func("RegexNormalization", norm_inputs, {{"global_replace", true}});
-        }
         auto packed_output = create_func("StringTensorPack", outputs_utf8_validate, {});
         packed_output[0].get_tensor().add_names({"string_output"});
         detokenizer = std::make_shared<Model>(packed_output, ParameterVector{detokenizer_input}, "detokenizer");
