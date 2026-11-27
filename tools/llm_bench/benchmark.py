@@ -213,7 +213,9 @@ def get_argparser():
         "                   Activity Monitor shows: incl. compressed and GPU/Metal\n"
         "                   memory). macOS only; falls back to base on other platforms.",
     )
-    parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
+    parser.add_argument(
+        "-bs", "--batch_size", type=greater_than_zero, default=1, required=False, help="Batch size value"
+    )
     parser.add_argument(
         "--num_beams",
         type=int,
