@@ -75,6 +75,25 @@ protected:
         MtpPipelineTestInstance() = default;
         using MtpDecodingImpl::make_draft_generation_config;
         using MtpDecodingImpl::make_draft_sampling_params;
+
+        void set_main_pipeline(
+            std::shared_ptr<ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl> pipeline) {
+            m_main_pipeline = std::move(pipeline);
+        }
+    };
+
+    class MtpTargetPipelineStub : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
+    public:
+        ov::genai::GenerationHandle add_request(uint64_t request_id,
+                                                const ov::Tensor&,
+                                                const ov::genai::GenerationConfig&,
+                                                std::optional<ov::Tensor>,
+                                                std::optional<std::unordered_map<std::string, ov::Tensor>>) override {
+            last_request_id = request_id;
+            return {};
+        }
+
+        uint64_t last_request_id = 0;
     };
 
     PipelineTestInstance m_pipeline = PipelineTestInstance();
@@ -344,6 +363,19 @@ TEST_F(CBForSDTest, MtpSupportedConfigPassesAdmissionValidation) {
                 << exception.what();
         }
     }
+}
+
+TEST_F(CBForSDTest, MtpUsesTargetOnlyForSingleTokenPrompt) {
+    MtpPipelineTestInstance pipeline;
+    auto main_pipeline = std::make_shared<MtpTargetPipelineStub>();
+    pipeline.set_main_pipeline(main_pipeline);
+    ov::Tensor input(ov::element::f32, ov::Shape{1, 1, 16});
+    ov::Tensor prompt_ids(ov::element::i64, ov::Shape{1, 1});
+    ov::genai::GenerationConfig config;
+    config.num_assistant_tokens = 1;
+
+    EXPECT_NO_THROW(pipeline.add_request(42, input, config, prompt_ids));
+    EXPECT_EQ(main_pipeline->last_request_id, 42);
 }
 
 TEST_F(CBForSDTest, init_sequence_by_not_empty__one_sequence) {

@@ -93,6 +93,9 @@ protected:
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 
 protected:
+    virtual bool requires_prompt_ids_for_generation() const {
+        return false;
+    }
     virtual void prepare_inputs_embedder(const GenerationConfig& sampling_params) const;
     virtual std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
         std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const;
@@ -246,7 +249,6 @@ public:
         const StreamerVariant& streamer,
         std::shared_ptr<OmniStreamerBase> omni_streamer = nullptr
     );
-
 
     /**
      * Performs monolithic generation based on ChatHistory objects

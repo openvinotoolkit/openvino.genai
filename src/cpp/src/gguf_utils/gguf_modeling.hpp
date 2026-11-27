@@ -11,7 +11,7 @@
 /// \brief Load a .gguf file with the OpenVINO GGUF frontend and adapt it to GenAI.
 ///
 /// Returns the named models from ov::frontend::gguf::adapt_to_genai for a decoder GGUF.
-ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path);
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path, bool include_mtp_draft = false);
 
 /// \brief Convert a .gguf file into an ov::Model.
 ///

@@ -33,6 +33,39 @@ std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
     return it->second.as<ov::genai::ModelDesc>().model;
 }
 
+// A GGUF target with MTP layers runs its embedded draft under continuous batching.
+std::unique_ptr<ov::genai::LLMPipelineImplBase> create_gguf_mtp_pipeline(
+    const std::filesystem::path& models_path,
+    const std::optional<ov::genai::Tokenizer>& tokenizer,
+    const std::string& device,
+    const ov::AnyMap& user_properties) {
+    OPENVINO_ASSERT(!ov::genai::utils::is_npu_requested(device, user_properties), "GGUF MTP is not supported on NPU.");
+    auto [properties, attention_backend] = ov::genai::utils::extract_attention_backend(user_properties, false);
+    OPENVINO_ASSERT(attention_backend == ov::genai::PA_BACKEND,
+                    "GGUF MTP requires the paged attention backend (ATTENTION_BACKEND=\"PA\").");
+    // GGUF MTP models keep linear-attention state, for which MTP samples only without prefix caching.
+    // Keep the model's recommended sampling usable unless the caller passes a scheduler config.
+    auto default_scheduler_config = ov::genai::utils::get_latency_oriented_scheduler_config();
+    default_scheduler_config.enable_prefix_caching = false;
+    auto [device_properties, scheduler_config] =
+        ov::genai::utils::extract_scheduler_config(properties, default_scheduler_config);
+    device_properties["sampler_num_threads"] = 1;
+    std::unique_ptr<ov::genai::ContinuousBatchingPipeline> pipeline;
+    if (tokenizer) {
+        pipeline = std::make_unique<ov::genai::ContinuousBatchingPipeline>(models_path,
+                                                                           *tokenizer,
+                                                                           scheduler_config,
+                                                                           device,
+                                                                           device_properties);
+    } else {
+        pipeline = std::make_unique<ov::genai::ContinuousBatchingPipeline>(models_path,
+                                                                           scheduler_config,
+                                                                           device,
+                                                                           device_properties);
+    }
+    return std::make_unique<ov::genai::ContinuousBatchingAdapter>(std::move(pipeline));
+}
+
 // With the main model on NPU, NPUW_PA=YES selects the NPU PA front-end, which runs under continuous batching.
 // It is read from the language model's compile properties, the ones continuous batching compiles with.
 // Without it the NPU runs the stateful pipeline, so explicit PA requests are rejected instead of ignored.
@@ -159,6 +192,10 @@ std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!is_gguf_model(models_path),
+                    "A GGUF MTP draft runs only with its own GGUF target. Pass the GGUF file as the model and set "
+                    "speculative_type=\"mtp\".");
+
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     const bool is_mtp = std::filesystem::exists(models_path / "openvino_mtp_model.xml");
@@ -198,12 +235,9 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& properties) {
-    return create(ov::genai::utils::read_model(models_path, properties),
-                  tokenizer,
-                  device,
-                  properties,
-                  utils::from_config_json_if_exists(models_path),
-                  models_path);
+    auto model = ov::genai::utils::read_model(models_path, properties);
+    const auto generation_config = utils::from_config_json_or_model(models_path, *model);
+    return create(model, tokenizer, device, properties, generation_config, models_path);
 }
 
 static std::unique_ptr<LLMPipelineImplBase> create(
@@ -283,9 +317,16 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& user_properties) :
+    const ov::AnyMap& input_properties) :
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
+    if (is_gguf_mtp_request(models_path, input_properties)) {
+        m_pimpl = create_gguf_mtp_pipeline(models_path, tokenizer, device, input_properties);
+        utils::log_attention_backend(m_pimpl->get_attention_backend());
+        m_pimpl->save_load_time(start_time);
+        return;
+    }
+    const auto user_properties = resolve_draft_model_request(models_path, device, input_properties);
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
@@ -295,7 +336,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
-    const auto generation_config = utils::from_config_json_if_exists(models_path);
+    const auto generation_config = utils::from_config_json_or_model(models_path, *model);
     if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
         // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
         auto [device_properties, scheduler_config] =
@@ -341,9 +382,16 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& user_properties) :
+    const ov::AnyMap& input_properties) :
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
+    if (is_gguf_mtp_request(models_path, input_properties)) {
+        m_pimpl = create_gguf_mtp_pipeline(models_path, std::nullopt, device, input_properties);
+        utils::log_attention_backend(m_pimpl->get_attention_backend());
+        m_pimpl->save_load_time(start_time);
+        return;
+    }
+    const auto user_properties = resolve_draft_model_request(models_path, device, input_properties);
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
@@ -368,7 +416,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     // On the from-file path the frontend's metadata is still on the model and no longer read.
     erase_gguf_tokenizer_metadata(model);
 
-    const auto generation_config = utils::from_config_json_if_exists(models_path);
+    const auto generation_config = utils::from_config_json_or_model(models_path, *model);
     if (use_npuw_pa(device, user_properties, properties, attention_backend)) {
         // NPUW_PA=YES is an explicit continuous batching request, so errors propagate with no fallback
         auto [device_properties, scheduler_config] =

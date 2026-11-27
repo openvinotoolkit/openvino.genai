@@ -66,15 +66,64 @@ void assert_supported_add_request_lora_modes(const std::optional<AdapterConfig>&
     assert_supported_add_request_lora_mode(sampling_params.adapters);
 }
 
+struct GGUFMtpParts {
+    ModelDesc main;
+    ModelDesc draft;
+    std::shared_ptr<InputsEmbedder> embedder;
+};
+
+// One frontend conversion gives the target, its token embeddings and the MTP draft with shared weights.
+GGUFMtpParts load_gguf_mtp_parts(const std::filesystem::path& models_path,
+                                 const SchedulerConfig& scheduler_config,
+                                 const std::string& device,
+                                 const ov::AnyMap& input_properties,
+                                 const std::optional<Tokenizer>& tokenizer,
+                                 const ov::AnyMap& tokenizer_properties) {
+    auto properties = input_properties;
+    strip_gguf_mtp_request(models_path, properties);
+    utils::extract_extensions_to_core(properties);
+    const auto gguf_properties = gguf_utils::extract_gguf_properties(properties);
+    OPENVINO_ASSERT(!gguf_properties.legacy_reader.value_or(false), "GGUF MTP requires GGUF_READER=\"FRONTEND\".");
+    OPENVINO_ASSERT(!gguf_properties.enable_save_ov_model, "Saving a GGUF MTP model is not supported.");
+    auto models = gguf_utils::read_gguf_mtp_models(models_path, gguf_properties);
+    const Tokenizer mtp_tokenizer =
+        tokenizer ? *tokenizer
+                  : Tokenizer(GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(models.target)),
+                                            tokenizer_properties));
+    erase_gguf_tokenizer_metadata(models.target);
+    auto plugin_config = gguf_properties.rest;
+    plugin_config[ov::cache_model_path.name()] = models_path;
+    const auto generation_config = utils::from_config_json_or_model(models_path, *models.target);
+    auto embedder_config = plugin_config;
+    embedder_config.erase("sampler_num_threads");
+    auto embedder = std::make_shared<InputsEmbedder>(models.text_embeddings, mtp_tokenizer, device, embedder_config);
+    return {ModelDesc(models.target, mtp_tokenizer, device, plugin_config, scheduler_config, generation_config),
+            ModelDesc(models.draft, mtp_tokenizer, device, plugin_config, {}, generation_config),
+            std::move(embedder)};
+}
+
 } // namespace
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
-                                                        const ov::AnyMap& properties,
+                                                        const ov::AnyMap& input_properties,
                                                         const ov::AnyMap& tokenizer_properties,
                                                         const ov::AnyMap& vision_encoder_properties) {
     auto start_time = std::chrono::steady_clock::now();
+    if (is_gguf_mtp_request(models_path, input_properties)) {
+        auto parts = load_gguf_mtp_parts(models_path,
+                                         scheduler_config,
+                                         device,
+                                         input_properties,
+                                         std::nullopt,
+                                         tokenizer_properties);
+        utils::print_scheduler_config_info(scheduler_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(parts.main, parts.draft, parts.embedder);
+        m_impl->m_load_time_ms = get_load_time(start_time);
+        return;
+    }
+    const auto properties = resolve_draft_model_request(models_path, device, input_properties);
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
@@ -97,12 +146,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
             ? GGUFTokenizer(GGUFTokenizerParameters(take_gguf_tokenizer_metadata(model)), tokenizer_properties)
             : Tokenizer(models_path, tokenizer_properties);
     erase_gguf_tokenizer_metadata(model);
-    auto generation_config = utils::from_config_json_if_exists(models_path);
+    auto generation_config = utils::from_config_json_or_model(models_path, *model);
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,
-                                                    forward_adapters_to_submodels(properties_without_draft_model));
+                                                    forward_adapters_to_submodels(gguf_properties.rest));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -216,8 +265,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& input_properties) {
     auto start_time = std::chrono::steady_clock::now();
+    if (is_gguf_mtp_request(models_path, input_properties)) {
+        auto parts = load_gguf_mtp_parts(models_path, scheduler_config, device, input_properties, tokenizer, {});
+        utils::print_scheduler_config_info(scheduler_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(parts.main, parts.draft, parts.embedder);
+        m_impl->m_load_time_ms = get_load_time(start_time);
+        return;
+    }
+    const auto properties = resolve_draft_model_request(models_path, device, input_properties);
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
@@ -233,7 +290,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model_without_gguf = gguf_utils::extract_gguf_properties(properties_without_draft_model).rest;
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
-    auto generation_config = utils::from_config_json_if_exists(models_path);
+    auto generation_config = utils::from_config_json_or_model(models_path, *model);
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, tokenizer, device,

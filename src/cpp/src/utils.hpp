@@ -144,6 +144,11 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
     return std::filesystem::exists(config_file_path) ? Config{config_file_path} : Config{};
 }
 
+// Without generation_config.json, starts from the sampling a converter recorded in the model's
+// rt_info "generation_config" (the GGUF frontend stores general.sampling.* there).
+ov::genai::GenerationConfig from_config_json_or_model(const std::filesystem::path& models_path,
+                                                      const ov::Model& model);
+
 OPENVINO_GENAI_EXPORTS ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 ov::genai::OmniSpeechStreamerVariant get_speech_streamer_from_map(const ov::AnyMap& config_map);
 

@@ -39,7 +39,6 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
         result.legacy_reader = reader == LEGACY_GGUF_READER;
         result.rest.erase(reader_it);
     }
-
     return result;
 }
 
@@ -59,6 +58,23 @@ std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_pa
         }
         throw;
     }
+#else
+    OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+#endif
+}
+
+GGUFMtpModels read_gguf_mtp_models(const std::filesystem::path& model_path, const GGUFProperties& properties) {
+#ifdef ENABLE_GGUF
+    OPENVINO_ASSERT(!properties.legacy_reader.value_or(false), "GGUF MTP drafts require GGUF_READER=\"FRONTEND\".");
+    OPENVINO_ASSERT(!properties.enable_save_ov_model, "Saving a GGUF MTP draft is not supported.");
+    const auto models = convert_gguf_with_frontend(model_path.string(), true);
+    const auto draft = models.find("mtp_draft");
+    OPENVINO_ASSERT(draft != models.end(),
+                    "A GGUF draft model must contain supported MTP layers (<arch>.nextn_predict_layers > 0): ",
+                    model_path.string());
+    const auto embeddings = models.find("text_embeddings");
+    OPENVINO_ASSERT(embeddings != models.end(), "The GGUF frontend did not return text embeddings for an MTP model.");
+    return {models.at("language"), embeddings->second, draft->second};
 #else
     OPENVINO_THROW("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif

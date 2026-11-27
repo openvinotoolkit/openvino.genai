@@ -70,7 +70,7 @@
 
 - name: GGUF Reader tests
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_gguf_reader.py
+    python -m pytest -v ./tests/python_tests/test_gguf_reader.py ./tests/python_tests/test_gguf_mtp.py
   timeout: 60
   components:
     - GGUF

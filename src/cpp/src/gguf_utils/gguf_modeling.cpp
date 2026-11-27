@@ -142,14 +142,22 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path) {
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path, bool include_mtp_draft) {
     ov::frontend::gguf::FrontEnd frontend;
-    auto converted_model = frontend.convert(frontend.load(model_path));
+    const auto input_model = include_mtp_draft
+                                 ? frontend.load(model_path, ov::frontend::gguf::LoadOptions{true})
+                                 : frontend.load(model_path);
+    auto converted_model = frontend.convert(input_model);
     OPENVINO_ASSERT(!converted_model->has_rt_info("gguf_mmproj"),
                     "GGUF file '",
                     model_path,
                     "' is an mmproj and cannot be loaded as a language model.");
-    return ov::frontend::gguf::adapt_to_genai(converted_model);
+    ov::frontend::gguf::GenAIAdaptOptions options;
+    if (include_mtp_draft) {
+        // Text-only MTP: embedding inputs with ordinary [batch, sequence] positions.
+        options.input = ov::frontend::gguf::pass::AdaptToGenAI::InputMode::EMBEDS_TO_LOGITS_TEXT;
+    }
+    return ov::frontend::gguf::adapt_to_genai(converted_model, options);
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,

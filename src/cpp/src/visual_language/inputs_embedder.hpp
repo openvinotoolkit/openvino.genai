@@ -60,6 +60,12 @@ public:
                    const std::string& device,
                    const ov::AnyMap device_config);
 
+    /// Text-only embedder over a token embedding model, used by GGUF MTP targets.
+    InputsEmbedder(const std::shared_ptr<ov::Model>& text_embeddings,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   const ov::AnyMap& properties);
+
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 

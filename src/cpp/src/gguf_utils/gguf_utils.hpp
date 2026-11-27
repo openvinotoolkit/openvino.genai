@@ -32,6 +32,13 @@ GGUFProperties extract_gguf_properties(const ov::AnyMap& properties);
 std::shared_ptr<ov::Model> read_gguf_model(const std::filesystem::path& model_path,
                                          const GGUFProperties& properties);
 bool has_gguf_recurrent_states(const ov::Model& model);
+struct GGUFMtpModels {
+    std::shared_ptr<ov::Model> target;
+    std::shared_ptr<ov::Model> text_embeddings;
+    std::shared_ptr<ov::Model> draft;
+};
+/// Converts the target, its token embeddings and its MTP draft once, with shared weight buffers.
+GGUFMtpModels read_gguf_mtp_models(const std::filesystem::path& model_path, const GGUFProperties& properties);
 
 }  // namespace gguf_utils
 }  // namespace ov::genai

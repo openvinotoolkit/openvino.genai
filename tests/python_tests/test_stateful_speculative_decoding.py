@@ -485,6 +485,16 @@ def test_qwen38_flash_next_mtp_cb_add_request(qwen38_flash_next_mtp_cb_pipe: ov_
     assert len(outputs[0].generated_ids) == generation_config.max_new_tokens
 
 
+def test_qwen38_flash_next_mtp_cb_rejects_token_ids(qwen38_flash_next_mtp_cb_pipe: ov_genai.ContinuousBatchingPipeline):
+    input_ids = ov.Tensor(np.array([[1, 2]], dtype=np.int64))
+    with pytest.raises(RuntimeError, match="M-RoPE positions"):
+        qwen38_flash_next_mtp_cb_pipe.add_request(
+            0,
+            input_ids,
+            ov_genai.GenerationConfig(max_new_tokens=1, num_assistant_tokens=1),
+        )
+
+
 # Eagle3 specific tests
 eagle3_models_and_input = [
     (

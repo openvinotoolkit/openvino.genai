@@ -106,6 +106,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         std::vector<GenerationResult> results;
         for (auto& vlm_result : results_vlm) {
             GenerationResult result;
+            result.m_request_id = results.size();
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
@@ -232,6 +233,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         std::vector<GenerationResult> results;
         for (auto& vlm_result : results_vlm) {
             GenerationResult result;
+            result.m_request_id = results.size();
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
@@ -341,14 +343,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-             const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& images_vector,
-             const std::vector<std::vector<ov::Tensor>>& videos_vector,
-             const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
-             const std::vector<std::vector<ov::Tensor>>& audios_vector,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer,
-             std::shared_ptr<OmniStreamerBase> omni_streamer) {
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    std::shared_ptr<OmniStreamerBase> omni_streamer
+) {
     PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
@@ -718,12 +721,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
     // Omni speech needs the exact prompt-token slice the Thinker consumed, but collecting it must
     // not force ChatHistory through the string path (which would misplace multimodal tokens).
-    const bool capture_prompt_ids = omni_streamer ||
-                                    std::any_of(sampling_params.begin(), sampling_params.end(),
-                                                [](const GenerationConfig& params) {
-                                                    return params.return_omni_outputs ||
-                                                           params.is_assisting_generation();
-                                                });
+    const bool capture_prompt_ids =
+        omni_streamer ||
+        std::any_of(sampling_params.begin(), sampling_params.end(), [this](const GenerationConfig& params) {
+            return params.return_omni_outputs || params.is_assisting_generation() ||
+                   requires_prompt_ids_for_generation();
+        });
 
     std::vector<VLMChatContext> chat_contexts;
     chat_contexts.reserve(histories.size());
@@ -936,7 +939,9 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
 
         const auto [unified_prompt, image_sequence, video_sequence, audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, 0, encoded_images, encoded_videos, encoded_audios);
-        const bool capture_prompt_ids = sampling_params.is_prompt_lookup() || sampling_params.is_assisting_generation();
+        const bool capture_prompt_ids = sampling_params.is_prompt_lookup() ||
+                                        sampling_params.is_assisting_generation() ||
+                                        requires_prompt_ids_for_generation();
         const size_t cache_size_before =
             capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 

@@ -43,6 +43,13 @@ public:
         m_generation_config = m_impl->get_config();
         }
 
+    explicit ContinuousBatchingAdapter(std::unique_ptr<ContinuousBatchingPipeline> pipeline)
+        : LLMPipelineImplBase{pipeline->get_tokenizer(), GenerationConfig()},
+          m_impl{std::move(pipeline)} {
+        set_attention_backend(PA_BACKEND);
+        m_generation_config = m_impl->get_config();
+    }
+
     ContinuousBatchingAdapter(
         const std::shared_ptr<ov::Model>& model,
         const Tokenizer& tokenizer,
