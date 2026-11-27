@@ -253,7 +253,7 @@ def _wwb_retry_delay(output: str) -> int | None:
     if not output or not WWB_TRANSIENT_ERROR.search(output):
         return None
     retry_after = [int(seconds) for seconds in WWB_RETRY_AFTER.findall(output)]
-    # A few extra seconds so the rerun doesn't start right at the window boundary
+    # A few extra seconds so the rerun does not start right at the window boundary
     delay = max(retry_after) + 5 if retry_after else WWB_DEFAULT_RETRY_DELAY_SECONDS
     return min(delay, WWB_MAX_RETRY_DELAY_SECONDS)
 
