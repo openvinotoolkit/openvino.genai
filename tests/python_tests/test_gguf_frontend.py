@@ -7,6 +7,8 @@ See README.md, "GGUF Frontend Tests", for the steps, CI runtime and model-covera
 """
 
 import gc
+import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -21,6 +23,13 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 import openvino as ov
 import openvino_genai as genai
+
+from test_gguf_generated import llama_reference_tools
+from test_vlm_pipeline import (
+    VlmModelInfo,
+    run_vlm_pipeline as run_vlm_image_test,
+    run_vlm_start_chat_vs_chat_history as run_vlm_chat_test,
+)
 
 from utils.comparation import compare_generation_results
 from utils.constants import extra_generate_kwargs, get_default_llm_properties
@@ -88,6 +97,12 @@ TINY_GGUF_MODELS = [
         id="gemma3",
     ),
 ]
+
+
+TINY_GGUF_VLM_MODELS = {
+    "qwen35": ("qwen3.5", "aa8ac4a953c6081e0afaa34bd95cefd9c852ddbf"),
+    "qwen35moe": ("qwen3.5-moe", "3061bafacf5a42fc57e620dc54ab19fae19ad594"),
+}
 
 
 def reference_properties():
@@ -304,3 +319,191 @@ def test_tiny_gguf_saved_ir(tiny_gguf_model, pipeline_type, tmp_path):
     del pipeline
     reloaded = create_ov_pipeline(tmp_path, pipeline_type=pipeline_type, ov_config=reference_properties())
     assert reloaded.generate(prompt, config) == expected
+
+
+@pytest.fixture(scope="module")
+def tiny_gguf_vlm_model(request, llama_reference_tools, tmp_path_factory):
+    from test_gguf_generated import run_reference_command
+
+    family = getattr(request, "param", "qwen35")
+    name, revision = TINY_GGUF_VLM_MODELS[family]
+    source = Path(
+        retry_request(
+            lambda: snapshot_download("optimum-intel-internal-testing/tiny-random-" + name, revision=revision)
+        )
+    )
+    converter = llama_reference_tools[0].parent.parent / "_deps" / "llama_cpp-src" / "convert_hf_to_gguf.py"
+    directory = Path.home() / "gguf_models" / "genai_vlm_tests" / family
+    directory.mkdir(parents=True, exist_ok=True)
+    fixture_source = tmp_path_factory.mktemp(family)
+    config = json.loads((source / "config.json").read_text(encoding="utf-8"))
+    # The production mRoPE default exceeds the tiny model's rotary width.
+    config["text_config"]["rope_parameters"]["mrope_section"] = [1, 1, 0]
+    for path in source.iterdir():
+        if path.name != "config.json":
+            shutil.copy2(path, fixture_source / path.name)
+    (fixture_source / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    language, projector = directory / "model.gguf", directory / "mmproj.gguf"
+    converter_env = os.environ.copy()
+    converter_env["PYTHONPATH"] = os.pathsep.join([str(converter.parent / "gguf-py"), str(converter.parent)])
+    for output, options in [(language, ["--no-mtp"]), (projector, ["--mmproj"])]:
+        command = [
+            sys.executable,
+            str(converter),
+            str(fixture_source),
+            "--outfile",
+            str(output),
+            "--outtype",
+            "f32",
+            *options,
+        ]
+        run_reference_command(command, timeout=300, env=converter_env)
+    return language, projector
+
+
+@pytest.fixture
+def gguf_vlm_pipelines(tiny_gguf_vlm_model):
+    language, projector = tiny_gguf_vlm_model
+    name, _ = TINY_GGUF_VLM_MODELS[language.parent.name]
+    model_id = "optimum-intel-internal-testing/tiny-random-" + name
+    pipelines = []
+    for backend in ["SDPA", "PA"]:
+        pipeline = genai.VLMPipeline(
+            language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **reference_properties()
+        )
+        pipelines.append(VlmModelInfo(model_id, backend, lambda idx: "", lambda idx: "", 24, pipeline, False))
+    return pipelines
+
+
+@pytest.mark.parametrize("tiny_gguf_vlm_model", list(TINY_GGUF_VLM_MODELS), indirect=True)
+@pytest.mark.parametrize("media", ["image", "video"])
+@pytest.mark.parametrize("backend", ["SDPA", "PA"])
+def test_gguf_vlm_projector_layouts(tiny_gguf_vlm_model, backend, media):
+    language, projector = tiny_gguf_vlm_model
+    pipeline = genai.VLMPipeline(
+        language, "CPU", mmproj_path=str(projector), ATTENTION_BACKEND=backend, **reference_properties()
+    )
+    image = np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8)
+    inputs = {"images": [ov.Tensor(image)]}
+    if media == "video":
+        metadata = genai.VideoMetadata()
+        metadata.fps = 2.0
+        inputs = {"videos": [ov.Tensor(np.repeat(image, 4, axis=0))], "videos_metadata": [metadata]}
+    options = {"max_new_tokens": 2, "do_sample": False, "ignore_eos": True}
+    result = pipeline.generate("Describe.", **inputs, **options)
+    assert result.perf_metrics.get_num_generated_tokens() == 2
+    assert result.perf_metrics.get_num_input_tokens() > 0
+    assert pipeline.generate("Describe.", **inputs, **options).texts == result.texts
+
+
+def test_gguf_vlm_attention_backends_and_images(gguf_vlm_pipelines):
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = genai.GenerationConfig(max_new_tokens=8, do_sample=False, ignore_eos=True)
+    for images in [[image], [image, image]]:
+        results = [run_vlm_image_test(info, images, generation_config=config) for info in gguf_vlm_pipelines]
+        assert results[0].texts == results[1].texts
+        assert [run_vlm_image_test(info, images, generation_config=config).texts for info in gguf_vlm_pipelines] == [
+            r.texts for r in results
+        ]
+
+
+@pytest.mark.parametrize("reader", ["LEGACY", "INVALID"])
+def test_gguf_vlm_rejects_incompatible_reader(tiny_gguf_vlm_model, reader):
+    language, projector = tiny_gguf_vlm_model
+    with pytest.raises(RuntimeError, match="GGUF.*reader|GGUF_READER"):
+        genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), GGUF_READER=reader)
+
+
+def test_gguf_vlm_attention_backends_and_chat(gguf_vlm_pipelines):
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = genai.GenerationConfig(max_new_tokens=8, do_sample=False, ignore_eos=True)
+    answers = [run_vlm_chat_test(info, [[image], [image]], generation_config=config) for info in gguf_vlm_pipelines]
+    assert answers[0] == answers[1]
+
+
+def test_gguf_vlm_requires_projector(tiny_gguf_vlm_model):
+    language, _ = tiny_gguf_vlm_model
+    with pytest.raises(RuntimeError, match="mmproj_path"):
+        genai.VLMPipeline(language, "CPU")
+
+
+@pytest.mark.parametrize("option", ["prompt_lookup", "adapters_sdpa", "adapters_pa"])
+def test_gguf_vlm_language_properties(tiny_gguf_vlm_model, option):
+    language, projector = tiny_gguf_vlm_model
+    properties = reference_properties()
+    properties["ATTENTION_BACKEND"] = "SDPA" if option == "adapters_sdpa" else "PA"
+    baseline = genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), **properties)
+    properties["adapters"] = genai.AdapterConfig()
+    if option == "prompt_lookup":
+        properties["prompt_lookup"] = True
+    pipe = genai.VLMPipeline(language, "CPU", mmproj_path=str(projector), **properties)
+    defaults = pipe.get_generation_config()
+    assert defaults.eos_token_id == baseline.get_generation_config().eos_token_id
+    assert defaults.stop_token_ids == baseline.get_generation_config().stop_token_ids
+    assert defaults.adapters is not None
+    image = ov.Tensor(np.random.default_rng(0).integers(0, 256, (1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 8, "do_sample": False, "ignore_eos": True}
+    if option == "prompt_lookup":
+        config["num_assistant_tokens"] = 3
+        config["max_ngram_size"] = 3
+    assert (
+        pipe.generate("Describe the image.", images=[image], **config).texts
+        == baseline.generate("Describe the image.", images=[image], **config).texts
+    )
+
+
+@pytest.mark.parametrize("prompt_lookup", [False, True])
+@pytest.mark.parametrize("top_level", ["absent", "empty", "active"])
+def test_gguf_vlm_language_adapter_overlay(tiny_gguf_vlm_model, tmp_path, prompt_lookup, top_level):
+    from safetensors.numpy import save_file
+
+    language, projector = tiny_gguf_vlm_model
+    frontend = ov.frontend.FrontEndManager().load_by_framework("gguf")
+    model = frontend.convert(frontend.load(str(language)))
+    head = next(
+        op for op in model.get_ops() if op.get_type_name() == "MatMul" and "result_output" in op.get_friendly_name()
+    )
+    vocab_size, hidden_size = head.input(1).get_shape()
+    weights = np.zeros((vocab_size, 1), dtype=np.float32)
+    weights[1000] = 1000
+    weights[1001] = -1000
+    adapter_path = tmp_path / "language_adapter.safetensors"
+    save_file(
+        {
+            "base_model.model.logits.lora_A.weight": np.ones((1, hidden_size), dtype=np.float32),
+            "base_model.model.logits.lora_B.weight": weights,
+        },
+        str(adapter_path),
+    )
+    adapter = genai.AdapterConfig(genai.Adapter(str(adapter_path)), 1.0, genai.AdapterConfig.Mode.MODE_DYNAMIC)
+    empty_adapter = genai.AdapterConfig()
+    properties = {
+        **reference_properties(),
+        "ATTENTION_BACKEND": "PA" if prompt_lookup else "SDPA",
+        "prompt_lookup": prompt_lookup,
+        "mmproj_path": str(projector),
+    }
+    baseline = genai.VLMPipeline(language, "CPU", **properties)
+    active = genai.VLMPipeline(language, "CPU", adapters=adapter, **properties)
+    role_adapter = empty_adapter if top_level == "active" else adapter
+    if top_level != "absent":
+        properties["adapters"] = adapter if top_level == "active" else empty_adapter
+    properties["MODEL_PROPERTIES"] = {"language_model": {"adapters": role_adapter}}
+    pipe = genai.VLMPipeline(language, "CPU", **properties)
+    defaults = pipe.get_generation_config()
+    assert defaults.adapters is not None
+    assert len(defaults.adapters.get_adapters()) == (0 if top_level == "active" else 1)
+
+    image = ov.Tensor(np.zeros((1, 48, 64, 3), dtype=np.uint8))
+    config = {"max_new_tokens": 4, "do_sample": False, "ignore_eos": True}
+    if prompt_lookup:
+        config.update(num_assistant_tokens=3, max_ngram_size=3)
+    without_adapter = baseline.generate("Describe.", images=[image], **config).texts
+    with_adapter = active.generate("Describe.", images=[image], **config).texts
+    assert with_adapter != without_adapter
+    assert pipe.generate("Describe.", images=[image], **config).texts == (
+        without_adapter if top_level == "active" else with_adapter
+    )
+    if top_level != "active":
+        assert pipe.generate("Describe.", images=[image], adapters=empty_adapter, **config).texts == without_adapter
+        assert pipe.generate("Describe.", images=[image], **config).texts == with_adapter

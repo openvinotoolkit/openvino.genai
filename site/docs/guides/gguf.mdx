@@ -75,3 +75,30 @@ print(pipe.generate(history, max_new_tokens=64))
 ```
 
 Chat requires a suitable template in the GGUF metadata. See [Tokenization](./tokenization.mdx) for configuring the tokenizer and [Streaming](./streaming.mdx) for streamer behavior.
+
+## Generate with images or video
+
+Pass a Qwen3.5 or Qwen3.5 MoE language GGUF, such as Ternary Bonsai 2, together with its matching
+`qwen3vl_merger` projector GGUF to `VLMPipeline`. This route uses the OpenVINO GGUF frontend and
+reuses the image processing, embedding assembly, and generation code used for Optimum Intel exports.
+
+```python
+import numpy as np
+from PIL import Image
+import openvino as ov
+import openvino_genai as genai
+
+pipe = genai.VLMPipeline(
+    "model.gguf", "CPU", mmproj_path="mmproj.gguf"
+)
+image = ov.Tensor(np.asarray(Image.open("image.jpg").convert("RGB"))[None])
+print(pipe.generate("Describe the image.", images=[image], max_new_tokens=64))
+```
+
+In C++, pass `ov::AnyMap{{"mmproj_path", std::string("mmproj.gguf")}}` to the `VLMPipeline` constructor.
+The existing image, video, and chat APIs apply.
+Speculative decoding with `draft_model` is not supported for GGUF `VLMPipeline`.
+
+Compatibility checks cannot confirm that two files come from the same checkpoint, so use the
+checkpoint's matching projector. Paged attention is selected using the existing backend rules;
+request `ATTENTION_BACKEND="SDPA"` explicitly when needed.
