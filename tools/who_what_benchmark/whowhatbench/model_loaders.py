@@ -533,7 +533,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     try:
         import openvino_genai
     except ImportError as e:
-        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
+        logger.error("Failed to import openvino_genai package. Please install it. Details:\n%s", e)
         exit(-1)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
@@ -754,7 +754,7 @@ def load_image2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
     try:
         import openvino_genai
     except ImportError as e:
-        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
+        logger.error("Failed to import openvino_genai package. Please install it. Details:\n%s", e)
         exit(-1)
 
     return GenAIModelWrapper(
@@ -809,7 +809,7 @@ def load_inpainting_genai_pipeline(model_dir, device="CPU", ov_config=None):
     try:
         import openvino_genai
     except ImportError as e:
-        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
+        logger.error("Failed to import openvino_genai package. Please install it. Details:\n%s", e)
         exit(-1)
 
     return GenAIModelWrapper(
@@ -844,7 +844,7 @@ def load_inpainting_model(
         try:
             model = OVPipelineForInpainting.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError as e:
-            logger.error("Failed to load inpaiting pipeline. Details:\n", e)
+            logger.error("Failed to load inpainting pipeline. Details:\n%s", e)
             model = OVPipelineForInpainting.from_pretrained(
                 model_id,
                 trust_remote_code=True,
@@ -868,7 +868,7 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
     try:
         import openvino_genai
     except ImportError as e:
-        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
+        logger.error("Failed to import openvino_genai package. Please install it. Details:\n%s", e)
         exit(-1)
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
@@ -933,7 +933,7 @@ def load_reranking_genai_pipeline(model_dir, device="CPU", ov_config=None, is_qw
     try:
         import openvino_genai
     except ImportError as e:
-        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
+        logger.error("Failed to import openvino_genai package. Please install it. Details:\n%s", e)
         exit(-1)
 
     logger.info("Using OpenVINO GenAI TextRerankPipeline API")
