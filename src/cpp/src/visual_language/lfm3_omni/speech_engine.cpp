@@ -75,12 +75,11 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
                                                 const OmniSpeechStreamerVariant& speech_streamer) {
     LFM3SpeechState state(m_models.config(), request, speech_streamer);
     // The continuous batching sampler with the rules it gets on PA, so both backends draw the same text tokens.
-    const SamplingOverrides text_rules = lfm3_text_sampling_overrides(m_models.config());
-    LogitProcessor text_processor(request.text_config,
-                                  {},
-                                  nullptr,
-                                  text_rules.suppressed_token_ids.value_or(std::set<int64_t>{}),
-                                  text_rules.repetition_window);
+    auto text_rules = lfm3_text_sampling_overrides(m_models.config());
+    text_rules.forced_token = [&state] {
+        return state.forced_token();
+    };
+    LogitProcessor text_processor(request.text_config, {}, nullptr, text_rules);
     std::mt19937 text_rng(request.text_config.rng_seed);
     size_t generated_slots = 0;
 
@@ -121,18 +120,21 @@ LFM3SpeechResult LFM3OmniSpeechEngine::generate(const ov::Tensor& inputs_embeds,
     while (!state.finished()) {
         ov::Tensor next_embeds;
         text_processor.update_generated_len(generated_slots++);
+        // A frame slot draws its forced <|audio_out|> too, as on PA, so the random engine stays in step.
+        Logits logits(step.logits.data(), step.logits.size());
+        text_processor.apply(logits);
+        const Token token = request.text_config.is_greedy_decoding()
+                                ? greedy_sample(logits, request.text_config.logprobs)
+                                : SamplingDistribution(logits).sample(text_rng);
+        text_processor.register_new_generated_token(token.m_index);
         if (state.next_is_frame()) {
+            OPENVINO_ASSERT(token.m_index == m_models.config().audio_out_token_id,
+                            "LFM3-Omni frame slot sampled token ",
+                            token.m_index,
+                            " instead of the forced <|audio_out|>");
             next_embeds =
                 m_models.embed_frame(state.accept_frame(m_models.sample_frame(step.hidden_state, state), m_models));
-            // On PA every frame slot appends <|audio_out|> to the sequence.
-            text_processor.register_new_generated_token(m_models.config().audio_out_token_id);
         } else {
-            Logits logits(step.logits.data(), step.logits.size());
-            text_processor.apply(logits);
-            const Token token = request.text_config.is_greedy_decoding()
-                                    ? greedy_sample(logits, request.text_config.logprobs)
-                                    : SamplingDistribution(logits).sample(text_rng);
-            text_processor.register_new_generated_token(token.m_index);
             StreamingStatus status = StreamingStatus::RUNNING;
             if (streamer) {
                 text_streamer_guard.done = true;

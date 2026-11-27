@@ -34,8 +34,7 @@ public:
 
     /// @brief What a step hook did with a request after sampling; all fields empty to go on with the sampled token.
     struct RequestOutcome {
-        /// @brief Next input [1, 1, hidden_size] instead of the sampled token's embedding; required after a forced
-        /// token unless the request ends.
+        /// @brief Next input [1, 1, hidden_size] instead of the sampled token's embedding.
         std::optional<ov::Tensor> next_embedding;
         /// @brief Position ids of that input, copied; computed by the inputs embedder when absent.
         std::optional<ov::Tensor> position_ids;
@@ -49,7 +48,7 @@ public:
 
     /// @brief Called by add_request() on the caller's thread, before the request is built. inputs are embeddings
     /// [1, n, hidden_size] or token ids; appended prompt rows must also extend prompt_ids.
-    /// @param sampling_overrides Output: sampling rules of this request only.
+    /// @param sampling_overrides Output: sampling rules of this request only, a forced token among them.
     /// @param payload May be null.
     /// @return The state of a request the hook takes, else null.
     virtual std::unique_ptr<StepRequestState> before_add_request(
@@ -63,11 +62,8 @@ public:
     /// @param status FINISHED, IGNORED, STOP, CANCEL or FAILED.
     virtual void after_remove_request(StepRequestState& state, GenerationStatus status) = 0;
 
-    /// @brief After forward, before sampling: a forced token per request, or none to sample it. requests have state,
-    /// sample in this step and have exactly one sequence, get_sequences().front(), which may finish in sampling.
-    virtual std::vector<std::optional<int64_t>> before_sampling(const std::vector<SequenceGroup::Ptr>& requests) = 0;
-
-    /// @brief After sampling, before handles are notified: one outcome per request, in order.
+    /// @brief After sampling, before handles are notified: one outcome per request, in order. requests have state,
+    /// sampled in this step and have exactly one sequence, get_sequences().front(), which may have finished.
     virtual std::vector<RequestOutcome> after_sampling(const std::vector<SequenceGroup::Ptr>& requests) = 0;
 };
 

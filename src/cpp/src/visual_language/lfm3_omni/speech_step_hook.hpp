@@ -46,7 +46,6 @@ public:
                                                          SamplingOverrides& sampling_overrides,
                                                          const std::shared_ptr<StepRequestPayload>& payload) override;
     void after_remove_request(StepRequestState& state, GenerationStatus status) override;
-    std::vector<std::optional<int64_t>> before_sampling(const std::vector<SequenceGroup::Ptr>& requests) override;
     std::vector<RequestOutcome> after_sampling(const std::vector<SequenceGroup::Ptr>& requests) override;
 
 private:

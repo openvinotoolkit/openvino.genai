@@ -106,7 +106,6 @@ public:
     };
 
     using Requests = std::vector<SequenceGroup::Ptr>;
-    using Forcer = std::function<std::vector<std::optional<int64_t>>(const Requests&)>;
     using Outcomes = std::function<std::vector<RequestOutcome>(const Requests&)>;
 
     std::unique_ptr<StepRequestState> before_add_request(
@@ -121,11 +120,6 @@ public:
         }
         sampling_overrides = overrides;
         return std::make_unique<CountedState>(payload->tag, destroyed);
-    }
-
-    std::vector<std::optional<int64_t>> before_sampling(const Requests& requests) override {
-        before_sampling_calls.push_back(request_ids(requests));
-        return force ? force(requests) : std::vector<std::optional<int64_t>>(requests.size());
     }
 
     std::vector<RequestOutcome> after_sampling(const Requests& requests) override {
@@ -148,14 +142,12 @@ public:
 
     bool decline = false;
     SamplingOverrides overrides;
-    Forcer force;
     Outcomes outcomes;
     GenerationStatus failing_status = GenerationStatus::RUNNING;
     std::exception_ptr remove_failure;
 
     const std::shared_ptr<size_t> destroyed = std::make_shared<size_t>(0);
     std::vector<std::shared_ptr<StepRequestPayload>> created_payloads;
-    std::vector<std::vector<uint64_t>> before_sampling_calls;
     std::vector<std::vector<uint64_t>> after_sampling_calls;
     std::vector<RemoveCall> remove_calls;
 
@@ -194,12 +186,6 @@ FakeStepHook::Outcomes fail_request(uint64_t request_id, const std::exception_pt
             }
         }
         return outcomes;
-    };
-}
-
-FakeStepHook::Forcer force_every_request(int64_t token) {
-    return [token](const FakeStepHook::Requests& requests) {
-        return std::vector<std::optional<int64_t>>(requests.size(), token);
     };
 }
 
@@ -520,7 +506,6 @@ TEST_P(CBStepHookRemoveRequestTest, handle_end_maps_to_status) {
     pipeline.step();
 
     // A request whose handle ended before it samples reaches no hook call.
-    EXPECT_TRUE(hook->before_sampling_calls.empty());
     EXPECT_TRUE(hook->after_sampling_calls.empty());
     ASSERT_EQ(hook->remove_calls.size(), 1);
     EXPECT_EQ(hook->remove_calls[0].status, GetParam());
@@ -561,7 +546,7 @@ TEST_F(CBStepHookRemoveRequestTest, dropped_awaiting_request_is_never_pulled) {
 
     EXPECT_TRUE(pipeline.awaiting().empty());
     EXPECT_TRUE(pipeline.requests().empty());
-    EXPECT_TRUE(hook->before_sampling_calls.empty());
+    EXPECT_TRUE(hook->after_sampling_calls.empty());
     EXPECT_EQ(hook->remove_count(1), 1);
 }
 
@@ -738,12 +723,10 @@ TEST_F(CBStepHookStepTest, chunked_prefill_calls_hook_only_when_sampling) {
 
     pipeline.step();
 
-    EXPECT_TRUE(hook->before_sampling_calls.empty());
     EXPECT_TRUE(hook->after_sampling_calls.empty());
 
     pipeline.step();
 
-    EXPECT_EQ(hook->before_sampling_calls, (std::vector<std::vector<uint64_t>>{{0}}));
     EXPECT_EQ(hook->after_sampling_calls, (std::vector<std::vector<uint64_t>>{{0}}));
 }
 
@@ -755,24 +738,24 @@ TEST_F(CBStepHookStepTest, plain_request_reaches_no_hook_call) {
     pipeline.step();
     pipeline.step();
 
-    EXPECT_EQ(hook->before_sampling_calls, (std::vector<std::vector<uint64_t>>{{0}, {0}}));
     EXPECT_EQ(hook->after_sampling_calls, (std::vector<std::vector<uint64_t>>{{0}, {0}}));
 }
 
-TEST_F(CBStepHookStepTest, forced_token_is_recorded_and_request_ends) {
+TEST_F(CBStepHookStepTest, forced_token_from_hook_overrides_is_sampled) {
     PipelineTestInstance pipeline(hook);
-    hook->force = force_every_request(3);
-    // A forced request that goes on needs a next input, which token groups cannot take, so the request ends.
-    hook->outcomes = every_request(ending_outcome(GenerationStatus::FINISHED, GenerationFinishReason::STOP));
-    const auto handle = pipeline.add(0, {1}, make_config(4), payload(1));
+    hook->overrides.forced_token = [] {
+        return std::optional<int64_t>{3};
+    };
+    pipeline.add(0, {1}, make_config(4), payload(1));
+    pipeline.add(1, {2}, make_config(4));
 
     pipeline.step();
+    pipeline.step();
 
-    EXPECT_EQ(handle->get_status(), GenerationStatus::FINISHED);
-    const auto outputs = handle->read_all();
-    ASSERT_EQ(outputs.size(), 1);
-    EXPECT_EQ(outputs[0].generated_ids, TokenIds({3}));
-    EXPECT_EQ(outputs[0].finish_reason, GenerationFinishReason::STOP);
+    ASSERT_EQ(pipeline.requests().size(), 2);
+    EXPECT_EQ(pipeline.requests()[0]->get_sequences().front()->get_generated_ids(), TokenIds({3, 3}));
+    // Only the request the hook took gets its overrides.
+    EXPECT_NE(pipeline.requests()[1]->get_sequences().front()->get_generated_ids(), TokenIds({3, 3}));
 }
 
 TEST_F(CBStepHookStepTest, after_sampling_runs_once_for_all_requests) {
@@ -791,8 +774,6 @@ TEST_F(CBStepHookStepTest, after_sampling_runs_once_for_all_requests) {
 
     ASSERT_EQ(hook->after_sampling_calls.size(), 1);
     EXPECT_EQ(hook->after_sampling_calls[0].size(), 2);
-    ASSERT_EQ(hook->before_sampling_calls.size(), 1);
-    EXPECT_EQ(hook->after_sampling_calls[0], hook->before_sampling_calls[0]);
     EXPECT_EQ(last_hidden_values, (std::map<uint64_t, float>{{0, 5.0f}, {1, 4.0f}}));
 }
 
@@ -885,12 +866,7 @@ INSTANTIATE_TEST_SUITE_P(
                                        outcome.position_ids = token_tensor({1}, {1, 1});
                                        fake.outcomes = every_request(outcome);
                                    },
-                                   "Position ids need a next input"},
-                    BadOutcomeCase{"forced_request_goes_on_without_next_input",
-                                   [](FakeStepHook& fake) {
-                                       fake.force = force_every_request(3);
-                                   },
-                                   "needs its next input"}),
+                                   "Position ids need a next input"}),
     [](const testing::TestParamInfo<BadOutcomeCase>& info) {
         return info.param.name;
     });

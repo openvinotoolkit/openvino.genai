@@ -7,6 +7,8 @@
 #include <chrono>
 #include <cmath>
 #include <future>
+#include <limits>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <set>
@@ -160,17 +162,18 @@ const std::vector<float> TOKEN_ONE_WINS{0.0f, 1.0f};
 
 class SamplerForcedTokenTest : public testing::Test {
 protected:
-    static ForcedTokens force_token_zero(const SequenceGroup::Ptr& group) {
-        return {{group->get_sequences().front()->get_id(), 0}};
+    // Forces token 0 at the first num_forced samplings of group, then lets it sample.
+    static void force_token_zero(const SequenceGroup::Ptr& group,
+                                 size_t num_forced = std::numeric_limits<size_t>::max(),
+                                 SamplingOverrides overrides = {}) {
+        overrides.forced_token = [num_forced, calls = std::make_shared<size_t>(0)]() -> std::optional<int64_t> {
+            return (*calls)++ < num_forced ? std::optional<int64_t>{0} : std::nullopt;
+        };
+        group->set_sampling_overrides(std::move(overrides));
     }
 
-    SamplerOutput sample_one_row(const SequenceGroup::Ptr& group, const ForcedTokens& forced_tokens) {
-        return m_sampler.sample({group},
-                                make_logits_row(TOKEN_ONE_WINS),
-                                /*is_validation_mode_enabled=*/false,
-                                /*notify_handles=*/true,
-                                /*defer_sequence_group_updates=*/false,
-                                forced_tokens);
+    SamplerOutput sample_one_row(const SequenceGroup::Ptr& group) {
+        return m_sampler.sample({group}, make_logits_row(TOKEN_ONE_WINS));
     }
 
     Sampler m_sampler;
@@ -290,10 +293,38 @@ TEST(SamplerWorkerJoiningTest, preserves_successful_multi_request_results) {
 
 TEST_F(SamplerForcedTokenTest, records_forced_token_instead_of_sampling) {
     const auto group = make_scheduled_group(0);
+    force_token_zero(group);
 
-    sample_one_row(group, force_token_zero(group));
+    sample_one_row(group);
 
     EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), TokenIds({0}));
+}
+
+TEST_F(SamplerForcedTokenTest, forced_token_wins_over_its_suppression) {
+    // LFM3-Omni suppresses <|audio_out|> in text slots and forces it in frame slots.
+    const auto group = make_scheduled_group(0);
+    SamplingOverrides overrides;
+    overrides.suppressed_token_ids = std::set<int64_t>{0};
+    force_token_zero(group, 1, std::move(overrides));
+
+    EXPECT_EQ(sample_steps(group, {0.0f, 1.0f, 0.5f}, 2), TokenIds({0, 1}));
+}
+
+TEST_F(SamplerForcedTokenTest, forced_draw_advances_random_engine_as_sampled_one) {
+    // SDPA and PA draw a forced slot too, so the text tokens after it are the same on both.
+    GenerationConfig config;
+    config.do_sample = true;
+    config.max_new_tokens = 8;
+    const std::vector<float> uniform(16, 0.0f);
+    const auto sampled_group = make_scheduled_group(0, config);
+    const auto forced_group = make_scheduled_group(1, config);
+    force_token_zero(forced_group, 1);
+
+    const auto sampled = sample_steps(sampled_group, uniform, 6);
+    const auto forced = sample_steps(forced_group, uniform, 6);
+
+    EXPECT_EQ(forced.front(), 0);
+    EXPECT_EQ(TokenIds(forced.begin() + 1, forced.end()), TokenIds(sampled.begin() + 1, sampled.end()));
 }
 
 TEST_F(SamplerForcedTokenTest, forced_token_still_counts_towards_max_new_tokens) {
@@ -301,49 +332,31 @@ TEST_F(SamplerForcedTokenTest, forced_token_still_counts_towards_max_new_tokens)
     config.max_new_tokens = 1;
     const auto group = make_scheduled_group(0, config);
     const auto sequence = group->get_sequences().front();
+    force_token_zero(group);
 
-    const auto output = sample_one_row(group, force_token_zero(group));
+    const auto output = sample_one_row(group);
 
     EXPECT_TRUE(sequence->has_finished());
     EXPECT_EQ(sequence->get_finish_reason(), GenerationFinishReason::LENGTH);
     EXPECT_EQ(output.m_dropped_sequences, std::vector<uint64_t>({sequence->get_id()}));
 }
 
-TEST_F(SamplerForcedTokenTest, applies_to_one_call_only) {
+TEST_F(SamplerForcedTokenTest, samples_when_callback_returns_none) {
     const auto group = make_scheduled_group(0);
+    force_token_zero(group, 1);
 
-    sample_one_row(group, force_token_zero(group));
-    group->schedule_tokens(1);
-    sample_one_row(group, {});
-
-    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), TokenIds({0, 1}));
+    EXPECT_EQ(sample_steps(group, TOKEN_ONE_WINS, 2), TokenIds({0, 1}));
 }
 
-TEST_F(SamplerForcedTokenTest, goes_only_to_its_sequence) {
+TEST_F(SamplerForcedTokenTest, goes_only_to_its_request) {
     const auto forced_group = make_scheduled_group(0);
     const auto sampled_group = make_scheduled_group(1);
+    force_token_zero(forced_group);
 
-    m_sampler.sample({forced_group, sampled_group},
-                     make_logits(2),
-                     /*is_validation_mode_enabled=*/false,
-                     /*notify_handles=*/true,
-                     /*defer_sequence_group_updates=*/false,
-                     force_token_zero(forced_group));
+    m_sampler.sample({forced_group, sampled_group}, make_logits(2));
 
     EXPECT_EQ(forced_group->get_sequences().front()->get_generated_ids(), TokenIds({0}));
     EXPECT_EQ(sampled_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
-}
-
-TEST_F(SamplerForcedTokenTest, rejects_validation_mode) {
-    const auto group = make_scheduled_group(0);
-
-    EXPECT_THROW(m_sampler.sample({group},
-                                  make_logits_row(TOKEN_ONE_WINS),
-                                  /*is_validation_mode_enabled=*/true,
-                                  /*notify_handles=*/false,
-                                  /*defer_sequence_group_updates=*/false,
-                                  force_token_zero(group)),
-                 ov::Exception);
 }
 
 TEST(SamplerSamplingOverridesTest, suppressed_ids_replace_pipeline_set) {

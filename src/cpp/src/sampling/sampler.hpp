@@ -141,15 +141,6 @@ private:
 /// top_logprobs > 0.
 Token greedy_sample(const Logits& logits, size_t top_logprobs);
 
-/// @brief Tokens the sampler records instead of sampling, by sequence id; valid for one sample() call.
-using ForcedTokens = std::unordered_map<uint64_t, int64_t>;
-
-/// @brief Shared empty ForcedTokens: a default-constructed unordered_map allocates on MSVC, and sample() runs per step.
-inline const ForcedTokens& no_forced_tokens() {
-    static const ForcedTokens empty;
-    return empty;
-}
-
 class Sampler {
     class Searcher;
     class TreeSearcher;
@@ -184,8 +175,7 @@ class Sampler {
                              const ov::Tensor& sequence_group_logits,
                              RequestSamplerContext& context,
                              size_t num_tokens_to_process,
-                             SequenceGroupSamplingInfo& sg_sampling_info,
-                             const ForcedTokens& forced_tokens);
+                             SequenceGroupSamplingInfo& sg_sampling_info);
 
     // A main model step over a window of candidates: verifies the candidates in order, with speculative sampling for
     // sampled drafts and by exact match for greedy decoding and prompt lookup, then samples the token after the window.
@@ -209,8 +199,7 @@ class Sampler {
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
                                                         RequestSamplerContext& context,
                                                         bool is_validation_mode_enabled,
-                                                        bool notify_handle,
-                                                        const ForcedTokens& forced_tokens);
+                                                        bool notify_handle);
 
     // Block sampling of one request: samples one token from each gathered row, in row order, in place of the
     // request's trailing placeholder tokens. A sampled token carries its proposal when proposals are collected.
@@ -269,8 +258,7 @@ public:
                          ov::Tensor logits,
                          bool is_validation_mode_enabled = false,
                          bool notify_handles = true,
-                         bool defer_sequence_group_updates = false,
-                         const ForcedTokens& forced_tokens = no_forced_tokens());
+                         bool defer_sequence_group_updates = false);
 
     // Non-CB pipelines required API for seed. The CB path uses per-request engines from m_request_contexts.
     void set_seed(size_t new_seed) { m_default_seed = new_seed; }

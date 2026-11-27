@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <set>
 
@@ -21,6 +22,8 @@ struct SamplingOverrides {
     std::optional<std::set<int64_t>> suppressed_token_ids;
     /// @brief Replaces the repetition penalty history: prompt and all generated tokens.
     std::optional<RepetitionWindow> repetition_window;
+    /// @brief Called before each sampling of this request; a returned token is the only one it can sample.
+    std::function<std::optional<int64_t>()> forced_token;
 };
 
 }  // namespace ov::genai

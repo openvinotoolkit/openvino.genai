@@ -726,7 +726,9 @@ TEST(TopKThenTemperatureTest, DeferredExpfPathTemperatureOneIsNoOp) {
 TEST(LogitProcessorTest, SuppressedTokensKeepRawLogprobs) {
     GenerationConfig config;
     config.logprobs = 1;
-    LogitProcessor logit_processor(config, {}, nullptr, {1});
+    SamplingOverrides overrides;
+    overrides.suppressed_token_ids = std::set<int64_t>{1};
+    LogitProcessor logit_processor(config, {}, nullptr, overrides);
     float input[]{1.0f, 3.0f, 2.0f};
     Logits logits(input, 3);
     logit_processor.apply(logits);
@@ -734,6 +736,25 @@ TEST(LogitProcessorTest, SuppressedTokensKeepRawLogprobs) {
     EXPECT_FLOAT_EQ(logits.m_data[1], 3.0f);
     EXPECT_NEAR(logits.m_full_vocab_log_sum_exp, std::log(std::exp(1.0f) + std::exp(3.0f) + std::exp(2.0f)), 1e-5);
     EXPECT_EQ(logits.m_vector[1].m_log_prob, -std::numeric_limits<float>::infinity());
+}
+
+TEST(LogitProcessorTest, ForcedTokenMasksSamplingCopyWithLogprobs) {
+    GenerationConfig config;
+    config.logprobs = 1;
+    SamplingOverrides overrides;
+    overrides.suppressed_token_ids = std::set<int64_t>{1};
+    overrides.forced_token = [] {
+        return std::optional<int64_t>{1};
+    };
+    LogitProcessor processor(config, {}, nullptr, overrides);
+    float input[]{1.0f, 3.0f, 2.0f};
+    Logits logits(input, 3);
+    processor.apply(logits);
+    // The forced token survives its suppression, and the raw logits stay for its log-probability.
+    EXPECT_FLOAT_EQ(logits.m_data[1], 3.0f);
+    EXPECT_EQ(logits.m_vector[0].m_log_prob, -std::numeric_limits<float>::infinity());
+    EXPECT_EQ(logits.m_vector[1].m_log_prob, 0.0f);
+    EXPECT_EQ(logits.m_vector[2].m_log_prob, -std::numeric_limits<float>::infinity());
 }
 
 // Speculative decoding removes rejected draft tokens from the generated history. Token 3 keeps one of its two
@@ -765,7 +786,7 @@ TEST(LogitProcessorRepetitionWindow, PenalizesOnlyRecentNotIgnoredTokens) {
     GenerationConfig config;
     config.repetition_penalty = 2.0f;
     const RepetitionWindow window{2, {5}};
-    LogitProcessor processor(config, TokenIds{0}, nullptr, {}, window);
+    LogitProcessor processor(config, TokenIds{0}, nullptr, SamplingOverrides{{}, window, {}});
     for (const int64_t token : {1, 2, 5, 3, 5}) {
         processor.register_new_generated_token(token);
     }
@@ -783,7 +804,7 @@ TEST(LogitProcessorRepetitionWindow, PenalizesOnlyRecentNotIgnoredTokens) {
 TEST(LogitProcessorRepetitionWindow, PenalizesARepeatedTokenOnce) {
     GenerationConfig config;
     config.repetition_penalty = 2.0f;
-    LogitProcessor processor(config, {}, nullptr, {}, RepetitionWindow{4, {}});
+    LogitProcessor processor(config, {}, nullptr, SamplingOverrides{{}, RepetitionWindow{4, {}}, {}});
     for (const int64_t token : {1, 1, 1}) {
         processor.register_new_generated_token(token);
     }
@@ -797,7 +818,7 @@ TEST(LogitProcessorRepetitionWindow, PenalizesARepeatedTokenOnce) {
 TEST(LogitProcessorRepetitionWindow, RejectsRollback) {
     GenerationConfig config;
     config.repetition_penalty = 2.0f;
-    LogitProcessor processor(config, {}, nullptr, {}, RepetitionWindow{4, {}});
+    LogitProcessor processor(config, {}, nullptr, SamplingOverrides{{}, RepetitionWindow{4, {}}, {}});
     processor.register_new_generated_token(1);
     EXPECT_THROW(processor.decrease_generated_token_occurrence(1), ov::Exception);
 }

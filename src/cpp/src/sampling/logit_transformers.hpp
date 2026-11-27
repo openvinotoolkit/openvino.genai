@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 #include <deque>
+#include <functional>
+#include <optional>
 #include <set>
 
 #include "openvino/genai/generation_config.hpp"
@@ -569,6 +571,38 @@ public:
 protected:
     size_t m_applicable_tensor_len = std::numeric_limits<size_t>::max();
     std::set<int64_t> m_stop_token_ids;
+};
+
+/// @brief Leaves only the token a callback returns, so the later rules and the draw can pick nothing else.
+class ForcedTokenTransform : public ILogitTransformer {
+public:
+    explicit ForcedTokenTransform(std::function<std::optional<int64_t>()> forced_token)
+        : m_forced_token(std::move(forced_token)) {}
+
+    void apply(Logits& logits) override {
+        const std::optional<int64_t> token = m_forced_token();
+        if (!token) {
+            return;
+        }
+        OPENVINO_ASSERT(*token >= 0 && *token < static_cast<int64_t>(logits.m_size),
+                        "Forced token id is out of vocabulary range: ",
+                        *token);
+        constexpr float masked = -std::numeric_limits<float>::infinity();
+        if (logits.is_vector_initialized()) {
+            // The log-probability snapshot copied the whole vocabulary in order; no filter has run yet.
+            OPENVINO_ASSERT(logits.m_vector.size() == logits.m_size, "A forced token must precede the top_k filter");
+            for (auto& candidate : logits.m_vector) {
+                candidate.m_log_prob = masked;
+            }
+            logits.m_vector[*token].m_log_prob = 0.0f;
+        } else {
+            std::fill_n(logits.m_data, logits.m_size, masked);
+            logits.m_data[*token] = 0.0f;
+        }
+    }
+
+private:
+    std::function<std::optional<int64_t>()> m_forced_token;
 };
 
 class SuppressTokensTransform : public ILogitTransformer {

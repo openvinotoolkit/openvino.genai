@@ -469,6 +469,10 @@ bool LFM3SpeechState::next_is_frame() const {
     return m_mode == Mode::SPEECH || (m_mode == Mode::INTERLEAVED && m_speaking);
 }
 
+std::optional<int64_t> LFM3SpeechState::forced_token() const {
+    return next_is_frame() ? std::optional<int64_t>{m_config.audio_out_token_id} : std::nullopt;
+}
+
 std::vector<std::vector<int64_t>> LFM3SpeechState::codebook_history() const {
     std::vector<std::vector<int64_t>> history(m_config.num_codebooks);
     for (const auto& frame : m_audio_history) {

@@ -30,8 +30,7 @@ public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids,
                    std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr,
-                   const std::set<int64_t>& suppressed_token_ids = {},
-                   const std::optional<RepetitionWindow>& repetition_window = std::nullopt
+                   const SamplingOverrides& overrides = {}
     ) {
         for (const auto& input_id : input_ids) {
             m_unique_prompt_token_ids->insert(input_id);
@@ -48,9 +47,9 @@ public:
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::CopyLogitsToVectorTransform>());
         }
 
-        if (!suppressed_token_ids.empty()) {
+        if (overrides.suppressed_token_ids && !overrides.suppressed_token_ids->empty()) {
             m_logit_transformers.push_back(
-                std::make_shared<LogitTransformers::SuppressTokensTransform>(suppressed_token_ids));
+                std::make_shared<LogitTransformers::SuppressTokensTransform>(*overrides.suppressed_token_ids));
         }
 
         if (sampling_params.min_new_tokens > 0) {
@@ -58,6 +57,9 @@ public:
                 sampling_params.stop_token_ids, sampling_params.min_new_tokens));
         }
 
+        OPENVINO_ASSERT(
+            !overrides.forced_token || sampling_params.is_multinomial() || sampling_params.is_greedy_decoding(),
+            "A forced token needs greedy or multinomial sampling");
         OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation");
         if (sampling_params.is_structured_output_generation() && structured_output_controller != nullptr) {
             auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
@@ -66,6 +68,7 @@ public:
         }
 
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
+            const auto& repetition_window = overrides.repetition_window;
             if (sampling_params.repetition_penalty != 1.0f && repetition_window) {
                 auto transformer = std::make_shared<LogitTransformers::WindowedRepetitionPenaltyTransform>(
                     sampling_params.repetition_penalty, repetition_window->size, repetition_window->ignored_token_ids);
@@ -89,6 +92,12 @@ public:
                 m_logit_transformers.push_back(transformer);
             }
 
+            // After suppression and penalties, which may hit the forced token, and before the filters, which may
+            // drop it. The draw still runs, so the random engine advances as for a sampled token.
+            if (overrides.forced_token) {
+                m_logit_transformers.push_back(
+                    std::make_shared<LogitTransformers::ForcedTokenTransform>(overrides.forced_token));
+            }
             if (sampling_params.is_multinomial()) {
                 // Order: top_k → temperature → min_p → top_p
                 //

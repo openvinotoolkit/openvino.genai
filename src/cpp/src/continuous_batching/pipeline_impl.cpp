@@ -407,7 +407,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_reques
     if (m_step_hook) {
         step_state = m_step_hook->before_add_request(inputs, prompt_ids, sampling_overrides, step_payload);
     }
-    // Step work assumes one running sequence per request, and forced tokens reach only greedy or multinomial sampling.
+    // Step work assumes one running sequence per request.
     OPENVINO_ASSERT(!step_state ||
                         ((sampling_params_copy.is_greedy_decoding() || sampling_params_copy.is_multinomial()) &&
                          sampling_params_copy.num_return_sequences == 1 &&
@@ -920,24 +920,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     // process generation_config.echo parameter
     _fill_prompt_log_probs(m_requests, logits);
 
-    std::vector<std::optional<int64_t>> forced_tokens;
-    std::optional<ForcedTokens> forced_tokens_by_sequence;
-    if (!step_requests.empty()) {
-        forced_tokens = m_step_hook->before_sampling(step_requests);
-        OPENVINO_ASSERT(forced_tokens.size() == step_requests.size(),
-                        "A step hook must select one token or none per request, got ",
-                        forced_tokens.size(),
-                        " for ",
-                        step_requests.size());
-        forced_tokens_by_sequence.emplace();
-        for (size_t i = 0; i < step_requests.size(); ++i) {
-            if (forced_tokens[i]) {
-                forced_tokens_by_sequence->emplace(step_requests[i]->get_sequences().front()->get_id(),
-                                                   *forced_tokens[i]);
-            }
-        }
-    }
-
     SamplerOutput sampler_output;
     {
         static ManualTimer timer("sample");
@@ -949,9 +931,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
                                            logits,
                                            m_is_validation_mode_enabled,
                                            false,
-                                           defer_sequence_group_updates,
-                                           forced_tokens_by_sequence ? *forced_tokens_by_sequence
-                                                                     : no_forced_tokens());
+                                           defer_sequence_group_updates);
         m_pipeline_metrics.sampling_duration =
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
@@ -963,10 +943,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     std::vector<SequenceGroup::Ptr> failed_requests;
     if (!step_requests.empty()) {
         // Next inputs land before append_embeddings() below, which then skips them, and endings before notifications.
-        failed_requests = _apply_request_outcomes(step_requests,
-                                                  forced_tokens,
-                                                  m_step_hook->after_sampling(step_requests),
-                                                  sampler_output);
+        failed_requests =
+            _apply_request_outcomes(step_requests, m_step_hook->after_sampling(step_requests), sampler_output);
     }
 
     std::vector<std::pair<SequenceGroup::Ptr, SequenceGroup::PendingNotification>> deferred_notifications;
@@ -1645,7 +1623,6 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingIm
 
 std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingImpl::_apply_request_outcomes(
     const std::vector<SequenceGroup::Ptr>& requests,
-    const std::vector<std::optional<int64_t>>& forced_tokens,
     std::vector<IStepHook::RequestOutcome> outcomes,
     SamplerOutput& sampler_output) {
     OPENVINO_ASSERT(outcomes.size() == requests.size(),
@@ -1674,10 +1651,6 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingIm
                         request_id);
         OPENVINO_ASSERT(!outcome.position_ids || outcome.next_embedding,
                         "Position ids need a next input, request ",
-                        request_id);
-        OPENVINO_ASSERT(!forced_tokens[i] || outcome.ending || sequence->has_finished() || outcome.next_embedding,
-                        "A request with a forced token that goes on needs its next input; its placeholder token would "
-                        "be embedded, request ",
                         request_id);
         if (outcome.next_embedding) {
             m_model_runner->append_generated_embedding(request,

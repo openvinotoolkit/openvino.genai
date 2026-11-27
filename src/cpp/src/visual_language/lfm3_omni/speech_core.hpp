@@ -189,6 +189,8 @@ public:
     void start(size_t context_length);
 
     bool next_is_frame() const;
+    /// @brief <|audio_out|> before a frame slot, which feeds back the frame embedding, else none.
+    std::optional<int64_t> forced_token() const;
     bool finished() const {
         return m_finished;
     }

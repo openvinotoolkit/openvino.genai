@@ -153,7 +153,6 @@ protected:
     /// Checks the step hook's outcomes against its requests and applies their next inputs and endings.
     /// @return Requests failed by an outcome with an error, kept until the end of the step.
     std::vector<SequenceGroup::Ptr> _apply_request_outcomes(const std::vector<SequenceGroup::Ptr>& requests,
-                                                            const std::vector<std::optional<int64_t>>& forced_tokens,
                                                             std::vector<IStepHook::RequestOutcome> outcomes,
                                                             SamplerOutput& sampler_output);
 

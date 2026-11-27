@@ -109,6 +109,10 @@ std::unique_ptr<StepRequestState> LFM3SpeechStepHook::before_add_request(
     }
     speech.start(inputs_embeds.get_shape().at(1));
     sampling_overrides = lfm3_text_sampling_overrides(m_models->config());
+    // The sampler context of a request is cleared in the step its state ends, and it samples no more in between.
+    sampling_overrides.forced_token = [&speech] {
+        return speech.forced_token();
+    };
     return state;
 }
 
@@ -128,31 +132,6 @@ void LFM3SpeechStepHook::after_remove_request(StepRequestState& step_state, Gene
         state.result = state.speech.finish(*m_models);
     }
     state.payload->result = std::move(state.result);
-}
-
-std::vector<std::optional<int64_t>> LFM3SpeechStepHook::before_sampling(
-    const std::vector<SequenceGroup::Ptr>& requests) {
-    std::vector<std::optional<int64_t>> tokens;
-    tokens.reserve(requests.size());
-    for (const auto& request : requests) {
-        const auto& state = as_request_state(*request);
-        const auto& sequence = request->get_sequences().front();
-        // A request is freed in the step its speech ends, so it never samples again.
-        OPENVINO_ASSERT(!state.result,
-                        "LFM3-Omni speech request ",
-                        request->get_request_id(),
-                        " samples after its speech ended");
-        OPENVINO_ASSERT(state.speech.generated_slots() == sequence->get_generated_len(),
-                        "LFM3-Omni speech state is out of step with its sequence: ",
-                        state.speech.generated_slots(),
-                        " slots, ",
-                        sequence->get_generated_len(),
-                        " tokens");
-        // A frame slot feeds back <|audio_out|> with the frame embedding instead of a sampled token.
-        tokens.push_back(state.speech.next_is_frame() ? std::optional<int64_t>{m_models->config().audio_out_token_id}
-                                                      : std::nullopt);
-    }
-    return tokens;
 }
 
 std::vector<IStepHook::RequestOutcome> LFM3SpeechStepHook::after_sampling(
@@ -217,6 +196,12 @@ IStepHook::RequestOutcome LFM3SpeechStepHook::after_slot(const SequenceGroup& re
 
 std::vector<int64_t> LFM3SpeechStepHook::accept_frame_slot(RequestState& state, const Sequence& sequence) {
     auto& speech = state.speech;
+    const auto audio_out = m_models->config().audio_out_token_id;
+    OPENVINO_ASSERT(sequence.get_generated_ids().back() == audio_out,
+                    "LFM3-Omni frame slot sampled token ",
+                    sequence.get_generated_ids().back(),
+                    " instead of the forced <|audio_out|> ",
+                    audio_out);
     auto codes = speech.accept_frame(m_models->sample_frame(last_hidden_row(sequence), speech), *m_models);
     // The stop of an asynchronous text streamer may arrive in a frame slot, after its last text token.
     speech.accept_text_stream_status(text_stream_status(*state.payload));
