@@ -61,6 +61,9 @@ QWEN3_DSPARK = pytest.param((QWEN3, "optimum-intel-internal-testing/tiny-random-
 QWEN3_DSPARK_MARKOV_STEP = pytest.param(
     (QWEN3, "optimum-intel-internal-testing/tiny-random-qwen3-dspark", MARKOV_STEP), id="qwen3-dspark-markov_step"
 )
+QWEN3_DFLASH2 = pytest.param(
+    (QWEN3, "optimum-intel-internal-testing/tiny-random-qwen3-dflash2", {}), id="qwen3-dflash2"
+)
 QWEN35_DFLASH = pytest.param(
     (QWEN35, "optimum-intel-internal-testing/tiny-random-qwen3.5-dflash", {}), id="qwen3.5-dflash"
 )
@@ -72,7 +75,7 @@ MINICPMV47_DSPARK_MARKOV_STEP = pytest.param(
     id="minicpmv47-dspark-markov_step",
 )
 
-TEXT_TARGET_PAIRS = [QWEN3_DFLASH, QWEN3_DEEPSPEC, QWEN3_DSPARK, QWEN3_DSPARK_MARKOV_STEP]
+TEXT_TARGET_PAIRS = [QWEN3_DFLASH, QWEN3_DEEPSPEC, QWEN3_DSPARK, QWEN3_DSPARK_MARKOV_STEP, QWEN3_DFLASH2]
 VLM_TARGET_PAIRS = [QWEN35_DFLASH, MINICPMV47_DSPARK, MINICPMV47_DSPARK_MARKOV_STEP]
 PAIRS = TEXT_TARGET_PAIRS + VLM_TARGET_PAIRS
 
@@ -248,6 +251,31 @@ def _assert_all_tokens_generated(outputs: list, results: list) -> None:
         assert all(len(tokens) == BLOCK_MAX_NEW_TOKENS for tokens in outputs)
 
 
+def _assert_draft_steps_report_their_parts(pair: ModelPair, results: list) -> None:
+    # Every draft step reports its backbone forward, its Markov head inferences for a draft with a Markov head, and its
+    # sampling; the rest of the step is scheduling, input preparation and candidate submission.
+    metrics = results[0].extended_perf_metrics
+    parts = [metrics.draft_model_metrics, metrics.draft_sampling_metrics]
+    if (pair.draft_path / "openvino_markov_head_model.xml").exists():
+        parts.append(metrics.draft_markov_head_metrics)
+    else:
+        assert not metrics.draft_markov_head_metrics.raw_metrics.m_durations
+    steps = list(metrics.draft_step_metrics.raw_metrics.m_durations)
+    part_durations = [list(part.raw_metrics.m_durations) for part in parts]
+    assert steps and all(len(durations) == len(steps) for durations in part_durations)
+    for step, *step_parts in zip(steps, *part_durations):
+        # the step is truncated to whole microseconds
+        assert sum(step_parts) <= step + 0.002
+    # every candidate a draft step drafts is submitted to the target
+    submitted = list(metrics.draft_step_metrics.raw_metrics.m_batch_sizes)
+    backbone, *candidate_parts = parts
+    assert all(list(part.raw_metrics.m_batch_sizes) == submitted for part in candidate_parts)
+    # the backbone also forwards the context rows of a block, and the prompt rows of a forward that drafts none
+    forwarded = list(backbone.raw_metrics.m_batch_sizes)
+    assert all(rows >= candidates for rows, candidates in zip(forwarded, submitted))
+    assert sum(forwarded) > sum(submitted)
+
+
 @functools.cache
 def _block_target_outputs(pair: ModelPair) -> list:
     outputs, results = _generate(
@@ -292,11 +320,10 @@ def test_generate_matches_target(model_pair, ignore_eos):
     metrics = result.extended_perf_metrics
     assert metrics.get_num_draft_tokens() > 0
     assert metrics.get_num_accepted_tokens() <= metrics.get_num_draft_tokens()
-    assert (
-        0
-        < metrics.draft_model_metrics.get_num_generated_tokens()
-        <= config.max_new_tokens * config.num_assistant_tokens
-    )
+    num_drafted = metrics.draft_sampling_metrics.get_num_generated_tokens()
+    assert 0 < num_drafted <= config.max_new_tokens * config.num_assistant_tokens
+    # the backbone also forwards the context rows of every block
+    assert metrics.draft_model_metrics.get_num_generated_tokens() > num_drafted
 
 
 # The DeepSpec draft has candidates accepted on this prompt, and the other drafts have none.
@@ -307,6 +334,7 @@ def test_generate_matches_target(model_pair, ignore_eos):
         pytest.param(*QWEN3_DEEPSPEC.values, id=QWEN3_DEEPSPEC.id, marks=SCORE_SKIP),
         QWEN3_DSPARK,
         QWEN3_DSPARK_MARKOV_STEP,
+        QWEN3_DFLASH2,
     ],
     indirect=True,
 )
@@ -329,8 +357,9 @@ def test_requests_drafted_together_match_target(model_pair):
     assert outputs == target_outputs
     assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
     # one draft forward and one candidate selection drafts the blocks of several requests
-    candidates_per_draft_step = results[0].extended_perf_metrics.draft_model_metrics.raw_metrics.m_batch_sizes
+    candidates_per_draft_step = results[0].extended_perf_metrics.draft_sampling_metrics.raw_metrics.m_batch_sizes
     assert max(candidates_per_draft_step) > BLOCK_NUM_ASSISTANT_TOKENS
+    _assert_draft_steps_report_their_parts(model_pair, results)
 
     single_outputs = [_generate(pipe, [prompt], _block_config())[0][0] for prompt in _block_prompts(model_pair)]
     assert single_outputs == target_outputs
@@ -396,14 +425,70 @@ def test_batched_prompts_with_chunked_prefill_match_target(model_pair):
     assert [result.m_generation_ids for result in results] == reference
 
 
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_rejects_a_request_whose_validation_window_exceeds_the_token_budget(model_pair):
+    # The target validates the seed and its 4 candidates in one forward, which a budget of 4 tokens never fits. The
+    # pipeline rejects that request when it is added and serves the next request under the same id.
+    scheduler_config = _scheduler_config(dynamic_split_fuse=True, max_num_batched_tokens=4)
+    prompts = PROMPTS_4[:1]
+    reference = _run_add_requests(
+        _target_pipeline(model_pair, scheduler_config), prompts, _greedy_config(num_assistant_tokens=0), {0: 0}
+    )
+    pipe = _cb_pipeline(model_pair, scheduler_config)
+
+    with pytest.raises(RuntimeError, match="too small to ever schedule the speculative validation windows"):
+        pipe.add_request(0, prompts[0], _greedy_config(num_assistant_tokens=4))
+    assert not pipe.has_non_finished_requests()
+
+    assert _run_add_requests(pipe, prompts, _greedy_config(num_assistant_tokens=3), {0: 0}) == reference
+
+
+@pytest.mark.parametrize("model_pair", [QWEN3_DEEPSPEC], indirect=True)
+def test_counts_candidates_validated_in_a_later_step(model_pair):
+    # A budget of 9 fits two validation windows of the 4 requests, and the target validates the others in a later
+    # step. The drafts and the outputs do not depend on the budget, so neither do the accepted tokens. The target
+    # accepts some candidates of the tiny DeepSpec draft, and none of the DFlash one.
+    config = _greedy_config(num_assistant_tokens=3, max_new_tokens=30)
+
+    def generate(max_num_batched_tokens):
+        scheduler_config = _scheduler_config(dynamic_split_fuse=True, max_num_batched_tokens=max_num_batched_tokens)
+        results = _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4, [config] * len(PROMPTS_4))
+        metrics = results[0].extended_perf_metrics
+        return (
+            [result.m_generation_ids for result in results],
+            metrics.get_num_draft_tokens(),
+            metrics.get_num_accepted_tokens(),
+        )
+
+    assert generate(9) == generate(256)
+
+
+@pytest.mark.parametrize("model_pair", [QWEN3_DEEPSPEC], indirect=True)
+def test_counts_the_window_that_ends_a_request(model_pair):
+    # Without dynamic split fuse the first draft window holds only prompt rows, so with 4 new tokens each request drafts
+    # one candidate after its second token: only one fits before the last token. A candidate the target accepts ends
+    # the request, and its window counts all the same.
+    config = _greedy_config(num_assistant_tokens=3, max_new_tokens=4)
+    scheduler_config = _scheduler_config(dynamic_split_fuse=False)
+
+    results = _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4, [config] * len(PROMPTS_4))
+
+    metrics = results[0].extended_perf_metrics
+    assert metrics.get_num_draft_tokens() == len(PROMPTS_4)
+    assert metrics.get_num_accepted_tokens() > 0
+
+
+@pytest.mark.parametrize("max_num_batched_tokens", [5, 7, 16])
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
-def test_chunked_prefill_matches_target(model_pair):
-    # 16 tokens split the prompts over several steps and fit the 1 + BLOCK_NUM_ASSISTANT_TOKENS rows of the
-    # validation windows of all three requests.
-    pipe = _block_pipeline(model_pair, _block_scheduler_config(max_num_batched_tokens=16))
+def test_chunked_prefill_matches_target(model_pair, max_num_batched_tokens):
+    # Every budget splits the prompts over several steps. Validation windows have 1 + BLOCK_NUM_ASSISTANT_TOKENS
+    # rows: 5 and 7 fit one window and defer the others to a later step, 16 fits the windows of all three requests.
+    pipe = _block_pipeline(model_pair, _block_scheduler_config(max_num_batched_tokens=max_num_batched_tokens))
     outputs, results = _generate(pipe, _block_prompts(model_pair), _block_config())
     assert outputs == _block_target_outputs(model_pair)
     assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
+    # the draft forwards the rows of a split prompt without drafting candidates
+    _assert_draft_steps_report_their_parts(model_pair, results)
 
 
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
@@ -619,15 +704,18 @@ def test_small_draft_cache_leaves_requests_to_the_target(model_pair, dynamic_spl
     assert [result.m_generation_ids for result in results] == reference
 
 
-@pytest.mark.parametrize("num_kv_blocks", [3, 4, 6])
+@pytest.mark.parametrize("num_kv_blocks", [1, 3, 4, 6])
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
 def test_draft_kv_cache_limit_leaves_requests_to_the_target(model_pair, num_kv_blocks):
     # The draft KV cache holds num_kv_blocks blocks of 32 tokens, fewer than the three requests need: a request whose
-    # window does not run stops drafting, and the target finishes it alone.
+    # window does not run stops drafting, and the target finishes it alone. With one block, a draft step can schedule
+    # no row.
     pipe = _block_pipeline(model_pair, draft_scheduler_config=_block_scheduler_config(num_kv_blocks=num_kv_blocks))
     outputs, results = _generate(pipe, _block_prompts(model_pair), _block_config())
     assert outputs == _block_target_outputs(model_pair)
     assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
+    # a draft step that schedules no row runs no forward and reports no parts
+    _assert_draft_steps_report_their_parts(model_pair, results)
 
 
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
@@ -650,12 +738,7 @@ def test_preemption_completes_all_requests(model_pair):
     results = _cb_pipeline(model_pair, scheduler_config).generate(PROMPTS_4, [config] * len(PROMPTS_4))
 
     assert [result.m_status for result in results] == [GenerationStatus.FINISHED] * len(PROMPTS_4)
-    assert all(result.m_generation_ids[0] for result in results)
-    # When the target is preempted with candidates waiting for validation, the replay is scheduled one token short
-    # of the validation window, so the candidates are validated against shifted logits. FastDraft fails the same
-    # way. Related: CVS-198275. Whether the shifted validation changes the output depends on the draft.
-    if [result.m_generation_ids for result in results] != reference:
-        pytest.xfail("Target preemption with pending candidates corrupts speculative decoding output, CVS-198275")
+    assert [result.m_generation_ids for result in results] == reference
 
 
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
@@ -681,10 +764,29 @@ def test_target_and_draft_preemption_complete(model_pair):
             raise
         pytest.xfail("Linear-attention targets cannot recompute requests preempted during validation, CVS-198275")
     assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
-    # Candidates waiting for validation when the target is preempted are validated against shifted logits, with any
-    # speculative draft (CVS-198275).
-    if outputs != _block_target_outputs(model_pair):
-        pytest.xfail("Target preemption with pending candidates corrupts speculative decoding output, CVS-198275")
+    assert outputs == _block_target_outputs(model_pair)
+
+
+@pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
+def test_sampled_requests_are_reproducible(model_pair):
+    # The target accepts or replaces every sampled candidate by rejection sampling against the distribution the draft
+    # drew it from; the draws of both follow the request seed.
+    config = GenerationConfig(
+        do_sample=True,
+        temperature=0.8,
+        top_k=4,
+        rng_seed=3,
+        max_new_tokens=20,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+
+    def generate():
+        results = _cb_pipeline(model_pair).generate(PROMPTS_4, [config] * len(PROMPTS_4))
+        assert results[0].extended_perf_metrics.get_num_draft_tokens() > 0
+        return [result.m_generation_ids for result in results]
+
+    assert generate() == generate()
 
 
 @pytest.mark.parametrize("model_pair", PAIRS, indirect=True)
@@ -707,7 +809,7 @@ def test_greedy_requests_with_penalties_match_target(model_pair):
 
 
 # The draft gets no properties, so the Markov step pair would repeat the plain DSpark run.
-@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH, QWEN3_DEEPSPEC, QWEN3_DSPARK], indirect=True)
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH, QWEN3_DEEPSPEC, QWEN3_DSPARK, QWEN3_DFLASH2], indirect=True)
 def test_llm_pipeline_draft_without_properties_matches_target(model_pair):
     # A draft without properties compiles with the target's, to which LLMPipeline adds the GenAI-only
     # sampler_num_threads.

@@ -222,9 +222,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         sequence_group->set_output_seq_len(output_sequence_len);
     }
 
-    std::map<size_t, size_t> beam_offets;
+    std::map<size_t, size_t> beam_offsets;
     for (size_t i = 0; i < sequence_groups.size(); i++)
-        beam_offets.insert({sequence_groups.at(i)->get_request_id(), i});
+        beam_offsets.insert({sequence_groups.at(i)->get_request_id(), i});
 
     const auto sample_start = std::chrono::steady_clock::now();
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
@@ -295,14 +295,14 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                 }
 
                 // for different sequences iteration of beams started from 0, but we collect it to one input_ids
-                next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offets.at(sequence_group->get_request_id()));
+                next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offsets.at(sequence_group->get_request_id()));
             }
 
             current_batch_size += num_running_sequences;
         }
 
         for (size_t i = 0; i < active_sequence_groups.size(); i++) {
-            beam_offets[active_sequence_groups.at(i)->get_request_id()] = i == 0 ? 0 : (active_sequence_groups.at(i - 1)->num_running_seqs() + beam_offets[i - 1]);
+            beam_offsets[active_sequence_groups.at(i)->get_request_id()] = i == 0 ? 0 : (active_sequence_groups.at(i - 1)->num_running_seqs() + beam_offsets[i - 1]);
         }
 
         if (m_embedding) {

@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <numeric>
 #include <optional>
@@ -515,6 +516,64 @@ TEST(SamplerValidationMode, gen_phase) {
     EXPECT_EQ(output.acceptance_by_sequence.at(sequence_id).accepted_depth, 4u);
 }
 
+namespace {
+// Greedy request with prompt [0, 1, 2, 3, 4], processed prompt, next token 0 and the given candidates to validate.
+SequenceGroup::Ptr make_validation_window(const std::vector<int64_t>& candidates) {
+    const std::vector<int64_t> prompt{0, 1, 2, 3, 4};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, ov::genai::utils::get_greedy_config());
+    Sequence::Ptr sequence = sequence_group->get_sequences().front();
+    sequence->append_token(0, 1.f);
+    sequence_group->update_processed_tokens_num(prompt.size());
+    for (const int64_t token_id : candidates) {
+        sequence->append_token(token_id, 1.f);
+    }
+    sequence_group->set_num_validated_tokens(candidates.size());
+    return sequence_group;
+}
+}  // namespace
+
+TEST(SamplerValidationMode, rejects_a_validation_window_split_over_two_forwards) {
+    auto sequence_group = make_validation_window({1, 2, 3});
+    // the rows of the base token and of two candidates, without the row of the last candidate
+    sequence_group->schedule_tokens(3);
+    std::vector<float> logits{
+        0, 1.f, 0, 0, 0,
+        0, 0, 1.f, 0, 0,
+        0, 0, 0, 1.f, 0,
+    };
+    ov::Tensor validation_logits(ov::element::f32, ov::Shape{3, 1, 5}, logits.data());
+
+    Sampler sampler;
+    EXPECT_THROW(std::ignore = sampler.sample({sequence_group}, validation_logits, true), ov::Exception);
+}
+
+TEST(SamplerValidationMode, prompt_chunk_before_the_validation_window_keeps_the_candidates) {
+    // The replay of a recompute runs the prompt and ends before the token the target sampled after it, whose row
+    // validates the first candidate.
+    const std::vector<int64_t> prompt{0, 1, 2, 3, 4};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, ov::genai::utils::get_greedy_config());
+    Sequence::Ptr sequence = sequence_group->get_sequences().front();
+    sequence->append_token(0, 1.f);
+    sequence_group->update_processed_tokens_num(prompt.size());
+    for (const int64_t token_id : {1, 2, 3}) {
+        sequence->append_token(token_id, 1.f);
+    }
+    sequence_group->set_num_validated_tokens(3);
+    sequence_group->preempt_tokens(prompt.size());
+    sequence_group->schedule_tokens(prompt.size());
+    std::vector<float> logits(prompt.size() * 5, 0.f);
+    ov::Tensor chunk_logits(ov::element::f32, ov::Shape{prompt.size(), 1, 5}, logits.data());
+
+    Sampler sampler;
+    sampler.sample({sequence_group}, chunk_logits, true);
+
+    EXPECT_EQ(sequence->get_generated_ids(), TokenIds({0, 1, 2, 3}));
+    EXPECT_EQ(sequence_group->get_num_processed_tokens(), prompt.size());
+    EXPECT_EQ(sequence_group->get_num_tokens_to_validate(), 3u);
+    // the token the target sampled and the candidates
+    EXPECT_EQ(sequence_group->get_num_available_tokens_for_batching(), 4u);
+}
+
 TEST(SamplerValidationMode, terminal_stop_token_preserves_acceptance_result) {
     auto sampling_config = ov::genai::utils::get_greedy_config();
     sampling_config.stop_token_ids = {2};
@@ -834,7 +893,7 @@ public:
         steps.push_back({position, blocks, previous_tokens});
     }
 
-    std::optional<std::vector<BlockToken>> draw(size_t, const GenerationConfig&) const override {
+    std::optional<std::vector<BlockToken>> draw(size_t, const GenerationConfig&, std::mt19937&) const override {
         if (drawn_tokens.empty()) {
             return std::nullopt;
         }
@@ -956,6 +1015,25 @@ TEST(SamplerBlockSampling, row_source_appends_the_tokens_it_draws_for_a_whole_bl
     EXPECT_EQ(output.num_generated_tokens_per_request.at(0), 2);
 }
 
+TEST(SamplerBlockSampling, drawn_tokens_carry_their_proposals_when_proposals_are_collected) {
+    for (const bool collect_draft_proposals : {false, true}) {
+        Sampler sampler;
+        sampler.set_collect_draft_proposals(collect_draft_proposals);
+        auto source = std::make_shared<ChainRowSource>(false);
+        auto proposal = std::make_shared<const DraftProposal>(DraftProposal{{20, 21}, {0.25f, 0.75f}});
+        source->drawn_tokens = {{21, std::log(0.75f), proposal}, {30, 0.0f, nullptr}};
+        sampler.set_block_sampling(1, source);
+        auto group = make_dflash_draft_group(0, 4, {7, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN, DRAFT_MASK_TOKEN}, 8, 3);
+
+        sampler.sample({group}, make_candidate_logits({0, 0, 0}), false, false);
+
+        const auto sequence = group->get_running_sequences().front();
+        EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{7, 21, 30}));
+        EXPECT_EQ(!sequence->get_draft_proposal(1).empty(), collect_draft_proposals);
+        EXPECT_TRUE(sequence->get_draft_proposal(2).empty());
+    }
+}
+
 namespace {
 // Emulates a processed prompt [0, 1, 2, 3, 4] followed by the main model's token 0, then appends the draft candidates
 // and schedules them for validation.
@@ -1069,6 +1147,50 @@ TEST(SamplerValidationMode, lifts_min_new_tokens_mask_for_tree_bonus_token) {
     sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
 
     EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 2, 3, 4}));
+}
+
+// A stop token that the main model accepts on a tree path ends the path without a bonus token, and the sampler
+// counts it with the candidates before it.
+TEST(SamplerValidationMode, counts_the_stop_token_accepted_on_a_tree_path) {
+    auto group = make_tree_validation_group(0, {1, 4, 3});
+    std::vector<float> logits = {
+        0, 5.f, 0, 0, 0,
+        0, 0, 0, 0, 5.f,
+        0, 0, 0, 5.f, 0,
+        5.f, 0, 0, 0, 0,
+    };
+    Sampler sampler;
+    const SamplerOutput output =
+        sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
+
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 4}));
+    const auto window = output.validated_windows.find(group->get_request_id());
+    ASSERT_NE(window, output.validated_windows.end());
+    EXPECT_EQ(window->second.num_candidates, 3u);
+    EXPECT_EQ(window->second.num_accepted, 2u);
+}
+
+// The sampler reports the candidates of a validated window and the ones the main model accepted before it rejected
+// one.
+TEST(SamplerValidationMode, reports_the_accepted_candidates_of_a_validation_window) {
+    auto config = ov::genai::utils::get_greedy_config();
+    config.max_new_tokens = 30;
+    auto group = make_validation_group(config, {1, 2, 3});
+    std::vector<float> logits = {
+        0, 5.f, 0, 0, 0,
+        0, 0, 5.f, 0, 0,
+        0, 0, 0, 0, 5.f,
+        5.f, 0, 0, 0, 0,
+    };
+    Sampler sampler;
+    const SamplerOutput output =
+        sampler.sample({group}, ov::Tensor(ov::element::f32, ov::Shape{4, 1, 5}, logits.data()), true);
+
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), (TokenIds{0, 1, 2, 4}));
+    const auto window = output.validated_windows.find(group->get_request_id());
+    ASSERT_NE(window, output.validated_windows.end());
+    EXPECT_EQ(window->second.num_candidates, 3u);
+    EXPECT_EQ(window->second.num_accepted, 2u);
 }
 
 // Accepted candidates report the main model's log-probabilities, and the sequence score must follow them.
