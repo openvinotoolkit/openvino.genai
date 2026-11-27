@@ -59,8 +59,8 @@ private:
     RequestOutcome after_slot(const SequenceGroup& request);
 
     /// @brief Records a speech frame sampled from the last hidden state of sequence.
-    /// @return The codes of the frame.
-    std::vector<int64_t> accept_frame_slot(RequestState& state, const Sequence& sequence);
+    /// @return The codes of the frame, or nothing when a text streamer status already ended the request.
+    std::optional<std::vector<int64_t>> accept_frame_slot(RequestState& state, const Sequence& sequence);
 
     /// @brief Records the text token the sampler drew this step.
     void accept_text_slot(RequestState& state, const Sequence& sequence);

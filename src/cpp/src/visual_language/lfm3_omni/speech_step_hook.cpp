@@ -194,7 +194,8 @@ IStepHook::RequestOutcome LFM3SpeechStepHook::after_slot(const SequenceGroup& re
     }
 }
 
-std::vector<int64_t> LFM3SpeechStepHook::accept_frame_slot(RequestState& state, const Sequence& sequence) {
+std::optional<std::vector<int64_t>> LFM3SpeechStepHook::accept_frame_slot(RequestState& state,
+                                                                          const Sequence& sequence) {
     auto& speech = state.speech;
     const auto audio_out = m_models->config().audio_out_token_id;
     OPENVINO_ASSERT(sequence.get_generated_ids().back() == audio_out,
@@ -202,8 +203,13 @@ std::vector<int64_t> LFM3SpeechStepHook::accept_frame_slot(RequestState& state, 
                     sequence.get_generated_ids().back(),
                     " instead of the forced <|audio_out|> ",
                     audio_out);
+    // The stop of an asynchronous text streamer may arrive in a frame slot, after its last text token. A status that
+    // is already there wins over the speech streamer, as a synchronous text streamer would end the turn before it.
+    speech.accept_text_stream_status(text_stream_status(*state.payload));
+    if (speech.finished()) {
+        return std::nullopt;
+    }
     auto codes = speech.accept_frame(m_models->sample_frame(last_hidden_row(sequence), speech), *m_models);
-    // The stop of an asynchronous text streamer may arrive in a frame slot, after its last text token.
     speech.accept_text_stream_status(text_stream_status(*state.payload));
     return codes;
 }
