@@ -1,0 +1,39 @@
+import CodeExampleCPP from './_code_example_cpp.mdx';
+import CodeExamplePython from './_code_example_python.mdx';
+
+## Run Model Using OpenVINO GenAI
+
+`classify()` takes a ready prompt and optional images; no chat template or special tokens are added. It returns:
+- `logits`: a tensor of shape `[1, num_labels]` with the raw model output.
+- `scores`: the logits passed through an activation function, as `std::vector<std::vector<float>>` in C++ and a list of lists in Python. It holds one list of per-label scores for the classified prompt, so use `scores[0]`.
+
+Both are in label ID order.
+
+The activation turns logits into scores: `SOFTMAX` makes the scores of a prompt sum to 1 (one label is correct), `SIGMOID` makes each score an independent probability (multi-label classification or a single output), and `NONE` keeps the raw logits. By default it is selected from `problem_type` in `config.json`: `regression` gives `NONE`, `multi_label_classification` gives `SIGMOID`, otherwise `SOFTMAX` is used (`SIGMOID` if the model has a single label). Override it with the `classification_activation` property when creating the pipeline.
+
+The example scores an OCR result with [openbmb/MiniCPM-OCR-Jev](https://huggingface.co/openbmb/MiniCPM-OCR-Jev). The prompt is built as described in the model card, the images are the original region and the rendered OCR text, and `scores[0][1]` is the probability that the OCR text is correct.
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExamplePython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExamplePython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
+
+See the [Python sample](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/classification) and [C++ sample](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/classification) for runnable applications.

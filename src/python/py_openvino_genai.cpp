@@ -49,6 +49,7 @@ void init_omni_pipeline(py::module_& m);
 void init_whisper_pipeline(py::module_& m);
 void init_asr_pipeline(py::module_& m);
 void init_rag_pipelines(py::module_& m);
+void init_classification_pipeline(py::module_& m);
 void init_speech_generation_pipeline(py::module_& m);
 
 namespace {
@@ -163,5 +164,6 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     init_whisper_pipeline(m);
     init_asr_pipeline(m);
     init_rag_pipelines(m);
+    init_classification_pipeline(m);
     init_speech_generation_pipeline(m);
 }

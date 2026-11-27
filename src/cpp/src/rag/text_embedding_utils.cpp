@@ -70,43 +70,16 @@ std::shared_ptr<op::Op> get_mean_pooling_op(const ov::Output<ov::Node>& last_hid
     return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
 }
 
-std::shared_ptr<op::Op> get_last_token_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node,
-                                                  const ov::Output<ov::Node>& attention_mask,
-                                                  const TextEmbeddingPipeline::Config& config) {
-    const auto left_padding = config.padding_side.has_value() && config.padding_side.value() == "left";
-
-    // shortcut for left padding. We can slice last token directly
-    if (left_padding) {
-        auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
-        auto stop = std::make_shared<op::v0::Constant>(ov::element::i64,
-                                                       ov::Shape{1},
-                                                       std::vector<int64_t>{std::numeric_limits<int64_t>::max()});
-        auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-
-        auto slice = std::make_shared<op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
-
-        auto squeeze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
-    }
-
-    auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-    auto reduce_sum = std::make_shared<op::v1::ReduceSum>(attention_mask, axis_1);
-    auto subtract_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-    auto subtract = std::make_shared<op::v1::Subtract>(reduce_sum, subtract_1);
-
-    return std::make_shared<op::v8::Gather>(last_hidden_state_node, subtract, axis_1, 1);
-}
-
-std::shared_ptr<op::Op> create_post_ops(const ov::Output<ov::Node>& input,
-                                        const ov::Output<ov::Node>& attention_mask,
-                                        const TextEmbeddingPipeline::Config& config) {
+std::shared_ptr<ov::Node> create_post_ops(const ov::Output<ov::Node>& input,
+                                          const ov::Output<ov::Node>& attention_mask,
+                                          const TextEmbeddingPipeline::Config& config) {
     if (config.pooling_type == TextEmbeddingPipeline::PoolingType::CLS) {
         return get_cls_pooling_op(input);
     } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
         return get_mean_pooling_op(input, attention_mask);
     } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::LAST_TOKEN) {
-        return get_last_token_pooling_op(input, attention_mask, config);
+        const bool left_padding = config.padding_side.has_value() && config.padding_side.value() == "left";
+        return utils::last_token_pooling(input, attention_mask, left_padding);
     }
 
     OPENVINO_THROW("Pooling type is not supported");

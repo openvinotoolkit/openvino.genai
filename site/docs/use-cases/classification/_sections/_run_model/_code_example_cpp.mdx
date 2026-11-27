@@ -1,0 +1,31 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include <iostream>
+#include <string>
+#include <vector>
+
+#include "openvino/genai/classification/classification_pipeline.hpp"
+#include "load_image.hpp"  // Image loader from the visual_language_chat sample.
+
+int main(int argc, char* argv[]) {
+    const std::string models_path = argv[1];
+    const std::string ocr_text = argv[2];
+
+    ov::genai::ClassificationPipeline pipeline(models_path, "${props.device || 'CPU'}");
+    const std::string image_tag = "<|vision_start|><|image_pad|><|vision_end|>";
+    const std::string instruction =
+        "第一张图是原图，第二张图是上述 OCR 文本渲染得到的图片。\\n"
+        "请判断该 OCR 文本及其对应渲染图是否与原图内容一致。\\n"
+        "这是一个二分类任务：一致标为 1，不一致标为 0。";
+    const std::string prompt =
+        "<|im_start|>user\\n" + image_tag + "\\nOCR文本：\\n" + ocr_text +
+        "\\n" + image_tag + "\\n" + instruction +
+        "<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n";
+
+    const std::vector<ov::Tensor> images{utils::load_image(argv[3]), utils::load_image(argv[4])};
+    const ov::genai::ClassificationResult result = pipeline.classify(prompt, images);
+    std::cout << "OCR consistency probability: " << result.scores[0][1] << '\\n';
+}
+`}
+</CodeBlock>

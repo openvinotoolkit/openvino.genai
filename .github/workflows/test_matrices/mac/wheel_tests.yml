@@ -109,6 +109,15 @@
   components:
     - RAG
 
+- name: Classification
+  cmd: |-
+    # optimum-intel supports qwen3_5 text-classification export since cc46ec89.
+    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@cc46ec89040d92ba6ebfe10205c992caebd33ff1#egg=optimum-intel"
+    python -m pytest -v ./tests/python_tests/test_classification_pipeline.py
+  timeout: 30
+  components:
+    - classification
+
 - name: WWB tests
   cmd: |-
     # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
