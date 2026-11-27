@@ -19,7 +19,7 @@ def test_qwen_benchmark_selected_independently(platform, component):
     entries = yaml.safe_load(path.read_text(encoding="utf-8"))
     selected = matrices.filter_matrix({component: {"test": True}}, entries)
     test = next(entry for entry in selected if entry["name"] == "LLM benchmark Qwen3-ASR")
-    assert 'samples and llm_bench_qwen3_asr' in test["cmd"]
+    assert "samples and llm_bench_qwen3_asr" in test["cmd"]
 
 
 @pytest.mark.parametrize("platform", ["linux", "manylinux", "windows"])

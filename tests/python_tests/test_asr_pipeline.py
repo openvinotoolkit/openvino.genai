@@ -109,9 +109,7 @@ def get_whisper_models_list(tiny_only=False):
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_asr_model(
-    params, word_timestamps=False, pipeline_type=PipelineType.WHISPER, attention_backend=None
-):
+def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER, attention_backend=None):
     model_id, path = params
     if model_id == QWEN3_ASR_MODEL_ID:
         skip_if_qwen3_asr_package_is_unavailable()
@@ -528,7 +526,6 @@ def test_asr_constructors(pipelines_fixture, sample_from_dataset):
     hf_pipe, genai_pipe, model_id, pipeline_type = pipelines_fixture
     path = get_ov_cache_converted_models_dir() / model_id.split("/")[-1]
 
-
     expected = hf_pipe(sample_from_dataset)["text"]
 
     pipeline_cls = get_pipeline_cls(pipeline_type)
@@ -557,7 +554,6 @@ def test_asr_constructors(pipelines_fixture, sample_from_dataset):
 def test_max_new_tokens(pipelines_fixture, sample_from_dataset):
     hf_pipe, genai_pipe, model_id, _ = pipelines_fixture
 
-
     expected = hf_pipe(sample_from_dataset, max_new_tokens=10)
 
     genai_result = genai_pipe.generate(sample_from_dataset, max_new_tokens=10)
@@ -568,18 +564,6 @@ def test_max_new_tokens(pipelines_fixture, sample_from_dataset):
     config.max_new_tokens = 10
     genai_result = genai_pipe.generate(sample_from_dataset, config)
     compare_results(expected, genai_result)
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
@@ -1340,8 +1324,7 @@ def check_streamers(pipelines_fixture, sample_from_dataset, streamer_for_test):
 
 @pytest.mark.parametrize(
     "pipelines_fixture",
-    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)])
-    + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]) + QWEN3_ASR_SPLIT_EXPORT_ASR_PARAMS,
     indirect=True,
 )
 def test_qwen3_asr_streamer_rejects_multi_chunk_audio(pipelines_fixture):
