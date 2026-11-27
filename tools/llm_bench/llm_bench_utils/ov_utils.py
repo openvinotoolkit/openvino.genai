@@ -236,7 +236,9 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
     if isinstance(offload_config, dict):
         offload_kwargs = dict(offload_config)
         if "write_policy" in offload_kwargs:
-            offload_kwargs["write_policy"] = getattr(openvino_genai.CacheOffloadWritePolicy, offload_kwargs["write_policy"])
+            offload_kwargs["write_policy"] = getattr(
+                openvino_genai.CacheOffloadWritePolicy, offload_kwargs["write_policy"]
+            )
         if isinstance(offload_kwargs.get("plugin"), dict):
             offload_kwargs["plugin"] = openvino_genai.CacheStorePluginConfig(**offload_kwargs["plugin"])
         scheduler_config.cache_offload = openvino_genai.CacheOffloadConfig(**offload_kwargs)

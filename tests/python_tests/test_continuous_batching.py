@@ -271,10 +271,18 @@ def test_cache_offload_members_are_edited_in_place(tmp_path: Path):
 @pytest.mark.parametrize(
     "scheduler_params",
     [
-        pytest.param({"enable_prefix_caching": False, "ssd_cache_capacity_gb": 1, "use_dir": True}, id="without_prefix_caching"),
-        pytest.param({"enable_prefix_caching": True, "ssd_cache_capacity_gb": 0, "use_dir": False}, id="without_a_tier"),
-        pytest.param({"enable_prefix_caching": True, "ssd_cache_capacity_gb": 1, "use_dir": False}, id="without_a_directory"),
-        pytest.param({"enable_prefix_caching": True, "ssd_cache_capacity_gb": -1, "use_dir": True}, id="negative_ssd_capacity"),
+        pytest.param(
+            {"enable_prefix_caching": False, "ssd_cache_capacity_gb": 1, "use_dir": True}, id="without_prefix_caching"
+        ),
+        pytest.param(
+            {"enable_prefix_caching": True, "ssd_cache_capacity_gb": 0, "use_dir": False}, id="without_a_tier"
+        ),
+        pytest.param(
+            {"enable_prefix_caching": True, "ssd_cache_capacity_gb": 1, "use_dir": False}, id="without_a_directory"
+        ),
+        pytest.param(
+            {"enable_prefix_caching": True, "ssd_cache_capacity_gb": -1, "use_dir": True}, id="negative_ssd_capacity"
+        ),
     ],
 )
 def test_cache_offload_rejects_invalid_scheduler_config(
