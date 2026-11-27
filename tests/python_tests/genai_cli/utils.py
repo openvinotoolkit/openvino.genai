@@ -29,9 +29,7 @@ TASK_SUBMODELS = {
 }
 
 EXPORTS = [
-    (model_type, task)
-    for model_type in SUPPORTED_ARCHITECTURES
-    for task in get_native_exporter(model_type, None).TASKS
+    (model_type, task) for model_type in SUPPORTED_ARCHITECTURES for task in get_native_exporter(model_type, None).TASKS
 ]
 
 

@@ -31,9 +31,7 @@ TASK_STATEFUL_SUBMODEL = {
 
 
 def _has_constants_of_type(ov_model: ov.Model, element_type: ov.Type) -> bool:
-    return any(
-        op.get_type_name() == "Constant" and op.get_element_type() == element_type for op in ov_model.get_ops()
-    )
+    return any(op.get_type_name() == "Constant" and op.get_element_type() == element_type for op in ov_model.get_ops())
 
 
 @pytest.fixture(scope="module", params=EXPORTS, ids=[f"{model_type}-{task}" for model_type, task in EXPORTS])
@@ -82,9 +80,9 @@ def test_exported_tokenizer(exported_model):
 
 @pytest.mark.parametrize("model_type, task", EXPORTS)
 def test_export_with_custom_gen_config(tmp_path, model_type, task):
-    # A local copy of the checkpoint, its Hub cache files are read-only.
+    # A writable local copy of the checkpoint: shutil.copyfile doesn't preserve the permissions of the Hub cache files.
     model_dir = tmp_path / "checkpoint"
-    shutil.copytree(download(model_type), model_dir)
+    shutil.copytree(download(model_type), model_dir, copy_function=shutil.copyfile)
     generation_config_path = model_dir / "generation_config.json"
     generation_config = json.loads(generation_config_path.read_text())
     generation_config.update(top_k=42, do_sample=True)
@@ -124,7 +122,7 @@ def test_export_with_disable_convert_tokenizer(tmp_path, model_type, task):
 def test_export_with_custom_variant(tmp_path, model_type, task):
     # A local checkpoint that only has the weights of the `custom` variant.
     model_dir = tmp_path / "checkpoint"
-    shutil.copytree(download(model_type), model_dir)
+    shutil.copytree(download(model_type), model_dir, copy_function=shutil.copyfile)
     (model_dir / "model.safetensors").rename(model_dir / "model.custom.safetensors")
 
     output = tmp_path / "exported"
