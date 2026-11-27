@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <atomic>
+#include <cstring>
 #include <set>
 #include <map>
 #include <string>
@@ -42,6 +44,7 @@
 
 #include "utils.hpp"
 #include "lora/common.hpp"
+#include "lora/helper.hpp"
 #include "lora/names_mapping.hpp"
 
 #ifdef ENABLE_GGUF
@@ -1090,6 +1093,19 @@ public:
     virtual const LoRAConstantTensors& get_constant_tensors() const = 0;
     virtual const LoRATensors& get_tensors() const = 0;
     virtual bool eq(const AdapterImpl* other) const = 0;
+
+    // Unique within the process. Unlike the object address, it is not reused after the adapter is destroyed.
+    uint64_t get_id() const {
+        return id;
+    }
+
+private:
+    static uint64_t next_id() {
+        static std::atomic<uint64_t> counter{1};
+        return counter.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    uint64_t id = next_id();
 };
 
 class SafetensorsAdapterImpl : public AdapterImpl {
@@ -1541,6 +1557,18 @@ private:
 
 
 struct AdapterControllerImpl {
+    static uint64_t get_adapter_id(const Adapter& adapter) {
+        return adapter.m_pimpl->get_id();
+    }
+
+    static bool has_constant_tensors(const Adapter& adapter) {
+        return !adapter.m_pimpl->get_constant_tensors().empty();
+    }
+
+    static const AdapterConfig& get_current_config(const AdapterController& controller) {
+        return controller.m_pimpl->current_config;
+    }
+
     LoRAVarMap variable_ids;
     std::map<std::string, ov::op::util::VariableInfo> constant_variable_ids;
     std::unordered_set<std::string> variable_names;
@@ -2288,6 +2316,45 @@ struct AdapterControllerImpl {
         return new_tensors;
     }
 };
+
+
+size_t get_prefix_cache_namespace(const std::optional<AdapterConfig>& config) {
+    if (!config) {
+        return 0;
+    }
+    std::vector<std::pair<uint64_t, uint32_t>> applied;
+    // Tensor preparation applies the first alpha of a duplicated adapter to every occurrence, so hash that alpha
+    // for each occurrence.
+    for (const auto& adapter : config->get_adapters()) {
+        const float alpha = config->get_alpha(adapter);
+        // A zero alpha cancels the LoRA term, but constant replacements apply regardless of alpha.
+        if (alpha == 0.0f && !AdapterControllerImpl::has_constant_tensors(adapter)) {
+            continue;
+        }
+        uint32_t alpha_bits;
+        std::memcpy(&alpha_bits, &alpha, sizeof(alpha_bits));
+        applied.emplace_back(AdapterControllerImpl::get_adapter_id(adapter), alpha_bits);
+    }
+    if (applied.empty()) {
+        return 0;
+    }
+    std::sort(applied.begin(), applied.end());
+    // The prefix selects which adapter tensors match the model, so it is part of the namespace.
+    std::string content = config->get_tensor_name_prefix().value_or("");
+    content.push_back('\0');
+    for (const auto& [id, alpha_bits] : applied) {
+        content.append(reinterpret_cast<const char*>(&id), sizeof(id));
+        content.append(reinterpret_cast<const char*>(&alpha_bits), sizeof(alpha_bits));
+    }
+    const size_t result = std::hash<std::string>{}(content);
+    // 0 is reserved for requests without adapters.
+    return result == 0 ? 1 : result;
+}
+
+
+AdapterConfig get_applied_adapters(const AdapterController& controller) {
+    return AdapterControllerImpl::get_current_config(controller);
+}
 
 
 AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device)

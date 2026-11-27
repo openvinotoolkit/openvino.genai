@@ -349,6 +349,11 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     // If eos_token_id was not provided, take value from default m_generation_config
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
+    // The model runs with the adapters the controller applies: the request's adapters merged into the earlier ones
+    // once generate() has applied them, or the earlier ones for a request without adapters. Key the prefix cache on them.
+    if (m_adapter_controller) {
+        sampling_params_copy.adapters = get_applied_adapters(*m_adapter_controller);
+    }
     sampling_params_copy.validate();
     // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
     OPENVINO_ASSERT(!sampling_params_copy.is_beam_search() || !m_inputs_embedder ||

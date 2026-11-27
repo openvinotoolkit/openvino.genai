@@ -4,8 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <limits>
 #include <numeric>
+#include <optional>
 
 #include "continuous_batching/scheduler.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -53,6 +55,16 @@ void ensure_two_running_sequences(const ov::genai::SequenceGroup::Ptr& sequence_
     auto parent = sequence_group->get_running_sequences().at(0);
     sequence_group->fork_sequence(parent);
     ASSERT_EQ(sequence_group->num_running_seqs(), 2);
+}
+
+// An adapter parsed from a safetensors buffer whose header is "{}". It has no tensors but a unique identity.
+ov::genai::Adapter create_adapter_without_tensors() {
+    const std::string header = "{}";
+    const uint64_t header_size = header.size();
+    ov::Tensor safetensor(ov::element::u8, {sizeof(header_size) + header.size()});
+    std::memcpy(safetensor.data(), &header_size, sizeof(header_size));
+    std::memcpy(static_cast<char*>(safetensor.data()) + sizeof(header_size), header.data(), header.size());
+    return ov::genai::Adapter(safetensor);
 }
 
 class PrefixCachingCopyOnWriteLayerTest : public testing::TestWithParam<size_t> {};
@@ -588,6 +600,49 @@ TEST(TestBlockManager, SequenceHashMemoizationIsIndependentPerBlockSize) {
     EXPECT_EQ(reverse_la_hash, fresh_la_hash);
     EXPECT_EQ(kv_hash, reverse_kv_hash);
     EXPECT_EQ(la_hash, reverse_la_hash);
+}
+
+TEST(TestBlockManager, SequenceHashSeparatesLoraAdapters) {
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    const ov::genai::Adapter first = create_adapter_without_tensors();
+    const ov::genai::Adapter second = create_adapter_without_tensors();
+    using Adapters = std::vector<std::pair<ov::genai::Adapter, float>>;
+
+    // A partial first block, the first full block, and the second block, which inherits the namespace.
+    auto hashes = [&](const std::optional<ov::genai::AdapterConfig>& adapters) {
+        auto config = ov::genai::utils::get_greedy_config();
+        config.adapters = adapters;
+        auto sequence_group = std::make_shared<ov::genai::SequenceGroup>(
+            0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()), config);
+        auto sequence = sequence_group->get_running_sequences().at(0);
+        return std::vector<size_t>{sequence->get_hash(2, 4), sequence->get_hash(4, 4), sequence->get_hash(8, 4)};
+    };
+
+    const auto base = hashes(std::nullopt);
+    EXPECT_EQ(hashes(ov::genai::AdapterConfig{}), base);
+    EXPECT_EQ(hashes(ov::genai::AdapterConfig(Adapters{{first, 0.0f}, {second, -0.0f}})), base);
+
+    const auto first_only = hashes(ov::genai::AdapterConfig(first, 1.0f));
+    const auto second_only = hashes(ov::genai::AdapterConfig(second, 1.0f));
+    const auto first_half = hashes(ov::genai::AdapterConfig(first, 0.5f));
+    for (size_t i = 0; i < base.size(); ++i) {
+        EXPECT_NE(first_only[i], base[i]);
+        EXPECT_NE(first_only[i], second_only[i]);
+        EXPECT_NE(first_only[i], first_half[i]);
+    }
+
+    EXPECT_EQ(hashes(ov::genai::AdapterConfig(Adapters{{first, 1.0f}, {second, 0.0f}})), first_only);
+    EXPECT_EQ(hashes(ov::genai::AdapterConfig(Adapters{{first, 1.0f}, {second, 0.5f}})),
+              hashes(ov::genai::AdapterConfig(Adapters{{second, 0.5f}, {first, 1.0f}})));
+
+    // Every occurrence of a duplicated adapter is applied with its first alpha.
+    EXPECT_NE(hashes(ov::genai::AdapterConfig(Adapters{{first, 1.0f}, {first, 0.5f}})),
+              hashes(ov::genai::AdapterConfig(Adapters{{first, 0.5f}, {first, 1.0f}})));
+
+    // The prefix selects which tensors are applied.
+    ov::genai::AdapterConfig prefixed(first, 1.0f);
+    prefixed.set_tensor_name_prefix("base_model.model.");
+    EXPECT_NE(hashes(prefixed), first_only);
 }
 
 TEST(TestBlockManager, SequenceHashRollbackAndForkMatchFreshSequences) {
