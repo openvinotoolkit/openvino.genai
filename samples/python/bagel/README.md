@@ -12,7 +12,7 @@ install them from these commits:
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 pip install "transformers @ git+https://github.com/padatta/transformers.git@38b3e74123a005abfd071d2709bbbb017a7919e1"
-pip install --no-deps "optimum-intel @ git+https://github.com/padatta/optimum-intel.git@2135bb984870b131a5403ad6afca1bf53fba990d"
+pip install --no-deps "optimum-intel @ git+https://github.com/padatta/optimum-intel.git@e6123e1f0c0a973b6a5a9219449f84c0672df772"
 huggingface-cli download ByteDance-Seed/BAGEL-7B-MoT --local-dir BAGEL-7B-MoT
 python -m transformers.models.bagel.convert_bagel_weights_to_hf --input_dir BAGEL-7B-MoT --output_dir BAGEL-7B-MoT-hf
 optimum-cli export openvino -m BAGEL-7B-MoT-hf --task image-text-to-text --weight-format int4 --sym --group-size 128 \
@@ -76,10 +76,13 @@ python bagel.py BAGEL-7B-MoT-ov-int4 CPU frames "Generate the next frame of this
 step: `--cfg-text` (default 4) is the text guidance scale and `--cfg-img` (default 2) the image guidance scale of
 `edit` and `frames`, on top of the text guidance. A scale of 1 disables that guidance: `--cfg-text 1` runs one pass
 per step and keeps one KV cache, the fastest and least memory-hungry setting, `--cfg-img 1` keeps the text guidance
-only. `--num-frames` (default 3) sets the number of generated frames and `--seed` the initial noise.
+only. `--num-frames` (default 3) sets the number of generated frames and `--seed` the initial noise. `--cfg-renorm`
+rescales the guided velocity: `text_channel` per latent token before image guidance, the default of `edit` and `frames`
+as in BAGEL image editing, or `global`, the default of `t2i`. `--image-size N` resizes the input images to N x N.
 
 Keep the guidance on for `frames`: each generated frame conditions the next one, so without guidance the first frame
-is already ghosted and the following ones blur out. The prompt should state the task and the next action, as above:
+is already ghosted and the following ones blur out, and with `--cfg-renorm global` noise builds up over the frames.
+The prompt should state the task and the next action, as above:
 
 ```sh
 # 20 steps with text and image guidance (recommended)
@@ -94,4 +97,16 @@ encodes the 3 input frames and decodes the 3 generated frames in one call each, 
 On NPU the language, vision and VAE models run through NPUW (`NPUW_BAGEL`), which compiles a static variant of a model
 the first time an input size is used, so the first run is slower than the next ones. `--props` passes device
 properties: `--props NPUW_BAGEL_MAX_LM_VARIANTS=2` caps the compiled language model variants, for hosts with 32 GB of
-memory.
+memory. `--config-file` passes a JSON file of compile properties (`BAGEL_CONFIG_FILE`): top-level entries apply to all
+models, an object named after a model to that model only:
+
+```json
+{"NPUW_BAGEL_MAX_LM_VARIANTS": "2", "language_model": {"NPUW_DQ": "YES"}, "vae_decoder_3img": {"NPUW_ONLINE_PIPELINE": "NONE"}}
+```
+
+`--warmup N --iterations M` benchmarks the task: after N untimed runs it times M runs and prints the compile time, the
+latency over the M runs and, per stage, the calls and milliseconds per run and the share of the time:
+
+```sh
+python bagel.py BAGEL-7B-MoT-ov-int4 NPU edit "Make the bicycle green" bicycle.png --steps 20 --warmup 1 --iterations 3
+```

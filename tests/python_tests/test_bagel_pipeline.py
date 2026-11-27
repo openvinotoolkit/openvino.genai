@@ -371,6 +371,55 @@ def test_generate_frames_labels_match_optimum(genai_pipe, optimum_model, process
         genai_pipe.generate_frames([ov.Tensor(f[None]) for f in frames], EDIT_PROMPT, 2, config)
 
 
+@pytest.mark.parametrize("renorm", ["channel", "text_channel"])
+def test_edit_image_renorm_matches_optimum(genai_pipe, optimum_model, processor, image, renorm):
+    config = ov_genai.BagelImageGenerationConfig()
+    config.num_inference_steps = NUM_STEPS
+    config.cfg_renorm_type = renorm
+    genai_image = genai_pipe.edit_image(ov.Tensor(image[None]), EDIT_PROMPT, config).data[0]
+
+    inputs = processor(text=EDIT_PROMPT, images=[Image.fromarray(image)], generation_mode="image", return_tensors="pt")
+    height, width = inputs["vae_pixel_values"].shape[-2:]
+    num_tokens = (height // optimum_model.latent_downsample) * (width // optimum_model.latent_downsample)
+    noise = np.random.RandomState(config.seed).randn(num_tokens, optimum_model._patch_dim).astype(np.float32)
+    optimum_image = optimum_model.generate(
+        **inputs,
+        generation_mode="image",
+        num_inference_steps=NUM_STEPS,
+        guidance_scale=config.cfg_text_scale,
+        image_guidance_scale=config.cfg_img_scale,
+        cfg_interval=(0.0, 1.0),
+        cfg_renorm_type=renorm,
+        latents=torch.from_numpy(noise),
+    )
+    diff = np.abs(genai_image.astype(np.int32) - to_uint8(optimum_image).astype(np.int32))
+    assert diff.max() <= 1, f"max abs pixel diff {diff.max()}"
+
+    config.cfg_renorm_type = "local"
+    with pytest.raises(RuntimeError, match="cfg_renorm_type"):
+        genai_pipe.edit_image(ov.Tensor(image[None]), EDIT_PROMPT, config)
+
+
+def test_config_file(bagel_ov_path, image, tmp_path):
+    """BAGEL_CONFIG_FILE: properties for all models and per model, the pipeline properties take precedence."""
+    config_file = tmp_path / "config.json"
+    config_file.write_text(
+        json.dumps(
+            {"INFERENCE_PRECISION_HINT": "bf16", "NUM_STREAMS": 1, "vae_decoder": {"PERFORMANCE_HINT": "LATENCY"}}
+        )
+    )
+    pipe = ov_genai.BagelPipeline(
+        bagel_ov_path, "CPU", INFERENCE_PRECISION_HINT="f32", BAGEL_CONFIG_FILE=str(config_file)
+    )
+    config = ov_genai.BagelImageGenerationConfig()
+    config.num_inference_steps = NUM_STEPS
+    assert pipe.edit_image(ov.Tensor(image[None]), EDIT_PROMPT, config).get_element_type() == ov.Type.u8
+
+    config_file.write_text(json.dumps({"vae_decoder_x": {"NUM_STREAMS": 1}}))
+    with pytest.raises(RuntimeError, match="unknown model 'vae_decoder_x'"):
+        ov_genai.BagelPipeline(bagel_ov_path, "CPU", BAGEL_CONFIG_FILE=str(config_file))
+
+
 def test_generate_frames_rejects_invalid_arguments(genai_pipe, image):
     with pytest.raises(RuntimeError, match="at least one input frame"):
         genai_pipe.generate_frames([], EDIT_PROMPT, 1)

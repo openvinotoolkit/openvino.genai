@@ -1065,6 +1065,14 @@ class BagelImageGenerationConfig:
     def cfg_renorm_min(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
+    def cfg_renorm_type(self) -> str:
+        """
+        global (all latent tokens), channel (per token) or text_channel (per token, on the text-guided velocity before image guidance, the image editing default of BAGEL).
+        """
+    @cfg_renorm_type.setter
+    def cfg_renorm_type(self, arg0: str) -> None:
+        ...
+    @property
     def cfg_text_scale(self) -> float:
         ...
     @cfg_text_scale.setter

@@ -30,6 +30,10 @@ struct BagelImageGenerationConfig {
     // (0.0, 1.0] for image editing
     std::optional<std::pair<float, float>> cfg_interval;
     float cfg_renorm_min = 0.0f;
+    // Rescales the guided velocity to at most the norm of the conditional one: "global" over all latent tokens,
+    // "channel" per token, or "text_channel" per token on the text-guided velocity, before image guidance (the
+    // image editing default of BAGEL)
+    std::string cfg_renorm_type = "global";
     // Initial noise matches numpy.random.RandomState(seed).randn
     uint32_t seed = 0;
     // generate_frames only: one text per input frame, prefilled before the frame of that window slot, e.g.
@@ -58,7 +62,10 @@ public:
      *                    (openvino_*_model.xml with config.json)
      * @param device inference device
      * @param tokenizer_path directory with openvino_tokenizer.xml / openvino_detokenizer.xml; models_path if empty
-     * @param properties applied on top of the default per-model configuration
+     * @param properties applied on top of the default per-model configuration. "BAGEL_CONFIG_FILE" names a JSON file
+     *                   of compile properties: top-level entries apply to all models (below `properties`), and an
+     *                   object named after a model (language_model, vision_embeddings, vae_decoder_3img, ...) applies
+     *                   to that model, e.g. {"NPUW_BAGEL_MAX_LM_VARIANTS": "2", "language_model": {"NPUW_DQ": "YES"}}
      */
     BagelPipeline(const std::filesystem::path& models_path,
                   const std::string& device,

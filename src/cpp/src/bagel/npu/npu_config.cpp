@@ -15,6 +15,8 @@ std::vector<size_t> parse_buckets(const std::string& text) {
     for (std::string item; std::getline(ss, item, ',');) {
         buckets.push_back(std::stoul(item));
     }
+    // as NPUW_BAGEL, which picks the smallest bucket that fits
+    std::sort(buckets.begin(), buckets.end());
     return buckets;
 }
 

@@ -60,3 +60,27 @@ def test_sample_bagel(
         assert len(frames) == 3, f"frames wrote {len(frames)} frames:\n{result.stdout}"
     elif task != "vqa":
         assert list(tmp_path.glob("image*.bmp")), f"{task} wrote no image:\n{result.stdout}"
+
+
+@pytest.mark.bagel
+@pytest.mark.samples
+def test_sample_bagel_benchmark(bagel_ov_path: str, input_image: str, tmp_path: Path):
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"INFERENCE_PRECISION_HINT": "f32", "language_model": {"NUM_STREAMS": 1}}')
+    command = bagel_command("py", bagel_ov_path, "edit", "Make it green", [input_image])
+    command += [
+        "--steps",
+        "3",
+        "--image-size",
+        "24",
+        "--config-file",
+        str(config_file),
+        "--warmup",
+        "1",
+        "--iterations",
+        "2",
+    ]
+    result = run_sample(command, cwd=str(tmp_path))
+    assert "latency over 2 iterations" in result.stdout, result.stdout
+    assert "compile_model language " in result.stdout, result.stdout
+    assert "vae_dec" in result.stdout, result.stdout

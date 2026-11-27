@@ -198,12 +198,21 @@ ov::Tensor full_mask(size_t q, size_t past) {
     return m;
 }
 
-float l2_norm(const std::vector<float>& v) {
-    double s = 0.0;
-    for (float x : v) {
-        s += static_cast<double>(x) * x;
+// Scales `guided` to at most the L2 norm of `v` (at least by min_scale), over all values or per token of `dim` values
+void renorm(std::vector<float>& guided, const std::vector<float>& v, size_t dim, bool per_token, float min_scale) {
+    const size_t group = per_token ? dim : v.size();
+    for (size_t begin = 0; begin < v.size(); begin += group) {
+        double norm_v = 0.0, norm_guided = 0.0;
+        for (size_t k = begin; k < begin + group; ++k) {
+            norm_v += static_cast<double>(v[k]) * v[k];
+            norm_guided += static_cast<double>(guided[k]) * guided[k];
+        }
+        const float ratio = static_cast<float>(std::sqrt(norm_v)) / (static_cast<float>(std::sqrt(norm_guided)) + 1e-8f);
+        const float scale = std::max(std::min(ratio, 1.0f), min_scale);
+        for (size_t k = begin; k < begin + group; ++k) {
+            guided[k] *= scale;
+        }
     }
-    return static_cast<float>(std::sqrt(s));
 }
 
 nlohmann::json read_json(const std::filesystem::path& path) {
@@ -215,6 +224,51 @@ nlohmann::json read_json(const std::filesystem::path& path) {
 // optimum-intel exports name the models openvino_<name>; the original BAGEL IR set uses <name> directly
 std::string model_file(const std::filesystem::path& models_dir, const std::string& name) {
     return std::filesystem::exists(models_dir / ("openvino_" + name)) ? "openvino_" + name : name;
+}
+
+constexpr char CONFIG_FILE[] = "BAGEL_CONFIG_FILE";
+
+ov::Any json_property(const std::string& key, const nlohmann::json& value) {
+    if (value.is_string()) {
+        return value.get<std::string>();
+    }
+    if (value.is_boolean()) {
+        return std::string(value.get<bool>() ? "YES" : "NO");
+    }
+    OPENVINO_ASSERT(value.is_number(), CONFIG_FILE, ": ", key, " must be a string, a number or a boolean");
+    return value.dump();
+}
+
+// Moves BAGEL_CONFIG_FILE out of `properties`. Its top-level entries apply to all models, below the properties given
+// to the pipeline; an object named after a model (language_model, vae_decoder_3img, ...) applies to that model only
+std::map<std::string, ov::AnyMap> read_config_file(ov::AnyMap& properties) {
+    std::map<std::string, ov::AnyMap> per_model;
+    const auto it = properties.find(CONFIG_FILE);
+    if (it == properties.end()) {
+        return per_model;
+    }
+    const std::filesystem::path path = it->second.as<std::string>();
+    properties.erase(it);
+    const auto config = read_json(path);
+    OPENVINO_ASSERT(config.is_object(), CONFIG_FILE, " must hold a JSON object: ", path.string());
+    static const std::set<std::string> models{"text_embeddings",
+                                              "vision_embeddings",
+                                              "language_model",
+                                              "vae_encoder",
+                                              "vae_decoder"};
+    for (const auto& [key, value] : config.items()) {
+        if (!value.is_object()) {
+            properties.emplace(key, json_property(key, value));
+            continue;
+        }
+        const auto frames = key.rfind("img") == key.size() - 3 ? key.rfind('_') : std::string::npos;
+        const auto model = frames != std::string::npos ? key.substr(0, frames) : key;
+        OPENVINO_ASSERT(models.count(model), CONFIG_FILE, ": unknown model '", key, "' in ", path.string());
+        for (const auto& [name, property] : value.items()) {
+            per_model[key][name] = json_property(name, property);
+        }
+    }
+    return per_model;
 }
 
 struct BagelConfig {
@@ -259,6 +313,10 @@ void validate(const BagelImageGenerationConfig& config) {
         const auto [low, high] = *config.cfg_interval;
         OPENVINO_ASSERT(low <= high, "cfg_interval must be (low, high), got (", low, ", ", high, ")");
     }
+    OPENVINO_ASSERT(config.cfg_renorm_type == "global" || config.cfg_renorm_type == "channel" ||
+                        config.cfg_renorm_type == "text_channel",
+                    "cfg_renorm_type must be global, channel or text_channel, got ",
+                    config.cfg_renorm_type);
 }
 
 // Sizes from the model files are used as divisors, strides and allocation sizes
@@ -367,14 +425,20 @@ public:
         m_vae_transform = cfg.vae_transform;
 
         auto& core = utils::singleton_core();
+        auto properties_ = properties;
+        m_model_properties = read_config_file(properties_);
         if (m_npu) {
-            m_npu_variants = bagel::npu::VariantNames(core, device, properties);
+            auto lm_properties = properties_;
+            for (const auto& [key, value] : m_model_properties["language_model"]) {
+                lm_properties[key] = value;
+            }
+            m_npu_variants = bagel::npu::VariantNames(core, device, lm_properties);
         }
         // the text embedding lookup stays on CPU on NPU, like in the GenAI VLMs
-        m_config = m_npu ? bagel::npu::compile_properties(properties) : properties;
+        m_config = m_npu ? bagel::npu::compile_properties(properties_) : properties_;
         const auto& config = m_config;
         m_text_emb = m_npu ? compile("text_embeddings_model.xml", "CPU", {})
-                           : compile("text_embeddings_model.xml", device, properties);
+                           : compile("text_embeddings_model.xml", device, properties_);
         m_vit = compile("vision_embeddings_model.xml", device, config);
         ov::AnyMap lm_config = config;
         if (device.find("GPU") != std::string::npos) {
@@ -546,10 +610,15 @@ private:
     using KVCache = std::vector<ov::Tensor>;
 
     ov::InferRequest compile(const std::string& name, const std::string& device, const ov::AnyMap& config) {
+        const auto model = name.substr(0, name.find("_model.xml"));
+        auto model_config = config;
+        for (const auto& [key, value] : m_model_properties[model]) {
+            model_config[key] = value;
+        }
         const auto t0 = Clock::now();
         auto compiled = utils::singleton_core().compile_model(
-            (m_models_dir / model_file(m_models_dir, name)).string(), device, config);
-        add_compile_ms("compile_model " + name.substr(0, name.find("_model.xml")), ms_since(t0));
+            (m_models_dir / model_file(m_models_dir, name)).string(), device, model_config);
+        add_compile_ms("compile_model " + model, ms_since(t0));
         return compiled.create_infer_request();
     }
 
@@ -942,25 +1011,27 @@ private:
             const float t = ts[i];
             const bool use_cfg = interval.first < t && t <= interval.second;
             auto v = velocity(x, t, main, vae_pos);
-            if (use_cfg) {
-                auto v_ = v;
+            if (use_cfg && cfg_text && config.cfg_text_scale > 1.0f) {
                 // as BAGEL, image guidance only refines text guidance
-                if (cfg_text && config.cfg_text_scale > 1.0f) {
-                    const auto vt = velocity(x, t, *cfg_text, vae_pos);
-                    for (size_t k = 0; k < v.size(); ++k) {
-                        v_[k] = vt[k] + config.cfg_text_scale * (v[k] - vt[k]);
-                    }
-                    if (cfg_img && config.cfg_img_scale > 1.0f) {
-                        const auto vi = velocity(x, t, *cfg_img, vae_pos);
-                        for (size_t k = 0; k < v.size(); ++k) {
-                            v_[k] = vi[k] + config.cfg_img_scale * (v_[k] - vi[k]);
-                        }
-                    }
-                }
-                const float scale = std::max(std::min(l2_norm(v) / (l2_norm(v_) + 1e-8f), 1.0f), config.cfg_renorm_min);
+                const auto vt = velocity(x, t, *cfg_text, vae_pos);
+                std::vector<float> guided(v.size());
                 for (size_t k = 0; k < v.size(); ++k) {
-                    v[k] = v_[k] * scale;
+                    guided[k] = vt[k] + config.cfg_text_scale * (v[k] - vt[k]);
                 }
+                const bool text_channel = config.cfg_renorm_type == "text_channel";
+                if (text_channel) {
+                    renorm(guided, v, dim, true, config.cfg_renorm_min);
+                }
+                if (cfg_img && config.cfg_img_scale > 1.0f) {
+                    const auto vi = velocity(x, t, *cfg_img, vae_pos);
+                    for (size_t k = 0; k < v.size(); ++k) {
+                        guided[k] = vi[k] + config.cfg_img_scale * (guided[k] - vi[k]);
+                    }
+                }
+                if (!text_channel) {
+                    renorm(guided, v, dim, config.cfg_renorm_type == "channel", config.cfg_renorm_min);
+                }
+                v = std::move(guided);
             }
             const float dt = ts[i] - ts[i + 1];
             for (size_t k = 0; k < v.size(); ++k) {
@@ -1044,6 +1115,7 @@ private:
     std::filesystem::path m_models_dir;
     std::string m_device;
     ov::AnyMap m_config;
+    std::map<std::string, ov::AnyMap> m_model_properties;
     std::map<std::string, std::optional<ov::InferRequest>> m_frames_models;
     Tokenizer m_tokenizer;
     ov::InferRequest m_text_emb, m_vit, m_lm, m_vae_enc, m_vae_dec;

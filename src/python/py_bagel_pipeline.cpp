@@ -35,6 +35,10 @@ void init_bagel_pipeline(py::module_& m) {
                        "Guidance is applied for timesteps t with low < t <= high; defaults to (0.4, 1.0] for "
                        "text-to-image and (0.0, 1.0] for image editing.")
         .def_readwrite("cfg_renorm_min", &BagelImageGenerationConfig::cfg_renorm_min)
+        .def_readwrite("cfg_renorm_type",
+                       &BagelImageGenerationConfig::cfg_renorm_type,
+                       "global (all latent tokens), channel (per token) or text_channel (per token, on the "
+                       "text-guided velocity before image guidance, the image editing default of BAGEL).")
         .def_readwrite("seed", &BagelImageGenerationConfig::seed, "Matches numpy.random.RandomState(seed).randn.")
         .def_readwrite("frame_labels",
                        &BagelImageGenerationConfig::frame_labels,
