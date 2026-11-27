@@ -144,8 +144,9 @@ public:
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";
 
-    // MiniCPM-V 4.7 specific config
-    /// @brief Image size for num_patches_per_side calculation in vision embeddings.
+    // MiniCPM-V 4.7 and InternVL specific config
+    /// @brief Vision encoder input image size: used for num_patches_per_side calculation in vision embeddings
+    /// (MiniCPM-V) and as the image tile size (InternVL).
     size_t vision_config_image_size = 980;
     /// @brief Window kernel size for ViT window attention merge.
     size_t vision_config_window_kernel_size = 2;

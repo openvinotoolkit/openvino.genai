@@ -4241,3 +4241,25 @@ def test_gemma3_pa_chat_does_not_duplicate_bos(chat_api):
             result = pipeline.generate(ChatHistory([{"role": "user", "content": prompt}]), generation_config=config)
         input_counts.append(result.perf_metrics.get_num_input_tokens())
     assert input_counts == [len(expected_ids), len(expected_ids)]
+
+
+@pytest.mark.transformers_lower_v5(reason="internvl_chat is not supported by transformers>=v5")
+def test_internvl_chat_tile_size_from_vision_config(cat_tensor: openvino.Tensor, tmp_path: Path):
+    # InternVL3.5 checkpoints ship preprocessor_config.json in GotOcr2 format (size.height/width, no
+    # size.shortest_edge). Tiles must still be vision_config.image_size, as in the remote-code preprocessing.
+    model_dir = Path(_get_ov_model("optimum-intel-internal-testing/tiny-random-internvl2"))
+    image_size = json.loads((model_dir / "config.json").read_text())["vision_config"]["image_size"]
+    gotocr2_model_dir = tmp_path / "gotocr2_preprocessor_config"
+    shutil.copytree(model_dir, gotocr2_model_dir)
+    preprocessor_config_path = gotocr2_model_dir / "preprocessor_config.json"
+    preprocessor_config = json.loads(preprocessor_config_path.read_text())
+    preprocessor_config.pop("crop_size", None)
+    preprocessor_config["size"] = {"height": image_size, "width": image_size}
+    preprocessor_config_path.write_text(json.dumps(preprocessor_config))
+
+    config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
+    prompt = "<image>\nDescribe this image."
+    expected = VLMPipeline(model_dir, "CPU").generate(prompt, images=[cat_tensor], generation_config=config)
+    actual = VLMPipeline(gotocr2_model_dir, "CPU").generate(prompt, images=[cat_tensor], generation_config=config)
+    assert actual.texts == expected.texts
+    assert actual.perf_metrics.get_num_input_tokens() == expected.perf_metrics.get_num_input_tokens()

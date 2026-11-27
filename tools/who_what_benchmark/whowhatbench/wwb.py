@@ -818,7 +818,11 @@ def load_processor(args):
                 trust_remote_code=True)
             preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
             config = model.config
-        elif config.model_type == "videochat_flash_qwen":
+        elif config.model_type in ("videochat_flash_qwen", "internvl_chat"):
+            # Remote-code InternVL (internvl_chat) checkpoints are preprocessed with the tokenizer and config only
+            # (see inputs_preprocessors/internvl.py). Their processor_config.json may still reference the native
+            # transformers InternVLProcessor, which requires tokenizer attributes (e.g. start_image_token)
+            # that the remote-code tokenizer does not define, so the processor must not be instantiated.
             preprocessor = None
         else:
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
