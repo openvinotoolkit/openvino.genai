@@ -1,9 +1,11 @@
 import os
+import re
 import pytest
 import logging
 import shutil
 import subprocess  # nosec B404
 import sys
+import time
 
 from pathlib import Path
 from typing import Any, Callable, Dict
@@ -228,19 +230,57 @@ def session_setup_teardown():
             logger.info(f"Skipped temporary directory cleanup because it doesn't exist: {ov_cache_dir}")
 
 
+# wwb output of a run that failed on a Hugging Face Hub rate limit or a network error, which a later run can pass.
+# Keep in sync with the --only-rerun pattern of PYTEST_ADDOPTS in the "Tests" step of the genai_tests_wheel jobs.
+WWB_TRANSIENT_ERROR = re.compile(
+    r"Too Many Requests|\b5\d\d Server Error|Gateway Time-?out|Temporary failure in name resolution"
+    r"|Name or service not known|nodename nor servname provided|getaddrinfo failed|Connection reset by peer"
+    r"|forcibly closed by the remote host|Server disconnected without sending a response|Read timed out"
+    r"|The read operation timed out"
+)
+# The Hugging Face Hub reports when the rate limit window frees up: "Retry after 45 seconds (0/3000 requests ...)".
+WWB_RETRY_AFTER = re.compile(r"Retry after (\d+) seconds")
+WWB_DEFAULT_RETRY_DELAY_SECONDS = 30
+WWB_MAX_RETRY_DELAY_SECONDS = 120
+WWB_MAX_ATTEMPTS = 3
+# Caps the total wait of a session, so that a long outage fails the job instead of running into its timeout.
+WWB_MAX_SESSION_RETRIES = 2
+_wwb_session_retries = 0
+
+
+def _wwb_retry_delay(output: str) -> int | None:
+    """Returns the seconds to wait before rerunning a failed wwb command, or None if the failure is not transient."""
+    if not output or not WWB_TRANSIENT_ERROR.search(output):
+        return None
+    retry_after = [int(seconds) for seconds in WWB_RETRY_AFTER.findall(output)]
+    # A few extra seconds so the rerun doesn't start right at the window boundary
+    delay = max(retry_after) + 5 if retry_after else WWB_DEFAULT_RETRY_DELAY_SECONDS
+    return min(delay, WWB_MAX_RETRY_DELAY_SECONDS)
+
+
 def run_wwb(args: list[str], env=None):
+    global _wwb_session_retries
+
     command = ["wwb"] + args
     base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
     if env:
         base_env.update(env)
 
-    try:
-        return subprocess.check_output(
-            command,
-            stderr=subprocess.STDOUT,
-            encoding="utf-8",
-            env=base_env,
-        )
-    except subprocess.CalledProcessError as error:
-        logger.error(f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n{error.output}")
-        raise
+    for attempt in range(1, WWB_MAX_ATTEMPTS + 1):
+        try:
+            return subprocess.check_output(
+                command,
+                stderr=subprocess.STDOUT,
+                encoding="utf-8",
+                env=base_env,
+            )
+        except subprocess.CalledProcessError as error:
+            logger.error(f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n{error.output}")
+            delay = _wwb_retry_delay(error.output)
+            if delay is None or attempt == WWB_MAX_ATTEMPTS or _wwb_session_retries >= WWB_MAX_SESSION_RETRIES:
+                raise
+            _wwb_session_retries += 1
+            logger.warning(
+                f"wwb failed on a transient error (attempt {attempt}/{WWB_MAX_ATTEMPTS}), retrying in {delay} s"
+            )
+            time.sleep(delay)

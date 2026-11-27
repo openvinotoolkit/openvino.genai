@@ -774,6 +774,12 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
+        env:
+          # Reruns tests that fail on Hugging Face Hub rate limits and network errors. Keep the pattern in sync with
+          # WWB_TRANSIENT_ERROR in tools/who_what_benchmark/tests/conftest.py, which retries the failed wwb command.
+          PYTEST_ADDOPTS: >-
+            --reruns 2 --reruns-delay 30 --max-suite-reruns 2
+            --only-rerun "Too Many Requests|\b5\d\d Server Error|Gateway Time-?out|Temporary failure in name resolution|Name or service not known|nodename nor servname provided|getaddrinfo failed|Connection reset by peer|forcibly closed by the remote host|Server disconnected without sending a response|Read timed out|The read operation timed out"
 
   genai_misaki_parity:
     name: Misaki C++ Parity (Windows)

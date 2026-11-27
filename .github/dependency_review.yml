@@ -38,3 +38,4 @@ allow-dependencies-licenses:
   - "pkg:pypi/PyGithub" # Dependencies of the workflow rerunner script
   - "pkg:pypi/psycopg2-binary"
   - "pkg:pypi/tqdm" # MPL-2.0 AND MIT
+  - "pkg:pypi/pytest-rerunfailures" # MPL-2.0, test-only dependency: https://github.com/pytest-dev/pytest-rerunfailures
