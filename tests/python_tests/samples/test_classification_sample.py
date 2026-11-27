@@ -1,6 +1,8 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import subprocess
 import sys
 
 import pytest
@@ -21,6 +23,12 @@ def test_sample_classification(convert_model, generate_test_content, with_image)
     py_result = run_sample([sys.executable, py_script, convert_model, prompt, *images])
 
     cpp_sample = SAMPLES_CPP_DIR / "classification"
+    if with_image:
+        # DIAG (temporary, do not merge): the [H, W, 3] variant is logged by run_sample and not asserted.
+        try:
+            run_sample([cpp_sample, convert_model, prompt, *images], env={**os.environ, "CLS_DIAG_IMAGE_3D": "1"})
+        except subprocess.CalledProcessError:
+            pass
     cpp_result = run_sample([cpp_sample, convert_model, prompt, *images])
 
     assert py_result.stdout, "The sample must print label scores"
