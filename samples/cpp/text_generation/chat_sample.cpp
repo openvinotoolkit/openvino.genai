@@ -25,9 +25,8 @@ int main(int argc, char* argv[]) try {
 
     // Customize the system prompt to set the assistant's role and behavior.
     const std::string system_prompt = "You are a helpful assistant.";
-    ov::genai::ChatHistory chat_history({
-        {{"role", "system"}, {"content", system_prompt}}
-    });
+    ov::genai::ChatHistory chat_history;
+    chat_history.push_back({{"role", "system"}, {"content", system_prompt}});
 
     std::cout << "question:\n";
     while (std::getline(std::cin, prompt)) {

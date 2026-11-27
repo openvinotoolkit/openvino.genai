@@ -35,7 +35,10 @@ async function main() {
   const pipe = await LLMPipeline(MODEL_PATH, device);
   const config = { 'max_new_tokens': 100 };
 
+  // Customize the system prompt to set the assistant's role and behavior.
+  const systemPrompt = 'You are a helpful assistant.';
   const chatHistory = new ChatHistory();
+  chatHistory.push({ role: "system", content: systemPrompt });
   promptUser();
 
   // Function to prompt the user for input

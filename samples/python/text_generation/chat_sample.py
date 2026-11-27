@@ -26,9 +26,8 @@ def main():
 
     # Customize the system prompt to set the assistant's role and behavior.
     system_prompt = "You are a helpful assistant."
-    chat_history = openvino_genai.ChatHistory(
-        [{"role": "system", "content": system_prompt}]
-    )
+    chat_history = openvino_genai.ChatHistory()
+    chat_history.append({"role": "system", "content": system_prompt})
     while True:
         try:
             prompt = input("question:\n")
