@@ -121,6 +121,8 @@ jobs:
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
       CCACHE_DIR: ${{ github.workspace }}\ccache
+      # The Release cache outgrows 500Mi, which evicts entries and lowers the hit rate.
+      CCACHE_MAXSIZE: ${{ matrix.build-type == 'Release' && '1Gi' || '500Mi' }}
       MANIFEST_PATH: ${{ github.workspace }}\manifest.yml
 
     steps:
@@ -647,13 +649,19 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-4-cores-8gb-build
+    runs-on: aks-win-8-cores-16gb-build
 
     env:
+      CMAKE_GENERATOR: Ninja # Ninja is the only Windows native generator supported by ccache
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/openvino.genai
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
       BUILD_DIR: ${{ github.workspace }}/build
+      CCACHE_DIR: ${{ github.workspace }}\ccache
+      # Normalize workspace paths and volatile time macros so ccache hits across runs.
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: 'true'
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
 
     steps:
       - name: Clone openvino.genai
@@ -675,15 +683,58 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      - name: Download and install ninja
+        run: |
+          Invoke-WebRequest https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip -OutFile ninja-win.zip -MaximumRetryCount 10
+          Expand-Archive -Force ninja-win.zip
+          # Add it to the GitHub Path so it would be available in the subsequent steps
+          Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}/ninja-win"
+
+      - name: Download and install ccache
+        run: |
+          Invoke-WebRequest -Uri 'https://github.com/ccache/ccache/releases/download/v4.9.1/ccache-4.9.1-windows-x86_64.zip' -OutFile 'ccache.zip'
+          Expand-Archive -Path 'ccache.zip' -DestinationPath 'C:\temp\ccache'
+          Move-Item -Path 'C:\temp\ccache\*' -Destination 'C:\ccache'
+          Add-Content -Path $env:GITHUB_PATH -Value "C:\ccache"
+
+      - name: Setup ccache
+        id: ccache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-nodejs-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-nodejs
+          path: ${{ env.CCACHE_DIR }}
+
+      - name: Clean ccache stats
+        run: ccache --zero-stats --show-config
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
+
+      # The NPM package only needs the node addon, so C++ tests and tools are not built.
       - name: Build GenAI Node.js bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release `
             -DENABLE_JS=ON -DCPACK_GENERATOR=NPM `
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF `
+            -DENABLE_TESTS=OFF -DENABLE_TOOLS=OFF `
             -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR }} --config Release --parallel --verbose
+          cmake --build ${{ env.BUILD_DIR }} --config Release --parallel $ENV:NUMBER_OF_PROCESSORS --verbose
           cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Show ccache stats
+        run: ccache --show-stats
+
+      - name: Save ccache
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-nodejs-${{ github.sha }}
+          path: ${{ env.CCACHE_DIR }}
 
       - name: Upload Node.js bindings Build Package
         if: always()

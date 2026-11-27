@@ -70,7 +70,7 @@ def rerun_failed_jobs(repository_name: str, run_id: int, session: requests.Sessi
 
     response.raise_for_status()
 
-    LOGGER.info(f"RUN RETRIGGERED SUCCESSFULLY")
+    LOGGER.info(f"RUN RETRIGGERED SUCCESSFULLY: https://github.com/{repository_name}/actions/runs/{run_id}")
 
 
 def analyze_and_rerun(
@@ -90,7 +90,7 @@ def analyze_and_rerun(
         log_analyzer.analyze()
 
         if log_analyzer.found_matching_error:
-            LOGGER.info(f"FOUND MATCHING ERROR, RETRIGGERING {run.html_url}")
+            LOGGER.info(f"FOUND KNOWN ERRORS IN ALL FAILED JOBS, RETRIGGERING {run.html_url}")
             if is_dry_run:
                 LOGGER.info(f"RUNNING IN DRY RUN MODE, NOT RETRIGGERING, EXITING")
                 return
@@ -110,7 +110,7 @@ def analyze_and_rerun(
                 LOGGER.error(f"Cannot record to database: missing ticket_number or error_text")
                 raise ValueError("Missing ticket_number or error_text for database recording.")
         else:
-            LOGGER.info(f"NO ERROR WAS FOUND, NOT RETRIGGERING")
+            LOGGER.info(f"NOT ALL FAILED JOBS HAVE A KNOWN ERROR, NOT RETRIGGERING")
 
 
 if __name__ == "__main__":

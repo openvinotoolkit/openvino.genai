@@ -5,6 +5,8 @@
 LogAnalyzer tests
 """
 
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -94,3 +96,60 @@ class LogAnalyzerTest(unittest.TestCase):
         )
         analyzer.analyze()
         self.assertFalse(analyzer.found_matching_error)
+
+    def _analyze_jobs(self, job_logs: dict[str, dict[str, str]]) -> LogAnalyzer:
+        """
+        Analyzes logs laid out as `collect_logs_for_run` saves them: {job name: {file name: content}}
+        """
+        with tempfile.TemporaryDirectory() as logs_dir:
+            for job_name, files in job_logs.items():
+                job_dir = Path(logs_dir, job_name)
+                job_dir.mkdir()
+                for file_name, content in files.items():
+                    job_dir.joinpath(file_name).write_text(content, encoding="utf-8")
+
+            analyzer = LogAnalyzer(path_to_logs=Path(logs_dir), path_to_errors_file=self.errors_to_look_for_file)
+            analyzer.analyze()
+            return analyzer
+
+    def test_analyzer_with_error_in_every_job(self) -> None:
+        """
+        Ensure the error of the first job is reported when every job has a known error
+        """
+        analyzer = self._analyze_jobs(
+            {
+                "Job A": {"1_Job A.txt": "OSError: [Errno 101] Network is unreachable\n", "system.txt": "ok\n"},
+                "Job B": {"system.txt": "fatal: unable to access: Could not resolve host: github.com\n"},
+            }
+        )
+        self.assertTrue(analyzer.found_matching_error)
+        self.assertEqual(analyzer.matched_error_text, "Network is unreachable")
+        self.assertEqual(analyzer.unmatched_jobs, [])
+
+    def test_analyzer_with_job_without_error(self) -> None:
+        """
+        Ensure there is no match if one of the jobs has no known error, e.g. a real test failure
+        """
+        with tempfile.TemporaryDirectory() as logs_dir:
+            shutil.copytree(self.logs_dir_with_error, logs_dir, dirs_exist_ok=True)
+            Path(logs_dir, "Tests").mkdir()
+            Path(logs_dir, "Tests", "1_Tests.txt").write_text(
+                "FAILED tests/test_llm.py::test_generate\n", encoding="utf-8"
+            )
+
+            analyzer = LogAnalyzer(path_to_logs=Path(logs_dir), path_to_errors_file=self.errors_to_look_for_file)
+            analyzer.analyze()
+
+        self.assertFalse(analyzer.found_matching_error)
+        self.assertIsNone(analyzer.found_error_ticket)
+        self.assertEqual(analyzer.unmatched_jobs, ["Tests"])
+
+    def test_analyzer_with_job_without_logs(self) -> None:
+        """
+        Ensure there is no match if the logs of one of the jobs were not found
+        """
+        analyzer = self._analyze_jobs(
+            {"Job A": {"system.txt": "OSError: [Errno 101] Network is unreachable\n"}, "Job B": {}}
+        )
+        self.assertFalse(analyzer.found_matching_error)
+        self.assertEqual(analyzer.unmatched_jobs, ["Job B"])
