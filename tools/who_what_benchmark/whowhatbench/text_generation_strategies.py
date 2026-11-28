@@ -77,6 +77,9 @@ class BaseGenerationStrategy(ABC):
     ) -> GenerationResults:
         pass
 
+    def run_batch_generation(self, *args, **kwargs) -> list[GenerationResults]:
+        raise NotImplementedError(f"{self.whoami} does not support batch_size > 1.")
+
     @property
     def whoami(self):
         return type(self).__name__
@@ -235,6 +238,60 @@ class GenAIGeneration(BaseGenerationStrategy):
             generated_token_ids=torch.Tensor(output.tokens[0]),
         )
 
+    def run_batch_generation(
+        self,
+        model,
+        tokenizer,
+        prompts,
+        max_new_tokens,
+        crop_question,
+        use_chat_template=False,
+        empty_adapters=False,
+        num_assistant_tokens=0,
+        assistant_confidence_threshold=0.0,
+        generation_config_extra=None,
+    ) -> list[GenerationResults]:
+        import openvino_genai
+
+        generate_kwargs = dict(
+            do_sample=False,
+            max_new_tokens=max_new_tokens,
+            apply_chat_template=use_chat_template,
+            num_assistant_tokens=num_assistant_tokens,
+            assistant_confidence_threshold=assistant_confidence_threshold,
+        )
+        if empty_adapters:
+            generate_kwargs["adapters"] = openvino_genai.AdapterConfig()
+        if generation_config_extra:
+            generate_kwargs.update(generation_config_extra)
+
+        if Metrics.TOKEN_SIMILARITY.value not in self.metrics_list:
+            output = model.generate(prompts, **generate_kwargs)
+            return [GenerationResults(answer_text=text) for text in output.texts]
+
+        tokenizer = model.get_tokenizer()
+        if use_chat_template:
+            chat_prompts = []
+            for prompt in prompts:
+                chat_history = openvino_genai.ChatHistory()
+                chat_history.append({"role": "user", "content": prompt})
+                chat_prompts.append(tokenizer.apply_chat_template(chat_history, add_generation_prompt=True))
+            prompts = chat_prompts
+
+        tokenized_input = tokenizer.encode(prompts)
+        output = model.generate(tokenized_input, **generate_kwargs)
+
+        return [
+            GenerationResults(
+                answer_text=tokenizer.decode(tokens),
+                prompt_input_ids=torch.from_numpy(input_ids[attention_mask == 1][None]),
+                generated_token_ids=torch.Tensor(tokens),
+            )
+            for input_ids, attention_mask, tokens in zip(
+                tokenized_input.input_ids.data, tokenized_input.attention_mask.data, output.tokens, strict=True
+            )
+        ]
+
 
 class OptimumHFGeneration(BaseGenerationStrategy):
     def __init__(self, metrics_list: list = None, **kwargs):
@@ -254,10 +311,64 @@ class OptimumHFGeneration(BaseGenerationStrategy):
         generation_config_extra=None,
         context: TextGenerationContext | None = None,
     ) -> GenerationResults:
-        is_awq = getattr(model, "is_awq", None) is not None
-        device = "cpu"
-        if hasattr(model, "device"):
-            device = model.device
+        inputs = self._encode_prompt(model, tokenizer, prompt, use_chat_template)
+        tokens = self._generate_tokens(model, inputs, max_new_tokens)
+        if crop_question:
+            tokens = tokens[:, inputs["input_ids"].shape[-1] :]
+
+        return GenerationResults(
+            answer_text=tokenizer.batch_decode(tokens, skip_special_tokens=True)[0],
+            prompt_input_ids=inputs["input_ids"],
+            generated_token_ids=tokens,
+        )
+
+    def run_batch_generation(
+        self,
+        model,
+        tokenizer,
+        prompts,
+        max_new_tokens,
+        crop_question,
+        use_chat_template=False,
+        empty_adapters=False,
+        num_assistant_tokens=0,
+        assistant_confidence_threshold=0.0,
+        generation_config_extra=None,
+    ) -> list[GenerationResults]:
+        encoded = [self._encode_prompt(model, tokenizer, prompt, use_chat_template) for prompt in prompts]
+        padded_len = max(inputs["input_ids"].shape[-1] for inputs in encoded)
+        pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+        batch_inputs = {}
+        for key in encoded[0]:
+            batch_inputs[key] = encoded[0][key].new_full(
+                (len(encoded), padded_len), pad_token_id if key == "input_ids" else 0
+            )
+            for row, inputs in enumerate(encoded):
+                batch_inputs[key][row, padded_len - inputs[key].shape[-1] :] = inputs[key][0]
+
+        tokens = self._generate_tokens(model, batch_inputs, max_new_tokens)
+
+        eos_token_id = model.generation_config.eos_token_id
+        eos_token_ids = torch.tensor(
+            [eos_token_id] if isinstance(eos_token_id, int) else (eos_token_id or []), device=tokens.device
+        )
+        results = []
+        for row, inputs in enumerate(encoded):
+            eos_positions = torch.isin(tokens[row, padded_len:], eos_token_ids).nonzero()
+            end = padded_len + eos_positions[0, 0].item() + 1 if len(eos_positions) else tokens.shape[-1]
+            start = padded_len if crop_question else padded_len - inputs["input_ids"].shape[-1]
+            row_tokens = tokens[row : row + 1, start:end]
+            results.append(
+                GenerationResults(
+                    answer_text=tokenizer.batch_decode(row_tokens, skip_special_tokens=True)[0],
+                    prompt_input_ids=inputs["input_ids"],
+                    generated_token_ids=row_tokens,
+                )
+            )
+        return results
+
+    def _encode_prompt(self, model, tokenizer, prompt, use_chat_template):
+        device = getattr(model, "device", "cpu")
 
         if use_chat_template:
             message = [{"role": "user", "content": prompt}]
@@ -271,24 +382,13 @@ class OptimumHFGeneration(BaseGenerationStrategy):
             inspect.signature(model.forward).parameters.keys()
         ):
             inputs.pop("token_type_ids")
+        return inputs
 
-        if is_awq:
-            with patch_awq_for_inference(is_awq):
-                tokens = model.generate(
-                    **inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag()
-                )
-        else:
-            tokens = model.generate(
+    def _generate_tokens(self, model, inputs, max_new_tokens):
+        with patch_awq_for_inference(getattr(model, "is_awq", None) is not None):
+            return model.generate(
                 **inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag()
             )
-        if crop_question:
-            tokens = tokens[:, inputs["input_ids"].shape[-1] :]
-
-        return GenerationResults(
-            answer_text=tokenizer.batch_decode(tokens, skip_special_tokens=True)[0],
-            prompt_input_ids=inputs["input_ids"],
-            generated_token_ids=tokens,
-        )
 
 
 class KLDivergencyGeneration(BaseGenerationStrategy):

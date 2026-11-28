@@ -74,6 +74,7 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 > **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.<br>
 > **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-n-ctx` to set context window size; if omitted, WWB uses 8192.<br>
+> **NOTE**: use `--batch-size N` to generate `N` prompts per batch in `--model-type text` with HF, Optimum or GenAI backends (default: 1). It is not supported with llama.cpp or `kl_divergency` metric.<br>
 
 ### Compare Agent-style Models
 

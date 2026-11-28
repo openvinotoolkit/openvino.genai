@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import numpy as np
 import pandas as pd
 import pytest
 import logging
@@ -213,10 +214,73 @@ def test_text_genai_model():
             "CPU",
             "--genai",
             "--short-prompt",
+            "--batch-size",
+            "2",
         ]
     )
     assert "Metrics for model" in output
     assert "## Reference text" not in output
+
+
+@pytest.mark.parametrize("backend_args", [["--hf"], [], ["--genai"]], ids=["hf", "optimum", "genai"])
+def test_text_batch_size(backend_args, tmp_path, monkeypatch):
+    prompts = ["Hi", "What is OpenVINO?", "Tell me a long story about a dragon who lived in the mountains and"]
+    dataset_path = tmp_path / "prompts.csv"
+    pd.DataFrame({"prompts": prompts}).to_csv(dataset_path, index=False)
+
+    results = {}
+    for batch_size in ("1", "2"):
+        run_dir = tmp_path / f"batch_{batch_size}"
+        run_dir.mkdir()
+        monkeypatch.chdir(run_dir)
+        run_wwb(
+            [
+                "--base-model",
+                model_id if "--hf" in backend_args else base_model_path,
+                "--gt-data",
+                run_dir / "gt.csv",
+                "--dataset",
+                dataset_path,
+                "--short-prompt",
+                "--max_new_tokens",
+                "16",
+                "--metrics",
+                "similarity",
+                "token_similarity",
+                "--batch-size",
+                batch_size,
+                *backend_args,
+            ]
+        )
+        results[batch_size] = pd.read_csv(run_dir / "gt.csv", keep_default_na=False)
+
+    single, batched = results["1"], results["2"]
+    assert single["prompts"].tolist() == prompts
+    assert batched["prompts"].tolist() == prompts
+    assert all(batched["answers"].values)
+    assert batched["answers"].tolist() == single["answers"].tolist()
+    for column in ("prompt_input_ids_path", "generated_token_ids_path"):
+        for single_path, batched_path in zip(single[column], batched[column]):
+            np.testing.assert_array_equal(
+                np.load(tmp_path / "batch_2" / batched_path), np.load(tmp_path / "batch_1" / single_path)
+            )
+
+
+def test_text_batch_size_args(monkeypatch):
+    from whowhatbench import wwb
+
+    monkeypatch.setattr(sys, "argv", ["wwb", "--gt-data", "gt.csv"])
+    assert wwb.parse_args().batch_size == 1
+
+    for value in ("0", "-1"):
+        monkeypatch.setattr(sys, "argv", ["wwb", "--gt-data", "gt.csv", "--batch-size", value])
+        with pytest.raises(SystemExit):
+            wwb.parse_args()
+
+    for extra_args in (["--metrics", "kl_divergency"], ["--llamacpp"], ["--model-type", "text-to-image"]):
+        monkeypatch.setattr(sys, "argv", ["wwb", "--gt-data", "gt.csv", "--batch-size", "2", *extra_args])
+        with pytest.raises(ValueError, match="--batch-size greater than 1"):
+            wwb.check_args(wwb.parse_args())
 
 
 def test_text_genai_cb_model(tmp_path):

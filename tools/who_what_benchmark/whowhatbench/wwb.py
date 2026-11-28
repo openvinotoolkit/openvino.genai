@@ -519,6 +519,13 @@ def parse_args():
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
     )
     parser.add_argument(
+        "--batch-size",
+        type=positive_integer,
+        default=1,
+        help="Number of prompts generated in one batch for --model-type text with HF, Optimum or GenAI backends. "
+        "Default is 1. Values greater than 1 are not supported with --llamacpp or kl_divergency metric.",
+    )
+    parser.add_argument(
         "--sd-generation-config",
         type=str,
         default=None,
@@ -618,6 +625,14 @@ def check_args(args):
 
     if args.metrics != [Metrics.SIMILARITY.value] and args.model_type != "text":
         raise ValueError(f"For --model-type {args.model_type}, only --metrics={Metrics.SIMILARITY.value} is supported.")
+
+    if args.batch_size > 1 and (
+        args.model_type != "text" or args.llamacpp or Metrics.KL_DIVERGENCY.value in args.metrics
+    ):
+        raise ValueError(
+            "--batch-size greater than 1 is supported only for --model-type text with HF, Optimum or GenAI backends "
+            f"and without --metrics {Metrics.KL_DIVERGENCY.value}."
+        )
 
 
 def load_prompts(args):
@@ -1312,6 +1327,7 @@ def create_evaluator(base_model, args):
                 metrics_list=args.metrics,
                 is_genai=args.genai,
                 is_llamacpp=args.llamacpp,
+                batch_size=args.batch_size,
             )
         elif task == "text-agent" or task == "visual-text-agent":
             tokenizer = load_tokenizer(args)
