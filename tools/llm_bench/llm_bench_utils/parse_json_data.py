@@ -80,8 +80,9 @@ def parse_video_json_data(json_data_list):
             if param in json_data:
                 video_param[param] = float(json_data[param])
 
-        if "media" in json_data:
-            video_param["media"] = json_data["media"]
+        for param in ["media", "negative_prompt"]:
+            if param in json_data:
+                video_param[param] = json_data[param]
 
         video_param_list.append(video_param)
     return video_param_list
