@@ -161,6 +161,7 @@ protected:
     friend class PromptLookupImpl;
     friend class VLMPipeline;
     friend class ContinuousBatchingAdapter;
+    friend class EmbeddingContinuousBatchingPipeline;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 

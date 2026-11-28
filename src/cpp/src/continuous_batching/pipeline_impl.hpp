@@ -8,6 +8,7 @@
 #include "openvino/genai/lora_adapter.hpp"
 #include "continuous_batching/cache/cache_eviction.hpp"
 #include "continuous_batching/cache/hidden_state_cache.hpp"
+#include "continuous_batching/step_embed_feedback.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
@@ -57,6 +58,10 @@ protected:
     std::vector<ov::Tensor> m_current_step_rotation_deltas;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
+
+    // Optional post-sample embedding feedback hook for embedding-input models without a VLM InputsEmbedder.
+    PostSampleEmbedCallback m_post_sample_embed_cb;
+    std::set<int64_t> m_suppressed_token_ids;
 
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -136,6 +141,7 @@ protected:
 
     void _fail_pipeline(std::exception_ptr error) noexcept;
     void _throw_if_failed() const;
+    void _invoke_post_sample_embed_callback(const ContinuousBatchingScheduler::Output& scheduler_output);
     void _step();
 
     virtual void drop_requests();
@@ -158,7 +164,31 @@ public:
                            const ov::genai::GenerationConfig& generation_config,
                            bool is_validation_mode_enabled = false);
 
+    // Constructor for embedding-input models driven by a custom per-step feedback callback
+    // (no VLM InputsEmbedder required; e.g. Qwen3-TTS PagedAttention talker).
+    ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
+                           const Tokenizer& tokenizer,
+                           const SchedulerConfig& scheduler_config,
+                           const std::string& device,
+                           const ov::AnyMap& properties,
+                           const ov::genai::GenerationConfig& generation_config,
+                           PostSampleEmbedCallback post_sample_embed_cb,
+                           std::set<int64_t> suppressed_token_ids = {},
+                           bool enable_hidden_state_export = true);
+
     virtual ~ContinuousBatchingImpl();
+
+    void set_post_sample_embed_callback(PostSampleEmbedCallback callback) {
+        m_post_sample_embed_cb = std::move(callback);
+    }
+
+    // Adds an embedding-input request directly with explicit position_ids (bypasses VLM InputsEmbedder).
+    GenerationHandle add_request_with_embeddings(uint64_t request_id,
+                                                 const ov::Tensor& inputs_embeds,
+                                                 const ov::Tensor& position_ids,
+                                                 const ov::genai::GenerationConfig& sampling_params,
+                                                 std::optional<int64_t> rope_delta = std::nullopt,
+                                                 std::optional<ov::Tensor> prompt_ids = std::nullopt);
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
@@ -227,4 +257,63 @@ public:
 
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 };
+
+// Internal facade exposing ContinuousBatchingImpl in ModelInputType::EMBEDDINGS mode
+// with PostSampleEmbedCallback to non-VLM pipelines (e.g. Qwen3TTSPagedImpl) and unit tests.
+class EmbeddingContinuousBatchingPipeline {
+public:
+    EmbeddingContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& model,
+                                        const Tokenizer& tokenizer,
+                                        const SchedulerConfig& scheduler_config,
+                                        const std::string& device,
+                                        const ov::AnyMap& properties,
+                                        const ov::genai::GenerationConfig& generation_config,
+                                        PostSampleEmbedCallback post_sample_embed_cb,
+                                        std::set<int64_t> suppressed_token_ids = {},
+                                        bool enable_hidden_state_export = true)
+        : m_impl(std::make_unique<ContinuousBatchingPipeline::ContinuousBatchingImpl>(
+              model,
+              tokenizer,
+              scheduler_config,
+              device,
+              properties,
+              generation_config,
+              std::move(post_sample_embed_cb),
+              std::move(suppressed_token_ids),
+              enable_hidden_state_export)) {}
+
+    void set_post_sample_embed_callback(PostSampleEmbedCallback callback) {
+        m_impl->set_post_sample_embed_callback(std::move(callback));
+    }
+
+    GenerationHandle add_request_with_embeddings(uint64_t request_id,
+                                                 const ov::Tensor& inputs_embeds,
+                                                 const ov::Tensor& position_ids,
+                                                 const ov::genai::GenerationConfig& sampling_params,
+                                                 std::optional<int64_t> rope_delta = std::nullopt,
+                                                 std::optional<ov::Tensor> prompt_ids = std::nullopt) {
+        return m_impl->add_request_with_embeddings(
+            request_id, inputs_embeds, position_ids, sampling_params, rope_delta, prompt_ids);
+    }
+
+    bool has_non_finished_requests() {
+        return m_impl->has_non_finished_requests();
+    }
+
+    void step() {
+        m_impl->step();
+    }
+
+    std::vector<SequenceGroup::Ptr> get_awaiting_requests() {
+        return m_impl->get_awaiting_requests();
+    }
+
+    PipelineMetrics get_metrics() const {
+        return m_impl->get_metrics();
+    }
+
+private:
+    std::unique_ptr<ContinuousBatchingPipeline::ContinuousBatchingImpl> m_impl;
+};
+
 } // namespace ov::genai

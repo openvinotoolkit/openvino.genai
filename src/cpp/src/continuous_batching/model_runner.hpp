@@ -616,19 +616,19 @@ public:
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-            OPENVINO_ASSERT(m_inputs_embedder, "Inputs embedder is not set for embeddings-based model");
-
             hidden_size = sequence_groups[0]->get_hidden_size();
 
-            const size_t first_sequence_groups_id = scheduler_output.m_scheduled_sequence_groups_ids[0];
-            per_layer_inputs_context.init(
-                sequence_groups[first_sequence_groups_id]->get_per_layer_inputs(),
-                m_inputs_embedder->get_per_layer_embeddings_callback()
-            );
-            ngram_embeddings_context.init(
-                sequence_groups[first_sequence_groups_id]->get_ngram_embeddings(),
-                m_inputs_embedder->get_ngram_embeddings_callback()
-            );
+            if (m_inputs_embedder) {
+                const size_t first_sequence_groups_id = scheduler_output.m_scheduled_sequence_groups_ids[0];
+                per_layer_inputs_context.init(
+                    sequence_groups[first_sequence_groups_id]->get_per_layer_inputs(),
+                    m_inputs_embedder->get_per_layer_embeddings_callback()
+                );
+                ngram_embeddings_context.init(
+                    sequence_groups[first_sequence_groups_id]->get_ngram_embeddings(),
+                    m_inputs_embedder->get_ngram_embeddings_callback()
+                );
+            }
         }
 
 

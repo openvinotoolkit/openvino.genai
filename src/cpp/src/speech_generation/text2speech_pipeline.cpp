@@ -12,6 +12,8 @@
 #include "kokoro_tts_model.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_model.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_paged_model.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_utils.hpp"
 #include "speecht5_tts_model.hpp"
 #include "utils.hpp"
 
@@ -91,7 +93,30 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
         m_impl = std::make_shared<SpeechT5TTSImpl>(root_dir, device, properties, tokenizer);
     } else if (backend == SpeechBackend::Qwen3TTS) {
         auto tokenizer = ov::genai::Tokenizer(root_dir);
-        m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, properties, tokenizer);
+        auto [talker_device, _] = qwen3_tts::resolve_component_target(device, properties, qwen3_tts::roles::TALKER);
+        const bool is_npu_talker = talker_device.find("NPU") != std::string::npos;
+        const bool has_explicit_attention_backend = properties.find("attention_backend") != properties.end();
+        const bool has_scheduler_config = properties.find(ov::genai::scheduler_config.name()) != properties.end();
+        auto [__, attention_backend] = utils::extract_attention_backend(properties, is_npu_talker);
+
+        const bool request_paged_attention =
+            !is_npu_talker &&
+            ((has_explicit_attention_backend && attention_backend == PA_BACKEND) ||
+             (!has_explicit_attention_backend && has_scheduler_config));
+
+        if (request_paged_attention) {
+            try {
+                m_impl = std::make_shared<Qwen3TTSPagedImpl>(root_dir, device, properties, tokenizer);
+            } catch (const ov::Exception& e) {
+                if (has_explicit_attention_backend && attention_backend == PA_BACKEND) {
+                    throw;
+                }
+                utils::log_paged_attention_fallback(e);
+                m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, properties, tokenizer);
+            }
+        } else {
+            m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, properties, tokenizer);
+        }
     } else {
         m_impl = std::make_shared<KokoroTTSImpl>(root_dir, device, properties);
     }

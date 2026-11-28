@@ -143,6 +143,8 @@ inline void strip_speech_routing_properties(ov::AnyMap& properties) {
     properties.erase("device_mapping");
     properties.erase("decoder_device");
     properties.erase("encoder_device");
+    properties.erase("attention_backend");
+    properties.erase("scheduler_config");
 }
 
 inline bool is_non_llm_codec_role(const std::string& role) {
