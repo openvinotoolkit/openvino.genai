@@ -33,6 +33,11 @@ public:
                                        const ov::Tensor& speaker_embedding,
                                        const SpeechGenerationConfig& generation_config) override;
 
+    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                       const ov::Tensor& speaker_embedding,
+                                       const SpeechGenerationConfig& generation_config,
+                                       const AudioStreamerVariant& streamer) override;
+
     ov::Shape get_speaker_embedding_shape() const override;
 
 private:
@@ -43,17 +48,22 @@ private:
 
     Text2SpeechDecodedResults generate_voice_clone(const std::string& text,
                                                    const Qwen3VoiceClonePrompt& prompt,
-                                                   const SpeechGenerationConfig& generation_config);
+                                                   const SpeechGenerationConfig& generation_config,
+                                                   const AudioStreamerVariant& streamer,
+                                                   std::chrono::steady_clock::time_point generation_start);
 
     Text2SpeechDecodedResults decode_from_prefill(const ov::Tensor& talker_prefill,
                                                   const ov::Tensor& tts_pad,
                                                   const ov::Tensor& trailing_text_hidden,
                                                   const SpeechGenerationConfig& generation_config,
                                                   const std::vector<bool>& suppress_tokens,
-                                                  const ov::Tensor& ref_codec_ids = ov::Tensor{});
+                                                  const ov::Tensor& ref_codec_ids = ov::Tensor{},
+                                                  const AudioStreamerVariant& streamer = std::monostate{},
+                                                  std::optional<std::chrono::steady_clock::time_point> generation_start = std::nullopt);
 
     Qwen3TTSCodecEngine m_engine;
     ov::InferRequest m_talker;
+    std::string m_talker_device;
 
     mutable int64_t m_talker_prefill_tokens = 0;
 };

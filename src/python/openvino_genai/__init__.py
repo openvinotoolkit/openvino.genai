@@ -16,6 +16,7 @@ from .py_openvino_genai import (
     RawPerfMetrics,
     PerfMetrics,
     StreamerBase,
+    AudioStreamerBase,
     OmniSpeechStreamerBase,
     get_version,
     StreamingStatus,

@@ -3,15 +3,31 @@
 
 #pragma once
 
+#include <map>
 #include <optional>
+#include <string>
 
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/speech_generation/audio_streamer_base.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 
 namespace ov {
 namespace genai {
 class Text2SpeechPipelineImpl;
+
+/// @brief Per-component device overrides for multi-submodel TTS pipelines (e.g. Qwen3-TTS),
+///        keyed by component role name (e.g. "talker_model", "code_predictor_fused",
+///        "code_predictor_model", "codec_decoder", "codec_encoder", "speaker_encoder").
+static constexpr ov::Property<std::map<std::string, std::string>> device_mapping{"device_mapping"};
+
+/// @brief Shorthand device override for the speech tokenizer / vocoder decoder component
+///        (e.g. "NPU" for GPU Talker + NPU Decoder heterogeneous execution).
+static constexpr ov::Property<std::string> decoder_device{"decoder_device"};
+
+/// @brief Shorthand device override for reference audio encoder components
+///        (speech tokenizer encoder, speaker encoder, and mel preprocessing).
+static constexpr ov::Property<std::string> encoder_device{"encoder_device"};
 
 /**
  * Structure that stores the result from the generate method, including a list of waveform tensors
@@ -92,6 +108,21 @@ public:
     }
 
     /**
+     * Generates speech for a single text and streams PCM audio chunks as they are decoded.
+     * @param text input text for which to generate speech
+     * @param speaker_embedding Optional speaker embedding tensor
+     * @param generation_config Optional speech generation configuration override
+     * @param streamer Callback or AudioStreamerBase subclass to receive audio chunks [1, 1, N_samples]
+     * @returns full decoded speech result and performance metrics (including TTFA and RTF)
+     */
+    Text2SpeechDecodedResults generate(const std::string& text,
+                                       const ov::Tensor& speaker_embedding,
+                                       const std::optional<SpeechGenerationConfig>& generation_config,
+                                       const AudioStreamerVariant& streamer) {
+        return generate(std::vector<std::string>{text}, speaker_embedding, generation_config, streamer);
+    }
+
+    /**
      * Generates speeches based on input texts
      * @param texts input texts for which to generate speeches
      * @param speaker_embedding Optional speaker embedding tensor representing the unique characteristics of a speaker's
@@ -118,6 +149,19 @@ public:
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        const std::optional<SpeechGenerationConfig>& generation_config = std::nullopt);
+
+    /**
+     * Generates speeches for one or more texts and streams PCM audio chunks as they are decoded.
+     * @param texts input texts for which to generate speeches
+     * @param speaker_embedding Optional speaker embedding tensor
+     * @param generation_config Optional speech generation configuration override
+     * @param streamer Callback or AudioStreamerBase subclass to receive audio chunks [1, 1, N_samples]
+     * @returns full decoded speech results and performance metrics
+     */
+    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                       const ov::Tensor& speaker_embedding,
+                                       const std::optional<SpeechGenerationConfig>& generation_config,
+                                       const AudioStreamerVariant& streamer);
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
