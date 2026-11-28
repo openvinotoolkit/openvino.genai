@@ -204,6 +204,15 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request_config(con
     OPENVINO_ASSERT(!config.return_omni_outputs, "DFlash does not support Omni intermediate outputs.");
 }
 
+GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_main_generation_config(
+    const GenerationConfig& config) const {
+    GenerationConfig main_config = config;
+    if (!main_config.num_assistant_tokens.has_value()) {
+        main_config.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
+    }
+    return main_config;
+}
+
 GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_generation_config(
     const GenerationConfig& config) {
     // The target decides when to stop and what to return; the draft only proposes candidates, drawn independently
@@ -265,6 +274,42 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
+    const auto main_sampling_params = make_main_generation_config(sampling_params);
+
+    // The draft prompt is the target prompt: draft position t pairs with target hidden state t.
+    // insert_or_assign drops a stale handle a finished request may leave under the same request_id.
+    RollbackGuard discard_request{[this, request_id] {
+        discard_awaiting_request(request_id);
+    }};
+    if (has_draft_request(main_sampling_params)) {
+        m_draft_generations.insert_or_assign(
+            request_id,
+            m_draft_pipeline->add_request(request_id, input_ids, make_draft_generation_config(main_sampling_params), prompt_ids));
+    }
+    auto main_handle =
+        m_main_pipeline->add_request(request_id, input_ids, main_sampling_params, prompt_ids, lm_extra_inputs);
+    align_request_pair_processed_prefix(request_id);
+    discard_request.dismiss();
+    return main_handle;
+}
+
+GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const ov::genai::GenerationConfig& sampling_params) {
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+    }
+    return add_request(request_id, m_tokenizer.encode(prompt).input_ids, sampling_params);
+}
+
+void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    const ov::genai::GenerationConfig& sampling_params,
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
     validate_request_config(sampling_params);
     const auto input_shape = input_ids.get_shape();
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
@@ -278,43 +323,19 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     }
     OPENVINO_ASSERT(m_model_input_type != ModelInputType::EMBEDDINGS || !m_main_pipeline->is_prefix_caching_enabled() ||
                         (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
-                         prompt_ids->get_size() == input_ids.get_shape()[1]),
+                         prompt_ids->get_size() == input_shape[1]),
                     "DFlash prefix caching requires built-in prompt preparation with one token ID per embedding");
-    auto main_sampling_params = sampling_params;
-    if (!main_sampling_params.num_assistant_tokens.has_value()) {
-        main_sampling_params.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
-    }
+    const auto main_sampling_params = make_main_generation_config(sampling_params);
     OPENVINO_ASSERT(!has_draft_request(main_sampling_params) || main_sampling_params.is_greedy_decoding() ||
                         !m_main_pipeline->is_prefix_caching_enabled() || !m_main_pipeline->has_linear_attention_cache(),
                     "DFlash speculative decoding of models with linear-attention state supports greedy decoding only "
                     "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
-
-    // The draft prompt is the target prompt: draft position t pairs with target hidden state t.
-    // insert_or_assign drops a stale handle a finished request may leave under the same request_id.
-    try {
-        if (has_draft_request(main_sampling_params)) {
-            m_draft_generations.insert_or_assign(
-                request_id,
-                m_draft_pipeline->add_request(request_id, input_ids, make_draft_generation_config(main_sampling_params), prompt_ids));
-        }
-        auto main_handle =
-            m_main_pipeline->add_request(request_id, input_ids, main_sampling_params, prompt_ids, lm_extra_inputs);
-        align_request_pair_processed_prefix(request_id);
-        return main_handle;
-    } catch (...) {
-        discard_awaiting_request(request_id);
-        throw;
+    if (has_draft_request(main_sampling_params)) {
+        m_draft_pipeline->validate_request(request_id,
+                                           input_shape[1],
+                                           make_draft_generation_config(main_sampling_params));
     }
-}
-
-GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
-    uint64_t request_id,
-    const std::string& prompt,
-    const ov::genai::GenerationConfig& sampling_params) {
-    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
-    }
-    return add_request(request_id, m_tokenizer.encode(prompt).input_ids, sampling_params);
+    m_main_pipeline->validate_request(request_id, input_ids, main_sampling_params, prompt_ids, lm_extra_inputs);
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingImpl::generate(

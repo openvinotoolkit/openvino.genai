@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <new>
+#include <numeric>
 
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -327,6 +328,118 @@ protected:
         std::shared_ptr<MtpAdmissionChild> draft_child;
     };
 
+    struct SteppingReached {};
+
+    // Starts the allocation budget at the first add_request() of generate() and ends generate() at its first step,
+    // which would need a model. The budget cannot start earlier: generate() destroys a Tokenizer copy before it adds
+    // a request, and ~Tokenizer() allocates unless an openvino_tokenizers library is loaded.
+    template <typename Base>
+    class StopsAtFirstStep : public Base {
+    public:
+        using Base::Base;
+        using Base::add_request;
+
+        ov::genai::GenerationHandle add_request(
+            uint64_t request_id,
+            const ov::Tensor& input_ids,
+            const ov::genai::GenerationConfig& config,
+            std::optional<ov::Tensor> prompt_ids = std::nullopt,
+            std::optional<std::unordered_map<std::string, ov::Tensor>> extra_inputs = std::nullopt) override {
+            if (request_id == 0) {
+                allocations_remaining = successful_allocations;
+            }
+            return Base::add_request(request_id, input_ids, config, prompt_ids, extra_inputs);
+        }
+
+        void step() override {
+            allocations_remaining = std::numeric_limits<size_t>::max();
+            stepping_reached = true;
+            throw SteppingReached{};
+        }
+
+        size_t successful_allocations = std::numeric_limits<size_t>::max();
+        bool stepping_reached = false;
+    };
+
+    class GeneratePipeline : public ContinuousBatchingImpl {
+    public:
+        explicit GeneratePipeline(const std::shared_ptr<ov::genai::ContinuousBatchingScheduler>& scheduler) {
+            m_scheduler = scheduler;
+            m_sampler = std::make_shared<ov::genai::Sampler>();
+        }
+
+        size_t awaiting_count() const {
+            return m_awaiting_requests.size();
+        }
+    };
+
+    class GenerateChild : public ContinuousBatchingForSpeculativeDecodingImpl {
+    public:
+        explicit GenerateChild(const std::shared_ptr<ov::genai::ContinuousBatchingScheduler>& scheduler) {
+            m_scheduler = scheduler;
+            m_sampler = std::make_shared<ov::genai::Sampler>();
+        }
+
+        size_t awaiting_count() const {
+            return m_awaiting_requests.size();
+        }
+    };
+
+    class SpeculativeGeneratePipeline : public SpeculativeDecodingImpl {
+    public:
+        SpeculativeGeneratePipeline(const std::shared_ptr<GenerateChild>& main, const std::shared_ptr<GenerateChild>& draft)
+            : main_child(main),
+              draft_child(draft) {
+            m_main_pipeline = main;
+            m_draft_pipeline = draft;
+        }
+
+        size_t awaiting_count() const {
+            return main_child->awaiting_count() + draft_child->awaiting_count() + m_draft_generations.size();
+        }
+
+    private:
+        std::shared_ptr<GenerateChild> main_child;
+        std::shared_ptr<GenerateChild> draft_child;
+    };
+
+    std::shared_ptr<ov::genai::ContinuousBatchingScheduler> make_scheduler() {
+        return std::make_shared<ov::genai::ContinuousBatchingScheduler>(make_orchestrator(), ov::genai::SchedulerConfig{});
+    }
+
+    // Runs generate() for two requests, failing the allocations after the first allocation_index ones, for each
+    // allocation_index up to the first step. make_pipeline gives a StopsAtFirstStep pipeline without requests;
+    // a generate() that fails must leave it without requests.
+    template <typename MakePipeline>
+    void expect_failed_generate_leaves_no_request(const MakePipeline& make_pipeline,
+                                                  const ov::genai::GenerationConfig& config) {
+        ov::Tensor prompt(ov::element::i64, {1, 4});
+        std::iota(prompt.data<int64_t>(), prompt.data<int64_t>() + prompt.get_size(), int64_t{1});
+        const std::vector<ov::Tensor> prompts(2, prompt);
+        const std::vector<ov::genai::GenerationConfig> configs(2, config);
+        size_t failures = 0;
+        bool stepping_reached = false;
+        for (size_t allocation_index = 0; allocation_index < 2048 && !stepping_reached; ++allocation_index) {
+            SCOPED_TRACE(allocation_index);
+            auto pipeline = make_pipeline();
+            pipeline->successful_allocations = allocation_index;
+            try {
+                // the pipeline starts the budget, this ends it
+                FailAllocation budget_end(std::numeric_limits<size_t>::max());
+                pipeline->generate(prompts, configs, std::monostate{});
+            } catch (const std::bad_alloc&) {
+                ++failures;
+            } catch (const SteppingReached&) {
+            }
+            stepping_reached = pipeline->stepping_reached;
+            if (!stepping_reached) {
+                ASSERT_EQ(pipeline->awaiting_count(), 0u);
+            }
+        }
+        EXPECT_TRUE(stepping_reached);
+        EXPECT_GT(failures, 0u);
+    }
+
     std::shared_ptr<CacheOrchestrator> make_orchestrator() {
         auto orchestrator = std::make_shared<CacheOrchestrator>();
         for (const CacheType type : {CacheType::KV_CACHE, CacheType::LINEAR_ATTENTION_CACHE}) {
@@ -627,6 +740,31 @@ TEST_P(PreparedCacheAllocationFailure, MtpPairedAdmissionRollsBackAcrossInjected
         ASSERT_TRUE(completed);
         EXPECT_GT(failures, 0u);
         RecordProperty("unshared_endpoint_" + std::to_string(draft_endpoint) + "_failures", failures);
+    }
+}
+
+TEST_P(PreparedCacheAllocationFailure, FailedGenerateLeavesNoRequestAcrossInjectedAllocationFailures) {
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 8;
+    config.set_eos_token_id(0);
+    {
+        SCOPED_TRACE("continuous batching");
+        expect_failed_generate_leaves_no_request(
+            [this] {
+                return std::make_shared<StopsAtFirstStep<GeneratePipeline>>(make_scheduler());
+            },
+            config);
+    }
+    {
+        SCOPED_TRACE("speculative decoding");
+        config.num_assistant_tokens = 4;
+        expect_failed_generate_leaves_no_request(
+            [this] {
+                return std::make_shared<StopsAtFirstStep<SpeculativeGeneratePipeline>>(
+                    std::make_shared<GenerateChild>(make_scheduler()),
+                    std::make_shared<GenerateChild>(make_scheduler()));
+            },
+            config);
     }
 }
 

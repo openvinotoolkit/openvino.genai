@@ -29,11 +29,17 @@ void validate_mtp_generation_config(const GenerationConfig& config) {
                     "MTP speculative decoding requires num_assistant_tokens > 0.");
 }
 
-// Align hidden[t] with embed(token[t+1]).
-ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
+// The shape of the input embeddings of a request, which the draft needs with more than one row.
+ov::Shape get_input_embeds_shape(const ov::Tensor& input_embeds) {
     const auto shape = input_embeds.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 1,
                     "MTP draft input embeds expect shape [1, seq_len>1, hidden_size], got ", shape);
+    return shape;
+}
+
+// Align hidden[t] with embed(token[t+1]).
+ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
+    const auto shape = get_input_embeds_shape(input_embeds);
 
     auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 1, 1, shape[1]);
     ov::Tensor shifted(input_embeds.get_element_type(), {shape[0], shape[1] - 1, shape[2]});
@@ -162,20 +168,11 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     const ov::genai::GenerationConfig& sampling_params,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
-    validate_mtp_generation_config(sampling_params);
-
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
     GenerationConfig draft_sampling_params = make_draft_generation_config(sampling_params);
     // Draft gets shifted embeds only; VLM extras belong to the main model.
     ov::Tensor draft_input_embeds = create_draft_input_embeds(input_ids);
-    OPENVINO_ASSERT(!m_main_pipeline->is_prefix_caching_enabled() ||
-                        (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
-                         prompt_ids->get_size() == input_ids.get_shape()[1]),
-                    "MTP prefix caching requires built-in prompt preparation with one token ID per embedding");
-    OPENVINO_ASSERT(sampling_params.is_greedy_decoding() || !m_main_pipeline->is_prefix_caching_enabled() ||
-                        !m_main_pipeline->has_linear_attention_cache(),
-                    "MTP speculative decoding of models with linear-attention state supports greedy decoding only "
-                    "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
     // Use insert_or_assign, not insert: a finished prior request may leave a stale (stopped) handle
     // under the same request_id. insert() would be a no-op there, dropping the new handle as a
     // temporary whose destructor stops the freshly added draft request before it can draft.
@@ -185,24 +182,45 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     if (m_draft_pipeline->has_mrope_position_ids()) {
         main_position_ids = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0).first;
     }
-    try {
-        if (main_position_ids) {
-            m_inputs_embedder->set_position_ids(create_draft_position_ids(main_position_ids));
-        }
-        m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
-        if (main_position_ids) {
-            m_inputs_embedder->set_position_ids(main_position_ids);
-        }
-        auto main_handle = m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
-        align_request_pair_processed_prefix(request_id);
-        return main_handle;
-    } catch (...) {
-        if (main_position_ids) {
-            m_inputs_embedder->set_position_ids(main_position_ids);
-        }
+    // a request is in both pipelines or in none
+    RollbackGuard discard_request{[&] {
         discard_awaiting_request(request_id);
-        throw;
+        if (main_position_ids) {
+            m_inputs_embedder->set_position_ids(main_position_ids);
+        }
+    }};
+    if (main_position_ids) {
+        m_inputs_embedder->set_position_ids(create_draft_position_ids(main_position_ids));
     }
+    m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
+    if (main_position_ids) {
+        m_inputs_embedder->set_position_ids(main_position_ids);
+    }
+    auto main_handle = m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
+    align_request_pair_processed_prefix(request_id);
+    discard_request.dismiss();
+    return main_handle;
+}
+
+void ContinuousBatchingPipeline::MtpDecodingImpl::validate_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    const ov::genai::GenerationConfig& sampling_params,
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
+    validate_mtp_generation_config(sampling_params);
+    const auto shape = get_input_embeds_shape(input_ids);
+    OPENVINO_ASSERT(!m_main_pipeline->is_prefix_caching_enabled() ||
+                        (prompt_ids.has_value() && prompt_ids->get_element_type() == ov::element::i64 &&
+                         prompt_ids->get_size() == shape[1]),
+                    "MTP prefix caching requires built-in prompt preparation with one token ID per embedding");
+    OPENVINO_ASSERT(sampling_params.is_greedy_decoding() || !m_main_pipeline->is_prefix_caching_enabled() ||
+                        !m_main_pipeline->has_linear_attention_cache(),
+                    "MTP speculative decoding of models with linear-attention state supports greedy decoding only "
+                    "when prefix caching is enabled; set enable_prefix_caching to false to use multinomial sampling.");
+    // The draft prompt is the prompt without its first row, see create_draft_input_embeds().
+    m_draft_pipeline->validate_request(request_id, shape[1] - 1, make_draft_generation_config(sampling_params));
+    m_main_pipeline->validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
 }
 
 void ContinuousBatchingPipeline::MtpDecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {

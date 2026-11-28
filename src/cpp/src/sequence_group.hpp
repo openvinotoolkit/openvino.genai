@@ -575,6 +575,57 @@ public:
         : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, std::nullopt) {
     }
 
+    // Throws for the inputs the constructor below rejects, so that a caller can check them before it changes anything
+    static void validate_inputs(
+        const ov::Tensor& input_ids,
+        const std::optional<ov::Tensor>& prompt_ids = std::nullopt,
+        const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs = std::nullopt) {
+        const auto& input_shape = input_ids.get_shape();
+        const size_t prompt_len = input_shape.size() > 1 ? input_shape[1] : input_ids.get_size();
+        OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
+        // the hidden size of input embeddings is their third dimension
+        const auto element_type = input_ids.get_element_type();
+        OPENVINO_ASSERT(element_type == ov::element::i64 ||
+                            (element_type == ov::element::f32 && input_shape.size() == 3),
+                        "input_ids must hold i64 token IDs or f32 input embeddings [1, seq_len, hidden_size], got ",
+                        element_type, " of shape ", input_shape);
+        // the constructor reads prompt IDs and extra inputs only with input embeddings
+        if (element_type == ov::element::i64) {
+            return;
+        }
+        OPENVINO_ASSERT(!prompt_ids.has_value() || prompt_ids->get_element_type() == ov::element::i64,
+                        "prompt_ids must have element type i64");
+        if (!lm_extra_inputs.has_value()) {
+            return;
+        }
+        for (const auto& [input_name, tensor] : lm_extra_inputs.value()) {
+            OPENVINO_ASSERT(tensor, "Extra input ", input_name, " is not set");
+            if (input_name == "visual_pos_masks") {
+                OPENVINO_ASSERT(tensor.get_element_type() == ov::element::boolean,
+                                "visual_pos_masks must have element type boolean");
+            } else if (input_name == "per_layer_inputs") {
+                OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32,
+                                "per_layer_inputs must have element type f32");
+                const auto& shape = tensor.get_shape();
+                OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1,
+                                "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
+            } else if (input_name == "token_type_ids") {
+                OPENVINO_ASSERT(tensor.get_element_type() == ov::element::i64,
+                                "token_type_ids must have element type i64");
+            } else if (input_name == "ngram_embeddings") {
+                OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32,
+                                "ngram_embeddings must have element type f32");
+                const auto& shape = tensor.get_shape();
+                OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1 && shape[1] == prompt_len,
+                                "ngram_embeddings must have shape [1, tokens, num_ple_layers, ple_embed_dim], got ",
+                                shape);
+            } else {
+                OPENVINO_ASSERT(input_name == "deepstack_visual_embeds" || input_name == "ngram_history",
+                                "Unsupported extra input for LLM: " + input_name);
+            }
+        }
+    }
+
     SequenceGroup(uint64_t request_id,
                   const ov::Tensor& input_ids,
                   const ov::genai::GenerationConfig& sampling_params,
@@ -583,6 +634,7 @@ public:
                   const std::optional<int64_t>& rope_delta = std::nullopt,
                   const std::optional<ov::Tensor>& prompt_ids = std::nullopt)
         : SequenceGroup(request_id, sampling_params) {
+        validate_inputs(input_ids, prompt_ids, lm_extra_inputs);
         size_t prompt_len;
         size_t hidden_size = 0;
         if (input_ids.get_shape().size() > 1) {
@@ -590,13 +642,12 @@ public:
         } else {
             prompt_len = input_ids.get_size();
         }
-        OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
 
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
             std::copy_n(input_ids.data<const int64_t>(), prompt_len, m_prompt_ids.begin());
             m_sequence_group_type = SequenceGroupType::TOKENS;
-        } else if (input_ids.get_element_type() == ov::element::f32) {
+        } else {
             hidden_size = input_ids.get_shape()[2];
             m_input_embeds.resize(prompt_len);
             for (size_t i = 0; i < prompt_len; i++) {
@@ -605,7 +656,6 @@ public:
             }
             if (prompt_ids.has_value()) {
                 const ov::Tensor& tokens = prompt_ids.value();
-                OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64);
                 m_prompt_ids.resize(tokens.get_size());
                 std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_prompt_ids.begin());
             }
@@ -618,11 +668,7 @@ public:
                     } else if (input_name == "visual_pos_masks") {
                         m_visual_pos_masks = std::vector<bool>(tensor.data<const bool>(), tensor.data<const bool>() + tensor.get_size());
                     } else if (input_name == "per_layer_inputs") {
-                        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32, "per_layer_inputs must have element type f32");
-                        const auto& shape = tensor.get_shape();
-                        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1,
-                            "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
-                        m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), shape);
+                        m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
                         tensor.copy_to(m_per_layer_inputs);
                     } else if (input_name == "token_type_ids") {
                         m_token_type_ids = std::vector<int64_t>(
@@ -630,25 +676,16 @@ public:
                             tensor.data<const int64_t>() + tensor.get_size()
                         );
                     } else if (input_name == "ngram_embeddings") {
-                        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32, "ngram_embeddings must have element type f32");
-                        const auto& shape = tensor.get_shape();
-                        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1 && shape[1] == prompt_len,
-                            "ngram_embeddings must have shape [1, tokens, num_ple_layers, ple_embed_dim], got ", shape);
-                        m_ngram_embeddings = ov::Tensor(tensor.get_element_type(), shape);
+                        m_ngram_embeddings = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
                         tensor.copy_to(m_ngram_embeddings);
                     } else if (input_name == "ngram_history") {
                         m_ngram_history = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
                         tensor.copy_to(m_ngram_history);
-                    } else {
-                        OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }
                 }
             }
             
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
-        }
-        else {
-            OPENVINO_THROW("Unknown tensor format.");
         }
         m_prompt_log_probs.reserve(prompt_len);
 

@@ -127,27 +127,36 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         OPENVINO_ASSERT(lm_extra_inputs_list->size() == input_ids.size(), "lm_extra_inputs_list size must match input_ids size.");
     }
 
-    std::vector<GenerationHandle> generations;
-    try {
-        for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-            OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
-            OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
+    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
+        bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
+        bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+        m_pipeline->validate_request(
+            request_id,
+            input_ids[request_id],
+            sampling_params[request_id],
+            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt);
+    }
 
-            bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
-            bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
-            generations.push_back(m_pipeline->add_request(
-                request_id,
-                input_ids[request_id],
-                sampling_params[request_id],
-                has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
-            ));
-        }
-    } catch (...) {
-        for (size_t request_id = 0; request_id < generations.size(); ++request_id) {
+    std::vector<GenerationHandle> generations;
+    // Until the first step, a failure discards the requests of this call: validation cannot foresee every failure.
+    RollbackGuard discard_requests{[this, &input_ids] {
+        for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
             m_pipeline->discard_awaiting_request(request_id);
         }
-        throw;
+    }};
+    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+        bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
+        bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+        generations.push_back(m_pipeline->add_request(
+            request_id,
+            input_ids[request_id],
+            sampling_params[request_id],
+            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
+        ));
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 
@@ -155,6 +164,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     streamer_ptr->start();
 
+    discard_requests.dismiss();
     while (has_non_finished_requests()) {
         try {
             step();

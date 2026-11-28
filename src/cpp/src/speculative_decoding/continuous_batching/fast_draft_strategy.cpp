@@ -172,35 +172,40 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
     const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
-    try {
-        // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
-        // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, prompt_ids)});
-        return m_main_pipeline->add_request(request_id,
-                                            input_ids,
-                                            sampling_params,
-                                            prompt_ids,
-                                            lm_extra_inputs);
-    } catch (...) {
+    // a request is in both pipelines or in none
+    RollbackGuard discard_request{[this, request_id] {
         discard_awaiting_request(request_id);
-        throw;
-    }
+    }};
+    // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
+    // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, prompt_ids)});
+    auto main_generation = m_main_pipeline->add_request(request_id,
+                                                        input_ids,
+                                                        sampling_params,
+                                                        prompt_ids,
+                                                        lm_extra_inputs);
+    discard_request.dismiss();
+    return main_generation;
 }
 
 GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  const ov::genai::GenerationConfig& sampling_params) {
-    std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    const auto draft_sampling_params = make_draft_sampling_params(sampling_params);
-    try {
-        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
-        return m_main_pipeline->add_request(request_id, prompt, sampling_params);
-    } catch (...) {
-        discard_awaiting_request(request_id);
-        throw;
-    }
+    return add_request(request_id, m_tokenizer.encode(prompt).input_ids, sampling_params);
+}
+
+void ContinuousBatchingPipeline::SpeculativeDecodingImpl::validate_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    const ov::genai::GenerationConfig& sampling_params,
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
+    const size_t prompt_len = ContinuousBatchingImpl::get_prompt_len(input_ids);
+    m_draft_pipeline->validate_request(request_id, prompt_len, make_draft_sampling_params(sampling_params));
+    m_main_pipeline->validate_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
 }
 
 bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_requests() {
@@ -409,7 +414,6 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::discard_awaiting_reque
     m_draft_pipeline->discard_awaiting_request(request_id);
     m_draft_generations.erase(request_id);
 }
-
 
 bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::is_requests_empty() {
     return m_main_pipeline->is_requests_empty() && m_draft_pipeline->is_requests_empty();

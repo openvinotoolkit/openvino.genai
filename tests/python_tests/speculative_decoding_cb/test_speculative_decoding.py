@@ -443,6 +443,24 @@ def test_rejects_a_request_whose_validation_window_exceeds_the_token_budget(mode
     assert _run_add_requests(pipe, prompts, _greedy_config(num_assistant_tokens=3), {0: 0}) == reference
 
 
+@pytest.mark.parametrize("model_pair", [QWEN3_DFLASH], indirect=True)
+def test_generate_discards_its_requests_when_one_is_rejected(model_pair):
+    # DFlash drafts a fixed number of candidates and rejects the second request. A request of the call left queued
+    # would make the next generate() fail.
+    config = _greedy_config()
+    rejected = GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, assistant_confidence_threshold=0.4)
+    prompts = PROMPTS_4[:2]
+    reference = _target_ids(model_pair, prompts, config)
+    pipe = _cb_pipeline(model_pair)
+
+    with pytest.raises(RuntimeError, match="assistant_confidence_threshold must be 0.f"):
+        pipe.generate(prompts, [config, rejected])
+    assert not pipe.has_non_finished_requests()
+
+    results = pipe.generate(prompts, [config] * len(prompts))
+    assert [result.m_generation_ids for result in results] == reference
+
+
 @pytest.mark.parametrize("model_pair", [QWEN3_DEEPSPEC], indirect=True)
 def test_counts_candidates_validated_in_a_later_step(model_pair):
     # A budget of 9 fits two validation windows of the 4 requests, and the target validates the others in a later

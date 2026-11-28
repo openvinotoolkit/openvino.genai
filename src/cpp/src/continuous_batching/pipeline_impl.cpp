@@ -331,6 +331,61 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_prepare_rotation_data_
     m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
 }
 
+GenerationConfig ContinuousBatchingPipeline::ContinuousBatchingImpl::_with_default_stop_tokens(
+    GenerationConfig sampling_params) const {
+    if (sampling_params.stop_token_ids.empty())
+        sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
+    if (sampling_params.eos_token_id == -1)
+        sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
+    return sampling_params;
+}
+
+size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::get_prompt_len(const ov::Tensor& input_ids) {
+    return input_ids.get_shape().size() > 1 ? input_ids.get_shape()[1] : input_ids.get_size();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::validate_request(
+    uint64_t request_id,
+    size_t prompt_len,
+    const ov::genai::GenerationConfig& sampling_params) const {
+    const auto config = _with_default_stop_tokens(sampling_params);
+    config.validate();
+    // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
+    OPENVINO_ASSERT(!config.is_beam_search() || !m_inputs_embedder ||
+                        m_inputs_embedder->get_suppressed_token_ids().empty(),
+                    "Beam search is not supported for this model because it has suppressed token ids");
+    OPENVINO_ASSERT(config.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
+    if (m_is_validation_mode_enabled && config.is_assisting_generation()) {
+        // The scheduler runs the validation windows of all sequences of a request in one forward, so a request whose
+        // windows exceed the budget would fail every request of the pipeline. A confidence-driven draft proposes at
+        // least one candidate.
+        const size_t num_candidates = std::max<size_t>(config.num_assistant_tokens.value_or(0), 1);
+        const size_t validation_window = num_candidates + 1;
+        const size_t max_num_batched_tokens = m_scheduler->get_config().max_num_batched_tokens;
+        OPENVINO_ASSERT(max_num_batched_tokens >= validation_window * config.num_return_sequences,
+                        "max_num_batched_tokens (", max_num_batched_tokens,
+                        ") is too small to ever schedule the speculative validation windows of ",
+                        config.num_return_sequences, " sequences of ", validation_window,
+                        " tokens each (1 base + ", num_candidates, " candidates) for request ", request_id,
+                        "; increase max_num_batched_tokens to at least (num_assistant_tokens + 1) * num_return_sequences");
+    }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::validate_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    const ov::genai::GenerationConfig& sampling_params,
+    const std::optional<ov::Tensor>& prompt_ids,
+    const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const {
+    // add_request() passes prompt_ids and lm_extra_inputs on to the request only for a model of input embeddings
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        SequenceGroup::validate_inputs(input_ids, prompt_ids, lm_extra_inputs);
+    } else {
+        SequenceGroup::validate_inputs(input_ids);
+    }
+    validate_request(request_id, get_prompt_len(input_ids), sampling_params);
+}
+
 GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
@@ -342,40 +397,8 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
         _throw_if_failed();
     }
 
-    auto sampling_params_copy = sampling_params;
-    // If stop_token_ids were not provided, take value from default m_generation_config
-    if (sampling_params_copy.stop_token_ids.empty())
-        sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
-    // If eos_token_id was not provided, take value from default m_generation_config
-    if (sampling_params_copy.eos_token_id == -1)
-        sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
-    sampling_params_copy.validate();
-    // Beam search selects tokens without the LogitProcessor, so it would sample suppressed ids
-    OPENVINO_ASSERT(!sampling_params_copy.is_beam_search() || !m_inputs_embedder ||
-                        m_inputs_embedder->get_suppressed_token_ids().empty(),
-                    "Beam search is not supported for this model because it has suppressed token ids");
-    size_t prompt_len;
-    if (input_ids.get_shape().size() > 1) {
-        prompt_len = input_ids.get_shape()[1];
-    } else {
-        prompt_len = input_ids.get_size();
-    }
-    OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len,
-                    "'max_length' must be greater than the number of prompt tokens");
-    if (m_is_validation_mode_enabled && sampling_params_copy.is_assisting_generation()) {
-        // The scheduler runs the validation windows of all sequences of a request in one forward, so a request whose
-        // windows exceed the budget would fail every request of the pipeline. A confidence-driven draft proposes at
-        // least one candidate.
-        const size_t num_candidates = std::max<size_t>(sampling_params_copy.num_assistant_tokens.value_or(0), 1);
-        const size_t validation_window = num_candidates + 1;
-        const size_t max_num_batched_tokens = m_scheduler->get_config().max_num_batched_tokens;
-        OPENVINO_ASSERT(max_num_batched_tokens >= validation_window * sampling_params_copy.num_return_sequences,
-                        "max_num_batched_tokens (", max_num_batched_tokens,
-                        ") is too small to ever schedule the speculative validation windows of ",
-                        sampling_params_copy.num_return_sequences, " sequences of ", validation_window,
-                        " tokens each (1 base + ", num_candidates, " candidates) for request ", request_id,
-                        "; increase max_num_batched_tokens to at least (num_assistant_tokens + 1) * num_return_sequences");
-    }
+    const auto sampling_params_copy = _with_default_stop_tokens(sampling_params);
+    validate_request(request_id, input_ids, sampling_params_copy);
 
     std::shared_ptr<SequenceGroup> sequence_group;
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
@@ -1167,35 +1190,46 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                         sampling_params[0].num_return_sequences == 1 && !sampling_params[0].is_beam_search(),
                     "Streaming the thinker's output to a talker requires a single sequence per request "
                     "(num_return_sequences == 1, no beam search)");
+    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+        const bool has_valid_lm_extra_inputs =
+            lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+        validate_request(
+            request_id,
+            input_ids[request_id],
+            sampling_params[request_id],
+            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt);
+    }
 
     std::vector<GenerationHandle> generations;
-    try {
+    // Validation cannot foresee every failure (a failed allocation, for one), and a request left queued would make
+    // every later generate() fail. Until the first step, a failure discards the requests of this call.
+    RollbackGuard discard_requests{[this, &input_ids] {
         for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-            OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-            if (position_ids_list.has_value()) {
-                const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
-                m_inputs_embedder->set_position_ids(position_ids);
-                if (rope_delta.has_value()) {
-                    m_inputs_embedder->set_rope_delta(*rope_delta);
-                }
-            }
-
-            const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
-            const bool has_valid_lm_extra_inputs =
-                lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
-
-            generations.push_back(add_request(
-                request_id,
-                input_ids[request_id],
-                sampling_params[request_id],
-                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
-        }
-    } catch (...) {
-        for (size_t request_id = 0; request_id < generations.size(); ++request_id) {
             discard_awaiting_request(request_id);
         }
-        throw;
+    }};
+    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+        if (position_ids_list.has_value()) {
+            const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
+            m_inputs_embedder->set_position_ids(position_ids);
+            if (rope_delta.has_value()) {
+                m_inputs_embedder->set_rope_delta(*rope_delta);
+            }
+        }
+
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+        const bool has_valid_lm_extra_inputs =
+            lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+
+        generations.push_back(add_request(
+            request_id,
+            input_ids[request_id],
+            sampling_params[request_id],
+            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
     }
 
     auto all_requests =
@@ -1211,6 +1245,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
 
     streamer_ptr->start();
     m_sampler->clear_structured_output_compile_times();
+    // from here on, a step that fails releases the requests
+    discard_requests.dismiss();
     while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();

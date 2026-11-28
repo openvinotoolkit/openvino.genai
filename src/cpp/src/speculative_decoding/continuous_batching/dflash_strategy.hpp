@@ -30,6 +30,13 @@ public:
                                  const std::string& prompt,
                                  const ov::genai::GenerationConfig& sampling_params) override;
 
+    void validate_request(
+        uint64_t request_id,
+        const ov::Tensor& input_ids,
+        const ov::genai::GenerationConfig& sampling_params,
+        const std::optional<ov::Tensor>& prompt_ids,
+        const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs) const override;
+
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
@@ -44,6 +51,8 @@ protected:
     void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
                                     const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const override;
     void validate_request_config(const GenerationConfig& config) const;
+    // An unset num_assistant_tokens takes the default; an explicit 0 runs the request on the target alone.
+    GenerationConfig make_main_generation_config(const GenerationConfig& config) const;
     static GenerationConfig make_draft_generation_config(const GenerationConfig& config);
 
     ov::genai::utils::dflash::DFlashRTInfo m_rt_info;
