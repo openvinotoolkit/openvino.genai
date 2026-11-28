@@ -3,6 +3,7 @@
 - name: ASR
   cmd: |-
     python -m pytest -s -v tests/python_tests/test_asr_pipeline.py -m "not transformers_lower_v5"
+    python -m pytest -v tests/python_tests/test_voice_activity_detector.py
   timeout: 120
   components:
     - automatic_speech_recognition

@@ -653,6 +653,66 @@ Such prompts can be used to steer the model to use particular spellings or style
 For the ASR API, refer to the [ASR Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.ASRGenerationConfig.html).
 :::
 
+### Voice Activity Detection
+
+`VoiceActivityDetector` is a standalone class that finds speech regions in mono 16 kHz audio with [Silero VAD](https://github.com/snakers4/silero-vad). `get_speech_timestamps()` returns sorted, non-overlapping `SpeechTimestamp` values with `start_ts` and `end_ts` in seconds (end exclusive). The input audio must already be mono 16 kHz float PCM; the detector does not resample it.
+
+#### Preparing the Model
+
+Use a directory containing `silero_vad_16k_sequence.onnx` from Silero VAD v6.3. OpenVINO loads the ONNX file directly; no conversion is needed. The file is located at `src/silero_vad/data/silero_vad_16k_sequence.onnx` in the [v6.3 release](https://github.com/snakers4/silero-vad/tree/v6.3) and at `silero_vad/data/silero_vad_16k_sequence.onnx` in the `silero-vad==6.3` Python package, and has SHA-256 `b8918bcf4e9e13870dd43a6eda22ab4faaa0afcb22b9c7cd6bc85900d30cffca`.
+
+In the examples below, `vad_model_path` is that directory and `raw_speech` holds the application's mono 16 kHz float PCM samples.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        detector = ov_genai.VoiceActivityDetector(vad_model_path, "CPU")
+        for timestamp in detector.get_speech_timestamps(raw_speech):
+            print(f"[{timestamp.start_ts:.2f}, {timestamp.end_ts:.2f}]")
+
+        # Split speech segments longer than 30 seconds
+        config = ov_genai.SileroVADConfig()
+        config.max_speech_duration_s = 30.0
+        timestamps = detector.get_speech_timestamps(raw_speech, silero_vad_config=config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include <iostream>
+
+        #include "openvino/genai/automatic_speech_recognition/voice_activity_detector.hpp"
+
+        int main() {
+            ov::genai::VoiceActivityDetector detector(vad_model_path, "CPU");
+            for (const auto& timestamp : detector.get_speech_timestamps(raw_speech)) {
+                std::cout << "[" << timestamp.start_ts << ", " << timestamp.end_ts << "]\n";
+            }
+
+            // Split speech segments longer than 30 seconds
+            ov::genai::SileroVADConfig config;
+            config.max_speech_duration_s = 30.0;
+            auto timestamps = detector.get_speech_timestamps(raw_speech, ov::genai::silero_vad_config(config));
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+Constructor properties are OpenVINO compile properties. `SileroVADConfig` is passed per call; its segmentation parameters follow Silero VAD v6.3 for 16 kHz audio. Returned timestamps are in seconds and are not rounded.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `threshold` | 0.5 | Speech probability at or above which a window starts speech. Must be in (0, 1). |
+| `neg_threshold` | `None` | Speech probability below which a window counts as potential silence. When unset, `max(threshold - 0.15, 0.01)` is used. When set, must be in (0, `threshold`]. |
+| `min_speech_duration_ms` | 250 | Minimum speech duration in milliseconds. Segments not longer than this are discarded before padding. |
+| `min_silence_duration_ms` | 100 | Minimum silence duration in milliseconds that ends a speech segment. |
+| `speech_pad_ms` | 30 | Padding in milliseconds added to both sides of each segment. When neighbouring segments are closer than twice this value, the gap between them is split evenly. |
+| `max_speech_duration_s` | infinity | Speech duration limit in seconds used to split long speech regions. Splits are window-aligned and padding is applied afterwards, so returned segments may be longer. Must be positive; infinity disables splitting. |
+| `min_silence_at_max_speech_ms` | 98 | Minimum silence considered as a split point for segments longer than `max_speech_duration_s`. |
+
+The model state is reset on every `get_speech_timestamps()` call. Unsupported call-time properties and out-of-range configuration values raise an exception. An instance must not be used from multiple threads concurrently.
+
 ### Performance Metrics
 
 `ASRPipeline` returns `ASRDecodedResults` with a `perf_metrics` field of type `ASRPerfMetrics`, which extends [`PerfMetrics`](/docs/guides/performance-metrics).

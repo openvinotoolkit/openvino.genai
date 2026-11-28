@@ -1,0 +1,304 @@
+{
+  "source": {
+    "silero_vad": "6.3",
+    "commit": "63d4a2a7bfce8cd9bb39ed8fa0afcb5236d73e01",
+    "model": "silero_vad_16k_sequence.onnx",
+    "model_url": "https://raw.githubusercontent.com/snakers4/silero-vad/63d4a2a7bfce8cd9bb39ed8fa0afcb5236d73e01/src/silero_vad/data/silero_vad_16k_sequence.onnx",
+    "model_sha256": "b8918bcf4e9e13870dd43a6eda22ab4faaa0afcb22b9c7cd6bc85900d30cffca",
+    "reference": "silero_vad.sequence_vad.get_speech_timestamps_sequence"
+  },
+  "audio": {
+    "dataset": "hf-internal-testing/librispeech_asr_dummy",
+    "config": "clean",
+    "split": "validation",
+    "revision": "5be91486e11a2d616f4ec5db8d3fd248585ac07a",
+    "utterances": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "gap_samples": 8000,
+    "num_samples": 560880,
+    "sha256": "5f7def71e2b119fe4f247ec2b89cc5cb0016eb48b44453cbfc867fa454e2926e"
+  },
+  "cases": [
+    {
+      "id": "short_starts_in_speech",
+      "first_sample": 16000,
+      "num_samples": 24100,
+      "config": {},
+      "segments": [
+        [
+          0,
+          24100
+        ]
+      ]
+    },
+    {
+      "id": "first_block_plus_one_sample",
+      "first_sample": 0,
+      "num_samples": 262145,
+      "config": {},
+      "segments": [
+        [
+          8224,
+          88544
+        ],
+        [
+          109600,
+          174048
+        ],
+        [
+          193056,
+          262145
+        ]
+      ]
+    },
+    {
+      "id": "multi_block",
+      "first_sample": 0,
+      "num_samples": 560880,
+      "config": {},
+      "segments": [
+        [
+          8224,
+          88544
+        ],
+        [
+          109600,
+          174048
+        ],
+        [
+          193056,
+          300000
+        ],
+        [
+          308768,
+          379872
+        ],
+        [
+          398368,
+          547296
+        ]
+      ]
+    },
+    {
+      "id": "multi_block_max_speech_1s",
+      "first_sample": 0,
+      "num_samples": 560880,
+      "config": {
+        "max_speech_duration_s": 1.0
+      },
+      "segments": [
+        [
+          8224,
+          23552
+        ],
+        [
+          23552,
+          38400
+        ],
+        [
+          38400,
+          53248
+        ],
+        [
+          53248,
+          68096
+        ],
+        [
+          68096,
+          82944
+        ],
+        [
+          82944,
+          88544
+        ],
+        [
+          109600,
+          124928
+        ],
+        [
+          124928,
+          139776
+        ],
+        [
+          139776,
+          154624
+        ],
+        [
+          154624,
+          169472
+        ],
+        [
+          169472,
+          174048
+        ],
+        [
+          193056,
+          208384
+        ],
+        [
+          208384,
+          223232
+        ],
+        [
+          223232,
+          238080
+        ],
+        [
+          238080,
+          252928
+        ],
+        [
+          252928,
+          267776
+        ],
+        [
+          267776,
+          282624
+        ],
+        [
+          282624,
+          297952
+        ],
+        [
+          308768,
+          324096
+        ],
+        [
+          324096,
+          338944
+        ],
+        [
+          338944,
+          353792
+        ],
+        [
+          353792,
+          368640
+        ],
+        [
+          368640,
+          379872
+        ],
+        [
+          398368,
+          413696
+        ],
+        [
+          413696,
+          428544
+        ],
+        [
+          428544,
+          443392
+        ],
+        [
+          443392,
+          458240
+        ],
+        [
+          458240,
+          473088
+        ],
+        [
+          473088,
+          487936
+        ],
+        [
+          487936,
+          502784
+        ],
+        [
+          502784,
+          517632
+        ],
+        [
+          517632,
+          532480
+        ],
+        [
+          532480,
+          547808
+        ]
+      ]
+    },
+    {
+      "id": "multi_block_all_options",
+      "first_sample": 0,
+      "num_samples": 560880,
+      "config": {
+        "threshold": 0.6,
+        "neg_threshold": 0.3,
+        "min_speech_duration_ms": 100,
+        "min_silence_duration_ms": 300,
+        "speech_pad_ms": 100,
+        "max_speech_duration_s": 5.0,
+        "min_silence_at_max_speech_ms": 50
+      },
+      "segments": [
+        [
+          7104,
+          85504
+        ],
+        [
+          85504,
+          89664
+        ],
+        [
+          108480,
+          175168
+        ],
+        [
+          192448,
+          270848
+        ],
+        [
+          270848,
+          301120
+        ],
+        [
+          307648,
+          380992
+        ],
+        [
+          399296,
+          463616
+        ],
+        [
+          463616,
+          528128
+        ],
+        [
+          528128,
+          548928
+        ]
+      ]
+    },
+    {
+      "id": "longest_pause_split",
+      "first_sample": 367616,
+      "num_samples": 193264,
+      "config": {
+        "min_silence_duration_ms": 2000,
+        "max_speech_duration_s": 7.5
+      },
+      "segments": [
+        [
+          32,
+          12256
+        ],
+        [
+          35360,
+          154624
+        ],
+        [
+          154624,
+          193264
+        ]
+      ]
+    }
+  ]
+}
