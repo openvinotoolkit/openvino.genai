@@ -188,6 +188,11 @@ Napi::Value set_pipeline_generation_config(const Napi::CallbackInfo& info,
             auto config = pipeline->get_generation_config();
             config.update_generation_config(js_to_cpp<ov::AnyMap>(info.Env(), info[0]));
             pipeline->set_generation_config(config);
+        } else if constexpr (std::is_same_v<Config, ov::genai::VideoGenerationConfig>) {
+            // Video also merges partial updates to keep model defaults, such as the LTX-2 guidance settings.
+            auto config = pipeline->get_generation_config();
+            update_video_generation_config(info.Env(), info[0], config);
+            pipeline->set_generation_config(config);
         } else {
             pipeline->set_generation_config(js_to_cpp<Config>(info.Env(), info[0]));
         }
