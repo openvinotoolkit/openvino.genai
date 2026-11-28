@@ -74,6 +74,52 @@ ov::genai::GGUFTokenizerParameters byte_level_bpe_config(const std::string& pre)
                                                {"eos_token_id", eos},
                                                {"chat_template", std::string(qwen35_chat_template)}});
 }
+
+// Unigram vocab: <unk>=0, <s>=1, </s>=2, byte pieces 3..258, then @p pieces from id 259.
+ov::genai::GGUFTokenizerParameters unigram_config(const std::string& model,
+                                                  const std::vector<std::string>& pieces,
+                                                  const std::vector<float>& piece_scores) {
+    std::vector<std::string> vocab{"<unk>", "<s>", "</s>"};
+    std::vector<int32_t> types{2, 3, 3};
+    std::vector<float> scores{0.f, 0.f, 0.f};
+    for (int i = 0; i < 256; ++i) {
+        char byte[7];
+        std::snprintf(byte, sizeof(byte), "<0x%02X>", i);
+        vocab.emplace_back(byte);
+        types.push_back(6);
+        scores.push_back(0.f);
+    }
+    vocab.insert(vocab.end(), pieces.begin(), pieces.end());
+    types.insert(types.end(), pieces.size(), 1);
+    scores.insert(scores.end(), piece_scores.begin(), piece_scores.end());
+    ov::Tensor type_tensor(ov::element::i32, {types.size()});
+    std::memcpy(type_tensor.data(), types.data(), type_tensor.get_byte_size());
+    ov::Tensor score_tensor(ov::element::f32, {scores.size()});
+    std::memcpy(score_tensor.data(), scores.data(), score_tensor.get_byte_size());
+    const auto id = [](uint32_t value) {
+        ov::Tensor tensor(ov::element::u32, {});
+        tensor.data<uint32_t>()[0] = value;
+        return tensor;
+    };
+    return ov::genai::GGUFTokenizerParameters({{"model", model},
+                                               {"tokens", vocab},
+                                               {"token_type", type_tensor},
+                                               {"scores", score_tensor},
+                                               {"unknown_token_id", id(0)},
+                                               {"bos_token_id", id(1)},
+                                               {"eos_token_id", id(2)}});
+}
+
+ov::Tensor flag(bool value) {
+    ov::Tensor tensor(ov::element::boolean, {});
+    tensor.data<bool>()[0] = value;
+    return tensor;
+}
+
+std::vector<int64_t> encode_ids(ov::genai::Tokenizer& tokenizer, const std::string& text, bool add_special = false) {
+    const auto ids = tokenizer.encode(text, ov::genai::add_special_tokens(add_special)).input_ids;
+    return {ids.data<int64_t>(), ids.data<int64_t>() + ids.get_size()};
+}
 }  // namespace
 
 TEST(GGUFTokenizer, SentencePieceControlTokensUseTheirVocabularyIds) {
@@ -92,6 +138,48 @@ TEST(GGUFTokenizer, SentencePieceControlTokensUseTheirVocabularyIds) {
     EXPECT_EQ(tokenizer.get_eos_token(), "<eos>");
     EXPECT_EQ(tokenizer.apply_chat_template({{{"role", "user"}, {"content", "a"}}}, false),
               "<bos><start_of_turn>a<end_of_turn>");
+}
+
+// llama.cpp "t5" (UGM): unigram segmentation with byte fallback; no BOS and an EOS by default.
+TEST(GGUFTokenizer, T5UsesUnigramSegmentation) {
+    // ids 259..264
+    auto config = unigram_config("t5", {"▁", "a", "b", "▁a", "ab", "▁ab"}, {-3.f, -3.f, -3.f, -1.f, -1.2f, -2.5f});
+    config.config["add_space_prefix"] = flag(true);
+    ov::genai::GGUFTokenizer tokenizer(config);
+    // ▁ab (-2.5) beats ▁a+b (-4) and ▁+ab (-4.2); '\n' falls back to byte <0x0A>.
+    EXPECT_EQ(encode_ids(tokenizer, "ab ab\n"), (std::vector<int64_t>{264, 264, 3 + 0x0A}));
+    // remove_extra_whitespaces is false unless the GGUF sets it.
+    EXPECT_EQ(encode_ids(tokenizer, "a  b"), (std::vector<int64_t>{262, 259, 259, 261}));
+    EXPECT_EQ(encode_ids(tokenizer, "a", true), (std::vector<int64_t>{262, 2}));
+    EXPECT_EQ(tokenizer.decode(std::vector<int64_t>{264, 264, 3 + 0x0A}), "ab ab\n");
+
+    config.config["remove_extra_whitespaces"] = flag(true);
+    ov::genai::GGUFTokenizer collapsing(config);
+    EXPECT_EQ(encode_ids(collapsing, "a  b"), (std::vector<int64_t>{262, 259, 261}));
+}
+
+// PLaMo pieces spell spaces literally: whitespace is neither escaped to U+2581 nor collapsed.
+TEST(GGUFTokenizer, Plamo2KeepsLiteralSpaces) {
+    // ids 259..263
+    ov::genai::GGUFTokenizer tokenizer(
+        unigram_config("plamo2", {"a", "b", " ", "ab", " ab"}, {-3.f, -3.f, -3.f, -1.f, -1.f}));
+    EXPECT_EQ(encode_ids(tokenizer, "ab ab"), (std::vector<int64_t>{262, 263}));
+    EXPECT_EQ(encode_ids(tokenizer, "ab", true), (std::vector<int64_t>{262}));
+    EXPECT_EQ(tokenizer.decode(std::vector<int64_t>{262, 263, 261, 261}), "ab ab  ");
+}
+
+// PLaMo-3 isolates runs of 2+ spaces and 4+ repeated characters before the unigram search.
+TEST(GGUFTokenizer, Plamo3PreSegmentsWhitespaceRuns) {
+    // ids 259..263; without pre-segmentation "a    b" would end in " b" (-0.1).
+    const std::vector<std::string> pieces{"a", "b", " ", "  ", " b"};
+    const std::vector<float> scores{-1.f, -3.f, -2.5f, -2.f, -0.1f};
+    ov::genai::GGUFTokenizer plamo3(unigram_config("plamo3", pieces, scores));
+    EXPECT_EQ(encode_ids(plamo3, "a    b"), (std::vector<int64_t>{259, 262, 262, 260}));
+    EXPECT_EQ(encode_ids(plamo3, "a b"), (std::vector<int64_t>{259, 263}));
+    ov::genai::GGUFTokenizer plamo2(unigram_config("plamo2", pieces, scores));
+    const auto unsegmented = encode_ids(plamo2, "a    b");
+    ASSERT_FALSE(unsegmented.empty());
+    EXPECT_EQ(unsegmented.back(), 263);
 }
 
 TEST(GGUFTokenizer, MetadataRejectsModelsWithoutTokenizerInfo) {
