@@ -9,12 +9,19 @@
 #include "openvino/openvino.hpp"
 #include "openvino/genai/extensions.hpp"
 
-/// \brief Load a .gguf file with the OpenVINO GGUF frontend and adapt it to GenAI.
+namespace ov::frontend {
+class FrontEnd;
+}
+
+/// \brief Load a .gguf file with the given GGUF frontend and adapt it to GenAI.
 ///
 /// Returns the named models from ov::frontend::gguf::adapt_to_genai for a decoder GGUF.
-/// Extensions are registered with this frontend instance before loading the model.
-ov::frontend::gguf::ModelMap convert_gguf_with_frontend(const std::string& model_path,
-                                                        const ov::genai::ExtensionList& frontend_extensions);
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(ov::frontend::FrontEnd& frontend,
+                                                        const std::string& model_path,
+                                                        const ov::frontend::gguf::GenAIAdaptOptions& options = {});
+
+std::shared_ptr<ov::Model> get_gguf_language_model(const ov::frontend::gguf::ModelMap& models,
+                                                   const std::string& model_path);
 
 /// \brief Convert a .gguf file into an ov::Model.
 ///

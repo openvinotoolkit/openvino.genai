@@ -5,7 +5,11 @@
 #include <cstring>
 
 #include "gtest/gtest.h"
+#include "gguf_utils/gguf_multimodal.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "openvino/genai/gguf.hpp"
+#include "openvino/op/parameter.hpp"
+#include "sampling/sampler.hpp"
 
 namespace {
 ov::genai::GGUFTokenizerParameters sentencepiece_config() {
@@ -96,6 +100,107 @@ TEST(GGUFTokenizer, SentencePieceControlTokensUseTheirVocabularyIds) {
 
 TEST(GGUFTokenizer, MetadataRejectsModelsWithoutTokenizerInfo) {
     EXPECT_THROW(ov::genai::GGUFTokenizerParameters::from_model(nullptr), ov::Exception);
+}
+
+TEST(GGUFTokenizer, FimEndOfGenerationAliasesMatchLlamaCPU) {
+    for (const std::string token : {"<|fim_pad|>", "<fim-pad>", "<fim_pad>", "<PAD>", "[PAD]",
+                                   "<|fim_repo|>", "<|repo_name|>", "<fim-repo>", "<REPO>", "<reponame>",
+                                   "<|file_sep|>"}) {
+        SCOPED_TRACE(token);
+        const ov::AnyMap metadata{{"tokens", std::vector<std::string>{"<eos>", token}}};
+        EXPECT_EQ(ov::genai::gguf_stop_token_ids(metadata), (std::set<int64_t>{0, 1}));
+    }
+    const ov::AnyMap metadata{
+        {"tokens", std::vector<std::string>{"<eos>", "<|fim_prefix|>", "<|fim_middle|>", "<|fim_suffix|>"}}};
+    EXPECT_EQ(ov::genai::gguf_stop_token_ids(metadata), (std::set<int64_t>{0}));
+}
+
+TEST(GGUFTokenizer, FimMetadataOverridesVocabularyAliases) {
+    ov::AnyMap metadata{{"tokens", std::vector<std::string>{"<eos>", "<|fim_pad|>", "<|repo_name|>",
+                                                           "<|file_sep|>", "custom-pad", "custom-repo", "custom-sep"}}};
+    for (const auto& [key, id] : std::vector<std::pair<std::string, uint32_t>>{
+             {"fim_pad_token_id", 4}, {"fim_rep_token_id", 5}, {"fim_sep_token_id", 6}}) {
+        ov::Tensor value(ov::element::u32, {});
+        value.data<uint32_t>()[0] = id;
+        metadata[key] = value;
+    }
+    EXPECT_EQ(ov::genai::gguf_stop_token_ids(metadata), (std::set<int64_t>{0, 4, 5, 6}));
+    metadata["fim_pad_token_id"] = 99;
+    metadata["fim_rep_token_id"] = -1;
+    EXPECT_EQ(ov::genai::gguf_stop_token_ids(metadata), (std::set<int64_t>{0, 1, 2, 6}));
+}
+
+TEST(GGUFTokenizer, FimStopsTerminateGenerationUnlessEosIsIgnored) {
+    const std::vector<std::string> tokens{"<eos>", "x", "<|fim_pad|>", "<|repo_name|>", "<|file_sep|>",
+                                           "<|fim_prefix|>", "custom-pad", "custom-repo", "custom-sep"};
+    for (const bool use_metadata : {false, true}) {
+        ov::AnyMap metadata{{"tokens", tokens}};
+        if (use_metadata) {
+            metadata["fim_pad_token_id"] = 6;
+            metadata["fim_rep_token_id"] = 7;
+            metadata["fim_sep_token_id"] = 8;
+        }
+        for (const int64_t token : use_metadata ? std::vector<int64_t>{6, 7, 8, 5}
+                                                : std::vector<int64_t>{2, 3, 4, 5}) {
+            for (const bool ignore_eos : {false, true}) {
+                SCOPED_TRACE(::testing::Message() << use_metadata << " " << token << " " << ignore_eos);
+                ov::genai::GenerationConfig config;
+                config.max_new_tokens = 3;
+                config.eos_token_id = 0;
+                config.stop_token_ids = ov::genai::gguf_stop_token_ids(metadata);
+                config.ignore_eos = ignore_eos;
+                const std::vector<int64_t> prompt{1};
+                ov::Tensor input(ov::element::i64, {1, prompt.size()}, prompt.data());
+                auto group = std::make_shared<ov::genai::SequenceGroup>(0, input, config);
+                const auto sequence = group->get_sequences().front();
+                group->schedule_tokens(group->get_num_available_tokens_for_batching());
+                ov::Tensor logits(ov::element::f32, {1, 1, tokens.size()});
+                std::fill_n(logits.data<float>(), logits.get_size(), -10.0f);
+                logits.data<float>()[token] = 10.0f;
+                ov::genai::Sampler sampler;
+                sampler.sample({group}, logits, false);
+                EXPECT_EQ(sequence->has_finished(), !ignore_eos && token != 5);
+                if (sequence->has_finished())
+                    EXPECT_EQ(sequence->get_finish_reason(), ov::genai::GenerationFinishReason::STOP);
+            }
+        }
+    }
+}
+
+TEST(GGUFTokenizer, TruncationIsOptInWithoutBosOrEos) {
+    using namespace ov::genai;
+    auto parameters = sentencepiece_config();
+    parameters.config.at("add_bos_token").as<ov::Tensor>().data<bool>()[0] = false;
+    GGUFTokenizer tokenizer(parameters);
+    const std::string text(9000, 'a');
+    EXPECT_EQ(tokenizer.encode(text).input_ids.get_size(), 9000);
+    EXPECT_EQ(tokenizer.encode(text, add_special_tokens(false)).input_ids.get_size(), 9000);
+    EXPECT_EQ(tokenizer.encode(text, truncation(true), max_length(16)).input_ids.get_size(), 16);
+}
+
+TEST(GGUFMultimodal, ProjectorWidthsMustMatchLanguage) {
+    using namespace ov::genai;
+    const auto embedding = [](int64_t width) {
+        auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, width});
+        return std::make_shared<ov::Model>(ov::OutputVector{input}, ov::ParameterVector{input});
+    };
+    auto language = embedding(4);
+    language->get_parameters()[0]->output(0).set_names({"inputs_embeds"});
+    VLMModels models;
+    models.models["text_embeddings"] = embedding(4);
+    models.models["vision_embeddings"] = embedding(4);
+    EXPECT_NO_THROW(validate_gguf_multimodal_dimensions(language, models));
+    for (int64_t width : {2, 8, -1}) {
+        models.models["vision_embeddings"] = embedding(width);
+        EXPECT_THROW(validate_gguf_multimodal_dimensions(language, models), ov::Exception);
+    }
+    models.models["vision_embeddings_merger"] = embedding(4);
+    EXPECT_NO_THROW(validate_gguf_multimodal_dimensions(language, models));
+    models.models["vision_embeddings_merger"] = embedding(2);
+    EXPECT_THROW(validate_gguf_multimodal_dimensions(language, models), ov::Exception);
+    models.models["vision_embeddings_merger"] = embedding(4);
+    models.models["text_embeddings"] = embedding(2);
+    EXPECT_THROW(validate_gguf_multimodal_dimensions(language, models), ov::Exception);
 }
 
 class GGUFBpeTokenizer : public ::testing::TestWithParam<std::string> {};

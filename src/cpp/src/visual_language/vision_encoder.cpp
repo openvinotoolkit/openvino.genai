@@ -36,6 +36,10 @@
 
 namespace ov::genai {
 
+VisionEncoder::VisionEncoder(const VLMModels& models, ConfigOnlyTag)
+    : m_processor_config(models.processor_config),
+      m_video_processor_config(models.video_processor_config) {}
+
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
     auto compiled_model = utils::singleton_core().compile_model(
         model_dir / "openvino_vision_embeddings_model.xml", device,
@@ -237,6 +241,18 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderMolmo2>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
+    }
+}
+
+VisionEncoder::Ptr VisionEncoder::create(const VLMModels& models,
+                                         const std::string& device,
+                                         const ov::AnyMap& properties) {
+    switch (models.config.model_type) {
+    case VLMModelType::QWEN3_5:
+    case VLMModelType::QWEN3_5_MOE:
+        return std::make_shared<VisionEncoderQwen3_5>(models, device, properties);
+    default:
+        OPENVINO_THROW("Unsupported in-memory VLM model type");
     }
 }
 

@@ -61,6 +61,12 @@ use PA/default; native SDPA attention masks currently support batch one. The Opt
 Gemma-3 reference requires Transformers 5.0, matching the regular LLM job. The existing reader
 suite separately retains its model/quantization and native-tokenizer coverage.
 
+The VLM cases convert pinned tiny Qwen3.5 and Qwen3.5 MoE checkpoints into language/projector
+GGUF pairs under `~/gguf_models/genai_vlm_tests/`. They cover CPU image and video generation
+with SDPA and PA. Image/streaming and chat checks reuse `test_vlm_pipeline.py` helpers; these
+VLM checks cover integration and backend agreement, not Optimum output parity. Adapter tests
+cover language-model overrides in SDPA and prompt-lookup pipelines.
+
 This suite validates GenAI integration rather than standalone frontend translation.
 OpenVINO frontend tests should check graph conversion, operators and metadata handling
 in the OpenVINO repository. These tests additionally exercise GenAI's reader selection,

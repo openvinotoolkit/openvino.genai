@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <map>
+#include <nlohmann/json_fwd.hpp>
 
 #include <openvino/runtime/properties.hpp>
 
@@ -224,6 +225,7 @@ public:
     /// Keys in the file must match the VLMConfig's members.
     /// @param json_path A path to a file to extract the values from.
     explicit VLMConfig(const std::filesystem::path& config_path);
+    explicit VLMConfig(const nlohmann::json& parsed);
     /// @brief Default copy constructor.
     /// @param A config to copy from.
     VLMConfig(const VLMConfig&) = default;
