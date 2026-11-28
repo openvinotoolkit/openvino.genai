@@ -121,7 +121,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
         OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder, mtp_rt_info);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
@@ -189,7 +189,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
         OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder, mtp_rt_info);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
@@ -257,7 +257,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
         OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder, mtp_rt_info);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
@@ -318,7 +318,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
         OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
         auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder, mtp_rt_info);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         if (dflash_rt_info.dflash_mode) {
@@ -379,7 +379,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
         OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
-        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder, mtp_rt_info);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
@@ -462,7 +462,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
         OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
-        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder, mtp_rt_info);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
@@ -531,7 +531,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
         OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
-        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder, mtp_rt_info);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);

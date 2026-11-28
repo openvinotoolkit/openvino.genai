@@ -1178,6 +1178,41 @@ def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
     assert mtp_result[0].m_generation_ids == main_only_texts
 
 
+# The draft vocabulary subset only changes what the MTP head can propose; the main model verifies every candidate.
+@pytest.mark.parametrize("subset", ["answer_tokens", "unrelated_tokens"])
+def test_qwen35_mtp_draft_vocab_subset_matches_main_only(qwen35_mtp_model_path: Path, subset: str):
+    generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=3)
+    prompt = "OpenVINO is"
+
+    main_only_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+    )
+    main_only_texts = main_only_pipe.generate([prompt], [generation_config])[0].m_generation_ids
+    tokenizer = main_only_pipe.get_tokenizer()
+    del main_only_pipe
+    gc.collect()
+
+    answer_ids = tokenizer.encode(main_only_texts[0], add_special_tokens=False).input_ids.data.flatten().tolist()
+    if subset == "answer_tokens":
+        draft_vocab = sorted(set(answer_ids))
+    else:
+        # A subset that holds none of the answer tokens: every candidate is rejected, the output must not change.
+        draft_vocab = [token_id for token_id in range(1000, 1100) if token_id not in answer_ids]
+
+    properties = get_default_llm_properties()
+    properties["draft_model"] = draft_model(qwen35_mtp_model_path, "CPU", mtp_draft_vocab=draft_vocab)
+    mtp_pipe = ContinuousBatchingPipeline(qwen35_mtp_model_path, SchedulerConfig(), "CPU", properties)
+    mtp_result = mtp_pipe.generate([prompt], [generation_config])[0]
+
+    assert mtp_result.m_generation_ids == main_only_texts
+    num_accepted = mtp_result.extended_perf_metrics.get_num_accepted_tokens()
+    if subset == "answer_tokens":
+        assert num_accepted > 0
+    else:
+        assert num_accepted == 0
+
+
 # After preemption, pending tokens must be replayed before MTP can enter its atomic verification window.
 # Currently step() raises instead, failing the batch rather than replaying and continuing generation.
 @pytest.mark.skip(reason="Hybrid MTP verification rejects preempted requests with pending tokens to replay, CVS-198275")
