@@ -154,6 +154,10 @@ def image2image(args):
         pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
     pipe.compile(devices[0], devices[1], devices[2])
 
+    config = pipe.get_generation_config()
+    config.num_inference_steps = args.num_inference_steps
+    pipe.set_generation_config(config)
+
     warmup_metrics = []
     for i in range(num_warmup):
         pipe.generate(prompt, image_input, strength=strength)
@@ -193,6 +197,11 @@ def inpainting(args):
         width = image_input.get_shape()[2]
         pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
     pipe.compile(devices[0], devices[1], devices[2])
+
+    config = pipe.get_generation_config()
+    config.num_inference_steps = args.num_inference_steps
+    config.strength = strength
+    pipe.set_generation_config(config)
 
     warmup_metrics = []
     for i in range(num_warmup):
