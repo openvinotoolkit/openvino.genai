@@ -727,6 +727,64 @@ class TestLTXVideoTransformer3DModel:
             assert hasattr(config, "in_channels")
             assert hasattr(config, "patch_size")
 
+    @pytest.mark.parametrize("static_shapes", [False, True])
+    def test_infer_shared_timestep_shape(self, tmp_path, static_shapes):
+        """A shared timestep is bound as [B, 1], unless a static reshape fixed it to [B, S]."""
+        from openvino import opset13 as ops
+
+        (tmp_path / "transformer").mkdir()
+        (tmp_path / "vae_decoder").mkdir()
+        hidden_states = ops.parameter([-1, -1, 4], np.float32, name="hidden_states")
+        timestep = ops.parameter([-1, -1], np.float32, name="timestep")
+        # Echo the bound timestep so its shape can be checked
+        out_sample = ops.result(ops.add(timestep, ops.constant(0.0, np.float32)))
+        for node, name in ((hidden_states, "hidden_states"), (timestep, "timestep"), (out_sample, "out_sample")):
+            node.output(0).get_tensor().set_names({name})
+        ov.save_model(ov.Model([out_sample], [hidden_states, timestep]), tmp_path / "transformer/openvino_model.xml")
+        config = {"in_channels": 4, "patch_size": 1, "patch_size_t": 1}
+        (tmp_path / "transformer/config.json").write_text(json.dumps(config))
+        # 4x spatial and temporal VAE compression
+        vae_config = dict(config, spatio_temporal_scaling=[True, True])
+        (tmp_path / "vae_decoder/config.json").write_text(json.dumps(vae_config))
+
+        transformer = ov_genai.LTXVideoTransformer3DModel(tmp_path / "transformer")
+        if static_shapes:
+            transformer.reshape(2, 5, 8, 4, 8)  # 2 latent frames x 2 x 1 = 4 tokens
+        transformer.compile("CPU")
+        output = transformer.infer(ov.Tensor(np.zeros((2, 4, 4), np.float32)), 500.0)
+        assert list(output.shape) == [2, 4 if static_shapes else 1]
+
+    def test_infer_shared_timestep_matches_per_token(self, video_generation_model):
+        """The [B, 1] timestep gives the same output as the export run with a per-token [B, S] timestep."""
+        path = Path(video_generation_model) / "transformer"
+        baseline = ov.Core().compile_model(path / "openvino_model.xml", "CPU", {"INFERENCE_PRECISION_HINT": "f32"})
+        batch, frames, height, width, text_length = 2, 3, 4, 2, 5
+        tokens = frames * height * width
+        rng = np.random.default_rng(42)
+        inputs = {
+            "hidden_states": rng.standard_normal(
+                (batch, tokens, baseline.input("hidden_states").get_partial_shape()[2].get_length()), np.float32
+            ),
+            "encoder_hidden_states": rng.standard_normal(
+                (batch, text_length, baseline.input("encoder_hidden_states").get_partial_shape()[2].get_length()),
+                np.float32,
+            ),
+            "encoder_attention_mask": np.ones((batch, text_length), np.int64),
+            "num_frames": np.array(frames, np.int64),
+            "height": np.array(height, np.int64),
+            "width": np.array(width, np.int64),
+            "rope_interpolation_scale": np.array([4 / 25, 4, 4], np.float32),
+        }
+        expected = baseline({**inputs, "timestep": np.full((batch, tokens), 500.0, np.float32)})["out_sample"]
+
+        transformer = ov_genai.LTXVideoTransformer3DModel(path)
+        transformer.compile("CPU", INFERENCE_PRECISION_HINT="f32")
+        for name, value in inputs.items():
+            if name != "hidden_states":
+                transformer.set_hidden_states(name, ov.Tensor(value))
+        actual = transformer.infer(ov.Tensor(inputs["hidden_states"]), 500.0)
+        np.testing.assert_allclose(actual.data, expected, rtol=2e-5, atol=2e-5)
+
 
 @pytest.mark.parametrize("video_generation_model", [LTX2_3_MODEL_ID], indirect=True)
 @pytest.mark.parametrize("batch", [1, 2])
