@@ -573,3 +573,55 @@ class VideoSimilarity:
             "LPIPS (lower is better, 0 best)": lpips_per_video,
             "tLPIPS (lower is better, 0 best)": tlpips_per_video,
         }
+
+
+# Uncertainty of the mean similarity over a small set of prompts
+DEFAULT_CONFIDENCE = 0.95
+DEFAULT_N_RESAMPLES = 10000
+DEFAULT_SEED = 42
+
+
+def bootstrap_mean_ci(values, confidence=DEFAULT_CONFIDENCE, n_resamples=DEFAULT_N_RESAMPLES, seed=DEFAULT_SEED):
+    """Percentile bootstrap confidence interval of the mean of ``values``.
+
+    The bootstrap makes no assumption about the shape of the distribution, which matters here:
+    similarity scores are skewed and capped at 1.0. A fixed seed keeps the interval reproducible
+    between runs on the same data. Returns ``(low, high)``, or ``None`` if fewer than two values are given.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    if values.size < 2:
+        return None
+
+    rng = np.random.default_rng(seed)
+    means = np.empty(n_resamples)
+    # Resample in chunks to keep memory bounded for large prompt sets.
+    chunk = max(1, 1_000_000 // values.size)
+    for start in range(0, n_resamples, chunk):
+        stop = min(start + chunk, n_resamples)
+        indices = rng.integers(0, values.size, size=(stop - start, values.size))
+        means[start:stop] = values[indices].mean(axis=1)
+
+    tail = (1.0 - confidence) / 2 * 100
+    low, high = np.percentile(means, [tail, 100 - tail])
+    return float(low), float(high)
+
+
+def similarity_summary(per_sample_similarity, confidence=DEFAULT_CONFIDENCE):
+    """Confidence interval and worst score for a column of per-sample similarities.
+
+    Non-finite values (for example NaN from a failed sample) are left out and counted separately,
+    so they do not silently widen or hide the interval. Returns ``None`` if fewer than two finite values remain.
+    """
+    values = np.asarray(per_sample_similarity, dtype=np.float64)
+    finite = values[np.isfinite(values)]
+    ci = bootstrap_mean_ci(finite, confidence=confidence)
+    if ci is None:
+        return None
+
+    return {
+        "similarity_ci_low": ci[0],
+        "similarity_ci_high": ci[1],
+        "similarity_min": float(finite.min()),
+        "num_samples": int(finite.size),
+        "num_non_finite": int(values.size - finite.size),
+    }
