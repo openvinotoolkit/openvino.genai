@@ -39,6 +39,11 @@ SpeechGenerationConfig::SpeechGenerationConfig(const std::filesystem::path& json
         read_json_param(data, "subtalker_top_p", subtalker_top_p);
         read_json_param(data, "subtalker_temperature", subtalker_temperature);
         read_json_param(data, "ref_text", ref_text);
+        read_json_param(data, "first_chunk_frames", first_chunk_frames);
+        read_json_param(data, "steady_chunk_frames", steady_chunk_frames);
+        read_json_param(data, "first_context_frames", first_context_frames);
+        read_json_param(data, "steady_context_frames", steady_context_frames);
+        read_json_param(data, "async_audio_decode", async_audio_decode);
     }
     validate();
 }
@@ -64,6 +69,11 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
     read_anymap_param(config_map, "ref_text", ref_text);
     read_anymap_param(config_map, "ref_audio", ref_audio);
     read_anymap_param(config_map, "ref_codec_ids", ref_codec_ids);
+    read_anymap_param(config_map, "first_chunk_frames", first_chunk_frames);
+    read_anymap_param(config_map, "steady_chunk_frames", steady_chunk_frames);
+    read_anymap_param(config_map, "first_context_frames", first_context_frames);
+    read_anymap_param(config_map, "steady_context_frames", steady_context_frames);
+    read_anymap_param(config_map, "async_audio_decode", async_audio_decode);
 
     GenerationConfig::update_generation_config(config_map);
 }
@@ -74,6 +84,8 @@ void SpeechGenerationConfig::validate() const {
     OPENVINO_ASSERT(maxlenratio > minlenratio, "maxlenratio must be greater than minlenratio");
     OPENVINO_ASSERT(0.0f <= threshold && threshold <= 1.0f, "threshold must be in the range [0; 1]");
     OPENVINO_ASSERT(max_phoneme_length > 0, "max_phoneme_length must be positive");
+    OPENVINO_ASSERT(first_chunk_frames > 0, "first_chunk_frames must be positive");
+    OPENVINO_ASSERT(steady_chunk_frames > 0, "steady_chunk_frames must be positive");
     OPENVINO_ASSERT(!phonemize_fallback_model_dir.has_value() || !phonemize_fallback_model_dir->empty(),
                     "phonemize_fallback_model_dir must be unset or a non-empty path");
     if (subtalker_dosample) {

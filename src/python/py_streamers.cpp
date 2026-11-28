@@ -337,14 +337,15 @@ void init_streamers(py::module_& m) {
         
         .def("reset", &TextParserStreamer::reset, "Resets the internal state of the parser streamer.");
 
-    py::class_<ov::genai::OmniSpeechStreamerBase, ConstructableOmniSpeechStreamer,
-               std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>(m, "OmniSpeechStreamerBase", omni_speech_streamer_base_docstring)
+    auto audio_streamer_cls = py::class_<ov::genai::AudioStreamerBase, ConstructableOmniSpeechStreamer,
+               std::shared_ptr<ov::genai::AudioStreamerBase>>(m, "AudioStreamerBase", omni_speech_streamer_base_docstring)
         .def(py::init<>())
-        .def("write", &ov::genai::OmniSpeechStreamerBase::write,
+        .def("write", &ov::genai::AudioStreamerBase::write,
              "Called with each audio chunk tensor [1, 1, N_samples]. Return StreamingStatus.",
              py::arg("audio_chunk"))
-        .def("end", &ov::genai::OmniSpeechStreamerBase::end,
+        .def("end", &ov::genai::AudioStreamerBase::end,
              "Called when speech generation completes.");
+    m.attr("OmniSpeechStreamerBase") = audio_streamer_cls;
 
     py::class_<OmniStreamerBase, ConstructableOmniStreamer, std::shared_ptr<OmniStreamerBase>>(
         m, "OmniStreamerBase", omni_streamer_base_docstring)

@@ -11,6 +11,7 @@
 
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_stream_decoder.hpp"
 
 namespace ov {
 namespace genai {
@@ -133,6 +134,21 @@ public:
                                           bool non_streaming_mode);
 
     std::vector<float> decode_speech_tokenizer(const std::vector<int64_t>& codes);
+    std::vector<float> decode_speech_tokenizer_chunk(const std::vector<int64_t>& window_frame_major,
+                                                     size_t context_frames,
+                                                     size_t new_frames);
+
+    qwen3_tts::Qwen3TTSStreamDecoderPool& stream_decoder_pool() {
+        return m_stream_decoder_pool;
+    }
+
+    uint32_t decode_upsample_rate() const {
+        return m_decoder_upsample;
+    }
+
+    uint32_t decoder_num_quantizers() const {
+        return m_decoder_num_quantizers;
+    }
 
     std::vector<bool> compute_suppress_tokens() const;
     std::vector<int64_t> make_speaker_and_codec_prefill_ids(const std::string& language,
@@ -225,6 +241,7 @@ private:
     ov::Tensor m_pred_emb_step;  // generation_steps input, reused across calls
     ov::InferRequest m_speech_tokenizer_decoder;
     bool m_decoder_static = false;  // true when reshaped to a fixed DECODER_WINDOW_LEN window (NPU/GPU)
+    qwen3_tts::Qwen3TTSStreamDecoderPool m_stream_decoder_pool;
     ov::InferRequest m_qwen3_mel_preprocess;
     ov::InferRequest m_speaker_encoder;
     ov::InferRequest m_speech_tokenizer_encoder;

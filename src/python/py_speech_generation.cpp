@@ -182,13 +182,32 @@ py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
                                             const std::vector<std::string>& texts,
                                             py::object speaker_embedding,
                                             const std::optional<SpeechGenerationConfig>& generation_config,
+                                            const pyutils::PyBindOmniSpeechStreamerVariant& py_streamer,
                                             const py::kwargs& kwargs) {
     // TTS config should be initialized from generation_config.json in case of only kwargs provided.
     // If full config was provided then rely on it as a base config.
     const std::optional<SpeechGenerationConfig> base_config =
         generation_config.has_value() ? generation_config : pipe.get_generation_config();
-    const std::optional<SpeechGenerationConfig> updated_config =
-        update_speech_generation_config_from_kwargs(base_config, kwargs);
+
+    ov::genai::AudioStreamerVariant streamer = pyutils::py_speech_streamer_to_streamer(py_streamer);
+    py::dict filtered_kwargs;
+    for (const auto& item : kwargs) {
+        const std::string key = py::cast<std::string>(item.first);
+        if (key == "audio_streamer" || key == "speech_streamer") {
+            if (std::holds_alternative<std::monostate>(streamer) && !item.second.is_none()) {
+                auto kw_streamer = py::cast<pyutils::PyBindOmniSpeechStreamerVariant>(item.second);
+                streamer = pyutils::py_speech_streamer_to_streamer(kw_streamer);
+            }
+            continue;
+        }
+        filtered_kwargs[item.first] = item.second;
+    }
+
+    SpeechGenerationConfig res_config = base_config.has_value() ? *base_config : SpeechGenerationConfig();
+    if (!filtered_kwargs.empty()) {
+        res_config.update_generation_config(pyutils::py_object_to_any_map(filtered_kwargs));
+    }
+
     const ov::Tensor speaker_embedding_tensor = speaker_embedding.is_none() ?
                                                 ov::Tensor() :
                                                 speaker_embedding.cast<ov::Tensor>();
@@ -196,7 +215,7 @@ py::object call_text2speech_common_generate(Text2SpeechPipeline& pipe,
     ov::genai::Text2SpeechDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res = pipe.generate(texts, speaker_embedding_tensor, updated_config);
+        res = pipe.generate(texts, speaker_embedding_tensor, res_config, streamer);
     }
     return py::cast(res);
 }
@@ -229,6 +248,11 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("ref_text", &SpeechGenerationConfig::ref_text)
         .def_readwrite("ref_audio", &SpeechGenerationConfig::ref_audio)
         .def_readwrite("ref_codec_ids", &SpeechGenerationConfig::ref_codec_ids)
+        .def_readwrite("first_chunk_frames", &SpeechGenerationConfig::first_chunk_frames)
+        .def_readwrite("steady_chunk_frames", &SpeechGenerationConfig::steady_chunk_frames)
+        .def_readwrite("first_context_frames", &SpeechGenerationConfig::first_context_frames)
+        .def_readwrite("steady_context_frames", &SpeechGenerationConfig::steady_context_frames)
+        .def_readwrite("async_audio_decode", &SpeechGenerationConfig::async_audio_decode)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -238,6 +262,12 @@ void init_speech_generation_pipeline(py::module_& m) {
                                                          speech_generation_perf_metrics_docstring)
         .def(py::init<>())
         .def_readonly("num_generated_samples", &SpeechGenerationPerfMetrics::num_generated_samples)
+        .def_readonly("num_generated_frames", &SpeechGenerationPerfMetrics::num_generated_frames)
+        .def_readonly("output_sample_rate", &SpeechGenerationPerfMetrics::output_sample_rate)
+        .def_readonly("ttfa", &SpeechGenerationPerfMetrics::ttfa)
+        .def_readonly("codegen_duration", &SpeechGenerationPerfMetrics::codegen_duration)
+        .def_readonly("audio_decode_duration", &SpeechGenerationPerfMetrics::audio_decode_duration)
+        .def_readonly("rtf", &SpeechGenerationPerfMetrics::rtf)
         .def_readonly("m_evaluated", &SpeechGenerationPerfMetrics::m_evaluated)
         .def_readonly("generate_duration", &SpeechGenerationPerfMetrics::generate_duration)
         .def_readonly("throughput", &SpeechGenerationPerfMetrics::throughput);
@@ -273,12 +303,14 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::string& text,
                py::object speaker_embedding,
                const std::optional<SpeechGenerationConfig>& generation_config,
+               const pyutils::PyBindOmniSpeechStreamerVariant& streamer,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
                 return call_text2speech_common_generate(
                     pipe,
                     std::vector<std::string>{text},
                     speaker_embedding,
                     generation_config,
+                    streamer,
                     kwargs);
             },
             py::arg("text"),
@@ -287,6 +319,8 @@ void init_speech_generation_pipeline(py::module_& m) {
             "vector representing the unique characteristics of a speaker's voice.",
             py::arg("generation_config") = std::nullopt,
             "generation_config",
+            py::arg("streamer") = std::monostate{},
+            "optional callback or AudioStreamerBase to receive decoded audio chunks [1, 1, N_samples].",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def(
@@ -295,8 +329,9 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::vector<std::string>& texts,
                py::object speaker_embedding,
                const std::optional<SpeechGenerationConfig>& generation_config,
+               const pyutils::PyBindOmniSpeechStreamerVariant& streamer,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                return call_text2speech_common_generate(pipe, texts, speaker_embedding, generation_config, kwargs);
+                return call_text2speech_common_generate(pipe, texts, speaker_embedding, generation_config, streamer, kwargs);
             },
             py::arg("texts"),
             "a list of input texts for which to generate speeches.",
@@ -304,6 +339,8 @@ void init_speech_generation_pipeline(py::module_& m) {
             "vector representing the unique characteristics of a speaker's voice.",
             py::arg("generation_config") = std::nullopt,
             "generation_config",
+            py::arg("streamer") = std::monostate{},
+            "optional callback or AudioStreamerBase to receive decoded audio chunks [1, 1, N_samples].",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)

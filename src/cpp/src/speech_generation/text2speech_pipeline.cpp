@@ -101,18 +101,30 @@ Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::s
                                                         const ov::Tensor& speaker_embedding,
                                                         const ov::AnyMap& properties) {
     SpeechGenerationConfig request_config = m_speech_gen_config;
-    request_config.update_generation_config(properties);
+    ov::AnyMap filtered_properties = properties;
+    const AudioStreamerVariant streamer = utils::get_audio_streamer_from_map(filtered_properties);
+    filtered_properties.erase(utils::AUDIO_STREAMER_ARG_NAME);
+    filtered_properties.erase(utils::SPEECH_STREAMER_ARG_NAME);
+    request_config.update_generation_config(filtered_properties);
     request_config.validate();
-    return m_impl->generate(texts, speaker_embedding, request_config);
+    return m_impl->generate(texts, speaker_embedding, request_config, streamer);
 }
 
 Text2SpeechDecodedResults Text2SpeechPipeline::generate(
     const std::vector<std::string>& texts,
     const ov::Tensor& speaker_embedding,
     const std::optional<SpeechGenerationConfig>& generation_config) {
+    return generate(texts, speaker_embedding, generation_config, std::monostate{});
+}
+
+Text2SpeechDecodedResults Text2SpeechPipeline::generate(
+    const std::vector<std::string>& texts,
+    const ov::Tensor& speaker_embedding,
+    const std::optional<SpeechGenerationConfig>& generation_config,
+    const AudioStreamerVariant& streamer) {
     const SpeechGenerationConfig request_config = generation_config.has_value() ? *generation_config : m_speech_gen_config;
     request_config.validate();
-    return m_impl->generate(texts, speaker_embedding, request_config);
+    return m_impl->generate(texts, speaker_embedding, request_config, streamer);
 }
 
 SpeechGenerationConfig Text2SpeechPipeline::get_generation_config() const {
