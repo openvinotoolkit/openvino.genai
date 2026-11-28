@@ -24,7 +24,7 @@ from whowhatbench.text_generation_strategies import (  # noqa: E402
     OptimumHFGeneration,
 )
 
-from whowhatbench.artifacts_manager import Metrics  # noqa: E402
+from whowhatbench.artifacts_manager import Metrics, MetricsStrategy  # noqa: E402
 
 from conftest import run_wwb  # noqa: E402
 from test_cli_text import base_model_path, target_model_path  # noqa: E402
@@ -42,11 +42,11 @@ TOKEN_SIMILARITY = Metrics.TOKEN_SIMILARITY.value
 @pytest.mark.parametrize(
     ("metrics_list", "is_genai", "is_llamacpp", "expected_cls"),
     [
-        ([SIMILARITY], False, False, OptimumHFGeneration),
-        ([SIMILARITY], True, False, GenAIGeneration),
-        ([SIMILARITY], False, True, LlamaCPPGeneration),
-        ([KL_DIVERGENCY], False, False, KLDivergencyGeneration),
-        ([KL_DIVERGENCY], False, True, LlamaCPPKLDivergencyGeneration),
+        (MetricsStrategy([SIMILARITY], False), False, False, OptimumHFGeneration),
+        (MetricsStrategy([SIMILARITY], False), True, False, GenAIGeneration),
+        (MetricsStrategy([SIMILARITY], False), False, True, LlamaCPPGeneration),
+        (MetricsStrategy([KL_DIVERGENCY], False), False, False, KLDivergencyGeneration),
+        (MetricsStrategy([KL_DIVERGENCY], False), False, True, LlamaCPPKLDivergencyGeneration),
     ],
 )
 def test_factory_creates_single_strategy(metrics_list, is_genai, is_llamacpp, expected_cls):
@@ -66,7 +66,7 @@ def test_llamacpp_generation_preserves_special_tokens(use_chat_template):
     model.return_value = {"choices": [{"text": "completion"}]}
     model.create_chat_completion.return_value = {"choices": [{"message": {"content": "chat"}}]}
 
-    strategy = GenerationStrategy.create([SIMILARITY], False, True)
+    strategy = GenerationStrategy.create(MetricsStrategy([SIMILARITY]), False, True)
     result = strategy.run_generation(model, None, prompt, 8, True, use_chat_template=use_chat_template)
 
     if use_chat_template:
@@ -91,7 +91,9 @@ def test_llamacpp_generation_preserves_special_tokens(use_chat_template):
     ],
 )
 def test_factory_creates_composite_for_similarity_and_kl(is_llamacpp, expected_classes):
-    strategy = GenerationStrategy.create([SIMILARITY, KL_DIVERGENCY], False, is_llamacpp, kld_ctx=8, kld_chunk=3)
+    strategy = GenerationStrategy.create(
+        MetricsStrategy([SIMILARITY, KL_DIVERGENCY], False), False, is_llamacpp, kld_ctx=8, kld_chunk=3
+    )
 
     assert isinstance(strategy, CompositeGenerationStrategy)
     assert [type(inner) for inner in strategy.strategies] == expected_classes
