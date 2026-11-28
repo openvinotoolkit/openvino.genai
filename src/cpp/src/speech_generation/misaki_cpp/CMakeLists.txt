@@ -4,7 +4,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(misaki_cpp VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 20)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(MISAKI_CPP_BUILD_PYTHON_BINDINGS "Build Python bindings for misaki_cpp" OFF)

@@ -5,7 +5,9 @@
 cmake_minimum_required(VERSION 3.18)
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 20)
+endif()
 
 set(dist_folder "${CMAKE_SOURCE_DIR}/bin/")
 
