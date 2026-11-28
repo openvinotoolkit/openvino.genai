@@ -985,11 +985,13 @@ void InputsEmbedderPhi3V::update_chat_history(const std::string& decoded_results
 void InputsEmbedderPhi3V::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
     m_tokens_per_images.clear();
+    m_prev_tokens_per_images.clear();
 }
 
 void InputsEmbedderPhi3V::finish_chat() {
     IInputsEmbedder::finish_chat();
     m_tokens_per_images.clear();
+    m_prev_tokens_per_images.clear();
 }
 
 } // namespace ov::genai

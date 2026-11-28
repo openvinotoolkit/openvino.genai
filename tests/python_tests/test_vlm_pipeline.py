@@ -1445,6 +1445,37 @@ def test_vlm_pipeline_string_generate_after_chat_history(ov_pipe_model: VlmModel
     assert actual.texts == expected.texts
 
 
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
+            id="qwen2.5-vl/SDPA",
+        ),
+    ],
+    indirect=["ov_pipe_model"],
+)
+def test_vlm_chat_history_failed_turn_is_rolled_back(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
+    # A failed turn registered its image in the history state without undoing it, so the retry
+    # below started at image index 1 and its <ov_genai_image_0> was rejected as an older image.
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+
+    history = ChatHistory()
+    history.append({"role": "user", "content": "<ov_genai_image_1> What is on the image?"})
+    with pytest.raises(RuntimeError):
+        ov_pipe.generate(history, images=[cat_tensor], generation_config=generation_config)
+
+    history.pop()
+    history.append({"role": "user", "content": "<ov_genai_image_0> What is on the image?"})
+    retried = ov_pipe.generate(history, images=[cat_tensor], generation_config=generation_config)
+
+    fresh_history = ChatHistory()
+    fresh_history.append({"role": "user", "content": "<ov_genai_image_0> What is on the image?"})
+    fresh = ov_pipe.generate(fresh_history, images=[cat_tensor], generation_config=generation_config)
+    assert retried.texts == fresh.texts
+
+
 def finish_chat(ov_pipe_model: VlmModelInfo):
     # Clear chat state left by ChatHistory on the shared pipeline.
     ov_pipe_model.pipeline.finish_chat()
