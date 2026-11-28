@@ -7,9 +7,10 @@ Usage (the export options are the ones of ``optimum-cli export openvino``)::
 
     genai-cli export -m <model id or path> [options] <output dir>
 
-Models listed in ``openvino_genai._cli.exporters`` are converted natively with torch.export; every other model is
-exported through optimum-intel. In both cases the model is exported with the transformers version it is supported
-with, provided by an ephemeral uv overlay when the installed version differs.
+genai-cli uses a built-in GenAI exporter when one supports the requested model. Otherwise, it passes the export
+command to Optimum Intel, which handles its own supported models.
+Some exporters require a specific Transformers version. When the active environment has a different version,
+genai-cli restarts the export in a temporary environment managed by uv with the required version installed.
 """
 
 import importlib.util
@@ -30,6 +31,7 @@ _EXPORT_REQUIREMENTS = {
     "torchvision": "torchvision",
     "transformers": "transformers",
     "huggingface_hub": "huggingface_hub",
+    "pyyaml": "yaml",
     "nncf": "nncf",
     "packaging": "packaging",
     "uv": "uv",
@@ -59,25 +61,52 @@ def _build_parser() -> ArgumentParser:
     return parser
 
 
-def _read_model_config(model: str, cache_dir: str | None) -> dict | None:
-    """Reads config.json of a local or Hub model as plain JSON (no remote code is run)."""
+# For FunASR checkpoints without config.json, map the model class in config.yaml
+# to a model type handled by a built-in GenAI exporter.
+_FUNASR_MODEL_TYPES = {"FsmnVADStreaming": "fsmn_vad"}
+
+
+def _model_file(model: str, filename: str, cache_dir: str | None) -> Path | None:
+    """``filename`` of a local or Hub model, None when the model has no such file."""
     path = Path(model)
     if path.is_dir():
-        config_path = path / "config.json"
-        if not config_path.is_file():
-            return None
-    else:
-        from huggingface_hub import hf_hub_download
-        from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
+        file_path = path / filename
+        return file_path if file_path.is_file() else None
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
 
-        try:
-            config_path = Path(hf_hub_download(model, "config.json", cache_dir=cache_dir))
-        except (EntryNotFoundError, HfHubHTTPError, OSError, ValueError) as error:
-            # No config.json (e.g. a diffusers repository), offline or not a valid repository id: let
-            # optimum_fallback.export_with_optimum_intel handle the model and report the problem.
-            logger.debug(f"Cannot download config.json of {model}: {error}")
-            return None
-    return json.loads(config_path.read_text(encoding="utf-8"))
+    try:
+        return Path(hf_hub_download(model, filename, cache_dir=cache_dir))
+    except (EntryNotFoundError, HfHubHTTPError, OSError, ValueError) as error:
+        # No such file (e.g. config.json of a diffusers repository), offline or not a valid repository id: let
+        # optimum_fallback.export_with_optimum_intel handle the model and report the problem.
+        logger.debug(f"Cannot download {filename} of {model}: {error}")
+        return None
+
+
+def _read_model_config(model: str, cache_dir: str | None) -> dict | None:
+    """Reads config.json of a local or Hub model as plain JSON (no remote code is run). Without config.json, a FunASR
+    model with a native exporter gets ``{"model_type": ...}`` from its config.yaml."""
+    config_path = _model_file(model, "config.json", cache_dir)
+    if config_path is not None:
+        return json.loads(config_path.read_text(encoding="utf-8"))
+    return _read_funasr_model_config(model, cache_dir)
+
+
+def _read_funasr_model_config(model: str, cache_dir: str | None) -> dict | None:
+    config_path = _model_file(model, "config.yaml", cache_dir)
+    if config_path is None:
+        return None
+    import yaml
+
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError) as error:
+        logger.debug(f"Cannot parse config.yaml of {model}: {error}")
+        return None
+    funasr_model = config.get("model") if isinstance(config, dict) else None
+    model_type = _FUNASR_MODEL_TYPES.get(funasr_model) if isinstance(funasr_model, str) else None
+    return {"model_type": model_type} if model_type is not None else None
 
 
 def native_exporter_for_model(model: str, library: str | None = None, cache_dir: str | None = None):
@@ -107,17 +136,19 @@ def _export_openvino(parser: ArgumentParser, args, argv: list[str], export_argv:
         exporter_cls.validate_args(args)
     except ValueError as error:
         parser.error(str(error))
-    transformers_requirement = f"transformers=={exporter_cls.TRANSFORMERS_VERSION}"
-    if not is_satisfied(transformers_requirement):
-        logger.info(
-            f"`{model_type}` is exported with {transformers_requirement}, "
-            f"transformers {installed_version('transformers')} is installed."
-        )
-        return reexec_with([transformers_requirement], argv)
+    if exporter_cls.TRANSFORMERS_VERSION is not None:
+        transformers_requirement = f"transformers=={exporter_cls.TRANSFORMERS_VERSION}"
+        if not is_satisfied(transformers_requirement):
+            logger.info(
+                f"`{model_type}` is exported with {transformers_requirement}, "
+                f"transformers {installed_version('transformers')} is installed."
+            )
+            return reexec_with([transformers_requirement], argv)
 
-    logger.info(
-        f"Exporting `{model_type}` with the native genai-cli exporter (transformers {installed_version('transformers')})"
+    transformers_note = (
+        f" (transformers {installed_version('transformers')})" if exporter_cls.TRANSFORMERS_VERSION is not None else ""
     )
+    logger.info(f"Exporting `{model_type}` with the native genai-cli exporter{transformers_note}")
     exporter_cls(args).export()
     return 0
 

@@ -43,6 +43,7 @@ export = [
     "torchvision",
     "transformers",
     "huggingface_hub",
+    "pyyaml",
     "nncf",
     "packaging",
     "uv>=0.13.4",  # GHSA-hq85-5cpj-mr62: older bundled CA stores trust a compromised root

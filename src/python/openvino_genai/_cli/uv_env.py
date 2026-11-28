@@ -3,7 +3,7 @@
 
 """Re-execution of genai-cli inside an ephemeral ``uv`` overlay.
 
-Every model is exported with the transformers version it is known to work with. Instead of
+Models that need transformers are exported with the transformers version they are known to work with. Instead of
 installing that version into the user's environment, genai-cli re-executes itself under::
 
     uv run --active --no-project --with transformers==<X> python -m openvino_genai._cli ...

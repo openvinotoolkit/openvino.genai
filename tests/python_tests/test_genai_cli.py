@@ -18,7 +18,7 @@ from openvino_genai._cli import optimum_fallback, uv_env
 from openvino_genai._cli.exporters.common import copy_model_files, weight_compression_config_from_args
 from packaging.requirements import Requirement
 
-from utils.export import genai_cli_command
+from utils.export import export_with_genai_cli, genai_cli_command
 from utils.network import retry_request
 
 
@@ -521,6 +521,255 @@ def test_molmo2_hub_download_includes_pytorch_weights():
     ]
     downloaded = set(filter_repo_objects(files, allow_patterns=molmo2._ALLOW_PATTERNS))
     assert downloaded == set(files) - {"model_and_optim/__0_0.distcp", "model_and_optim/.metadata", "config.yaml"}
+
+
+_FSMN_VAD_REVISION = "df20e6b30c653645fa4ff125cacfcabd1020a669"
+
+
+def _fsmn_vad_checkpoint(tmp_path: Path, edit_config=None, missing_file: str | None = None) -> Path:
+    import yaml
+
+    from openvino_genai._cli.exporters.fsmn_vad import export as fsmn_vad
+    from openvino_genai._cli.exporters.fsmn_vad.model import ENCODER_CONF
+
+    model_dir = tmp_path / "fsmn-vad"
+    model_dir.mkdir()
+    config = {
+        "frontend": "WavFrontendOnline",
+        "frontend_conf": dict(fsmn_vad._FRONTEND_CONF),
+        "model": "FsmnVADStreaming",
+        "encoder": "FSMN",
+        "encoder_conf": dict(ENCODER_CONF),
+    }
+    if edit_config is not None:
+        edit_config(config)
+    files = {"config.yaml": yaml.safe_dump(config), "am.mvn": "<Nnet>\n", "model.pt": "not deserialized"}
+    for name, content in files.items():
+        if name != missing_file:
+            (model_dir / name).write_text(content)
+    return model_dir
+
+
+def test_fsmn_vad_is_found_through_its_config_yaml(tmp_path):
+    from openvino_genai._cli.exporters.fsmn_vad import FSMNVADExporter
+
+    model_dir = _fsmn_vad_checkpoint(tmp_path)
+    assert cli_main.native_exporter_for_model(str(model_dir)) == ("fsmn_vad", FSMNVADExporter)
+    (model_dir / "config.json").write_text(json.dumps({"model_type": "llama"}))
+    assert cli_main.native_exporter_for_model(str(model_dir)) == ("llama", None)
+
+
+def test_fsmn_vad_hub_repository_is_found_through_its_config_yaml(tmp_path, monkeypatch):
+    import huggingface_hub
+    from huggingface_hub.errors import EntryNotFoundError
+
+    from openvino_genai._cli.exporters.fsmn_vad import FSMNVADExporter
+
+    config_yaml = _fsmn_vad_checkpoint(tmp_path) / "config.yaml"
+    requested = []
+
+    def download(repo_id, filename, cache_dir=None):
+        requested.append((repo_id, filename))
+        if filename == "config.yaml":
+            return str(config_yaml)
+        raise EntryNotFoundError(f"{filename} is not in {repo_id}")
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    assert cli_main.native_exporter_for_model("funasr/fsmn-vad") == ("fsmn_vad", FSMNVADExporter)
+    assert requested == [("funasr/fsmn-vad", "config.json"), ("funasr/fsmn-vad", "config.yaml")]
+
+
+@pytest.mark.parametrize(
+    "config_yaml",
+    [
+        None,
+        "",
+        "model: SenseVoiceSmall\n",
+        "model: [FsmnVADStreaming]\n",
+        "model: [FsmnVADStreaming\n",
+    ],
+)
+def test_config_yaml_of_other_models_keeps_the_fallback(tmp_path, config_yaml):
+    model_dir = tmp_path / "checkpoint"
+    model_dir.mkdir()
+    if config_yaml is not None:
+        (model_dir / "config.yaml").write_text(config_yaml)
+    assert cli_main.native_exporter_for_model(str(model_dir)) == (None, None)
+
+
+def test_fsmn_vad_export_does_not_pin_transformers(tmp_path, monkeypatch):
+    from openvino_genai._cli.exporters.fsmn_vad import FSMNVADExporter
+
+    monkeypatch.setattr(uv_env, "is_satisfied", lambda requirement: pytest.fail("must not check transformers"))
+    monkeypatch.setattr(uv_env, "reexec_with", lambda *args: pytest.fail("must not re-execute"))
+    exported = []
+    monkeypatch.setattr(FSMNVADExporter, "export", lambda self: exported.append(True))
+
+    assert cli_main.main(["export", "-m", str(_fsmn_vad_checkpoint(tmp_path)), str(tmp_path / "out")]) == 0
+    assert exported == [True]
+
+
+@pytest.mark.parametrize(
+    "options, edit_config, missing_file, message",
+    [
+        (["--variant", "fp16"], None, None, "--variant is not supported"),
+        ([], None, "am.mvn", "has no am.mvn"),
+        ([], lambda config: config["frontend_conf"].update(fs=8000), None, "frontend_conf.fs is 8000, expected 16000"),
+        ([], lambda config: config["encoder_conf"].update(use_softmax=None), None, "encoder_conf.use_softmax is None"),
+        (
+            [],
+            lambda config: config.update(frontend="WavFrontend"),
+            None,
+            "frontend is 'WavFrontend', expected 'WavFrontendOnline'",
+        ),
+    ],
+)
+def test_fsmn_vad_exporter_rejects_unsupported_checkpoints(
+    tmp_path, monkeypatch, capsys, options, edit_config, missing_file, message
+):
+    from openvino_genai._cli.exporters.fsmn_vad import FSMNVADExporter
+
+    monkeypatch.setattr(FSMNVADExporter, "export", lambda self: pytest.fail("must fail before exporting"))
+    model_dir = _fsmn_vad_checkpoint(tmp_path, edit_config, missing_file)
+    with pytest.raises(SystemExit) as error:
+        cli_main.main(["export", "-m", str(model_dir), *options, str(tmp_path / "out")])
+    assert error.value.code == 2
+    assert message in capsys.readouterr().err
+
+
+def test_fsmn_vad_export_validates_the_snapshot_it_loads(tmp_path, monkeypatch):
+    from openvino_genai._cli.exporters.fsmn_vad import FSMNVADExporter
+    from openvino_genai._cli.exporters.fsmn_vad import export as fsmn_vad
+    from openvino_genai._cli.exporters.fsmn_vad import model as fsmn_vad_model
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    snapshots = [
+        _fsmn_vad_checkpoint(tmp_path / "a"),
+        _fsmn_vad_checkpoint(tmp_path / "b", lambda config: config["encoder_conf"].update(lstride=2)),
+    ]
+    monkeypatch.setattr(fsmn_vad, "resolve_model_dir", lambda *args: snapshots.pop(0))
+    monkeypatch.setattr(
+        fsmn_vad_model, "load_encoder", lambda checkpoint: pytest.fail("must not load an unvalidated snapshot")
+    )
+    output = tmp_path / "out"
+    args = _export_args("-m", "funasr/fsmn-vad", str(output))
+
+    FSMNVADExporter.validate_args(args)
+    with pytest.raises(ValueError, match="encoder_conf.lstride is 2, expected 1"):
+        FSMNVADExporter(args).export()
+    assert not output.exists()
+
+
+def test_fsmn_vad_in_place_export_keeps_the_source_config(tmp_path):
+    import torch
+
+    from openvino_genai._cli.exporters.fsmn_vad.model import FSMNEncoder
+
+    model_dir = _fsmn_vad_checkpoint(tmp_path)
+    state_dict = {f"encoder.{name}": tensor for name, tensor in FSMNEncoder().state_dict().items()}
+    torch.save(state_dict, model_dir / "model.pt")
+    config = {"model_type": "fsmn_vad", "sampling_rate": 16000}
+    blob = tmp_path / "config-blob.json"
+    blob.write_text(json.dumps(config))
+    blob_bytes = blob.read_bytes()
+    (model_dir / "config.json").symlink_to(blob)
+
+    assert cli_main.main(["export", "-m", str(model_dir), str(model_dir)]) == 0
+    assert not (model_dir / "config.json").is_symlink()
+    assert json.loads((model_dir / "config.json").read_text(encoding="utf-8")) == config
+    assert blob.read_bytes() == blob_bytes
+
+
+def test_fsmn_vad_export(tmp_path):
+    import numpy as np
+    import openvino as ov
+    import torch
+    from huggingface_hub import snapshot_download
+
+    from openvino_genai._cli.exporters.fsmn_vad import export as fsmn_vad
+    from openvino_genai._cli.exporters.fsmn_vad.model import load_encoder
+
+    source = Path(
+        retry_request(
+            partial(
+                snapshot_download,
+                "funasr/fsmn-vad",
+                revision=_FSMN_VAD_REVISION,
+                allow_patterns=fsmn_vad._ALLOW_PATTERNS,
+            )
+        )
+    )
+    output = tmp_path / "fsmn-vad-ov"
+    export_with_genai_cli(str(source), output)
+
+    exported = {path.name for path in output.iterdir()}
+    assert {"openvino_model.xml", "openvino_model.bin", "am.mvn", "config.json"} <= exported
+    assert "model.pt" not in exported
+    assert (output / "am.mvn").read_bytes() == (source / "am.mvn").read_bytes()
+    assert json.loads((output / "config.json").read_text(encoding="utf-8")) == {"model_type": "fsmn_vad"}
+
+    model = ov.Core().read_model(output / "openvino_model.xml")
+    cache_shape = (1, 128, 19, 1)
+    cache_port_shape = str(ov.PartialShape(list(cache_shape)))
+    ports = [(port.get_names(), port.get_element_type(), str(port.get_partial_shape())) for port in model.inputs]
+    assert ports == [({"speech"}, ov.Type.f32, "[1,?,400]")] + [
+        ({f"in_cache{i}"}, ov.Type.f32, cache_port_shape) for i in range(4)
+    ]
+    ports = [(port.get_names(), port.get_element_type(), str(port.get_partial_shape())) for port in model.outputs]
+    assert ports == [({"logits"}, ov.Type.f32, "[1,?,248]")] + [
+        ({f"out_cache{i}"}, ov.Type.f32, cache_port_shape) for i in range(4)
+    ]
+    assert all(op.get_element_type() != ov.Type.f16 for op in model.get_ops() if op.get_type_name() == "Constant")
+
+    compiled = ov.Core().compile_model(model, "CPU", {"INFERENCE_PRECISION_HINT": "f32"})
+    encoder = load_encoder(source / "model.pt")
+    zero_caches = [np.zeros(cache_shape, dtype=np.float32)] * 4
+
+    def run(speech, caches):
+        result = compiled({"speech": speech, **{f"in_cache{i}": cache for i, cache in enumerate(caches)}})
+        return [result[name] for name in fsmn_vad._OUTPUT_NAMES]
+
+    def assert_close(actual_outputs, expected_outputs, context):
+        for name, actual, expected in zip(fsmn_vad._OUTPUT_NAMES, actual_outputs, expected_outputs):
+            assert actual.shape == expected.shape, (name, context)
+            np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-4, err_msg=f"{name}, {context}")
+
+    frame = np.arange(77, dtype=np.float64)[:, None]
+    feature = np.arange(400, dtype=np.float64)[None, :]
+    speech = (np.sin(0.37 * (frame * 400 + feature)) + np.cos(0.05 * frame * (feature % 80))).astype(np.float32)[None]
+
+    ov_caches = torch_caches = zero_caches
+    chunk_logits, start = [], 0
+    for frames in (1, 7, 19, 50):
+        chunk = speech[:, start : start + frames]
+        ov_outputs = run(chunk, ov_caches)
+        with torch.no_grad():
+            torch_outputs = encoder(torch.from_numpy(chunk), *(torch.from_numpy(cache) for cache in torch_caches))
+        torch_outputs = [tensor.numpy() for tensor in torch_outputs]
+        assert_close(ov_outputs, torch_outputs, f"chunk T={frames}")
+        chunk_logits.append(ov_outputs[0])
+        ov_caches, torch_caches, start = ov_outputs[1:], torch_outputs[1:], start + frames
+
+    whole = run(speech, zero_caches)
+    assert_close([np.concatenate(chunk_logits, axis=1), *ov_caches], whole, "chunks vs whole sequence")
+
+    # Reference: official ONNX funasr/fsmn-vad-onnx@f6e9fbb4cefa7397216c763f21307993f147f585 model.onnx (SHA-256
+    # 756887ce01695a9bb00dd85ca0f743653de03b18ba54d2e9ef4f4bb9b3edbf9f) on OpenVINO 2027.0.0-23953 CPU with f32
+    # inference precision, given the `speech` above and zero caches.
+    reference_logits = {
+        (0, 0): 0.2171424,
+        (7, 0): 0.4795648,
+        (8, 0): 0.1378016,
+        (26, 0): 0.1547447,
+        (26, 196): 0.199229,
+        (27, 229): 0.3015217,
+    }
+    reference_caches = {(0, 127, 18): 11.37203, (1, 0, 0): -3.891153, (2, 63, 9): 4.520502, (3, 63, 9): -3.349579}
+    actual = [whole[0][0, t, k] for t, k in reference_logits]
+    actual += [whole[1 + layer][0, channel, t, 0] for layer, channel, t in reference_caches]
+    expected = [*reference_logits.values(), *reference_caches.values()]
+    np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-4)
 
 
 def test_uv_resolves_requirements_without_excluded_distributions():

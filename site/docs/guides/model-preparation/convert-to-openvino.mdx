@@ -86,6 +86,17 @@ and works in two modes:
     The output directory contains the OpenVINO IRs, the converted tokenizer and detokenizer, and the configuration
     files the GenAI pipelines read, so it can be passed to `VLMPipeline` directly.
 
+    FunASR FSMN-VAD is exported natively from the official `funasr/fsmn-vad` repository or a local copy of it.
+    genai-cli recognizes it by the upstream model name `FsmnVADStreaming` in `config.yaml`:
+    ```bash
+    genai-cli export -m funasr/fsmn-vad fsmn-vad-ov
+    ```
+    `openvino_model.xml` is the FSMN-VAD encoder. It maps `speech` [1, T, 400] (80-bin fbank features stacked by 5
+    frames and normalized with the checkpoint's `am.mvn`, which is copied next to the model) and the caches
+    `in_cache0` ... `in_cache3` [1, 128, 19, 1] (zeros at the start of a recording) to the frame posteriors `logits`
+    [1, T, 248] and the updated caches `out_cache0` ... `out_cache3`. The application prepares the input features and
+    converts the encoder's frame probabilities into speech segments.
+
     A model without a native exporter is exported the same way, through `optimum-intel`:
     ```bash
     genai-cli export -m TinyLlama/TinyLlama-1.1B-Chat-v1.0 --weight-format int4 TinyLlama_1_1b_v1_ov
@@ -97,11 +108,13 @@ and works in two modes:
 | Model type | Architecture | Converted by | transformers version |
 |------------|--------------|--------------|----------------------|
 | `molmo2` | `Molmo2ForConditionalGeneration` | `genai-cli` only (native) | 4.57.6 |
+| `fsmn_vad` | `FsmnVADStreaming` (upstream FunASR model) | `genai-cli` only (native) | Not used |
 | Any other | | `optimum-intel` (fallback) | Supported by `optimum-intel` for the model |
 
 :::info How genai-cli provides dependencies
 
-- **transformers version overlays.** Every model is exported with the `transformers` version it is known to work with.
+- **transformers version overlays.** Every model that needs `transformers` is exported with the `transformers` version
+  it is known to work with.
   If the installed version differs, `genai-cli` runs the export again in an ephemeral environment created by
   [`uv`](https://docs.astral.sh/uv/) on top of the active one (`uv run --with transformers==<version>`).
   The active virtual environment is never modified; the overlays are cached by `uv`.
