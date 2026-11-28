@@ -114,6 +114,17 @@ public:
             if (sampling_params.assistant_confidence_threshold > 0) {
                 m_assistant_confidence_threshold = sampling_params.assistant_confidence_threshold;
             }
+
+            // Reasoning budget must run last: upstream filters (top_k/top_p/min_p) have already
+            // truncated the candidate set, and force-closing replaces the whole set with the
+            // end-of-reasoning token so it is drawable even if the filters would drop it.
+            if (sampling_params.is_reasoning_budget_enabled()) {
+                auto transformer = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
+                    sampling_params.reasoning_config->budget,
+                    sampling_params.reasoning_config->end_token_id);
+                m_logit_transformers.push_back(transformer);
+                m_stateful_logit_transformers.emplace_back(transformer);
+            }
         }
     }
 

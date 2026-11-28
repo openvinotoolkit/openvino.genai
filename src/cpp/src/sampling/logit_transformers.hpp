@@ -527,6 +527,71 @@ protected:
     std::set<int64_t> m_stop_token_ids;
 };
 
+/// Caps the reasoning (thinking) section at `budget` generated tokens: once the budget is
+/// spent and the end-of-reasoning token has not been generated, every logit except
+/// `end_token_id` is suppressed so the reasoning section is force-closed and the model
+/// continues with the visible answer.
+///
+/// The count starts with the first generated token, NOT with a reasoning-opening tag:
+/// some models reason without emitting the opening tag (abliterated weights) and a
+/// prefilled closed reasoning block in the prompt does not stop them from rambling
+/// (see https://github.com/openvinotoolkit/openvino.genai/issues/4368), so relying on
+/// tag detection would miss exactly the pathological cases the budget exists for.
+///
+/// Must be the last transform in the pipeline: by then filters like top_k/top_p have
+/// already truncated the candidate set (m_vector), so the forced token replaces the
+/// candidates rather than being masked away by them.
+class ThinkingBudgetTransform : public IStatefulLogitTransformer {
+public:
+    ThinkingBudgetTransform(size_t budget, int64_t end_token_id) :
+        m_budget(budget), m_end_token_id(end_token_id) {
+        OPENVINO_ASSERT(end_token_id >= 0, "ThinkingBudgetTransform requires a non-negative end_token_id");
+    }
+
+    // Notified with every newly generated token while the transform is applicable.
+    void accept_tokens(const TokenIds& input_ids) override {
+        for (const auto token_id : input_ids) {
+            if (token_id == m_end_token_id) {
+                // The reasoning section closed naturally within the budget: never intervene.
+                m_closed = true;
+                return;
+            }
+        }
+    }
+
+    void apply(Logits& logits) override {
+        if (m_generated_tokens_cnt < m_budget) {
+            return;  // still within the budget, do not touch the logits
+        }
+        // Force-close: only the end-of-reasoning token can be generated this step.
+        if (logits.is_vector_initialized()) {
+            // The candidate set was truncated by upstream filters (top_k/top_p), so replace
+            // it: the end token must be drawable even if the filters would have dropped it.
+            logits.m_vector[0] = Token(1.0f, m_end_token_id);
+            logits.resize(1);
+        } else {
+            const float minus_inf = -std::numeric_limits<float>::infinity();
+            for (size_t i = 0; i < logits.m_size; ++i) {
+                logits.m_data[i] = minus_inf;
+            }
+            logits.m_data[m_end_token_id] = 1.0f;
+        }
+    }
+
+    // Called with the engine's count of already generated tokens before every apply()
+    // and before every accept_tokens(); stash it since apply() does not receive the count.
+    bool is_applicable(size_t generated_tokens_cnt) override {
+        m_generated_tokens_cnt = generated_tokens_cnt;
+        return !m_closed;  // stay applicable to keep receiving accept_tokens while active
+    }
+
+protected:
+    size_t m_budget;
+    int64_t m_end_token_id;
+    bool m_closed = false;
+    size_t m_generated_tokens_cnt = 0;
+};
+
 class SuppressTokensTransform : public ILogitTransformer {
 public:
     explicit SuppressTokensTransform(const std::set<int64_t>& token_ids) : m_token_ids(token_ids) {}

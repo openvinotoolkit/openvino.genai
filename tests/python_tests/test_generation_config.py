@@ -1,7 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, WhisperGenerationConfig, ASRGenerationConfig
+from openvino_genai import GenerationConfig, ReasoningConfig, WhisperGenerationConfig, ASRGenerationConfig
 import json
 import math
 import os
@@ -77,6 +77,11 @@ configs = [
     dict(max_new_tokens=1, return_omni_outputs=True),
     dict(max_new_tokens=1, stream_text2speech=True),
     dict(max_new_tokens=1, stream_text2speech=False),
+    # reasoning budget
+    dict(max_new_tokens=10, reasoning_config=ReasoningConfig(budget=5, end_token_id=1)),
+    dict(max_new_tokens=10, reasoning_config=ReasoningConfig(budget=10, end_token_id=0)),
+    # budget == 0 disables the feature, so an unset end_token_id stays acceptable
+    dict(max_new_tokens=10, reasoning_config=ReasoningConfig(budget=0, end_token_id=-1)),
 ]
 @pytest.mark.parametrize("generation_config_kwargs", configs)
 def test_valid_configs(generation_config_kwargs):
@@ -155,6 +160,26 @@ invalid_configs = [
     dict(
         max_new_tokens=1, max_ngram_size=1
     ),  # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
+    # reasoning budget
+    dict(
+        max_new_tokens=10, reasoning_config=ReasoningConfig(budget=5, end_token_id=-1)
+    ),  # 'end_token_id' must be non-negative
+    dict(
+        max_new_tokens=10, reasoning_config=ReasoningConfig(budget=20, end_token_id=1)
+    ),  # 'budget' must not exceed 'max_new_tokens'
+    dict(
+        max_new_tokens=10, num_beams=2, reasoning_config=ReasoningConfig(budget=5, end_token_id=1)
+    ),  # beam search is unsupported
+    dict(
+        max_new_tokens=10, num_assistant_tokens=2, reasoning_config=ReasoningConfig(budget=5, end_token_id=1)
+    ),  # assistant generation is unsupported
+    dict(
+        max_new_tokens=10,
+        num_assistant_tokens=2,
+        branching_factor=2,
+        tree_depth=1,
+        reasoning_config=ReasoningConfig(budget=5, end_token_id=1),
+    ),  # tree search (EAGLE) is unsupported
     # TODO: add tests for invalid properties
 ]
 @pytest.mark.parametrize("generation_config_kwargs", invalid_configs)
@@ -385,3 +410,37 @@ def test_numpy_scalars_from_kwargs(config_source, fields):
 
     for key, value in fields.items():
         assert getattr(config, key) == value, key
+
+
+def test_reasoning_config_defaults():
+    config = ReasoningConfig()
+    assert config.budget == 0
+    assert config.end_token_id == -1
+
+
+def test_reasoning_config_kwargs_and_repr():
+    config = ReasoningConfig(budget=512, end_token_id=151658)
+    assert config.budget == 512
+    assert config.end_token_id == 151658
+    assert config == ReasoningConfig(512, 151658)
+    assert config != ReasoningConfig(512, 1)
+    assert config != ReasoningConfig(256, 151658)
+    assert repr(config) == "ReasoningConfig(budget=512, end_token_id=151658)"
+
+
+def test_reasoning_config_attribute_assignment():
+    config = GenerationConfig(max_new_tokens=10)
+    assert config.reasoning_config is None
+    config.reasoning_config = ReasoningConfig(budget=5, end_token_id=1)
+    assert config.reasoning_config == ReasoningConfig(5, 1)
+    config.reasoning_config.budget = 7
+    config.reasoning_config.end_token_id = 2
+    assert config.reasoning_config == ReasoningConfig(7, 2)
+    config.validate()
+
+
+def test_reasoning_config_update_generation_config():
+    config = GenerationConfig(max_new_tokens=10)
+    config.update_generation_config(reasoning_config=ReasoningConfig(budget=5, end_token_id=1))
+    assert config.reasoning_config == ReasoningConfig(5, 1)
+    config.validate()

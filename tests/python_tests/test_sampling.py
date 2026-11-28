@@ -7,7 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
 
-from openvino_genai import GenerationConfig, StopCriteria
+from openvino_genai import (
+    GenerationConfig,
+    LLMPipeline,
+    ReasoningConfig,
+    StopCriteria,
+    StreamerBase,
+    StreamingStatus,
+)
 from optimum.intel.utils.import_utils import is_transformers_version
 
 from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, MAIN_PIPELINE_TYPES
@@ -511,3 +518,119 @@ def test_multinomial_sampling_against_reference(
 
     # Reference comparison is not performed as sampling results are non-deterministic.
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.
+
+
+class TokenCollector(StreamerBase):
+    """Accumulates every generated token id."""
+
+    def __init__(self):
+        super().__init__()
+        self.tokens: list[int] = []
+
+    def write(self, token) -> StreamingStatus:
+        try:
+            self.tokens.append(int(token))
+        except TypeError:
+            self.tokens.extend(int(t) for t in token)
+        return StreamingStatus.RUNNING
+
+    def end(self) -> None:
+        pass
+
+
+def _generate_token_ids(
+    model_schema: OVConvertedModelSchema, prompt: str, generation_config: GenerationConfig
+) -> list[int]:
+    pipe = LLMPipeline(model_schema.models_path, "CPU")
+    collector = TokenCollector()
+    pipe.generate(prompt, generation_config, collector)
+    return collector.tokens
+
+
+# A token id the tiny random model does not emit for this prompt at step 2,
+# checked by the precondition assert below.
+REASONING_END_TOKEN_ID = 1337
+
+
+def test_reasoning_budget_force_close_greedy(model_tiny_random_phi3: OVConvertedModelSchema):
+    prompt = "table is made of"
+    baseline = _generate_token_ids(model_tiny_random_phi3, prompt, GenerationConfig(max_new_tokens=5, ignore_eos=True))
+    # Precondition: the end-of-reasoning token must not occur naturally at the forced position.
+    assert REASONING_END_TOKEN_ID not in baseline[:3]
+
+    budgeted = _generate_token_ids(
+        model_tiny_random_phi3,
+        prompt,
+        GenerationConfig(
+            max_new_tokens=5,
+            ignore_eos=True,
+            reasoning_config=ReasoningConfig(budget=2, end_token_id=REASONING_END_TOKEN_ID),
+        ),
+    )
+    # Tokens within the budget are untouched, the budget step force-closes the reasoning.
+    assert budgeted[0] == baseline[0]
+    assert budgeted[1] == baseline[1]
+    assert budgeted[2] == REASONING_END_TOKEN_ID
+
+
+def test_reasoning_budget_no_intervention_within_budget(model_tiny_random_phi3: OVConvertedModelSchema):
+    prompt = "table is made of"
+    baseline = _generate_token_ids(model_tiny_random_phi3, prompt, GenerationConfig(max_new_tokens=5, ignore_eos=True))
+    # The budget can never be exhausted when it equals max_new_tokens, so the output is unchanged.
+    budgeted = _generate_token_ids(
+        model_tiny_random_phi3,
+        prompt,
+        GenerationConfig(
+            max_new_tokens=5,
+            ignore_eos=True,
+            reasoning_config=ReasoningConfig(budget=5, end_token_id=REASONING_END_TOKEN_ID),
+        ),
+    )
+    assert budgeted == baseline
+
+
+def test_reasoning_budget_force_close_multinomial(model_tiny_random_phi3: OVConvertedModelSchema):
+    prompt = "table is made of"
+    # top_k=1 makes the multinomial path deterministic while still exercising the
+    # truncated candidate-set (m_vector) code path of the budget transform.
+    config = {
+        "max_new_tokens": 5,
+        "ignore_eos": True,
+        "do_sample": True,
+        "top_k": 1,
+    }
+    baseline = _generate_token_ids(model_tiny_random_phi3, prompt, GenerationConfig(**config))
+    assert REASONING_END_TOKEN_ID not in baseline[:3]
+
+    budgeted = _generate_token_ids(
+        model_tiny_random_phi3,
+        prompt,
+        GenerationConfig(
+            **config,
+            reasoning_config=ReasoningConfig(budget=2, end_token_id=REASONING_END_TOKEN_ID),
+        ),
+    )
+    assert budgeted[0] == baseline[0]
+    assert budgeted[1] == baseline[1]
+    # The end token replaces the truncated candidate set even though top_k kept another token.
+    assert budgeted[2] == REASONING_END_TOKEN_ID
+
+
+def test_reasoning_budget_force_close_stops_generation(model_tiny_random_phi3: OVConvertedModelSchema):
+    prompt = "table is made of"
+    baseline = _generate_token_ids(model_tiny_random_phi3, prompt, GenerationConfig(max_new_tokens=2, ignore_eos=True))
+    assert len(baseline) == 2
+
+    # When the forced end-of-reasoning token is also a stop token, generation ends at the budget.
+    budgeted = _generate_token_ids(
+        model_tiny_random_phi3,
+        prompt,
+        GenerationConfig(
+            max_new_tokens=5,
+            stop_token_ids={REASONING_END_TOKEN_ID},
+            reasoning_config=ReasoningConfig(budget=2, end_token_id=REASONING_END_TOKEN_ID),
+        ),
+    )
+    assert budgeted[:2] == baseline
+    assert budgeted[-1] == REASONING_END_TOKEN_ID
+    assert len(budgeted) == 3
