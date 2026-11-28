@@ -51,7 +51,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         self.seed = seed
         self.similarity = VideoSimilarity()
         self.last_cmp = None
-        self.gt_dir = os.path.dirname(gt_data)
+        self.gt_dir = os.path.dirname(gt_data or "")
         self.generation_fn = gen_video_fn
         self.is_genai = is_genai
         self.empty_adapters = empty_adapters

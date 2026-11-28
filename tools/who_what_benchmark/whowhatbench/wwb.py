@@ -28,6 +28,9 @@ from whowhatbench.artifacts_manager import Metrics
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Used when --base-model is given without --gt-data
+DEFAULT_GT_DATA = "gt_data.csv"
+
 # Supported keys for --sd-generation-config and their expected Python types.
 # When updating this dict, also update the CLI help string for --sd-generation-config below to keep them consistent.
 SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
@@ -124,7 +127,8 @@ def parse_args():
         default=None,
         help=(
             "CSV file for ground truth outputs. If --base-model is provided, this file will be generated/"
-            "overwritten with --base-model evaluation. If --base-model is not provided, the file must exist."
+            "overwritten with --base-model evaluation (default: gt_data.csv in the current directory). "
+            "If --base-model is not provided, the file must exist."
         ),
     )
     parser.add_argument(
@@ -1713,6 +1717,12 @@ def print_speech_results(evaluator):
 def main():
     args = parse_args()
     check_args(args)
+
+    if args.base_model is not None and args.gt_data is None:
+        args.gt_data = DEFAULT_GT_DATA
+        logger.warning(
+            f"--gt-data was not provided, ground truth data will be saved to '{os.path.abspath(args.gt_data)}'"
+        )
 
     if args.num_assistant_tokens is not None:
         logger.warning(

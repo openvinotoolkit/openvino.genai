@@ -204,7 +204,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
         self.pooling_type = pooling_type
         self.normalize = normalize or False
         self.padding_side = padding_side or 'right'
-        self.gt_dir = os.path.dirname(gt_data)
+        self.gt_dir = os.path.dirname(gt_data or "")
         self.batch_size = batch_size
 
         if base_model:
