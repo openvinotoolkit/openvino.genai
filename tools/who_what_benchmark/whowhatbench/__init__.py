@@ -8,6 +8,7 @@ from .text_generation_strategies import GenerationResults, TextGenerationContext
 from .text2image_evaluator import Text2ImageEvaluator
 from .visualtext_evaluator import VisualTextEvaluator
 from .im2im_evaluator import Image2ImageEvaluator
+from .multi_image2image_evaluator import MultiImage2ImageEvaluator
 from .inpaint_evaluator import InpaintingEvaluator
 from .embeddings_evaluator import EmbeddingsEvaluator
 from .reranking_evaluator import RerankingEvaluator
@@ -30,6 +31,7 @@ __all__ = [
     "Text2ImageEvaluator",
     "VisualTextEvaluator",
     "Image2ImageEvaluator",
+    "MultiImage2ImageEvaluator",
     "InpaintingEvaluator",
     "EmbeddingsEvaluator",
     "RerankingEvaluator",
