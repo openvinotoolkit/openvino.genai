@@ -197,6 +197,20 @@ wwb --base-model BAAI/bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-ty
 wwb --target-model ./bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --genai
 ```
 
+By default, a sample of the MS MARCO dataset is used. To use your own data, pass a local CSV file with `--dataset`. It must have a `query` column and a `passages` column, where each `passages` cell is a JSON list of strings:
+```csv
+query,passages
+How do I bake sourdough bread?,"[""Mix flour, water and starter."", ""Bake at 230 C for 40 minutes.""]"
+```
+```sh
+wwb --base-model BAAI/bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --dataset my_queries.csv --hf
+```
+
+`--dataset` can also be a Hugging Face dataset (`path[,name]`). It must have a `passages` column holding either a list of strings or, as in `microsoft/ms_marco`, a dict with a `passage_text` list. The query column is set with `--dataset-field` (default: `query`):
+```sh
+wwb --base-model BAAI/bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --dataset microsoft/ms_marco,v2.1 --split "validation[:32]" --hf
+```
+
 ### Compare Text Embedding models
 
 **Supported options:**
