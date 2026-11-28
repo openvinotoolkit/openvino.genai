@@ -325,6 +325,9 @@ class ASRPipeline:
                     forced_aligner (ASRForcedAligner): Pre-constructed forced aligner instance.
                         Only supported for Qwen3-ASR. Required when requesting
                         generate(..., word_timestamps=True).
+                    chunk_length_s (int): Maximum length in seconds of an audio chunk processed by one inference.
+                        Longer audio is split into chunks and the results are merged. Only supported for SenseVoiceSmall.
+                        By default CPU and GPU do not split audio and NPU uses 30 seconds.
         """
     def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat] | collections.abc.Sequence[collections.abc.Sequence[typing.SupportsFloat]], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
