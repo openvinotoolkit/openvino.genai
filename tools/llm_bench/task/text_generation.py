@@ -604,6 +604,7 @@ def run_text_generation_genai(
         prompt_idx=prompt_index,
         cb_metric=cache_usage,
         prefill_time=inference_durations[0] * 1000 if args.get("num_prefill_tokens", None) else "",
+        decode_latency_per_token=True,
     )
 
     print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)

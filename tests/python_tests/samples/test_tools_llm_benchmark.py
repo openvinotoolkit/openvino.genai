@@ -243,6 +243,44 @@ LTX2_OPTIMUM = pytest.mark.skipif(not optimum_supports_ltx2(), reason="optimum-i
 
 
 class TestBenchmarkLLM:
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen2"], indirect=True)
+    @pytest.mark.parametrize("batch_size", [1, 2])
+    def test_genai_decode_throughput(self, convert_model, batch_size, tmp_path):
+        config = tmp_path / "sdpa.json"
+        config.write_text(json.dumps({"ATTENTION_BACKEND": "SDPA"}), encoding="utf-8")
+        report = tmp_path / "report.json"
+        output = run_sample(
+            [
+                sys.executable,
+                SAMPLES_PY_DIR / "llm_bench/benchmark.py",
+                "-m",
+                convert_model,
+                "-d",
+                "CPU",
+                "-n",
+                "1",
+                "-ic",
+                "12",
+                "-b",
+                str(batch_size),
+                "-p",
+                "The capital of France is",
+                "--ov-config",
+                config,
+                "-rj",
+                report,
+            ]
+        )
+
+        perfdata = json.loads(report.read_text(encoding="utf-8"))["perfdata"]
+        measured = perfdata["results_averaged"]
+        for result in [*perfdata["results"], measured]:
+            assert result["second_token_throughput"] == pytest.approx(1000 / result["second_avg_latency"], rel=0.001)
+        summary = next(line for line in output.stdout.splitlines() if "2nd tokens throughput:" in line)
+        assert " ms/token, 2nd tokens throughput:" in summary
+        throughput = float(summary.split("2nd tokens throughput: ")[1].split()[0])
+        assert throughput == pytest.approx(measured["second_token_throughput"], rel=0.001)
 
     @pytest.mark.samples
     @pytest.mark.parametrize("download_model, sample_args", [
