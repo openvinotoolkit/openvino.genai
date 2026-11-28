@@ -63,6 +63,7 @@ private:
 
     Qwen3TTSCodecEngine m_engine;
     ov::InferRequest m_talker;
+    std::string m_talker_device;
 
     mutable int64_t m_talker_prefill_tokens = 0;
 };

@@ -25,6 +25,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     // NPUW LLM compile path (stateful decoder -> static); every other device
     // keeps the generic path.
     auto [talker_device, talker_properties] = resolve_component_target(device, properties, roles::TALKER);
+    m_talker_device = talker_device;
     if (talker_device.find("NPU") != std::string::npos) {
         // Apply TTS-specific NPU defaults unless the caller already set them.
         constexpr int64_t DEFAULT_MAX_PROMPT_LEN = 1024;
@@ -155,6 +156,19 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(
     }
 
     std::mt19937 rng(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed) : std::random_device{}());
+    bool allow_device_zero_copy = false;
+    if (m_engine.has_fused_code_predictor() &&
+        m_engine.fused_code_predictor().uses_remote_next_embed() &&
+        m_talker_device == m_engine.fused_code_predictor().target_device()) {
+        try {
+            const auto talker_ctx = m_talker.get_compiled_model().get_context();
+            allow_device_zero_copy =
+                !m_engine.fused_code_predictor().remote_context_device_name().empty() &&
+                talker_ctx.get_device_name() == m_engine.fused_code_predictor().remote_context_device_name();
+        } catch (...) {
+            allow_device_zero_copy = false;
+        }
+    }
     size_t absolute_pos = talker_prefill.get_shape()[1];
     for (size_t step = 0; step < max_steps; ++step) {
         if (stream_session && stream_session->should_stop()) {
@@ -167,23 +181,41 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(
         generated_main.push_back(token);
 
         const size_t hs_len = hidden_states.get_shape()[1];
-        ov::Tensor past_hidden(hidden_states, ov::Coordinate{0, hs_len - 1, 0}, ov::Coordinate{1, hs_len, hidden});
+        ov::Tensor past_hidden = (hs_len == 1)
+            ? hidden_states
+            : ov::Tensor(hidden_states, ov::Coordinate{0, hs_len - 1, 0}, ov::Coordinate{1, hs_len, hidden});
 
-        auto groups = m_engine.generate_codec_groups(past_hidden, token, generation_config, rng);
+        auto fused_step = m_engine.generate_codec_groups_and_next_embed(past_hidden,
+                                                                        token,
+                                                                        step,
+                                                                        tts_pad,
+                                                                        trailing_text_hidden,
+                                                                        generation_config,
+                                                                        rng,
+                                                                        allow_device_zero_copy);
         if (stream_session) {
-            if (!stream_session->push_frame(groups.data(), groups.size())) {
+            if (!stream_session->push_frame(fused_step.codes.data(), fused_step.codes.size())) {
                 break;
             }
         } else {
-            all_codes.insert(all_codes.end(), groups.begin(), groups.end());
+            all_codes.insert(all_codes.end(), fused_step.codes.begin(), fused_step.codes.end());
         }
-
-        const ov::Tensor token_embed = m_engine.make_next_talker_embedding(
-            groups, step, tts_pad, trailing_text_hidden, generation_config.non_streaming_mode);
 
         auto attn = make_decode_attention_mask_4d(absolute_pos + 1);
         auto pos = make_position_ids_decode(absolute_pos);
-        logits = infer_talker(token_embed, attn, pos, false);
+        if (allow_device_zero_copy && fused_step.next_embed.is<ov::RemoteTensor>()) {
+            try {
+                logits = infer_talker(fused_step.next_embed, attn, pos, false);
+            } catch (const ov::Exception&) {
+                // Gracefully degrade from RemoteTensor zero-copy to host tensor if contexts differ.
+                allow_device_zero_copy = false;
+                ov::Tensor host_embed(fused_step.next_embed.get_element_type(), fused_step.next_embed.get_shape());
+                fused_step.next_embed.copy_to(host_embed);
+                logits = infer_talker(host_embed, attn, pos, false);
+            }
+        } else {
+            logits = infer_talker(fused_step.next_embed, attn, pos, false);
+        }
         hidden_states = m_talker.get_tensor(hidden_out_name);
         ++absolute_pos;
     }

@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <map>
 #include <optional>
+#include <string>
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/speech_generation/audio_streamer_base.hpp"
@@ -13,6 +15,19 @@
 namespace ov {
 namespace genai {
 class Text2SpeechPipelineImpl;
+
+/// @brief Per-component device overrides for multi-submodel TTS pipelines (e.g. Qwen3-TTS),
+///        keyed by component role name (e.g. "talker_model", "code_predictor_fused",
+///        "code_predictor_model", "codec_decoder", "codec_encoder", "speaker_encoder").
+static constexpr ov::Property<std::map<std::string, std::string>> device_mapping{"device_mapping"};
+
+/// @brief Shorthand device override for the speech tokenizer / vocoder decoder component
+///        (e.g. "NPU" for GPU Talker + NPU Decoder heterogeneous execution).
+static constexpr ov::Property<std::string> decoder_device{"decoder_device"};
+
+/// @brief Shorthand device override for reference audio encoder components
+///        (speech tokenizer encoder, speaker encoder, and mel preprocessing).
+static constexpr ov::Property<std::string> encoder_device{"encoder_device"};
 
 /**
  * Structure that stores the result from the generate method, including a list of waveform tensors
