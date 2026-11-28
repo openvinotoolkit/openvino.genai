@@ -128,8 +128,15 @@ public:
     }
 
     void after_remove_request(StepRequestState& state, GenerationStatus status) override {
-        remove_calls.push_back({static_cast<CountedState&>(state).tag, status});
-        if (remove_failure && status == failing_status) {
+        const auto tag = static_cast<CountedState&>(state).tag;
+        remove_calls.push_back({tag, status});
+        if (status != failing_status) {
+            return;
+        }
+        if (const auto failure = remove_failures_by_tag.find(tag); failure != remove_failures_by_tag.end()) {
+            std::rethrow_exception(failure->second);
+        }
+        if (remove_failure) {
             std::rethrow_exception(remove_failure);
         }
     }
@@ -145,6 +152,7 @@ public:
     Outcomes outcomes;
     GenerationStatus failing_status = GenerationStatus::RUNNING;
     std::exception_ptr remove_failure;
+    std::map<int, std::exception_ptr> remove_failures_by_tag;
 
     const std::shared_ptr<size_t> destroyed = std::make_shared<size_t>(0);
     std::vector<std::shared_ptr<StepRequestPayload>> created_payloads;
@@ -275,6 +283,10 @@ protected:
 
         bool has_block_table(uint64_t sequence_id) const {
             return m_scheduler->has_block_table(sequence_id);
+        }
+
+        Sampler& sampler() {
+            return *m_sampler;
         }
 
         // Handles stay unnotified, so the stream shows only what a model ending applies.
@@ -535,6 +547,54 @@ TEST_F(CBStepHookRemoveRequestTest, drop_ends_running_and_awaiting_once) {
     }
     EXPECT_EQ(hook->remove_count(1), 1);
     EXPECT_EQ(hook->remove_count(2), 1);
+}
+
+TEST_F(CBStepHookRemoveRequestTest, failing_drop_ends_every_request_and_fails_pipeline) {
+    PipelineTestInstance pipeline(hook);
+    pipeline.add(0, {1}, make_config(4), payload(1));
+    pipeline.add(1, {2}, make_config(4), payload(2));
+    pipeline.step();
+    ASSERT_EQ(pipeline.requests().size(), 2);
+    ASSERT_NO_THROW(pipeline.sampler().get_logit_processor(0));
+    ASSERT_NO_THROW(pipeline.sampler().get_logit_processor(1));
+    const auto awaiting_handle = pipeline.add(2, {3}, make_config(4), payload(3));
+    ASSERT_EQ(pipeline.awaiting().size(), 1);
+    std::vector<uint64_t> sequence_ids;
+    for (const auto* group : {&pipeline.requests(), &pipeline.awaiting()}) {
+        for (const auto& request : *group) {
+            for (const auto& sequence : request->get_sequences()) {
+                sequence_ids.push_back(sequence->get_id());
+            }
+        }
+    }
+    // Set only now, so a failed precondition above cannot make the fixture destructor throw.
+    hook->failing_status = GenerationStatus::FAILED;
+    for (const int tag : {1, 2, 3}) {
+        hook->remove_failures_by_tag[tag] =
+            std::make_exception_ptr(std::runtime_error("remove failure " + std::to_string(tag)));
+    }
+
+    EXPECT_NO_THROW(pipeline.drop_requests());
+
+    EXPECT_EQ(hook->remove_count(1), 1);
+    EXPECT_EQ(hook->remove_count(2), 1);
+    EXPECT_EQ(hook->remove_count(3), 1);
+    EXPECT_TRUE(pipeline.requests().empty());
+    EXPECT_TRUE(pipeline.awaiting().empty());
+    for (const auto sequence_id : sequence_ids) {
+        EXPECT_FALSE(pipeline.has_block_table(sequence_id)) << sequence_id;
+    }
+    // A sampler context left behind is reused by the next request with the same id.
+    for (const uint64_t request_id : {0, 1}) {
+        EXPECT_THROW(pipeline.sampler().get_logit_processor(request_id), ov::Exception) << request_id;
+    }
+    EXPECT_EQ(awaiting_handle->get_status(), GenerationStatus::FAILED);
+    expect_same_exception(capture_failure([&pipeline] {
+                              pipeline.step();
+                          }),
+                          hook->remove_failures_by_tag.at(1));
+    // Keeps the fixture destructor from aborting the run if drop_requests throws again.
+    hook->remove_failures_by_tag.clear();
 }
 
 TEST_F(CBStepHookRemoveRequestTest, dropped_awaiting_request_is_never_pulled) {

@@ -1529,31 +1529,55 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reset_cache_usage_stat
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
-    for (const std::shared_ptr<ov::genai::SequenceGroup> request : m_requests) {
-        for (const auto& sequence : request->get_sequences()) {
-            if (m_scheduler->has_block_table(sequence->get_id())) {
-                m_scheduler->free_sequence(sequence->get_id());
+    std::exception_ptr first_error;
+    // A throwing after_remove_request must not skip clear_request_info, or a sampler context keeps a reference
+    // to the destroyed step state. The error fails the pipeline after cleanup instead.
+    const auto end_request = [this, &first_error](const SequenceGroup::Ptr& request) {
+        try {
+            for (const auto& sequence : request->get_sequences()) {
+                if (m_scheduler->has_block_table(sequence->get_id())) {
+                    m_scheduler->free_sequence(sequence->get_id());
+                }
             }
+            _end_step_state(request, GenerationStatus::FAILED);
+        } catch (...) {
+            if (!first_error) {
+                first_error = std::current_exception();
+            }
+            std::string message;
+            try {
+                throw;
+            } catch (const std::exception& error) {
+                message = error.what();
+            } catch (...) {
+                message = "unknown exception";
+            }
+            GENAI_WARN("Request %lu failed while being dropped: %s",
+                       static_cast<unsigned long>(request->get_request_id()),
+                       message.c_str());
         }
-        _end_step_state(request, GenerationStatus::FAILED);
+    };
+    for (const std::shared_ptr<ov::genai::SequenceGroup> request : m_requests) {
+        end_request(request);
         m_sampler->clear_request_info(request->get_request_id());
     }
     m_requests.clear();
-    // A dropped request still waiting to be pulled would otherwise run on the next step without its state.
-    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-    for (const auto& request : m_awaiting_requests) {
-        // Prefix caching restores blocks when a request is added, before it is pulled.
-        for (const auto& sequence : request->get_sequences()) {
-            if (m_scheduler->has_block_table(sequence->get_id())) {
-                m_scheduler->free_sequence(sequence->get_id());
-            }
+    {
+        // A dropped request still waiting to be pulled would otherwise run on the next step without its state.
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (const auto& request : m_awaiting_requests) {
+            // end_request also frees blocks that prefix caching restored when the request was added.
+            end_request(request);
+            // Another caller may have queued it, so its handle must end instead of waiting for a step.
+            request->fail_generation(std::make_exception_ptr(std::runtime_error(
+                "Request " + std::to_string(request->get_request_id()) + " was dropped because generation failed")));
         }
-        _end_step_state(request, GenerationStatus::FAILED);
-        // Another caller may have queued it, so its handle must end instead of waiting for a step.
-        request->fail_generation(std::make_exception_ptr(std::runtime_error(
-            "Request " + std::to_string(request->get_request_id()) + " was dropped because generation failed")));
+        m_awaiting_requests.clear();
     }
-    m_awaiting_requests.clear();
+    // _fail_pipeline locks m_awaiting_requests_mutex, so it must run after the lock above is released.
+    if (first_error) {
+        _fail_pipeline(first_error);
+    }
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_end_step_state(const SequenceGroup::Ptr& request,
