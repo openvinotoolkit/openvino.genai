@@ -150,14 +150,26 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     // 4. Compute the predicted original sample x_0 based on the model parameterization
     std::vector<std::vector<float>> predicted_original_sample(batch_size);
     // "epsilon" by default
-    if (m_config.prediction_type == PredictionType::EPSILON) {
-        for (std::size_t i = 0; i < batch_size; ++i) {
-            std::vector<float>& predicted_original_sample_l = predicted_original_sample[i];
-            predicted_original_sample_l.resize(latent_size);
+    for (std::size_t i = 0; i < batch_size; ++i) {
+        std::vector<float>& predicted_original_sample_l = predicted_original_sample[i];
+        predicted_original_sample_l.resize(latent_size);
 
-            for (std::size_t j = 0; j < latent_size; ++j)
-                predicted_original_sample_l[j] = (latents_data[i * latent_size + j] -
-                    beta_prod_t_sqrt * noise_pred_data[i * latent_size + j]) / alpha_prod_t_sqrt;
+        for (std::size_t j = 0; j < latent_size; ++j) {
+            const float sample = latents_data[i * latent_size + j];
+            const float model_output = noise_pred_data[i * latent_size + j];
+            switch (m_config.prediction_type) {
+            case PredictionType::EPSILON:
+                predicted_original_sample_l[j] = (sample - beta_prod_t_sqrt * model_output) / alpha_prod_t_sqrt;
+                break;
+            case PredictionType::SAMPLE:
+                predicted_original_sample_l[j] = model_output;
+                break;
+            case PredictionType::V_PREDICTION:
+                predicted_original_sample_l[j] = alpha_prod_t_sqrt * sample - beta_prod_t_sqrt * model_output;
+                break;
+            default:
+                OPENVINO_THROW("Unsupported 'prediction_type' for LCMScheduler");
+            }
         }
     }
 
