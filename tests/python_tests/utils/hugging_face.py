@@ -340,6 +340,40 @@ def generate_and_save_gemma4_mtp_assistant_model(target_models_path: Path) -> Pa
     return assistant_models_path
 
 
+def download_and_convert_model_with_sliding_window(
+    model_id: str, sliding_window: int, max_window_layers: int
+) -> OVConvertedModelSchema:
+    """model_id with sliding-window attention in its layers from max_window_layers on (a Qwen2 / Qwen3 config option).
+
+    The model then has two attention masks: a causal one and a sliding-window one.
+    """
+    models_path = get_ov_cache_converted_models_dir() / (
+        f"{sanitize_model_id(model_id)}_sliding_window_{sliding_window}_from_layer_{max_window_layers}"
+    )
+    manager = AtomicDownloadManager(models_path)
+
+    def convert_to_temp(temp_path: Path) -> None:
+        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        config = AutoConfig.from_pretrained(model_cached, use_sliding_window=True, sliding_window=sliding_window)
+        config.max_window_layers = max_window_layers
+        # Set the layer types too: a config that lists them doesn't derive them from max_window_layers.
+        config.layer_types = [
+            "sliding_attention" if layer >= max_window_layers else "full_attention"
+            for layer in range(config.num_hidden_layers)
+        ]
+        hf_tokenizer = AutoTokenizer.from_pretrained(model_cached)
+        with tempfile.TemporaryDirectory() as hf_dir:
+            AutoModelForCausalLM.from_pretrained(model_cached, config=config).save_pretrained(hf_dir)
+            opt_model, _ = get_huggingface_models(
+                hf_dir, OVModelForCausalLM, local_files_only=True, has_tokenizer=False
+            )
+        convert_models(opt_model, hf_tokenizer, temp_path, model_id)
+
+    manager.execute(convert_to_temp)
+    opt_model, hf_tokenizer = get_huggingface_models(models_path, OVModelForCausalLM, local_files_only=True)
+    return OVConvertedModelSchema(model_id, opt_model, hf_tokenizer, models_path)
+
+
 def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 

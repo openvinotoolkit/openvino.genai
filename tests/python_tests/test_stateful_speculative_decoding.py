@@ -5,6 +5,7 @@ import pytest
 import numpy as np
 
 from pathlib import Path
+from typing import NamedTuple
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -12,6 +13,7 @@ import openvino_genai as ov_genai
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import (
     download_and_convert_model,
+    download_and_convert_model_with_sliding_window,
     generate_and_save_gemma4_mtp_assistant_model,
     run_hugging_face,
 )
@@ -486,21 +488,44 @@ def test_qwen38_flash_next_mtp_cb_add_request(qwen38_flash_next_mtp_cb_pipe: ov_
 
 
 # Eagle3 specific tests
-eagle3_models_and_input = [
-    (
-        "Qwen/Qwen3-1.7B",
-        "AngelSlim/Qwen3-1.7B_eagle3",
-        """Code:
+class SlidingWindowTarget(NamedTuple):
+    """A model with sliding-window attention in its layers from max_window_layers on (a Qwen3 config option).
+
+    It has two attention masks, a causal and a sliding-window one, so the tree mask must be added to both.
+    """
+
+    model_id: str
+    sliding_window: int
+    max_window_layers: int
+
+
+def download_and_convert_eagle3_target(target_model):
+    if isinstance(target_model, SlidingWindowTarget):
+        return download_and_convert_model_with_sliding_window(*target_model)
+    return download_and_convert_model(target_model)
+
+
+eagle3_code_prompt = """Code:
 def add(a, b):
     return a + b
 
 Question: Can you please add 2 and 3
-A:""",
-    ),
+A:"""
+
+eagle3_models_and_input = [
+    ("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3", eagle3_code_prompt),
     (
         "Qwen/Qwen3-1.7B",
         "AngelSlim/Qwen3-1.7B_eagle3",
         "What is the capital of Ireland?/no_think",
+    ),
+    # Sliding-window attention from layer 14 on, with Qwen3's default 4096-token window: longer than the test sequences,
+    # so the draft accepts as many tokens as with the base model, and the target has two attention masks.
+    pytest.param(
+        SlidingWindowTarget("Qwen/Qwen3-1.7B", sliding_window=4096, max_window_layers=14),
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        eagle3_code_prompt,
+        id="Qwen/Qwen3-1.7B-sliding_window-AngelSlim/Qwen3-1.7B_eagle3",
     ),
 ]
 
@@ -523,7 +548,7 @@ def test_eagle3_string_inputs(
 ):
     """Test Eagle3 pipeline with string inputs on different device combinations"""
     # Download and convert models:
-    target_model_schema = download_and_convert_model(target_model)
+    target_model_schema = download_and_convert_eagle3_target(target_model)
     target_opt_model = target_model_schema.opt_model
     target_hf_tokenizer = target_model_schema.hf_tokenizer
     target_model_path = target_model_schema.models_path
@@ -586,7 +611,7 @@ def test_eagle3_perf_metrics(
 ):
     """Test Eagle3 pipeline performance metrics to verify speculative decoding is actually working"""
     # Download and convert models:
-    target_model_path = download_and_convert_model(target_model).models_path
+    target_model_path = download_and_convert_eagle3_target(target_model).models_path
     draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI Eagle3 pipeline:
