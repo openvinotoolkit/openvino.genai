@@ -790,7 +790,10 @@ class MemorySampler(dict, SamplerTiming):
         ave = self[marker][metric, "mass"] / cnt
         ems2 = self[marker][metric, "mass2"] / cnt
         if self.metrics[metric]["cv"] and ave > 0:
-            cv = 100.0 * math.sqrt(ems2 - ave**2) / ave
+            # E[x^2] - E[x]^2 loses all precision for large, nearly constant values (macOS VMS is ~1 TiB)
+            # and can come out slightly negative, so clamp it at 0 before taking the square root
+            variance = max(ems2 - ave**2, 0.0)
+            cv = 100.0 * math.sqrt(variance) / ave
         elif self.metrics[metric]["cv"] and ave == 0:
             cv = 0.0
         else:
