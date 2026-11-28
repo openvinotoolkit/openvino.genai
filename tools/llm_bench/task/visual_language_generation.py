@@ -191,7 +191,7 @@ def run_visual_language_generation_genai(
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
-    gen_config.ignore_eos = True
+    gen_config.ignore_eos = not args["end_token_stopping"]
     if args["pruning_ratio"] is not None:
         gen_config.pruning_ratio = args["pruning_ratio"]
     if args["relevance_weight"] is not None:

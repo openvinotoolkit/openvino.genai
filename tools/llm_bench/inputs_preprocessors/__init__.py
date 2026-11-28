@@ -16,6 +16,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen3_vl": Qwen3VLInputsPreprocessor,
     "qwen3_5_moe": Qwen3_5VLInputsPreprocessor,
     "qwen3_5": Qwen3_5VLInputsPreprocessor,
+    "qwen4_exp": Qwen3_5VLInputsPreprocessor,
     "qwen3_omni_moe": Qwen3OmniInputsPreprocessor,
     "qwen3_omni": Qwen3OmniInputsPreprocessor,
     "qwen2_vl_text": Qwen2VLInputsPreprocessor,

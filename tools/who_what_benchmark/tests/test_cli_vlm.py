@@ -2,8 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
+import json
 import logging
 import sys
+from pathlib import Path
+
+import pandas as pd
 
 from transformers import __version__ as transformers_version
 from packaging.version import Version
@@ -16,61 +20,71 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
+def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path, dataset=None, genai_reference=False):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
 
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
+    dataset_args = ["--dataset", str(dataset)] if dataset is not None else []
 
-    # Collect reference with HF model
-    run_wwb([
-        "--base-model",
-        model_id,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--hf",
-    ])
+    # Collect reference
+    run_wwb(
+        [
+            "--base-model",
+            MODEL_PATH if genai_reference else model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai" if genai_reference else "--hf",
+        ]
+        + dataset_args
+    )
 
     # test Optimum
-    output = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-    ])
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+        ]
+        + dataset_args
+    )
     if optimum_threshold is not None:
         similarity = get_similarity(output)
         assert similarity >= optimum_threshold
 
     # test GenAI
-    output = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--genai",
-        "--output",
-        tmp_path,
-    ])
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--output",
+            tmp_path,
+        ]
+        + dataset_args
+    )
     if genai_threshold is not None:
         similarity = get_similarity(output)
         assert similarity >= genai_threshold
@@ -183,7 +197,14 @@ def run_test_with_lora(
     ],
 )
 def test_vlm_basic(model_id, model_type, tmp_path):
-    run_test(model_id, model_type, None, None, tmp_path)
+    from PIL import Image
+
+    image_path = tmp_path / "image.jpg"
+    Image.new("RGB", (32, 32), "white").save(image_path)
+    dataset = tmp_path / "dataset.csv"
+    pd.DataFrame({"prompts": ["What animal is this?"], "images": [str(image_path)]}).to_csv(dataset, index=False)
+
+    run_test(model_id, model_type, None, None, tmp_path, dataset=dataset, genai_reference=True)
 
 
 @pytest.mark.parametrize(
@@ -194,7 +215,23 @@ def test_vlm_basic(model_id, model_type, tmp_path):
     ],
 )
 def test_vlm_chat(model_id, model_type, tmp_path):
-    run_test(model_id, model_type, None, None, tmp_path)
+    expected_prompts = ["Describe the animal in this photograph.", "What color are the cabinets behind the animal?"]
+    dataset = tmp_path / "chat.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                [
+                    {"text": expected_prompts[0], "images": ["http://images.cocodataset.org/val2017/000000329219.jpg"]},
+                    {"text": expected_prompts[1], "images": []},
+                ]
+            ]
+        ),
+        encoding="utf-8",
+    )
+    run_test(model_id, model_type, None, None, tmp_path, dataset=dataset)
+    for csv_path in (tmp_path / "gt.csv", tmp_path / "target.csv"):
+        row = pd.read_csv(csv_path, keep_default_na=False).iloc[0]
+        assert json.loads(Path(row["prompts"]).read_text(encoding="utf-8")) == expected_prompts
 
 
 @pytest.mark.parametrize(

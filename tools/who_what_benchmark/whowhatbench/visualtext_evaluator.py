@@ -70,6 +70,7 @@ class VisualTextEvaluator(TextEvaluator):
             max_new_tokens=max_new_tokens,
             crop_question=crop_question,
             num_samples=num_samples,
+            gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
             generation_config_extra=self.generation_config_extra,
