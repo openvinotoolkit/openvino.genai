@@ -115,10 +115,18 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
             result[prompt_idx] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]
             for i in range(len(iters_idx)):
                 result[prompt_idx][i]['iteration'] = iters_idx[i]
+            sentinel_keys = {
+                "first_token_latency",
+                "other_tokens_avg_latency",
+                "first_token_infer_latency",
+                "other_tokens_infer_avg_latency",
+            }
             for key in key_word:
                 values = []
                 for prompt in same_prompt_datas:
                     if key in prompt and prompt[key] != "":
+                        if key in sentinel_keys and prompt[key] < 0:
+                            continue
                         values.append(prompt[key])
                 if len(values) > 0:
                     result[prompt_idx][0][key] = np.mean(values)
