@@ -3517,6 +3517,72 @@ def test_mtp_image_add_request(mtp_model_path, monkeypatch, capfd):
 
 
 @pytest.mark.parametrize("mtp_model_path", [MODEL_QWEN35_MTP], indirect=True)
+@pytest.mark.parametrize("enable_prefix_caching", [False, True])
+def test_vlm_mtp_rejection_continues_like_target(mtp_model_path, enable_prefix_caching):
+    scheduler = SchedulerConfig()
+    scheduler.enable_prefix_caching = enable_prefix_caching
+    scheduler.cache_size = 1
+    scheduler.cache_interval_multiplier = 1
+    scheduler.max_num_seqs = 1
+    scheduler.num_linear_attention_blocks = 32
+    draft_scheduler = SchedulerConfig()
+    draft_scheduler.enable_prefix_caching = enable_prefix_caching
+    draft_scheduler.num_kv_blocks = 128
+    properties = {
+        openvino.properties.hint.inference_precision: openvino.Type.f32,
+        openvino.properties.hint.kv_cache_precision: openvino.Type.f32,
+    }
+    target = VLMPipeline(mtp_model_path, "CPU", scheduler_config=scheduler, **properties)
+    speculative = VLMPipeline(
+        mtp_model_path,
+        "CPU",
+        draft_model=draft_model(mtp_model_path, "CPU", scheduler_config=draft_scheduler, **properties),
+        scheduler_config=scheduler,
+        **properties,
+    )
+    target_config = GenerationConfig(max_new_tokens=48, do_sample=False, ignore_eos=True)
+    speculative_config = GenerationConfig(max_new_tokens=48, do_sample=False, ignore_eos=True, num_assistant_tokens=4)
+    prompt = "Repeat the following sequence exactly: " + "one two three four. " * 32
+    pixels = np.zeros((224, 224, 3), dtype=np.uint8)
+    pixels[:, :112, 0] = 255
+    pixels[:, 112:, 1] = 255
+    image = openvino.Tensor(pixels[np.newaxis])
+    expected = target.generate(prompt, images=[image], generation_config=target_config)
+
+    target_batch = ContinuousBatchingPipeline(mtp_model_path, scheduler, "CPU", properties)
+    speculative_batch = ContinuousBatchingPipeline(
+        mtp_model_path,
+        scheduler,
+        "CPU",
+        {
+            **properties,
+            "draft_model": draft_model(mtp_model_path, "CPU", scheduler_config=draft_scheduler, **properties),
+        },
+    )
+
+    def generate_tokens(pipeline, config, request_id):
+        handle = pipeline.add_request(request_id, prompt, images=[image], generation_config=config)
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+        assert handle.get_status() == GenerationStatus.FINISHED
+        return handle.read_all()[0], handle.get_perf_metrics().get_num_prefix_cache_hit_tokens()
+
+    expected_tokens, _ = generate_tokens(target_batch, target_config, 0)
+    for iteration in range(2 if enable_prefix_caching else 1):
+        result = speculative.generate(prompt, images=[image], generation_config=speculative_config)
+        metrics = result.extended_perf_metrics
+        assert metrics.get_num_draft_tokens() > 0
+        assert metrics.get_num_accepted_tokens() < metrics.get_num_draft_tokens(), "No draft candidates were rejected"
+        assert result.perf_metrics.get_num_generated_tokens() == 48
+        assert result.texts == expected.texts
+        actual_tokens, prefix_hits = generate_tokens(speculative_batch, speculative_config, iteration)
+        assert actual_tokens.generated_ids == expected_tokens.generated_ids
+        assert actual_tokens.finish_reason == expected_tokens.finish_reason
+        if enable_prefix_caching and iteration == 1:
+            assert prefix_hits > 0
+
+
+@pytest.mark.parametrize("mtp_model_path", [MODEL_QWEN35_MTP], indirect=True)
 @pytest.mark.parametrize("media", ["text", "image", "video", "video_metadata"])
 @pytest.mark.parametrize("enable_prefix_caching", [False, True])
 @pytest.mark.parametrize("num_assistant_tokens", [1, 4])

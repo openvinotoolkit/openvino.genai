@@ -7,6 +7,7 @@ from pathlib import Path
 from xml.etree import ElementTree  # nosec B405 - parses only IRs that the tests export
 
 import numpy as np
+import openvino as ov
 import pytest
 from openvino_genai import (
     ChatHistory,
@@ -80,6 +81,60 @@ def test_vlm_echo_and_logprobs_match_target(model_pair, cat_tensor):
     assert result.perf_metrics.get_num_input_tokens() == reference.perf_metrics.get_num_input_tokens()
     assert result.extended_perf_metrics.get_num_draft_tokens() > 0
     assert result.scores == pytest.approx(reference.scores, abs=1e-4)
+
+
+@pytest.mark.parametrize("model_pair", [QWEN35_DFLASH], indirect=True)
+@pytest.mark.parametrize("enable_prefix_caching", [False, True])
+def test_vlm_dflash_rejection_continues_like_target(model_pair, enable_prefix_caching):
+    scheduler_config = SchedulerConfig()
+    scheduler_config.enable_prefix_caching = enable_prefix_caching
+    target = VLMPipeline(model_pair.target_path, "CPU", scheduler_config=scheduler_config, **PARITY_PROPERTIES)
+    speculative = VLMPipeline(
+        model_pair.target_path,
+        "CPU",
+        draft_model=draft_model(model_pair.draft_path, "CPU", **PARITY_PROPERTIES, **model_pair.draft_properties),
+        scheduler_config=scheduler_config,
+        **PARITY_PROPERTIES,
+    )
+    config = GenerationConfig(max_new_tokens=48, do_sample=False, ignore_eos=True, num_assistant_tokens=4)
+    pixels = np.zeros((224, 224, 3), dtype=np.uint8)
+    pixels[:, :112, 0] = 255
+    pixels[:, 112:, 1] = 255
+    image = ov.Tensor(pixels[np.newaxis])
+    prompt = PROMPTS[2] + " Repeat the following sequence exactly: " + "one two three four. " * 32
+    expected = target.generate(prompt, images=[image], generation_config=config)
+
+    target_batch = ContinuousBatchingPipeline(model_pair.target_path, scheduler_config, "CPU", PARITY_PROPERTIES)
+    speculative_batch = ContinuousBatchingPipeline(
+        model_pair.target_path,
+        scheduler_config,
+        "CPU",
+        {
+            **PARITY_PROPERTIES,
+            "draft_model": draft_model(
+                model_pair.draft_path, "CPU", **PARITY_PROPERTIES, **model_pair.draft_properties
+            ),
+        },
+    )
+
+    def generate_tokens(pipeline, request_id):
+        handle = pipeline.add_request(request_id, prompt, images=[image], generation_config=config)
+        while pipeline.has_non_finished_requests():
+            pipeline.step()
+        assert handle.get_status() == GenerationStatus.FINISHED
+        return handle.read_all()[0]
+
+    expected_tokens = generate_tokens(target_batch, 0)
+    for iteration in range(2 if enable_prefix_caching else 1):
+        result = speculative.generate(prompt, images=[image], generation_config=config)
+        metrics = result.extended_perf_metrics
+        assert metrics.get_num_draft_tokens() > 0
+        assert metrics.get_num_accepted_tokens() < metrics.get_num_draft_tokens(), "No draft candidates were rejected"
+        assert result.perf_metrics.get_num_generated_tokens() == 48
+        assert result.texts == expected.texts
+        actual_tokens = generate_tokens(speculative_batch, iteration)
+        assert actual_tokens.generated_ids == expected_tokens.generated_ids
+        assert actual_tokens.finish_reason == expected_tokens.finish_reason
 
 
 @pytest.mark.xfail(

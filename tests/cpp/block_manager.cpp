@@ -6,6 +6,7 @@
 
 #include <limits>
 #include <numeric>
+#include <tuple>
 
 #include "continuous_batching/scheduler.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -64,6 +65,8 @@ void set_block_timestamps_oldest_first(const ov::genai::BlocksPerLayer& blocks) 
 }
 
 class PrefixCachingCopyOnWriteLayerTest : public testing::TestWithParam<size_t> {};
+
+class EmbeddingSequenceRollbackTest : public testing::TestWithParam<std::tuple<size_t, size_t, size_t>> {};
 
 }  // namespace
 
@@ -671,6 +674,110 @@ TEST(TestBlockManager, SequenceHashEmbeddingRollbackMatchesFreshSequence) {
 
     EXPECT_EQ(sequence->get_hash(12, 3), fresh_sequence->get_hash(12, 3));
     EXPECT_EQ(sequence->get_hash(12, 4), fresh_sequence->get_hash(12, 4));
+}
+
+TEST_P(EmbeddingSequenceRollbackTest, RetainsEmbeddingsAndPositionsForRemainingTokens) {
+    const auto [generated_count, embedded_count, removed_count] = GetParam();
+    constexpr size_t prompt_count = 2;
+    std::vector<std::vector<float>> prompt_embeddings = {{10.0f, 10.25f}, {11.0f, 11.25f}};
+    std::vector<int64_t> prompt_positions = {0, 1};
+    ov::Tensor prompt_position_ids(ov::element::i64, {1, prompt_count}, prompt_positions.data());
+    auto group = std::make_shared<ov::genai::SequenceGroup>(0,
+                                                            create_embeddings_tensor(prompt_embeddings),
+                                                            ov::genai::utils::get_greedy_config(),
+                                                            std::nullopt,
+                                                            prompt_position_ids);
+    auto sequence = group->get_running_sequences().front();
+
+    std::vector<std::vector<float>> generated_embeddings;
+    std::vector<int64_t> generated_positions;
+    for (size_t index = 0; index < generated_count; ++index) {
+        sequence->append_token(static_cast<int64_t>(100 + index), -1.0f);
+        if (index < embedded_count) {
+            generated_embeddings.push_back({static_cast<float>(index), static_cast<float>(index) + 0.25f});
+            generated_positions.push_back(static_cast<int64_t>(prompt_count + index));
+        }
+    }
+    if (embedded_count > 0) {
+        sequence->append_generated_ids_embeds(create_embeddings_tensor(generated_embeddings));
+        sequence->append_position_ids(
+            ov::Tensor(ov::element::i64, {1, generated_positions.size()}, generated_positions.data()));
+    }
+
+    ASSERT_NO_THROW(sequence->remove_last_tokens(static_cast<int>(removed_count)));
+    const size_t remaining_count = generated_count - removed_count;
+    const size_t remaining_embedded_count = std::min(embedded_count, remaining_count);
+    ASSERT_EQ(sequence->get_generated_len(), remaining_count);
+    ASSERT_EQ(sequence->get_generated_ids_embeds().size(), remaining_embedded_count);
+    ASSERT_EQ(sequence->get_position_ids_list().size(), prompt_count + remaining_embedded_count);
+    EXPECT_FLOAT_EQ(sequence->get_cumulative_log_prob(), -static_cast<float>(remaining_count));
+    for (size_t index = 0; index < remaining_count; ++index) {
+        EXPECT_EQ(sequence->get_generated_ids()[index], static_cast<int64_t>(100 + index));
+        EXPECT_FLOAT_EQ(sequence->get_generated_log_probs()[index], -1.0f);
+    }
+    for (size_t index = 0; index < remaining_embedded_count; ++index) {
+        EXPECT_EQ(sequence->get_generated_ids_embeds()[index], generated_embeddings[index]);
+    }
+    for (size_t index = 0; index < prompt_count + remaining_embedded_count; ++index) {
+        EXPECT_EQ(sequence->get_position_ids_list()[index].data<const int64_t>()[0], static_cast<int64_t>(index));
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(EmbeddingCounts,
+                         EmbeddingSequenceRollbackTest,
+                         testing::Values(std::make_tuple(4, 4, 1),
+                                         std::make_tuple(4, 4, 4),
+                                         std::make_tuple(4, 3, 1),
+                                         std::make_tuple(4, 3, 2),
+                                         std::make_tuple(4, 1, 3),
+                                         std::make_tuple(4, 0, 4)));
+
+TEST(TestBlockManager, EmbeddingRollbackResynchronizationMatchesFreshPrefix) {
+    const std::vector<std::vector<float>> prompt_embeddings = {{10.f, 10.25f}, {11.f, 11.25f}};
+    const std::vector<std::vector<float>> generated_embeddings = {
+        {0.f, 0.25f}, {1.f, 1.25f}, {2.f, 2.25f}, {3.f, 3.25f}};
+    auto group = create_embedding_sequence_group(prompt_embeddings, 0);
+    auto sequence = group->get_running_sequences().front();
+    ov::Tensor prompt_positions(ov::element::i64, {1, prompt_embeddings.size()});
+    for (size_t index = 0; index < prompt_embeddings.size(); ++index) {
+        prompt_positions.data<int64_t>()[index] = static_cast<int64_t>(index);
+    }
+    sequence->append_position_ids(prompt_positions);
+    for (int64_t token = 0; token < 5; ++token) {
+        sequence->append_token(token, -1.f);
+    }
+    sequence->append_generated_ids_embeds(create_embeddings_tensor(generated_embeddings));
+    ov::Tensor generated_positions(ov::element::i64, {1, generated_embeddings.size()});
+    for (size_t index = 0; index < generated_embeddings.size(); ++index) {
+        generated_positions.data<int64_t>()[index] = static_cast<int64_t>(prompt_embeddings.size() + index);
+    }
+    sequence->append_position_ids(generated_positions);
+    sequence->get_hash(prompt_embeddings.size() + generated_embeddings.size(), 2);
+
+    ASSERT_NO_THROW(sequence->remove_last_tokens(1));
+    const size_t embedded_count = sequence->get_generated_ids_embeds().size();
+    if (embedded_count < sequence->get_generated_len()) {
+        const std::vector<std::vector<float>> missing_embeddings(generated_embeddings.begin() + embedded_count,
+                                                                  generated_embeddings.end());
+        sequence->append_generated_ids_embeds(create_embeddings_tensor(missing_embeddings));
+        ov::Tensor missing_positions(ov::element::i64, {1, missing_embeddings.size()});
+        for (size_t index = 0; index < missing_embeddings.size(); ++index) {
+            missing_positions.data<int64_t>()[index] =
+                static_cast<int64_t>(prompt_embeddings.size() + embedded_count + index);
+        }
+        sequence->append_position_ids(missing_positions);
+    }
+
+    EXPECT_EQ(sequence->get_generated_ids_embeds(), generated_embeddings);
+    ASSERT_EQ(sequence->get_position_ids_list().size(), prompt_embeddings.size() + generated_embeddings.size());
+    for (size_t index = 0; index < sequence->get_position_ids_list().size(); ++index) {
+        EXPECT_EQ(sequence->get_position_ids_list()[index].data<const int64_t>()[0], static_cast<int64_t>(index));
+    }
+    auto fresh_embeddings = prompt_embeddings;
+    fresh_embeddings.insert(fresh_embeddings.end(), generated_embeddings.begin(), generated_embeddings.end());
+    auto fresh_group = create_embedding_sequence_group(fresh_embeddings, 1);
+    EXPECT_EQ(sequence->get_hash(fresh_embeddings.size(), 2),
+              fresh_group->get_running_sequences().front()->get_hash(fresh_embeddings.size(), 2));
 }
 
 TEST(TestBlockManager, TemporaryReservationReclaimsOldestCheckpointFirst) {
