@@ -1867,6 +1867,21 @@ class TestOmniPipelineRealModel:
                 "the audio encoder must run when audios are passed"
             )
 
+    def test_talker_generate_accepts_speech_streamer_returning_none(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+        """A speech streamer that returns None, such as list.append, keeps the talker running."""
+        text_config = _text_config(2)
+        text_config.return_omni_outputs = True
+        vlm_result = omni_pipe.get_vlm().generate("Describe this.", generation_config=text_config)
+        speech_config = _talker_speech_config(return_audio=True, max_new_tokens=3)
+        speech_config.audio_chunk_frames = 1
+        chunks: list[ov.Tensor] = []
+
+        result = omni_pipe.get_talker().generate(vlm_result, speech_config, speech_streamer=chunks.append)
+
+        assert len(chunks) == 3
+        streamed = np.concatenate([chunk.data.reshape(-1) for chunk in chunks])
+        assert np.array_equal(streamed, result.waveforms[0].data.reshape(-1))
+
     def test_speaker_apis(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """list_speakers() reports the checkpoint's voices and each resolves to an embedding."""
         speakers = omni_pipe.get_talker().list_speakers()
