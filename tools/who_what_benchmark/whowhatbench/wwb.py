@@ -3,6 +3,7 @@
 
 import argparse
 import difflib
+import json
 import numpy as np
 import logging
 import os
@@ -195,7 +196,8 @@ def parse_args():
         help="Dataset source. For non-agent model types, this is passed to datasets.load_dataset "
         "as path,name (for example wikitext,wikitext-2-v1) and must follow Hugging Face datasets semantics. "
         "For text-agent and visual-text-agent, this should be a local .json/.jsonl file with "
-        "messages/tools records. If not provided, built-in defaults are used.",
+        "messages/tools records. For text-reranking, this can be a local .csv file with 'query' and 'passages' "
+        "columns, where 'passages' is a JSON list of strings. If not provided, built-in defaults are used.",
     )
     parser.add_argument(
         "--dataset-field",
@@ -620,6 +622,34 @@ def check_args(args):
         raise ValueError(f"For --model-type {args.model_type}, only --metrics={Metrics.SIMILARITY.value} is supported.")
 
 
+def load_reranking_csv(dataset_path):
+    # A text-reranking CSV has one row per query: a "query" column and a "passages"
+    # column holding a JSON list of strings, e.g. ["first passage", "second passage"].
+    df = pd.read_csv(dataset_path, keep_default_na=False)
+    if not {"query", "passages"} <= set(df.columns):
+        raise ValueError(
+            f"Local dataset CSV '{dataset_path}' for text-reranking must contain 'query' and 'passages' columns, "
+            f"got columns: {list(df.columns)}."
+        )
+
+    passages = []
+    for row, value in enumerate(df["passages"], start=1):
+        try:
+            docs = json.loads(value)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Row {row} of '{dataset_path}': 'passages' must be a JSON list of strings, got {value!r}."
+            ) from e
+        if not isinstance(docs, list) or not docs or not all(isinstance(doc, str) for doc in docs):
+            raise ValueError(
+                f"Row {row} of '{dataset_path}': 'passages' must be a non-empty JSON list of strings, got {value!r}."
+            )
+        passages.append(docs)
+
+    logger.info("Reranking dataset loaded from %s: count=%d", dataset_path, len(df))
+    return {"query": [str(query) for query in df["query"]], "passages": passages}
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
@@ -628,8 +658,11 @@ def load_prompts(args):
     # availability. The CSV must contain a "prompts" column and may optionally
     # contain "images" and "videos" columns (paths or None). Image paths are
     # resolved relative to the CSV file location when not absolute.
+    # For --model-type text-reranking the CSV needs "query" and "passages" columns instead (see load_reranking_csv).
     dataset_path = Path(args.dataset)
     if dataset_path.suffix.lower() == ".csv" and dataset_path.is_file():
+        if args.model_type == "text-reranking":
+            return load_reranking_csv(dataset_path)
         from transformers.image_utils import load_image
 
         base_dir = dataset_path.resolve().parent
