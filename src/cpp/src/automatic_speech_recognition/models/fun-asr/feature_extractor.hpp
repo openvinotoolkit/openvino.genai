@@ -5,6 +5,7 @@
 
 #include <vector>
 
+#include "automatic_speech_recognition/funasr_frontend/kaldi_fbank.hpp"
 #include "openvino/runtime/tensor.hpp"
 
 namespace ov::genai {
@@ -24,11 +25,10 @@ namespace ov::genai {
 class FunASRFeatureExtractor {
 public:
     // The original FunASR implementation hardcodes these preprocessing parameters.
-    static constexpr size_t sampling_rate = 16000;
-    static constexpr size_t frame_length = 400;
-    static constexpr size_t frame_shift = 160;
-    static constexpr size_t fft_size = 512;
-    static constexpr size_t mel_bins = 80;
+    static constexpr size_t sampling_rate = funasr_frontend::SAMPLING_RATE;
+    static constexpr size_t frame_length = funasr_frontend::FRAME_LENGTH;
+    static constexpr size_t frame_shift = funasr_frontend::FRAME_SHIFT;
+    static constexpr size_t mel_bins = funasr_frontend::MEL_BINS;
     static constexpr size_t lfr_window = 7;
     static constexpr size_t lfr_stride = 6;
 
