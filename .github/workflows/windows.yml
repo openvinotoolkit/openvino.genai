@@ -27,7 +27,8 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: C:/mount/caches/huggingface/win
+  HF_ENDPOINT: http://hf-proxy.hf-proxy.svc.cluster.local
+  HF_HUB_DISABLE_XET: "1"  # Disable Xet so downloads use HTTP through the proxy instead of Xet.
   HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/b53e4e21/
   OPENVINO_LOG_LEVEL: 1  # Windows fails with out of memory because of too verbose logging
@@ -793,6 +794,9 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -840,6 +844,9 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -894,6 +901,9 @@ jobs:
       OPENVINO_LOG_LEVEL: 1
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -983,6 +993,9 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1019,7 +1032,7 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) { return }
             $model_id = ($line -split ',')[0].Trim()
             $model_name = $model_id.Split('/')[-1]
-            $model_dir = "${{ env.HF_HOME }}/ov_test_models/$model_name"
+            $model_dir = "${{ env.OV_CACHE }}/ov_test_models/$model_name"
             if (-not (Test-Path "$model_dir/openvino_model.xml")) {
               optimum-cli export openvino -m $model_id --task text-generation-with-past $model_dir
             }
@@ -1033,7 +1046,7 @@ jobs:
           & "${{ env.INSTALL_DIR }}/tests/tests_cache_allocation_failure.exe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
-          TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
+          TEST_MODELS_BASE_DIR: "${{ env.OV_CACHE }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/Release/openvino_tokenizers.dll"
 
@@ -1066,6 +1079,9 @@ jobs:
       NODE_VERSION: ${{ matrix.nodejs-version }}
 
     steps:
+      - name: Setup Variables
+        run: '"HF_HOME=$env:RUNNER_TEMP/hf-home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
       - name: Clone openvino.genai
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
