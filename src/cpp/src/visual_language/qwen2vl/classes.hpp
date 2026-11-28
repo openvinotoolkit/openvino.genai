@@ -155,7 +155,9 @@ protected:
     // where the adapter weights are already baked into the compiled model.
     void apply_vision_adapters(ov::InferRequest& request);
 
-    virtual void expand_video_tags_in_prompt(
+    virtual std::string get_expanded_video_tag(const EncodedVideo& encoded_video) const;
+
+    void expand_video_tags_in_prompt(
         std::string& unified_prompt,
         const std::vector<EncodedVideo>& encoded_videos,
         const std::vector<size_t>& videos_sequence,
@@ -204,6 +206,9 @@ protected:
 namespace qwen2_vl_utils {
 
 ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels);
+    
+std::array<size_t, 3> get_grid_thw(const EncodedImage& encoded_image);
+std::array<size_t, 3> get_grid_thw(const EncodedVideo& encoded_video);
 
 ov::Tensor reshape_image_patches(
     const ov::Tensor& patches,
