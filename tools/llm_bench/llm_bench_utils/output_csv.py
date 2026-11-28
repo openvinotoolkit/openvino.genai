@@ -235,7 +235,9 @@ def write_result(
         mem_unit = memory_data_collector.mth.memory_unit
     include_tts_metrics = model_args["use_case"].task == "text_to_speech"
     include_e2e_throughput = any("throughput_token_count" in iter_data for iter_data in iter_data_list)
-    first_latenct_unit = "ms/token" if model_args["use_case"].task in ["text_gen_chat"] else "ms"
+    first_latenct_unit = (
+        "ms/token" if model_args["use_case"].task in ["text_gen_chat", "visual_text_gen_chat"] else "ms"
+    )
     header = [
         "iteration",
         "model",
