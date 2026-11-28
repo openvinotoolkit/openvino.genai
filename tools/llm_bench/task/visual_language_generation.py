@@ -241,12 +241,16 @@ def run_visual_language_generation_genai(
     else:
         log.warning("No generated tokens")
     first_token_time = (perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000)
-    second_tokens_durations = (
-        np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
-        - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1])
-    ).tolist()
-
-    tm_list = np.array([first_token_time] + second_tokens_durations) / 1000
+    if args.get("draft_model"):
+        tm_list = [first_token_time / 1000]
+        if generated_text_len > 1:
+            tm_list.append((generation_time - first_token_time / 1000) / (generated_text_len - 1))
+    else:
+        second_tokens_durations = (
+            np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
+            - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1])
+        ).tolist()
+        tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     tokenization_time = (
@@ -256,7 +260,7 @@ def run_visual_language_generation_genai(
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=args['batch_size'] * perf_metrics.get_num_input_tokens(),
-        infer_count=len(tm_list),
+        infer_count=len(perf_metrics.raw_metrics.m_batch_sizes) if args.get("draft_model") else len(tm_list),
         out_size=generated_text_len,
         gen_time=generation_time,
         latency=per_token_time,
@@ -271,7 +275,7 @@ def run_visual_language_generation_genai(
     metrics_print.print_metrics(
         num,
         iter_data,
-        tm_list.tolist(),
+        tm_list,
         inference_durations.tolist(),
         warm_up=(num == 0),
         tokenization_time=tokenization_time,
