@@ -12,10 +12,25 @@ from typing import Any, Protocol
 
 from whowhatbench.utils import patch_awq_for_inference, get_ignore_parameters_flag
 from whowhatbench.artifacts_manager import GenerationResults, Metrics
+from whowhatbench.chat_utils import is_harmony_template, is_native_harmony_prompt, normalize_chat_history
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _prepare_hf_inputs(tokenizer, prompt, device, use_chat_template):
+    native_harmony = is_native_harmony_prompt(prompt, tokenizer)
+    if use_chat_template and not native_harmony:
+        message = normalize_chat_history(prompt, tokenizer)
+        return tokenizer.apply_chat_template(
+            message, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True
+        ).to(device)
+
+    tokenizer_kwargs = {"return_tensors": "pt"}
+    if native_harmony:
+        tokenizer_kwargs["add_special_tokens"] = False
+    return tokenizer(prompt, **tokenizer_kwargs).to(device)
 
 
 @dataclass
@@ -166,6 +181,24 @@ class GenAIGeneration(BaseGenerationStrategy):
         generation_config_extra=None,
         context: TextGenerationContext | None = None,
     ) -> GenerationResults:
+        model_tokenizer = model.get_tokenizer() if hasattr(model, "get_tokenizer") else tokenizer
+        if is_native_harmony_prompt(question, model_tokenizer) or (
+            use_chat_template and is_harmony_template(model_tokenizer)
+        ):
+            return self.genai_generation_encoded(
+                model,
+                model_tokenizer,
+                question,
+                max_new_tokens,
+                skip_question,
+                use_chat_template=use_chat_template,
+                empty_adapters=empty_adapters,
+                num_assistant_tokens=num_assistant_tokens,
+                assistant_confidence_threshold=assistant_confidence_threshold,
+                generation_config_extra=generation_config_extra,
+                context=context,
+            )
+
         kwargs = {}
         if empty_adapters:
             import openvino_genai
@@ -208,22 +241,27 @@ class GenAIGeneration(BaseGenerationStrategy):
         if generation_config_extra:
             kwargs.update(generation_config_extra)
 
-        tokenizer = model.get_tokenizer()
+        tokenizer = model.get_tokenizer() if hasattr(model, "get_tokenizer") else tokenizer
 
         prompt = question
-        if use_chat_template:
+        native_harmony = is_native_harmony_prompt(prompt, tokenizer)
+        if use_chat_template and not native_harmony:
             import openvino_genai
 
             chat_history = openvino_genai.ChatHistory()
-            chat_history.append({"role": "user", "content": prompt})
+            for message in normalize_chat_history(prompt, tokenizer):
+                chat_history.append(message)
             prompt = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
 
-        tokenized_input = tokenizer.encode(prompt)
+        preserve_formatting = native_harmony or (use_chat_template and is_harmony_template(tokenizer))
+        tokenized_input = (
+            tokenizer.encode(prompt, add_special_tokens=False) if preserve_formatting else tokenizer.encode(prompt)
+        )
         output = model.generate(
             tokenized_input,
             do_sample=False,
             max_new_tokens=max_new_tokens,
-            apply_chat_template=use_chat_template,
+            apply_chat_template=False,
             num_assistant_tokens=num_assistant_tokens,
             assistant_confidence_threshold=assistant_confidence_threshold,
             **kwargs,
@@ -259,13 +297,7 @@ class OptimumHFGeneration(BaseGenerationStrategy):
         if hasattr(model, "device"):
             device = model.device
 
-        if use_chat_template:
-            message = [{"role": "user", "content": prompt}]
-            inputs = tokenizer.apply_chat_template(
-                message, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True
-            ).to(device)
-        else:
-            inputs = tokenizer(prompt, return_tensors="pt").to(device)
+        inputs = _prepare_hf_inputs(tokenizer, prompt, device, use_chat_template)
 
         if "token_type_ids" in inputs and "token_type_ids" not in list(
             inspect.signature(model.forward).parameters.keys()
@@ -376,17 +408,7 @@ class KLDivergencyGeneration(BaseGenerationStrategy):
         if context is not None and context.reference_tokens is not None:
             prompt_input_ids = torch.from_numpy(context.reference_tokens).to(dtype=torch.long)
         else:
-            if use_chat_template:
-                message = [{"role": "user", "content": prompt}]
-                inputs = tokenizer.apply_chat_template(
-                    message,
-                    tokenize=True,
-                    add_generation_prompt=True,
-                    return_tensors="pt",
-                    return_dict=True,
-                ).to(device)
-            else:
-                inputs = tokenizer(prompt, return_tensors="pt").to(device)
+            inputs = _prepare_hf_inputs(tokenizer, prompt, device, use_chat_template)
             prompt_input_ids = inputs["input_ids"]
 
         if is_awq:
