@@ -139,7 +139,7 @@ ov_status_e ov_genai_generation_config_set_stop_strings(ov_genai_generation_conf
 ov_status_e ov_genai_generation_config_set_stop_token_ids(ov_genai_generation_config* config,
                                                           const int64_t* token_ids,
                                                           const size_t token_ids_num) {
-    if (!config || !(config->object)) {
+    if (!config || !(config->object) || (!token_ids && token_ids_num > 0)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -376,6 +376,9 @@ ov_status_e ov_genai_generation_config_set_eos_token_id(ov_genai_generation_conf
     }
     try {
         config->object->eos_token_id = id;
+        if (id != -1) {
+            config->object->set_eos_token_id(id);
+        }
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
