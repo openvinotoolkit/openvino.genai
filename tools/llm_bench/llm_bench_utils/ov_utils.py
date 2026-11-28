@@ -73,25 +73,26 @@ def get_lora_config(lora_paths, lora_alphas, lora_mode=None):
         "fuse": openvino_genai.AdapterConfig.Mode.MODE_FUSE,
         "dynamic": openvino_genai.AdapterConfig.Mode.MODE_DYNAMIC,
         "static": openvino_genai.AdapterConfig.Mode.MODE_STATIC,
-        "static_rank": openvino_genai.AdapterConfig.Mode.MODE_DYNAMIC
+        "static_rank": openvino_genai.AdapterConfig.Mode.MODE_STATIC_RANK
     }
     if lora_mode is not None:
         lora_mode = modes[lora_mode]
         log.info(f"LoRA adapters loading mode: {lora_mode}")
 
-    adapter_config = list()
     if not lora_paths:
-        return adapter_config
+        return list()
 
     if len(lora_paths) != len(lora_alphas):
         log.warning('Amount of provided LoRA paths and alphas is not eq. LoRA will be ignored.')
-        return adapter_config
+        return list()
 
+    adapter_config = None
     for idx in range(len(lora_paths)):
         if not Path(lora_paths[idx]).exists():
             log.warning(f'LoRA path is not exists: {lora_paths[idx]}. LoRA will be ignored.')
             continue
-        adapter_config = openvino_genai.AdapterConfig() if lora_mode is None else openvino_genai.AdapterConfig(mode=lora_mode)
+        if adapter_config is None:
+            adapter_config = openvino_genai.AdapterConfig() if lora_mode is None else openvino_genai.AdapterConfig(mode=lora_mode)
         adapter = openvino_genai.Adapter(lora_paths[idx])
         alpha = float(lora_alphas[idx])
         adapter_config.add(adapter, alpha)
@@ -99,7 +100,7 @@ def get_lora_config(lora_paths, lora_alphas, lora_mode=None):
     if adapter_config:
         log.info('LoRA adapter(s) are added to config.')
 
-    return adapter_config
+    return adapter_config if adapter_config is not None else list()
 
 
 def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
