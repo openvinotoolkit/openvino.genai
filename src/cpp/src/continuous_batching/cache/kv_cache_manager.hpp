@@ -11,7 +11,7 @@
 #include "utils.hpp"
 namespace ov::genai {
 
-class KVCacheManager : public ICacheManager {
+class KVCacheManager : public IKVCacheManager {
     size_t m_num_layers = 0;
     std::string m_device;
     size_t m_block_size = 0; // block size is per inference device 
@@ -353,7 +353,7 @@ public:
         return m_value_cache[decoder_layer_id];
     }
 
-    size_t get_v_head_size(size_t layer_id) const {
+    size_t get_v_head_size(size_t layer_id) const override {
         return m_value_shapes[layer_id][3].get_length();
     }
 
