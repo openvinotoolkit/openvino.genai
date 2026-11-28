@@ -29,7 +29,8 @@ public:
         OPENVINO_THROW("Image-to-video generation is not supported by this pipeline");
     }
 
-    virtual VideoGenerationResult decode(const ov::Tensor& latent) = 0;
+    virtual VideoGenerationResult decode(const ov::Tensor& latent,
+                                         const std::optional<VideoGenerationConfig>& generation_config) = 0;
 
     virtual void reshape(int64_t num_videos_per_prompt,
                          int64_t num_frames,

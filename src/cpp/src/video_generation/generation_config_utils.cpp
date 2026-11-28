@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "generation_config_utils.hpp"
+#include <cmath>
 #include "logger.hpp"
 #include "utils.hpp"
 
@@ -15,6 +16,10 @@ void validate_generation_config(const VideoGenerationConfig& config) {
     if (!requests_classifier_free_guidance(config) && config.negative_prompt != std::nullopt) {
         GENAI_WARN("Guidance scale <= 1.0 ignores negative prompt");
     }
+    OPENVINO_ASSERT(!config.decode_timestep.has_value() || std::isfinite(*config.decode_timestep),
+                    "decode_timestep must be finite");
+    OPENVINO_ASSERT(!config.decode_noise_scale.has_value() || std::isfinite(*config.decode_noise_scale),
+                    "decode_noise_scale must be finite");
 }
 
 void resolve_negative_prompt(VideoGenerationConfig& config) {
@@ -33,6 +38,8 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "num_frames", config.num_frames);
     read_anymap_param(properties, "frame_rate", config.frame_rate);
     read_anymap_param(properties, "audio_guidance_scale", config.audio_guidance_scale);
+    read_anymap_param(properties, "decode_timestep", config.decode_timestep);
+    read_anymap_param(properties, "decode_noise_scale", config.decode_noise_scale);
     read_anymap_param(properties, "stg_scale", config.stg_scale);
     read_anymap_param(properties, "audio_stg_scale", config.audio_stg_scale);
     read_anymap_param(properties, "modality_scale", config.modality_scale);
