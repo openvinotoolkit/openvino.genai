@@ -79,6 +79,16 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             prompts = json.load(input_file)
 
         num = self.num_samples if self.num_samples is not None else len(prompts)
+        if self.image_dir is not None:
+            selected = prompts[: min(num, len(prompts))]
+            return {
+                "prompt": [p["prompt"] for p in selected],
+                "negative_prompt": [p["negative_prompt"] for p in selected],
+                "width": [p["width"] for p in selected],
+                "height": [p["height"] for p in selected],
+                "guidance_scale": [p["guidance_scale"] for p in selected],
+            }
+
         with patched_parquet(parquet_generate_tables):
             samples = prepare_default_data(num_samples=min(num, len(prompts)))
 
@@ -100,13 +110,20 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             "images": [image for _, image in samples],
         }
 
-    def _resolve_image(self, row, index):
+    def _resolve_image(self, row, index, base_dir=None):
         """Resolve a row's conditioning image to a PIL RGB image."""
-        if "images" in row:
-            spec = row["images"]
-        elif "image" in row:
-            spec = row["image"]
-        else:
+        spec = None
+        for col in ("images", "image"):
+            if col in row:
+                val = row[col]
+                if (
+                    val is not None
+                    and not (isinstance(val, float) and pd.isna(val))
+                    and not (isinstance(val, str) and not val.strip())
+                ):
+                    spec = val
+                    break
+        if spec is None:
             assert self.image_dir is not None, (
                 "test_data has no 'images'/'image' column and --image-dir was not provided"
             )
@@ -122,8 +139,11 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
                 return Image.open(io.BytesIO(spec["bytes"])).convert("RGB")
             spec = spec.get("path")
         if isinstance(spec, str):
-            if not os.path.isabs(spec) and self.image_dir:
-                spec = os.path.join(self.image_dir, spec)
+            if not os.path.isabs(spec):
+                if self.image_dir:
+                    spec = os.path.join(self.image_dir, spec)
+                elif base_dir:
+                    spec = os.path.join(base_dir, spec)
             return Image.open(spec).convert("RGB")
         raise ValueError(f"Unsupported conditioning image type at index {index}: {type(spec).__name__}")
 
@@ -163,16 +183,24 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
 
         generation_fn = gen_video_fn or default_gen_video_fn
 
+        csv_base_dir = None
         if self.test_data:
-            if isinstance(self.test_data, str):
+            if isinstance(self.test_data, (str, os.PathLike)):
+                csv_base_dir = os.path.dirname(os.path.abspath(self.test_data))
                 data = pd.read_csv(self.test_data)
             elif isinstance(self.test_data, dict):
-                assert "prompt" in self.test_data
                 data = pd.DataFrame.from_dict(dict(self.test_data))
             else:
                 raise ValueError(
                     "image-to-video test_data must be a CSV path or a dict of columns including 'prompt'; "
                     f"got {type(self.test_data).__name__}. A bare prompt list has no conditioning images."
+                )
+            if "prompt" not in data.columns and "prompts" in data.columns:
+                data = data.rename(columns={"prompts": "prompt"})
+            if "prompt" not in data.columns:
+                raise ValueError(
+                    "image-to-video test_data must contain a 'prompt' or 'prompts' column, "
+                    f"got columns: {list(data.columns)}."
                 )
         else:
             data = pd.DataFrame.from_dict(self.collect_default_data())
@@ -195,7 +223,7 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             frames = generation_fn(
                 model,
                 prompt=row["prompt"],
-                image=self._resolve_image(row, i),
+                image=self._resolve_image(row, i, base_dir=csv_base_dir),
                 negative_prompt=row.get("negative_prompt", self.DEF_NEGATIVE_PROMPT),
                 num_inference_steps=self.num_inference_steps,
                 width=int(row.get("width", self.DEF_WIDTH)),

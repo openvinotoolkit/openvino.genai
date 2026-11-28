@@ -284,10 +284,11 @@ wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-
 wwb --target-model ltx-video-model --gt-data i2v_test/gt.csv --model-type image-to-video --genai --output ltx_i2v_genai
 ```
 
-To condition on your own images, point `--image-dir` at the directory holding them. Relative filenames in the test data's `images`/`image` column are resolved against it; if the column is missing, the images are looked up as `0.png`, `1.png`, ... matching the prompt order.
+To condition on your own images, point `--image-dir` at the directory holding them, and optionally pass a local CSV via `--dataset` (with a `prompt` or `prompts` column and optional `images`/`image`, `negative_prompt`, `width`, `height`, `guidance_scale` columns). Relative filenames in the test data's `images`/`image` column are resolved against `--image-dir` (or the CSV's directory when `--image-dir` is omitted); if the column is missing, the images are looked up as `0.png`, `1.png`, ... matching the prompt order.
 
 ```sh
 wwb --base-model Lightricks/LTX-Video --gt-data i2v_test/gt.csv --model-type image-to-video --image-dir path/to/images --hf
+wwb --base-model Lightricks/LTX-Video --gt-data i2v_test/gt.csv --model-type image-to-video --dataset path/to/i2v.csv --image-dir path/to/images --hf
 ```
 
 LoRA adapters work the same way as for text-to-video, via `--adapters`/`--alphas` (and `--empty_adapters` to compare against a plain baseline).

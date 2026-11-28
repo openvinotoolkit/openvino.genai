@@ -630,6 +630,8 @@ def load_prompts(args):
     # resolved relative to the CSV file location when not absolute.
     dataset_path = Path(args.dataset)
     if dataset_path.suffix.lower() == ".csv" and dataset_path.is_file():
+        if args.model_type == "image-to-video":
+            return str(dataset_path)
         from transformers.image_utils import load_image
 
         base_dir = dataset_path.resolve().parent
@@ -688,7 +690,13 @@ def load_prompts(args):
     data = load_dataset(path=path, name=name, split=dataset_split)
 
     res = data[args.dataset_field]
-    prompts = {"prompts": list(res)}
+    if args.model_type == "image-to-video":
+        prompts = {"prompt": list(res)}
+        for col in ("negative_prompt", "width", "height", "guidance_scale", "guidance_rescale", "images", "image"):
+            if col in data.column_names:
+                prompts[col] = list(data[col])
+    else:
+        prompts = {"prompts": list(res)}
     logger.info("Prompts source path %s name %s split %s: count=%d", path, name, dataset_split, len(res))
     return prompts
 
@@ -1366,7 +1374,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 num_frames=args.video_frames_num,
