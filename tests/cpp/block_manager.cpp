@@ -55,6 +55,14 @@ void ensure_two_running_sequences(const ov::genai::SequenceGroup::Ptr& sequence_
     ASSERT_EQ(sequence_group->num_running_seqs(), 2);
 }
 
+void set_block_timestamps_oldest_first(const ov::genai::BlocksPerLayer& blocks) {
+    // Make LRU eviction deterministic because the steady clock can give multiple blocks the same timestamp.
+    const auto timestamp = std::chrono::steady_clock::now();
+    for (size_t index = 0; index < blocks.size(); ++index) {
+        blocks[index]->set_timestamp(timestamp - std::chrono::seconds(blocks.size() - index));
+    }
+}
+
 class PrefixCachingCopyOnWriteLayerTest : public testing::TestWithParam<size_t> {};
 
 }  // namespace
@@ -1026,7 +1034,10 @@ TEST(TestBlockManager, PrefixCachingRollbackInvalidatesLatestOnlyEndpointWithLog
     producer_group->schedule_tokens(source_tokens.size());
     block_manager.append_slots(producer_group);
     producer_group->finish_iteration();
-    block_manager.free_sequence(producer_group->get_running_sequences().front()->get_id());
+    const auto producer_sequence_id = producer_group->get_running_sequences().front()->get_id();
+    const auto producer_blocks = block_manager.get_block_table(producer_sequence_id, 0);
+    set_block_timestamps_oldest_first(producer_blocks);
+    block_manager.free_sequence(producer_sequence_id);
 
     auto pressure_group = create_sequence_group(std::vector<int64_t>{20, 21, 22, 23}, 73);
     pressure_group->schedule_tokens(4);
@@ -1348,7 +1359,10 @@ TEST(TestBlockManager, PrefixCachingRestoredLiveCheckpointRejectsCombinedDeficit
     producer_group->schedule_tokens(tokens.size());
     block_manager.append_slots(producer_group);
     producer_group->finish_iteration();
-    block_manager.free_sequence(producer_group->get_running_sequences().front()->get_id());
+    const auto producer_sequence_id = producer_group->get_running_sequences().front()->get_id();
+    const auto producer_blocks = block_manager.get_block_table(producer_sequence_id, 0);
+    set_block_timestamps_oldest_first(producer_blocks);
+    block_manager.free_sequence(producer_sequence_id);
 
     auto pressure_group = create_sequence_group(std::vector<int64_t>{20, 21, 22, 23}, 90);
     pressure_group->schedule_tokens(4);
@@ -1393,7 +1407,10 @@ TEST(TestBlockManager, PrefixCachingRestoredLiveCheckpointWithSufficientCapacity
     producer_group->schedule_tokens(tokens.size());
     block_manager.append_slots(producer_group);
     producer_group->finish_iteration();
-    block_manager.free_sequence(producer_group->get_running_sequences().front()->get_id());
+    const auto producer_sequence_id = producer_group->get_running_sequences().front()->get_id();
+    const auto producer_blocks = block_manager.get_block_table(producer_sequence_id, 0);
+    set_block_timestamps_oldest_first(producer_blocks);
+    block_manager.free_sequence(producer_sequence_id);
 
     auto pressure_group = create_sequence_group(std::vector<int64_t>{20, 21, 22, 23, 24, 25, 26, 27}, 94);
     pressure_group->schedule_tokens(8);
@@ -1756,10 +1773,7 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlder
     const auto latest_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
     block_manager.free_sequence(producer_seq_id);
 
-    // Ensure pressure evicts the older checkpoint even when the clock gives both blocks the same timestamp.
-    const auto timestamp = std::chrono::steady_clock::now();
-    older_checkpoint->set_timestamp(timestamp - std::chrono::seconds(1));
-    latest_checkpoint->set_timestamp(timestamp);
+    set_block_timestamps_oldest_first({older_checkpoint, latest_checkpoint});
 
     std::vector<int64_t> pressure_tokens = {10, 11, 12, 13};
     auto pressure_group = create_sequence_group(pressure_tokens, 29);

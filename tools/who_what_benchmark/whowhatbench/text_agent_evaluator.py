@@ -61,7 +61,7 @@ class TextAgentEvaluator(BaseEvaluator):
             result_dir = os.path.join(self.gt_dir, "reference")
             self.gt_data = self._generate_data(base_model, gen_answer_fn, result_dir=result_dir)
         else:
-            self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
+            self.gt_data = pd.read_csv(gt_data, keep_default_na=False).iloc[:num_samples]
 
         self.similarity = None
         self.divergency = None
@@ -142,7 +142,7 @@ class TextAgentEvaluator(BaseEvaluator):
         self.target_dir = result_folder
 
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
-            predictions = pd.read_csv(model_or_data, keep_default_na=False)
+            predictions = pd.read_csv(model_or_data, keep_default_na=False).iloc[: self.num_samples]
         else:
             predictions = self._generate_data(model_or_data, gen_answer_fn, result_dir=result_folder)
         self.predictions = predictions
