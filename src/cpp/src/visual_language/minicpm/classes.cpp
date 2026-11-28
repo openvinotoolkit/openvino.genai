@@ -21,7 +21,13 @@ float get_resampler_padding_mask_value(const std::filesystem::path& config_dir) 
     float version = 0.0f;
     std::ifstream stream(config_dir / "config.json");
     if (stream.is_open()) {
-        utils::read_json_param(nlohmann::json::parse(stream), "version", version);
+        nlohmann::json version_json;
+        utils::read_json_param(nlohmann::json::parse(stream), "version", version_json);
+        if (version_json.is_string()) {
+            version = std::stof(version_json.get<std::string>());
+        } else if (version_json.is_number()) {
+            version = version_json.get<float>();
+        }
     }
     return version >= 4.5f ? -std::numeric_limits<float>::infinity() : 1.0f;
 }
