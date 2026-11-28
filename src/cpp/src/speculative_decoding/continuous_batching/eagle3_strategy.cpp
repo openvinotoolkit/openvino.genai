@@ -326,6 +326,15 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     validate_single_sequence(sampling_params);
+    const size_t prompt_len = input_ids.get_shape().size() > 1 ? input_ids.get_shape()[1] : input_ids.get_size();
+    const auto max_tokens = get_max_request_tokens();
+    OPENVINO_ASSERT(!max_tokens.has_value() || prompt_len < *max_tokens,
+                    "The requested prompt length (",
+                    prompt_len,
+                    " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                    *max_tokens,
+                    " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
+
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
         // No speculative draft for this request: run only the main model.
@@ -392,6 +401,17 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     validate_single_sequence(sampling_params);
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+    }
+
+    const auto max_tokens = get_max_request_tokens();
+    if (max_tokens.has_value()) {
+        const size_t prompt_len = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids.get_size();
+        OPENVINO_ASSERT(prompt_len < *max_tokens,
+                        "The requested prompt length (",
+                        prompt_len,
+                        " tokens) exceeds the maximum token capacity supported by the current cache configuration (",
+                        *max_tokens,
+                        " tokens). Increase cache_size / num_kv_blocks, reduce prompt length, or raise cache_interval_multiplier for hybrid models.");
     }
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);

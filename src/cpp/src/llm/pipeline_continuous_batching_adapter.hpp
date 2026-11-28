@@ -87,6 +87,10 @@ public:
         m_generation_config = m_impl->get_config();
     }
 
+    std::optional<size_t> get_max_request_tokens() const override {
+        return m_impl ? m_impl->get_max_request_tokens() : std::nullopt;
+    }
+
     DecodedResults generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,

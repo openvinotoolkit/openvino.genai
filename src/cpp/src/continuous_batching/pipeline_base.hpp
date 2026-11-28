@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
@@ -101,6 +102,9 @@ public:
     void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;
     Tokenizer get_tokenizer();
+    virtual std::optional<size_t> get_max_request_tokens() const {
+        return std::nullopt;
+    }
 
     /**
      * Returns LoRA adapters the pipeline itself was constructed with.

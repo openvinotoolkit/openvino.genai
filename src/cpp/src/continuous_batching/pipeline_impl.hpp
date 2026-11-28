@@ -171,6 +171,7 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 
     bool has_non_finished_requests() override;
+    std::optional<size_t> get_max_request_tokens() const override;
 
     // Removes a request that add_request() queued and no step has pulled yet.
     void discard_awaiting_request(uint64_t request_id);

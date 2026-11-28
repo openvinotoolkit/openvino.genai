@@ -65,6 +65,10 @@ public:
         return m_pipeline->get_pipeline_adapters();
     }
 
+    std::optional<size_t> get_max_request_tokens() const override {
+        return m_pipeline ? m_pipeline->get_max_request_tokens() : std::nullopt;
+    }
+
     bool has_non_finished_requests() override;
 
     void step() override;
