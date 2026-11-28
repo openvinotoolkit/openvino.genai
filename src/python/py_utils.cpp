@@ -66,6 +66,48 @@ public:
     }
 };
 
+// Keeps a Python Drafter object alive while the pipeline uses it and releases it under the GIL.
+class GilSafeDrafterWrapper : public ov::genai::Drafter {
+    std::shared_ptr<ov::genai::Drafter> m_impl;
+    py::object m_py_ref;
+
+public:
+    GilSafeDrafterWrapper(std::shared_ptr<ov::genai::Drafter>&& impl, py::object&& py_ref)
+        : m_impl(std::move(impl)),
+          m_py_ref(std::move(py_ref)) {}
+
+    ~GilSafeDrafterWrapper() override {
+        if (Py_IsInitialized()) {
+            try {
+                py::gil_scoped_acquire acquire;
+                m_impl.reset();
+                m_py_ref = py::object();
+                return;
+            } catch (...) {
+            }
+        }
+        m_py_ref.release();
+    }
+
+    size_t max_draft_tokens() const override {
+        return m_impl->max_draft_tokens();
+    }
+    void start(const std::vector<int64_t>& prompt, const ov::genai::GenerationConfig& config) override {
+        m_impl->start(prompt, config);
+    }
+    ov::genai::DraftTree propose(int64_t root, int64_t position, size_t max_nodes) override {
+        return m_impl->propose(root, position, max_nodes);
+    }
+    void accept(const std::vector<int64_t>& tokens,
+                const std::vector<int64_t>& positions,
+                const ov::Tensor& features) override {
+        m_impl->accept(tokens, positions, features);
+    }
+    void finish() override {
+        m_impl->finish();
+    }
+};
+
 // Permissive mapping: any value outside {RUNNING, CANCEL, TOOL_CALL_STOP} (including legacy
 // `True`/non-zero ints from older Python callbacks that returned bool) is treated as STOP so
 // we don't break user code that returned bools to mean "stop streaming".
@@ -486,6 +528,11 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         auto impl = py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
         std::shared_ptr<ov::genai::Generator> wrapper =
             std::make_shared<GilSafeGeneratorWrapper>(std::move(impl), py::reinterpret_borrow<py::object>(py_obj));
+        return wrapper;
+    } else if (py::isinstance<ov::genai::Drafter>(py_obj)) {
+        auto impl = py::cast<std::shared_ptr<ov::genai::Drafter>>(py_obj);
+        std::shared_ptr<ov::genai::Drafter> wrapper =
+            std::make_shared<GilSafeDrafterWrapper>(std::move(impl), py::reinterpret_borrow<py::object>(py_obj));
         return wrapper;
     } else if (py::isinstance<ov::genai::ASRForcedAligner>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::ASRForcedAligner>>(py_obj);

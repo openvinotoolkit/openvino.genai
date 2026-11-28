@@ -15,6 +15,7 @@
 #include "speculative_decoding/dflash_model_transforms.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "speculative_decoding/mtp_model_transforms.hpp"
+#include "speculative_decoding/stateful/drafter_strategy.hpp"
 #include "speculative_decoding/stateful/eagle3_strategy.hpp"
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
@@ -55,8 +56,10 @@ bool use_npuw_pa(const std::string& device,
                         "config to use the stateful NPU pipeline.");
         return false;
     }
-    OPENVINO_ASSERT(properties.count(ov::genai::utils::DRAFT_MODEL_ARG_NAME) == 0,
-                    "NPUW_PA=YES does not support speculative decoding. Remove the draft model or NPUW_PA.");
+    OPENVINO_ASSERT(properties.count(ov::genai::utils::DRAFT_MODEL_ARG_NAME) == 0 &&
+                        properties.count(ov::genai::utils::DRAFTER_ARG_NAME) == 0,
+                    "NPUW_PA=YES does not support speculative decoding. Remove the draft model, the drafter or "
+                    "NPUW_PA.");
     OPENVINO_ASSERT(model_properties.count("NPU_USE_NPUW") == 0 || ov::genai::utils::is_npuw_enabled(model_properties),
                     "NPUW_PA=YES runs on NPUW, but NPU_USE_NPUW is NO. Remove NPU_USE_NPUW or NPUW_PA.");
     OPENVINO_ASSERT(attention_backend == ov::genai::PA_BACKEND,
@@ -71,7 +74,7 @@ bool should_use_stateful_pipeline(bool is_npu_requested,
                                   const std::string& attention_backend,
                                   const std::shared_ptr<ov::Model>& main_model,
                                   const ov::AnyMap& properties) {
-    if (is_npu_requested) {
+    if (is_npu_requested || properties.count(ov::genai::utils::DRAFTER_ARG_NAME)) {
         return true;
     }
     if (has_draft_model && attention_backend == ov::genai::SDPA_BACKEND) {
@@ -222,6 +225,12 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
     OPENVINO_ASSERT(model, "Model must not be null");
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
+    std::shared_ptr<Drafter> user_drafter;
+    if (auto it = properties_without_draft_model.find(utils::DRAFTER_ARG_NAME);
+        it != properties_without_draft_model.end()) {
+        user_drafter = it->second.as<std::shared_ptr<Drafter>>();
+        properties_without_draft_model.erase(it);
+    }
 
     // GGUF-specific properties configure conversion, which already happened by the time we get a
     // model, so drop them: the plugin rejects unknown properties, and this descriptor outlives
@@ -231,6 +240,12 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
     OPENVINO_ASSERT(main_model_descr.model, "Model descriptor must contain a valid model");
+
+    if (user_drafter) {
+        OPENVINO_ASSERT(!draft_model_descr.model, "draft_model and drafter can't be used together");
+        OPENVINO_ASSERT(device == "NPU", "Speculative decoding with a drafter requires the NPU device, got ", device);
+        return std::make_unique<StatefulDrafterLLMPipeline>(main_model_descr, std::move(user_drafter));
+    }
 
     if (draft_model_descr.model) {
         if (is_gemma4_mtp_model_pair(main_model_descr.model, draft_model_descr.model)) {

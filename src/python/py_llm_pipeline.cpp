@@ -112,6 +112,34 @@ py::object call_common_generate(
     return results;
 }
 
+// Lets Python classes implement ov::genai::Drafter.
+class PyDrafter : public ov::genai::Drafter {
+public:
+    using ov::genai::Drafter::Drafter;
+
+    size_t max_draft_tokens() const override {
+        PYBIND11_OVERRIDE_PURE(size_t, ov::genai::Drafter, max_draft_tokens);
+    }
+
+    void start(const std::vector<int64_t>& prompt, const ov::genai::GenerationConfig& config) override {
+        PYBIND11_OVERRIDE_PURE(void, ov::genai::Drafter, start, prompt, config);
+    }
+
+    ov::genai::DraftTree propose(int64_t root, int64_t position, size_t max_nodes) override {
+        PYBIND11_OVERRIDE_PURE(ov::genai::DraftTree, ov::genai::Drafter, propose, root, position, max_nodes);
+    }
+
+    void accept(const std::vector<int64_t>& tokens,
+                const std::vector<int64_t>& positions,
+                const ov::Tensor& features) override {
+        PYBIND11_OVERRIDE_PURE(void, ov::genai::Drafter, accept, tokens, positions, features);
+    }
+
+    void finish() override {
+        PYBIND11_OVERRIDE(void, ov::genai::Drafter, finish);
+    }
+};
+
 } // namespace
 
 extern char generation_config_docstring[];
@@ -272,4 +300,57 @@ void init_llm_pipeline(py::module_& m) {
         },
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
         py::arg("device") = "", "device on which inference will be performed");
+
+    py::class_<ov::genai::DraftTree>(m,
+                                     "DraftTree",
+                                     R"(
+            Candidate tokens proposed by a Drafter for one verification step, as a tree.
+            Node i holds token tokens[i]; parents[i] is -1 when its parent is the root (the last generated token) or
+            the index of an earlier node. A chain of k guesses has parents [-1, 0, ..., k - 2].
+        )")
+        .def(py::init<>())
+        .def(py::init([](std::vector<int64_t> tokens, std::vector<int64_t> parents) {
+                 return ov::genai::DraftTree{std::move(tokens), std::move(parents)};
+             }),
+             py::arg("tokens"),
+             py::arg("parents"))
+        .def_readwrite("tokens", &ov::genai::DraftTree::tokens)
+        .def_readwrite("parents", &ov::genai::DraftTree::parents);
+
+    py::class_<ov::genai::Drafter, PyDrafter, std::shared_ptr<ov::genai::Drafter>>(m,
+                                                                                   "Drafter",
+                                                                                   R"(
+            Base class for user-defined drafters of speculative decoding: LLMPipeline(models_path, "NPU", drafter=...).
+            Each step the pipeline asks for a DraftTree following the last generated token, verifies it with the main
+            model in one inference (greedy) and reports the tokens that entered the main model's KV cache (the prompt,
+            then the accepted tokens) with the main model's last_hidden_state rows for them. Supported with the main
+            model on NPU, greedy decoding and batch size 1. Tensors passed to the drafter are only valid during the
+            call.
+        )")
+        .def(py::init<>())
+        .def("max_draft_tokens",
+             &ov::genai::Drafter::max_draft_tokens,
+             "Largest tree a proposal may have; the main model verifies max_draft_tokens() + 1 tokens per step.")
+        .def("start",
+             &ov::genai::Drafter::start,
+             py::arg("prompt"),
+             py::arg("config"),
+             "New generate() call, before the main model processes the prompt: prompt token ids and the generation "
+             "config. The prompt's tokens and features follow in accept().")
+        .def("propose",
+             &ov::genai::Drafter::propose,
+             py::arg("root"),
+             py::arg("position"),
+             py::arg("max_nodes"),
+             "Returns a DraftTree of at most max_nodes candidates following root, the last generated token at "
+             "position.")
+        .def("accept",
+             &ov::genai::Drafter::accept,
+             py::arg("tokens"),
+             py::arg("positions"),
+             py::arg("features"),
+             "Tokens that entered the main model's KV cache, their positions and main model last_hidden_state rows "
+             "(empty without that output): first the prompt, then after every step the root followed by the accepted "
+             "tokens. The main model's next token (the next root) follows them.")
+        .def("finish", &ov::genai::Drafter::finish, "Called when a generate() call ends.");
 }

@@ -296,6 +296,21 @@ Recommended models: `meta-llama/Llama-3.2-1B-Instruct`, `meta-llama/Llama-3.2-8B
 **Note:**
 Structured output enforcement ensures valid JSON formatting, but does not guarantee factual accuracy or meaningfulness. The model may generate plausible-looking JSON with incorrect or nonsensical data (e.g., `{"explanation": "John", "output": 200000}` or `{"final_answer": "AbrakaKadabra9999######4242"}`). For best results, use the latest or fine-tuned models to improve output quality and relevance.
 
+### 11. Speculative Decoding with a Custom Drafter (`custom_drafter_lm`)
+- **Description:**
+  This sample shows how to plug your own drafting logic into speculative decoding. A drafter is a class derived from `ov::genai::Drafter`: at every step it proposes a tree of candidate tokens, the main model verifies the whole tree in one inference (tree attention) and keeps the longest branch that matches its greedy choice, plus its own next token.
+
+  The sample drafter does prompt lookup: it finds earlier occurrences of the latest n-gram and proposes their continuations, one branch per occurrence. A drafter can also run its own models: `accept()` receives the main model's `last_hidden_state` rows for the prompt and the accepted tokens when the main model has that output.
+
+  `config.num_assistant_tokens` limits the tree size of every step (at most `max_draft_tokens()`, which is the default); `0` disables drafting.
+- **Main Feature:** Speculative decoding with a user-defined, tree-shaped draft.
+- **Run Command:**
+  ```bash
+  ./custom_drafter_lm <MODEL_DIR> "<PROMPT>"
+  ```
+- **Notes:**
+  Custom drafters are supported with the main model on NPU, greedy decoding and batch size 1. See [Speculative Decoding with a Custom Drafter](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-generation/#speculative-decoding-with-a-custom-drafter-npu) for the method reference.
+
 ## Troubleshooting
 
 ### Unicode characters encoding error on Windows
