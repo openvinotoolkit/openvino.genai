@@ -8,8 +8,8 @@ include(FetchContent)
 
 # Keep generator and oracle on the same reviewed revision, independent of installed llama.cpp wheels.
 FetchContent_Declare(llama_cpp
-    URL https://codeload.github.com/ggml-org/llama.cpp/tar.gz/03fa73cb27f5c251b9528489b18d303b1366aca4
-    URL_HASH SHA256=a1ea18cad07f6051b771b80f4a68a34ab11905187e642124ca93d4f9bd7d7f4c
+    URL https://codeload.github.com/ggml-org/llama.cpp/tar.gz/19cce6919992fdffd92e0ac152caaf1e2b8f254e
+    URL_HASH SHA256=e16c6d1076af7a2bdb351e22176dd4b302f244ac4c3822604e2ec64a8a783d44
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
