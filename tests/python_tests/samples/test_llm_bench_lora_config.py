@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import importlib
 import sys
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "llm_bench"))
 
-from llm_bench_utils.ov_utils import get_lora_config
+get_lora_config = importlib.import_module("llm_bench_utils.ov_utils").get_lora_config
 
 
 class FakeAdapter:
