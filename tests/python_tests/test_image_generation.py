@@ -1,6 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import gc
 import json
 
 import pytest
@@ -739,3 +740,108 @@ class TestPNDMScheduler:
         )
 
         assert image is not None
+
+
+# --- LoRA adapters on the text encoders of a two-encoder pipeline ---------------
+#
+# SDXL's encoders share one adapter file and are told apart only by the prefix their
+# adapter tensors carry: kohya spells them lora_te1_* / lora_te2_*. Whoever hands a
+# pipeline an AdapterConfig has to pin that prefix per submodel, and a pipeline can be
+# given adapters at construction or at compile. Model Server builds an SDXL pipeline from
+# disk and only passes properties to compile(), so both paths are exercised here.
+
+LORA_RANK = 2
+
+
+def _text_encoder_lora_tensors(models_path, encoder_dir: str, prefix: str, rng) -> dict:
+    """A kohya-shaped LoRA for one text encoder, sized from that encoder's own weights.
+
+    Every MatMul under `text_model.encoder.layers` in the exported IR becomes one
+    `lora_<prefix>_<module path>` triple, which is exactly the spelling a kohya adapter
+    uses. The values are random: the test asks whether the tensors are claimed, not
+    whether they are good.
+    """
+    model = ov.Core().read_model(str(models_path / encoder_dir / "openvino_model.xml"))
+    tensors = {}
+    for op in model.get_ops():
+        if op.get_type_name() != "MatMul":
+            continue
+        name = op.get_friendly_name()
+        module = name.split("/", 1)[0].removeprefix("__module.")
+        if not module.startswith("text_model.encoder.layers."):
+            continue
+        # The weight may be a Constant, or wrapped in Convert/quantize nodes; the shape is
+        # all this needs, so ask for the shape rather than the producer.
+        weight_shape = op.get_input_shape(1)
+        if len(weight_shape) != 2:
+            continue
+        out_features, in_features = weight_shape
+        key = f"lora_{prefix}_{module.replace('.', '_')}"
+        tensors[f"{key}.lora_down.weight"] = rng.standard_normal((LORA_RANK, in_features)).astype(np.float16)
+        tensors[f"{key}.lora_up.weight"] = rng.standard_normal((out_features, LORA_RANK)).astype(np.float16)
+        tensors[f"{key}.alpha"] = np.array(float(LORA_RANK), dtype=np.float16)
+    return tensors
+
+
+def make_text_encoder_lora(models_path, out_path) -> str:
+    """A LoRA carrying nothing but text-encoder tensors, written in the kohya layout."""
+    from safetensors.numpy import save_file
+
+    rng = np.random.default_rng(0)
+    tensors = {}
+    tensors.update(_text_encoder_lora_tensors(models_path, "text_encoder", "te1", rng))
+    tensors.update(_text_encoder_lora_tensors(models_path, "text_encoder_2", "te2", rng))
+    assert tensors, f"no text-encoder MatMuls found in {models_path}"
+    save_file(tensors, str(out_path))
+    return str(out_path)
+
+
+def _unused_text_encoder_tensors(stderr: str) -> list:
+    return [
+        line.strip()
+        for line in stderr.splitlines()
+        if "Unused LoRA tensor" in line and "lora_te" in line
+    ]
+
+
+@pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+def test_sdxl_text_encoder_adapters_compiled_late(image_generation_model, tmp_path, capfd):
+    """Adapters passed to compile() must reach both CLIP encoders, not just the UNet.
+
+    Model Server loads a pipeline from disk and supplies adapters only at compile time.
+    The prefixes used to be assigned in the pipeline constructor alone, so on this path
+    both encoders fell back to the same default prefix, matched nothing, and every
+    text-encoder tensor was quietly dropped - the only trace being a stderr warning.
+    """
+    from pathlib import Path
+
+    models = Path(image_generation_model)
+    lora = make_text_encoder_lora(models, tmp_path / "te_only.safetensors")
+
+    pipe = ov_genai.Text2ImagePipeline(str(models))
+    pipe.compile("CPU", adapters=ov_genai.AdapterConfig(ov_genai.Adapter(lora), 1.0))
+    del pipe  # the unused-tensor warning comes from the adapter controller's destructor
+    gc.collect()
+
+    unused = _unused_text_encoder_tensors(capfd.readouterr().err)
+    assert not unused, "text-encoder adapter tensors were dropped on the compile() path:\n" + "\n".join(unused)
+
+
+@pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+def test_sdxl_text_encoder_adapter_changes_output(image_generation_model, tmp_path):
+    """And the tensors do something: with them applied, the same seed renders differently."""
+    from pathlib import Path
+
+    models = Path(image_generation_model)
+    lora = make_text_encoder_lora(models, tmp_path / "te_only.safetensors")
+
+    pipe = ov_genai.Text2ImagePipeline(str(models))
+    pipe.compile("CPU", adapters=ov_genai.AdapterConfig(ov_genai.Adapter(lora), 1.0))
+
+    kwargs = {"width": 64, "height": 64, "num_inference_steps": 2, "rng_seed": 42}
+    with_adapter = np.array(pipe.generate("a red cube", adapters=ov_genai.AdapterConfig(ov_genai.Adapter(lora), 1.0), **kwargs).data)
+    without_adapter = np.array(pipe.generate("a red cube", adapters=ov_genai.AdapterConfig(), **kwargs).data)
+
+    assert not np.array_equal(with_adapter, without_adapter), (
+        "the text-encoder adapter had no effect on the image, so its tensors were not applied"
+    )
