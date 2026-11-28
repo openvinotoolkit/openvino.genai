@@ -701,6 +701,24 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
     assert content_json["tool_calls"][0] == json.loads(json_str)
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "In C you write: int main() { return 0; }",
+        "Use a set literal like {1, 2, 3}.",
+        "A dict {'a': 1} uses single quotes in Python.",
+        'Unclosed {"name": "get_weather"',
+        '{"name": "f"} then code { x }',
+    ],
+)
+def test_final_parser_llama_32_json_ignores_non_json_braces(content):
+    # Braces that are not a JSON tool call leave the message as it is, like text without braces
+    message = {"content": content}
+    Llama3JsonToolParser().parse(message)
+    assert message["content"] == content
+    assert "tool_calls" not in message
+
+
 @pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
 @pytest.mark.nightly
 def test_custom_parser(tmp_path, model_id):
