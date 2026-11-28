@@ -1,7 +1,7 @@
 // Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "statefull_decoder.hpp"
+#include "stateful_decoder.hpp"
 
 #include <utility>
 
@@ -22,11 +22,11 @@ void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov:
 }  // namespace
 
 namespace ov::genai {
-WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& models_path,
-                                                 const std::string& device,
-                                                 const ov::AnyMap& properties,
-                                                 const ov::PartialShape& lhs_shape,
-                                                 const bool decompose_cross_attention_spda)
+WhisperStatefulDecoder::WhisperStatefulDecoder(const std::filesystem::path& models_path,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties,
+                                               const ov::PartialShape& lhs_shape,
+                                               const bool decompose_cross_attention_spda)
     : m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
     ov::Core core = utils::singleton_core();
 
@@ -57,9 +57,9 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     m_request = compiled_model.create_infer_request();
 }
 
-void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
-                                          const Tensor& input_ids,
-                                          const Tensor& beam_idx) {
+void WhisperStatefulDecoder::start_async(const Tensor& encoder_hidden_state,
+                                         const Tensor& input_ids,
+                                         const Tensor& beam_idx) {
     const size_t seq_len = input_ids.get_shape().at(1);
 
     // Cross-attention K/V are initialized from the batch-1 encoder output
@@ -77,7 +77,7 @@ void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
     m_request.start_async();
 };
 
-void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
+void WhisperStatefulDecoder::_set_cache_position_tensor(const size_t seq_len) {
     ov::Tensor cache_position_tensor = m_request.get_tensor("cache_position");
 
     int64_t start_cache_position = 0;
@@ -92,19 +92,19 @@ void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
     std::iota(cache_data, cache_data + seq_len, start_cache_position);
 };
 
-Tensor WhisperStatefullDecoder::wait() {
+Tensor WhisperStatefulDecoder::wait() {
     m_request.wait();
     return m_request.get_tensor("logits");
 }
 
-void WhisperStatefullDecoder::reset_state() {
+void WhisperStatefulDecoder::reset_state() {
     m_request.reset_state();
     if (m_has_cache_position) {
         m_request.set_tensor("cache_position", create_host_tensor(ov::element::i64, {0}));
     }
 };
 
-ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {
+ov::Tensor WhisperStatefulDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {
     try {
         return m_request.get_compiled_model().get_context().create_host_tensor(element_type, shape);
     } catch (std::exception& ex) {
@@ -112,7 +112,7 @@ ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type eleme
     }
 }
 
-std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks(
+std::vector<Tensor> WhisperStatefulDecoder::get_alignments_heads_qks(
     const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
     OPENVINO_ASSERT(m_decompose_cross_attention_spda_ops,
                     "Encoder attention heads are not decomposed. Cannot get encoder attention QKs.");

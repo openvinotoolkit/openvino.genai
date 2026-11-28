@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <vector>
 
-#include "automatic_speech_recognition/pipeline_base.hpp"
+#include "automatic_speech_recognition/audios_view.hpp"
 
 namespace ov::genai {
 

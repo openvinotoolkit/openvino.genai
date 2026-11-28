@@ -38,7 +38,7 @@ def default_gen_answer(
     answers = []
 
     # transformers manage kv_cache via past_key_values
-    # for optimum-intel statefull model ((),)
+    # for optimum-intel stateful model ((),)
     past_key_values = None
     tokenized_history: list = []
     for prompt in prompts:
