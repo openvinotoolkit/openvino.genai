@@ -19,6 +19,34 @@ def ov_pipe(request):
     return create_ov_pipeline(models_path)
 
 
+@pytest.mark.parametrize("limit", [None, 0, 2])
+def test_json_schema_whitespace_config(limit):
+    config = SOC(json_schema="{}", max_whitespace_cnt=limit)
+    assert config.max_whitespace_cnt == limit
+    config.max_whitespace_cnt = 1
+    assert ov_genai.GenerationConfig(structured_output_config=config).structured_output_config.max_whitespace_cnt == 1
+
+
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        ({"json_schema": "{}", "max_whitespace_cnt": -1}, "must be non-negative"),
+        ({"regex": "x", "max_whitespace_cnt": 0}, "requires json_schema"),
+    ],
+)
+def test_invalid_json_schema_whitespace_config(options, message):
+    with pytest.raises(RuntimeError, match=message):
+        SOC(**options)
+
+
+@pytest.mark.parametrize("ov_pipe", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+def test_compact_json_schema_generation(ov_pipe):
+    schema = {"type": "array", "items": {"const": "abc"}, "minItems": 2, "maxItems": 2}
+    config = SOC(json_schema=json.dumps(schema), max_whitespace_cnt=0)
+    result = ov_pipe.generate("Return an array.", structured_output_config=config, max_new_tokens=32)
+    assert result == '["abc","abc"]'
+
+
 class Person(BaseModel):
     name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
     age: int = Field(ge=0, le=128)

@@ -50,6 +50,19 @@ describe("LLMPipeline.generate() with generation config", () => {
     assert.ok(typeof parsed.city === "string");
   });
 
+  it("generates compact JSON when the whitespace limit is zero", async () => {
+    const schema = { type: "array", items: { const: "abc" }, minItems: 2, maxItems: 2 };
+    const config = new StructuredOutputConfig({
+      json_schema: JSON.stringify(schema),
+      max_whitespace_cnt: 0,
+    });
+    const res = await pipeline.generate("Return an array.", {
+      structured_output_config: config,
+      max_new_tokens: 32,
+    });
+    assert.equal(res.texts[0], '["abc","abc"]');
+  });
+
   it("generate with StructuredOutputConfig.JSONSchema in structured_output_config", async () => {
     const generationConfig = {
       max_new_tokens: 50,
