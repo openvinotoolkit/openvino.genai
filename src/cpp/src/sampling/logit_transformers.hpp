@@ -273,8 +273,14 @@ public:
         //
         // Downstream code (TemperatureLogitTransform, TopPFilter, SamplingDistribution)
         // must NOT assume m_vector[0] is the maximum — they all do their own O(K) max scan.
+        
+        // Strict weak ordering: treat NaN as worse than any non-NaN value (including -inf)
+        // so NaNs rise to the min-heap root and are evicted by valid logits.
+        static const auto is_better = [](float a, float b) {
+            return (a > b) || (std::isnan(b) && !std::isnan(a));
+        };
         static const auto min_cmp = [](const Token& a, const Token& b) {
-            return a.m_log_prob > b.m_log_prob;  // inverted: makes std::*_heap a min-heap
+            return is_better(a.m_log_prob, b.m_log_prob);  // inverted: makes std::*_heap a min-heap
         };
 
         if (logits.is_vector_initialized()) {
@@ -282,7 +288,7 @@ public:
             // Seed heap from the first K elements already in m_vector.
             std::make_heap(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, min_cmp);
             for (size_t i = m_top_k; i < logits.m_size; i++) {
-                if (logits.m_vector[i].m_log_prob > logits.m_vector[0].m_log_prob) {
+                if (is_better(logits.m_vector[i].m_log_prob, logits.m_vector[0].m_log_prob)) {
                     std::pop_heap(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, min_cmp);
                     logits.m_vector[m_top_k - 1] = logits.m_vector[i];
                     std::push_heap(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, min_cmp);
@@ -298,7 +304,7 @@ public:
             std::make_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);
 
             for (size_t i = m_top_k; i < logits.m_size; i++) {
-                if (logits.m_data[i] > logits.m_vector[0].m_log_prob) {
+                if (is_better(logits.m_data[i], logits.m_vector[0].m_log_prob)) {
                     std::pop_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);
                     logits.m_vector.back() = Token(logits.m_data[i], static_cast<int64_t>(i));
                     std::push_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);

@@ -291,6 +291,73 @@ TEST(TopKFilteringTest, FilterNotAppliedTopKGreaterThanInputSize) {
     }
 }
 
+TEST(TopKFilteringTest, EvictsNaNLogitsInFavorOfValidLogits) {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float neg_inf = -std::numeric_limits<float>::infinity();
+
+    struct Case {
+        const char* name;
+        size_t top_k;
+        std::vector<float> input;
+        std::vector<Token> expected;
+    };
+
+    const std::vector<Case> cases = {
+        {"nan_at_root", 2, {nan, 1.0f, 10.0f, 20.0f}, {{10.0f, 2}, {20.0f, 3}}},
+        {"nan_in_initial_k_non_root", 2, {1.0f, nan, 10.0f, 20.0f}, {{10.0f, 2}, {20.0f, 3}}},
+        {"nan_after_initial_k", 2, {1.0f, 2.0f, nan, 20.0f}, {{2.0f, 1}, {20.0f, 3}}},
+        {"neg_inf_beats_nan", 1, {nan, neg_inf}, {{neg_inf, 1}}},
+    };
+
+    for (const auto& c : cases) {
+        for (const bool init_vector : {false, true}) {
+            SCOPED_TRACE(std::string(c.name) + (init_vector ? " (vector)" : " (data)"));
+            auto input = c.input;
+            Logits logits(input.data(), input.size());
+            if (init_vector) {
+                logits.initialize_vector();
+            }
+            TopKFilter(c.top_k).apply(logits);
+
+            ASSERT_TRUE(logits.is_vector_initialized());
+            ASSERT_EQ(logits.m_size, c.expected.size());
+            ASSERT_EQ(logits.m_vector.size(), c.expected.size());
+
+            auto actual = logits.m_vector;
+            std::sort(actual.begin(), actual.end(), [](const Token& a, const Token& b) {
+                return a.m_index < b.m_index;
+            });
+            for (size_t i = 0; i < c.expected.size(); ++i) {
+                EXPECT_EQ(actual[i].m_index, c.expected[i].m_index);
+                if (std::isinf(c.expected[i].m_log_prob)) {
+                    EXPECT_EQ(actual[i].m_log_prob, c.expected[i].m_log_prob);
+                } else {
+                    EXPECT_FLOAT_EQ(actual[i].m_log_prob, c.expected[i].m_log_prob);
+                }
+            }
+        }
+    }
+}
+
+TEST(TopKFilteringTest, AllNaNLogitsKeepsTopKCount) {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+
+    for (bool init_vector : {false, true}) {
+        float input[]{nan, nan, nan, nan};
+        Logits logits(input, 4);
+        if (init_vector) {
+            logits.initialize_vector();
+        }
+        TopKFilter(2).apply(logits);
+
+        ASSERT_TRUE(logits.is_vector_initialized());
+        ASSERT_EQ(logits.m_size, 2u);
+        ASSERT_EQ(logits.m_vector.size(), 2u);
+        EXPECT_TRUE(std::isnan(logits.m_vector[0].m_log_prob));
+        EXPECT_TRUE(std::isnan(logits.m_vector[1].m_log_prob));
+    }
+}
+
 struct RepetitionPenaltyTransformTestStruct {
     static inline const size_t size = 3;
 
