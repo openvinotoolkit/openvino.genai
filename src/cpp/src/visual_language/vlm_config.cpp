@@ -129,6 +129,12 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "image_token_id", image_token_id);
     read_json_param(parsed, "video_token_id", video_token_id);
 
+    // InternVL (internvl_chat): tiles are resized to vision_config.image_size, as in the remote-code
+    // preprocessing. preprocessor_config.json may not carry it (e.g. GotOcr2 format with size.height/width).
+    if (model_type == VLMModelType::INTERNVL_CHAT) {
+        read_json_param(parsed, "vision_config.image_size", vision_config_image_size);
+    }
+
     // MiniCPM-V 4.6 / OCR / 4.7
     if (model_type == VLMModelType::MINICPMV4_6 || model_type == VLMModelType::MINICPM_OCR ||
         model_type == VLMModelType::MINICPMV4_7) {

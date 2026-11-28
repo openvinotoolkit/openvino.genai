@@ -30,7 +30,8 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/OpenGVLab/InternVL3-2B',
           'https://huggingface.co/OpenGVLab/InternVL3-8B',
           'https://huggingface.co/OpenGVLab/InternVL3-9B',
-          'https://huggingface.co/OpenGVLab/InternVL3-14B'
+          'https://huggingface.co/OpenGVLab/InternVL3-14B',
+          'https://huggingface.co/OpenGVLab/InternVL3_5-1B',
         ],
         notesLink: '#internvl2-notes',
       },

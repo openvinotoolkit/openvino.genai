@@ -128,6 +128,13 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
 
 } // namespace
 
+void VisionEncoderInternVLChat::update_vision_config(const VLMConfig& vlm_config) {
+    // Match the remote-code InternVL preprocessing, which splits images into vision_config.image_size tiles.
+    m_processor_config.size_shortest_edge = vlm_config.vision_config_image_size;
+    m_processor_config.crop_size_height = vlm_config.vision_config_image_size;
+    m_processor_config.crop_size_width = vlm_config.vision_config_image_size;
+}
+
 EncodedImage VisionEncoderInternVLChat::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
@@ -216,7 +223,9 @@ InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) { }
+    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
+    static_cast<VisionEncoderInternVLChat&>(*m_vision_encoder).update_vision_config(m_vlm_config);
+}
 
 InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     const VLMConfig& vlm_config,
@@ -225,7 +234,9 @@ InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    static_cast<VisionEncoderInternVLChat&>(*m_vision_encoder).update_vision_config(m_vlm_config);
+}
 
 
 NormalizedPrompt InputsEmbedderInternVLChat::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {

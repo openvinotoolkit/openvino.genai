@@ -17,6 +17,8 @@ public:
     using VisionEncoder::VisionEncoder;
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+    void update_vision_config(const VLMConfig& vlm_config);
 };
 
 class InputsEmbedderInternVLChat : public InputsEmbedder::IInputsEmbedder {
