@@ -42,7 +42,11 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("audio_modality_scale", &ov::genai::VideoGenerationConfig::audio_modality_scale)
         .def_readwrite("audio_guidance_rescale", &ov::genai::VideoGenerationConfig::audio_guidance_rescale)
         .def_readwrite("spatio_temporal_guidance_blocks",
-                       &ov::genai::VideoGenerationConfig::spatio_temporal_guidance_blocks);
+                       &ov::genai::VideoGenerationConfig::spatio_temporal_guidance_blocks)
+        .def_readwrite("vae_tile_sample_min_num_frames",
+                       &ov::genai::VideoGenerationConfig::vae_tile_sample_min_num_frames)
+        .def_readwrite("vae_tile_sample_stride_num_frames",
+                       &ov::genai::VideoGenerationConfig::vae_tile_sample_stride_num_frames);
 
     py::class_<ov::genai::VideoGenerationResult>(m, "VideoGenerationResult")
         .def_readonly("video", &ov::genai::VideoGenerationResult::video)

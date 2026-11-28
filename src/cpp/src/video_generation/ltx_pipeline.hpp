@@ -67,6 +67,8 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
                     "'audio_modality_scale' is not supported for LTX-Video pipelines");
     OPENVINO_ASSERT(!generation_config.spatio_temporal_guidance_blocks.has_value(),
                     "'spatio_temporal_guidance_blocks' is not supported for LTX-Video pipelines");
+    OPENVINO_ASSERT(generation_config.vae_tile_sample_min_num_frames == 0,
+                    "'vae_tile_sample_min_num_frames' is not supported for LTX-Video pipelines");
 }
 
 }  // anonymous namespace
