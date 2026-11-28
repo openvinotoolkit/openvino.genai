@@ -63,11 +63,40 @@
   components:
     - Speech_generation_samples
 
-- name: Video generation
+# Video generation runs one job per test file in parallel because each sample run takes 4-8 minutes.
+# A new video generation test file needs its own entry.
+- name: Video generation (text2video)
   # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
   extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8.tar.gz"
   marker: video_generation
-  cmd: tests/python_tests/samples
+  cmd: tests/python_tests/samples/test_text2video.py
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - Video_generation_samples
+
+- name: Video generation (image2video)
+  # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
+  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8.tar.gz"
+  marker: video_generation
+  cmd: tests/python_tests/samples/test_image2video.py
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - Video_generation_samples
+
+- name: Video generation (LoRA)
+  # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
+  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8.tar.gz"
+  marker: video_generation
+  cmd: tests/python_tests/samples/test_lora_text2video.py
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - Video_generation_samples
+
+- name: Video generation (TaylorSeer)
+  # LTX-2.3 export support landed after the optimum-intel pin in samples/export-requirements.txt
+  extra_cmd: python -m pip install -U "optimum-intel @ https://github.com/huggingface/optimum-intel/archive/60f8356bdf4fbf6a0f4ee350caa59b256a83d0e8.tar.gz"
+  marker: video_generation
+  cmd: tests/python_tests/samples/test_taylorseer.py
   runner: aks-win-4-cores-8gb-test
   components:
     - Video_generation_samples

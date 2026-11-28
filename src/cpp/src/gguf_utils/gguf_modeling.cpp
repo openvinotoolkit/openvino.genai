@@ -13,9 +13,11 @@
 #include <vector>
 
 #include "gguf_utils/building_blocks.hpp"
+#include "gguf_utils/gguf_frontend_extensions.hpp"
 #include "gguf_utils/gguf_utils.hpp"
 #include "openvino/frontend/gguf/adapt_to_genai.hpp"
 #include "openvino/frontend/gguf/frontend.hpp"
+#include "openvino/frontend/manager.hpp"
 #include "openvino/opsets/opset13.hpp"
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
@@ -142,7 +144,7 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-ov::frontend::gguf::ModelMap convert_gguf_with_frontend(ov::frontend::gguf::FrontEnd& frontend,
+ov::frontend::gguf::ModelMap convert_gguf_with_frontend(ov::frontend::FrontEnd& frontend,
                                                         const std::string& model_path,
                                                         const ov::frontend::gguf::GenAIAdaptOptions& options) {
     auto converted_model = frontend.convert(frontend.load(model_path));
@@ -165,7 +167,8 @@ std::shared_ptr<ov::Model> get_gguf_language_model(const ov::frontend::gguf::Mod
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             bool enable_save_ov_model,
-                                            bool use_legacy_reader) {
+                                            bool use_legacy_reader,
+                                            const ov::genai::ExtensionList& frontend_extensions) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     std::shared_ptr<ov::Model> model;
@@ -191,8 +194,16 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         ss << "Loading and converting GGUF model via the OpenVINO GGUF frontend: " << model_path;
         ov::genai::utils::print_gguf_debug_info(ss.str());
 
-        ov::frontend::gguf::FrontEnd frontend;
-        model = get_gguf_language_model(convert_gguf_with_frontend(frontend, model_path), model_path);
+        // The manager's frontend wrapper retains registered extensions on converted models.
+        ov::frontend::FrontEndManager manager;
+        auto frontend = manager.load_by_framework("gguf");
+        if (!frontend_extensions.empty()) {
+            ss.str("");
+            ss << "Registering " << frontend_extensions.size() << " user extension(s) with the GGUF frontend";
+            ov::genai::utils::print_gguf_debug_info(ss.str());
+        }
+        ov::genai::register_gguf_extensions(*frontend, frontend_extensions);
+        model = get_gguf_language_model(convert_gguf_with_frontend(*frontend, model_path), model_path);
     }
 
     if (enable_save_ov_model) {

@@ -3,6 +3,7 @@
 
 from pathlib import Path
 from zipfile import ZipFile
+import re
 import tempfile
 import time
 
@@ -14,6 +15,14 @@ LOG_DOWNLOAD_MAX_ATTEMPTS = 3
 LOG_DOWNLOAD_RETRY_BACKOFF_SECONDS = 5
 LOG_DOWNLOAD_TIMEOUT_SECONDS = 60
 LOG_DOWNLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
+
+# "ci/gha_overall_status_<os>" jobs fail only because a job they need failed,
+# so their logs never contain the root cause.
+STATUS_JOB_NAME_PREFIX = "ci/gha_overall_status"
+
+
+def is_status_job(job_name: str) -> bool:
+    return job_name.startswith(STATUS_JOB_NAME_PREFIX)
 
 
 def _download_logs_archive(run: WorkflowRun, log_archive_path: Path, session: requests.Session) -> None:
@@ -95,9 +104,14 @@ def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, session: requests.Ses
         └── system.txt
 
     In that case, we need only 'system.txt' file from each directory
+
+    The logs of each failed job are saved to their own directory, `logs_dir/<job name>/`.
+    The directory is created even if no logs are found for the job,
+    so that LogAnalyzer can require a known error in every failed job.
+    Status jobs ("ci/gha_overall_status_<os>") are skipped.
     """
     # Get failed jobs
-    failed_jobs = [job for job in run.jobs() if job.conclusion == "failure"]
+    failed_jobs = [job for job in run.jobs() if job.conclusion == "failure" and not is_status_job(job.name)]
     LOGGER.info(f"FAILED JOBS: {[job.name for job in failed_jobs]}")
 
     with tempfile.NamedTemporaryFile(suffix=".zip") as temp_file:
@@ -117,14 +131,20 @@ def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, session: requests.Ses
                 job_filename = job.name.replace("/", "_")
                 LOGGER.debug(f"Looking for failed job logs with filename: {job_filename}")
 
+                job_logs_dir = logs_dir / job_filename
+                job_logs_dir.mkdir(exist_ok=True)
+                # The full job log is "<index>_<job name>.txt"; an exact match keeps job "LLM"
+                # from taking the log of job "Samples LLM"
+                job_log_name_pattern = re.compile(rf"\d+_{re.escape(job_filename)}\.txt")
+
                 for p in logs_temp_dir.iterdir():
                     # Move failed jobs' logs to the final destination
                     if p.is_dir() and p.name == job_filename:
                         LOGGER.debug(f"Keeping system.txt from directory {p} for failed job {job.name}")
-                        (p / "system.txt").rename(logs_dir / f"{job_filename}__system.txt")
-                    elif p.is_file() and p.name.endswith(f"{job_filename}.txt"):
+                        (p / "system.txt").rename(job_logs_dir / "system.txt")
+                    elif p.is_file() and job_log_name_pattern.fullmatch(p.name):
                         LOGGER.debug(f"Keeping file {p} for failed job {job.name}")
-                        p.rename(logs_dir / p.name)
+                        p.rename(job_logs_dir / p.name)
 
     LOGGER.info(f"COLLECTED LOGS FOR {run.id} IN {logs_dir}")
     return logs_dir

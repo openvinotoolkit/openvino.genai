@@ -228,5 +228,50 @@
         "error_text": "SSL connect error",
         "ticket": 182850,
         "category": "Network"
+    },
+    {
+        "error_text": "429 Too Many Requests",
+        "ticket": 888888,
+        "category": "External Service"
+    },
+    {
+        "error_text": "429 Client Error: Too Many Requests",
+        "ticket": 888888,
+        "category": "External Service"
+    },
+    {
+        "error_text": "504 Gateway Time-out",
+        "ticket": 888888,
+        "category": "External Service"
+    },
+    {
+        "error_text": "504 Server Error: Gateway Timeout",
+        "ticket": 888888,
+        "category": "External Service"
+    },
+    {
+        "error_text": "Failed to GetSignedArtifactURL",
+        "ticket": 888888,
+        "category": "Network"
+    },
+    {
+        "error_text": "Failed to ListArtifacts",
+        "ticket": 888888,
+        "category": "Network"
+    },
+    {
+        "error_text": "Failed to make request after 5 attempts: Unexpected token",
+        "ticket": 888888,
+        "category": "Network"
+    },
+    {
+        "error_text": "Server disconnected without sending a response",
+        "ticket": 888888,
+        "category": "Network"
+    },
+    {
+        "error_text": "An existing connection was forcibly closed by the remote host",
+        "ticket": 888888,
+        "category": "Network"
     }
 ]
