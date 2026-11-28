@@ -124,4 +124,15 @@ void fill_video_metadata(EncodedVideo& encoded_video,
 
 std::vector<float> calculate_video_timestamps(const VideoMetadata& video_metadata, size_t temporal_patch_size);
 
+namespace qwen3_vl_utils {
+
+/// @brief Computes bilinear interpolation indices and weights of the learned 2D position embeddings table
+/// (num_grid_per_side x num_grid_per_side) for every patch of grids_thw, in raster (t, h, w) order.
+/// @return Pair of indices [4, num_positions] (i64) and weights [4, num_positions] (f32).
+std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights(
+    const std::vector<std::array<size_t, 3>>& grids_thw,
+    size_t num_grid_per_side);
+
+}  // namespace qwen3_vl_utils
+
 }  // namespace ov::genai

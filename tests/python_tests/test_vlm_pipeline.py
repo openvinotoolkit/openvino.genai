@@ -152,6 +152,8 @@ MODEL_QWEN38_FLASH_NEXT = "optimum-intel-internal-testing/tiny-random-qwen38-fla
 MODEL_MINICPMV4_6 = "optimum-intel-internal-testing/tiny-random-minicpmv4_6"
 MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
 MODEL_MOLMO2 = "optimum-intel-internal-testing/tiny-random-molmo2"
+# There is no hosted tiny-random PaddleOCR-VL checkpoint yet, so it is built locally, see LOCAL_TINY_MODEL_BUILDERS.
+MODEL_PADDLEOCR_VL = "tiny-random-paddleocr-vl"
 
 VIDEO_MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -210,6 +212,7 @@ else:
         MODEL_DEEPSEEK_OCR2,
         "optimum-intel-internal-testing/tiny-random-mistral3",
         *VIDEO_MODEL_IDS,
+        MODEL_PADDLEOCR_VL,
     ]
 MODEL_IDS += [model_id for model_id in GENAI_CLI_NATIVE_MODEL_IDS if model_id not in MODEL_IDS]
 # optimum-intel cannot export these models yet, so there is no optimum-intel reference to compare with.
@@ -250,6 +253,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     MODEL_MOLMO2: lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     MODEL_MINICPMV4_6: lambda idx: "<|image_pad|>",
+    MODEL_PADDLEOCR_VL: lambda idx: "<|IMAGE_START|><|IMAGE_PLACEHOLDER|><|IMAGE_END|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -404,6 +408,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of DeepSeek-OCR-2. Minimum required is 5.11.0."
         )
+    if model_id == MODEL_PADDLEOCR_VL and is_transformers_version("<", "5.13.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of PaddleOCR-VL. Minimum required is 5.13.0."
+        )
     if model_id == MODEL_MINICPMV4_6 and is_transformers_version("<", "5.7.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of MiniCPM-V-4.6. Minimum required is 5.7.0."
@@ -468,6 +476,78 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     return "videochat_flash_qwen" in MODEL_TYPE_TO_CLS_MAPPING
 
 
+def _create_tiny_random_paddleocr_vl(output_dir: Path) -> None:
+    """Builds a deterministic tiny-random PaddleOCR-VL from the original configs, tokenizer and processor."""
+    import torch
+
+    source_dir = Path(
+        retry_request(
+            lambda: snapshot_download(
+                "PaddlePaddle/PaddleOCR-VL-1.6", ignore_patterns=["*.safetensors", "*.bin", "*.pdparams"]
+            )
+        )
+    )
+    config_dict = json.loads((source_dir / "config.json").read_text(encoding="utf-8"))
+    # Use the native transformers implementation instead of the remote code.
+    config_dict.pop("auto_map", None)
+    config_dict["vision_config"].pop("auto_map", None)
+    # Text parameters are stored at the top level; head_dim stays decoupled from hidden_size as in the original.
+    config_dict.update(
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=32,
+        max_position_embeddings=4096,
+        use_cache=True,
+        torch_dtype="float32",
+    )
+    # mrope_section must sum up to head_dim / 2.
+    config_dict["rope_scaling"] = dict(config_dict["rope_scaling"], mrope_section=[4, 6, 6])
+    # patch_size, image_size and spatial_merge_size are kept to preserve the preprocessing contract.
+    config_dict["vision_config"].update(
+        hidden_size=32, intermediate_size=64, num_hidden_layers=2, num_attention_heads=2, torch_dtype="float32"
+    )
+    config = transformers.PaddleOCRVLConfig.from_dict(config_dict)
+    for sub_config in (config, config.text_config, config.vision_config):
+        sub_config.dtype = "float32"
+    config.text_config.use_cache = True
+
+    torch.manual_seed(42)
+    transformers.PaddleOCRVLForConditionalGeneration(config).eval().save_pretrained(output_dir)
+    generation_config = json.loads((source_dir / "generation_config.json").read_text(encoding="utf-8"))
+    generation_config["use_cache"] = True
+    (output_dir / "generation_config.json").write_text(json.dumps(generation_config, indent=2), encoding="utf-8")
+    transformers.AutoProcessor.from_pretrained(source_dir).save_pretrained(output_dir)
+    for config_name in ["config.json", "preprocessor_config.json", "processor_config.json", "tokenizer_config.json"]:
+        config_path = output_dir / config_name
+        if not config_path.exists():
+            continue
+        saved_config = json.loads(config_path.read_text(encoding="utf-8"))
+        saved_config.pop("auto_map", None)
+        for sub_config in saved_config.values():
+            if isinstance(sub_config, dict):
+                sub_config.pop("auto_map", None)
+        config_path.write_text(json.dumps(saved_config, indent=2), encoding="utf-8")
+
+
+# Tiny-random models which are not hosted on the Hugging Face Hub yet and are built locally instead.
+LOCAL_TINY_MODEL_BUILDERS: dict[str, Callable[[Path], None]] = {
+    MODEL_PADDLEOCR_VL: _create_tiny_random_paddleocr_vl,
+}
+
+
+def _get_model_sources(model_id: str) -> str:
+    builder = LOCAL_TINY_MODEL_BUILDERS.get(model_id)
+    if builder is None:
+        return retry_request(lambda: snapshot_download(model_id))
+    sources_dir = get_ov_cache_converted_models_dir() / f"{model_id}-sources"
+    manager = AtomicDownloadManager(sources_dir)
+    manager.execute(builder)
+    return str(sources_dir)
+
+
 def _get_ov_model(model_id: str) -> str:
     _maybe_skip_unsupported_model_export(model_id)
 
@@ -480,7 +560,7 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = retry_request(lambda: snapshot_download(model_id))
+        model_cached = _get_model_sources(model_id)
         if native_genai_cli_model_type(model_cached) is not None:
             # genai-cli converts the model natively (IRs, tokenizers and processor files) with the transformers
             # version it pins, so the installed transformers and optimum-intel are not involved.
@@ -2196,7 +2276,7 @@ def test_model_tags_representation(
     prompt = "Describe"
 
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    model_cached = _get_model_sources(model_id)  # required to avoid HF rate limits
     if model_id == "qnguyen3/nanoLLaVA":
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         messages = [{"role": "user", "content": f"{ov_pipe_model.get_media_tag(modality_type)(0)}{prompt}"}]
@@ -2642,7 +2722,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=N
 
     model_id = ov_pipe_model.model_id
     model_path = Path(model_id)
-    model_cached = str(model_path) if model_path.is_dir() else snapshot_download(model_id)
+    model_cached = str(model_path) if model_path.is_dir() else _get_model_sources(model_id)
     model_path = _get_ov_model(model_id)
     optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
 

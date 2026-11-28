@@ -122,8 +122,8 @@ public:
     std::optional<std::string> get_lora_tensor_prefix() const override;
 
 protected:
-    // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
-    inline static const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
+    // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_VIDEO_TAG is hardcoded as well.
+    // The native image tag is built from the configured vision tokens, see get_native_image_tag().
     inline static const std::string NATIVE_VIDEO_TAG = "<|vision_start|><|video_pad|><|vision_end|>";
 
     // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
@@ -194,6 +194,9 @@ protected:
 
     void encode_vision_placeholder_tokens();
 
+    // Native image tag inserted by the chat template, e.g. "<|vision_start|><|image_pad|><|vision_end|>" for Qwen2-VL.
+    std::string get_native_image_tag() const;
+
     void cvt_to_3_chn_image(ov::Tensor& image);
 
     size_t calc_tokens_num(size_t grid_t, size_t grid_h, size_t grid_w) const;
@@ -202,6 +205,17 @@ protected:
 };
 
 namespace qwen2_vl_utils {
+
+// Building blocks of the vision preprocessing graph that is merged into the vision embeddings model.
+// Converts u8 NHWC images into f32 NCHW.
+std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input);
+// Bicubic resize of NCHW input to target_size [height, width].
+std::shared_ptr<ov::Node> create_bicubic_resize(std::shared_ptr<ov::Node> input,
+                                                const std::shared_ptr<ov::Node>& target_size);
+// Clamps to [0, 255] and applies (input - mean) * std, where std holds the inverse scaled std.
+std::shared_ptr<ov::Node> create_normalization(std::shared_ptr<ov::Node> input,
+                                               const std::shared_ptr<ov::Node>& mean,
+                                               const std::shared_ptr<ov::Node>& std);
 
 ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels);
 

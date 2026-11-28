@@ -507,6 +507,7 @@ private:
     friend class InputsEmbedderLFM3VL;
     friend class InputsEmbedderLFM3Omni;
     friend class InputsEmbedderMolmo2;
+    friend class InputsEmbedderPaddleOCRVL;
 };
 
 /// @brief Universal-tag pattern for a modality. A switch, not a ternary on IMAGE: a ternary would
