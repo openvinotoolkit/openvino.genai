@@ -51,7 +51,12 @@ def test_get_lora_config_keeps_all_adapters(tmp_path, fake_lora_api):
     config = get_lora_config([str(path) for path in adapter_paths], ["0.5", "1.5"])
 
     assert len(config.adapters) == 2
-    assert [alpha for _, alpha in config.adapters] == [0.5, 1.5]
+    assert [
+        (adapter.path, alpha) for adapter, alpha in config.adapters
+    ] == [
+        (str(adapter_paths[0]), 0.5),
+        (str(adapter_paths[1]), 1.5),
+    ]
 
 
 def test_get_lora_config_uses_static_rank_mode(tmp_path, fake_lora_api):
