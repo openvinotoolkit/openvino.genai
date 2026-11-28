@@ -242,6 +242,9 @@ public:
     }
 
     void start_rerank_async(const std::string& query, const std::vector<std::string>& texts) {
+        // with no documents the model still returns one score row, which would be reported as a document that does not exist
+        OPENVINO_ASSERT(!texts.empty(), "List of texts passed to pipeline should not be empty");
+
         const TokenizedInputs& encoded = tokenize(query, texts);
 
         m_request.set_tensor("input_ids", encoded.input_ids);
