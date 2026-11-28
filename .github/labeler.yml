@@ -230,6 +230,7 @@
 
 'category: GGUF':
 - 'src/cpp/src/gguf_utils/**'
+- 'tests/cpp/test_gguf_*.cpp'
 - 'tests/python_tests/**'
 
 'category: Structured Output samples':
@@ -240,7 +241,9 @@
 
 'category: build':
 - 'cmake/**/*'
-- '**/CMakeLists.txt'
+- any:
+  - '**/CMakeLists.txt'
+  - '!tests/python_tests/gguf_reference/CMakeLists.txt'
 - '**/*.cmake'
 - 'pyproject.toml'
 - 'requirements-build.txt'

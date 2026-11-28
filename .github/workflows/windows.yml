@@ -971,7 +971,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
+    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching || fromJSON(needs.smart_ci.outputs.affected_components).GGUF }}
     timeout-minutes: 90
     defaults:
       run:
@@ -1012,6 +1012,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Convert models for cache types gtests
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
           $csvPath = "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           Get-Content $csvPath | ForEach-Object {
@@ -1026,6 +1027,7 @@ jobs:
           }
 
       - name: gtests unit tests
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
           & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe" --gtest_filter="-AddSecondInputTest.*"
@@ -1037,7 +1039,15 @@ jobs:
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
           OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/Release/openvino_tokenizers.dll"
 
+      - name: GGUF gtests
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF && !fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
+        run: |
+          . "${{ env.INSTALL_DIR }}/setupvars.ps1"
+          & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe" --gtest_filter="*GGUF*"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Test C++ Tools
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
