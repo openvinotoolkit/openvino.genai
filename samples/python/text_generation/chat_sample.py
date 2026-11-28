@@ -24,7 +24,10 @@ def main():
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
+    # Customize the system prompt to set the assistant's role and behavior.
+    system_prompt = "You are a helpful assistant."
     chat_history = openvino_genai.ChatHistory()
+    chat_history.append({"role": "system", "content": system_prompt})
     while True:
         try:
             prompt = input("question:\n")

@@ -141,7 +141,7 @@ You need to manually append user prompts and model responses to the `ChatHistory
 
 ### System Prompt
 
-Add a system message at the beginning to set the assistant's behavior:
+A system prompt is an optional message at the start of the chat history that guides the assistant's behavior.
 
 <LanguageTabs>
     <TabItemPython>
@@ -184,6 +184,10 @@ Add a system message at the beginning to set the assistant's behavior:
         ```
     </TabItemJS>
 </LanguageTabs>
+
+:::info
+The system prompt only takes effect if the model's chat template supports the `system` role.
+:::
 
 ### Chat History Metadata
 
