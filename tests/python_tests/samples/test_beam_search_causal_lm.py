@@ -120,7 +120,8 @@ class TestBeamSearchCausalLM:
             return
         
         import transformers
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'], local_files_only=True)
+
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model["name"])
         for prompt in sample_args:
             if tokenizer.chat_template:
                 prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
@@ -139,7 +140,7 @@ class TestBeamSearchCausalLM:
             }
             if is_transformers_version(">=", "4.51"):
                 generate_args.update(group_beam_search_generate_kwargs())
-            for beam in transformers.LlamaForCausalLM.from_pretrained(model["name"], local_files_only=True).generate(
+            for beam in transformers.LlamaForCausalLM.from_pretrained(model["name"]).generate(
                 **tokenized, **generate_args
             ):
                 ref = ": " + tokenizer.decode(beam[tokenized["input_ids"].numel() :], skip_special_tokens=True)
