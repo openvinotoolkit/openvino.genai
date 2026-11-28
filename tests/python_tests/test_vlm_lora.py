@@ -29,11 +29,15 @@ from test_vlm_pipeline import (
 
 # Qwen3.5 is multimodal on its own, there is no separate VL line for it.
 VISION_LORA_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3.5"
+# An architecture whose inputs embedder does not support visual LoRA.
+UNSUPPORTED_VISION_LORA_MODEL_ID = "optimum-intel-internal-testing/tiny-random-mistral3"
 
-pytestmark = [
-    pytest.mark.vlm,
-    pytest.mark.parametrize("model_id", [VISION_LORA_MODEL_ID], scope="module"),
-]
+pytestmark = pytest.mark.vlm
+
+
+@pytest.fixture(scope="module")
+def model_id() -> str:
+    return VISION_LORA_MODEL_ID
 
 
 def _build_vision_lora(models_path: Path, adapter_path: Path, rank: int = 2) -> int:
@@ -161,3 +165,101 @@ def test_vlm_vision_lora_cb_constructors(with_tokenizer, vision_lora, cat_tensor
         PROMPTS[0], images=[cat_tensor], generation_config=GenerationConfig(max_new_tokens=10, do_sample=False)
     )
     assert without_adapters[0].texts[0] == reference_without_adapters.texts[0]
+
+
+@pytest.fixture(scope="module")
+def unsupported_vision_lora_model() -> Path:
+    pytest.importorskip("transformers", minversion="5.2.0")
+    return _get_ov_model(UNSUPPORTED_VISION_LORA_MODEL_ID)
+
+
+def _create_unsupported_visual_lora_pipeline(
+    models_path: Path, backend: str, target_modules, unsupported_visual_lora: bool, tmp_path: Path
+) -> None:
+    from safetensors.numpy import save_file
+
+    properties = {}
+    if target_modules:
+        # Rank 2 LoRA for the 64x64 projections of tiny-random-mistral3, so language model layers accept it.
+        shapes = {"A": (2, 64), "B": (64, 2)}
+        tensors = {
+            f"base_model.model.{module}.lora_{matrix}.weight": np.ones(shapes[matrix], dtype=np.float32)
+            for module in target_modules
+            for matrix in ("A", "B")
+        }
+        adapter_path = tmp_path / "adapter.safetensors"
+        save_file(tensors, str(adapter_path))
+        properties["adapters"] = AdapterConfig(Adapter(str(adapter_path)))
+    elif target_modules is not None:
+        properties["adapters"] = AdapterConfig()
+
+    if unsupported_visual_lora:
+        with pytest.raises(RuntimeError, match="Visual LoRA adapters are not supported"):
+            VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, **properties)
+    else:
+        VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend, **properties)
+
+
+# The adapter check does not depend on the attention backend, so one backend covers the names.
+@pytest.mark.parametrize(
+    "target_modules, unsupported_visual_lora",
+    [
+        pytest.param(["model.visual.blocks.0.attn.q_proj"], True, id="qwen-vision"),
+        pytest.param(["vision_tower.vision_model.encoder.layers.0.self_attn.q_proj"], False, id="other-vision"),
+        pytest.param(["model.layers.0.self_attn.q_proj", "model.visual.blocks.0.attn.q_proj"], True, id="mixed"),
+        pytest.param(["model.layers.0.self_attn.q_proj"], False, id="lm-only"),
+        pytest.param(["model.layers.0.mlp1"], False, id="lm-mlp1"),
+        pytest.param(["model.visual_extra.blocks.0.attn.q_proj"], False, id="similar-prefix"),
+        pytest.param(["other.visual.blocks.0.attn.q_proj"], False, id="different-prefix"),
+        pytest.param([], False, id="empty"),
+        pytest.param(None, False, id="omitted"),
+    ],
+)
+def test_vlm_unsupported_visual_lora_constructor(
+    target_modules, unsupported_visual_lora, unsupported_vision_lora_model: Path, tmp_path: Path
+) -> None:
+    _create_unsupported_visual_lora_pipeline(
+        unsupported_vision_lora_model, "SDPA", target_modules, unsupported_visual_lora, tmp_path
+    )
+
+
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+@pytest.mark.parametrize(
+    "target_modules, unsupported_visual_lora",
+    [
+        pytest.param(["model.visual.blocks.0.attn.q_proj"], True, id="qwen-vision"),
+        pytest.param(["model.layers.0.self_attn.q_proj"], False, id="lm-only"),
+    ],
+)
+def test_vlm_unsupported_visual_lora_constructor_backends(
+    backend, target_modules, unsupported_visual_lora, unsupported_vision_lora_model: Path, tmp_path: Path
+) -> None:
+    _create_unsupported_visual_lora_pipeline(
+        unsupported_vision_lora_model, backend, target_modules, unsupported_visual_lora, tmp_path
+    )
+
+
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+def test_vlm_unsupported_visual_lora_generate(backend, unsupported_vision_lora_model, vision_lora) -> None:
+    _, adapter = vision_lora
+    pipe = VLMPipeline(unsupported_vision_lora_model, "CPU", ATTENTION_BACKEND=backend)
+    with pytest.raises(RuntimeError, match="Visual LoRA adapters are not supported"):
+        pipe.generate(PROMPTS[0], max_new_tokens=1, adapters=AdapterConfig(adapter))
+
+
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+def test_vlm_visual_lora_requires_constructor_config(backend, vision_lora) -> None:
+    models_path, adapter = vision_lora
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    with pytest.raises(RuntimeError, match="Visual LoRA was not enabled when this pipeline was created"):
+        pipe.generate(PROMPTS[0], max_new_tokens=1, adapters=AdapterConfig(adapter))
+
+
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+@pytest.mark.parametrize("role", ["language_model", "vision_embeddings_merger"])
+def test_vlm_per_model_adapters_rejected(role, backend, vision_lora) -> None:
+    models_path, adapter = vision_lora
+    with pytest.raises(RuntimeError, match=f"LoRA adapters can't be set for a single model role \\('{role}'\\)"):
+        VLMPipeline(
+            models_path, "CPU", ATTENTION_BACKEND=backend, MODEL_PROPERTIES={role: {"adapters": AdapterConfig(adapter)}}
+        )

@@ -118,6 +118,7 @@ public:
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos) const override;
 
+    static bool has_visual_lora(const AdapterConfig& adapters);
     void set_adapters(const std::optional<AdapterConfig>& adapters) override;
     std::optional<std::string> get_lora_tensor_prefix() const override;
 

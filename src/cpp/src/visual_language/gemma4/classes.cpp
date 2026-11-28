@@ -13,6 +13,7 @@
 #include <string_view>
 
 #include "logger.hpp"
+#include "lora/helper.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
@@ -334,7 +335,8 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
     patch_chat_template();
-    m_audio_encoder = AudioEncoderGemma4::create(model_dir, vlm_config.model_type, device, device_config);
+    const auto filtered_properties = extract_adapters_from_properties(device_config);
+    m_audio_encoder = AudioEncoderGemma4::create(model_dir, vlm_config.model_type, device, *filtered_properties);
 
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
@@ -345,7 +347,7 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
     auto compiled = utils::singleton_core().compile_model(
         per_layer_model_path,
         device,
-        utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
+        utils::get_model_properties(*filtered_properties, "text_embeddings_per_layer", device));
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),
@@ -362,8 +364,9 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
     patch_chat_template();
+    const auto filtered_properties = extract_adapters_from_properties(device_config);
     m_audio_encoder =
-        AudioEncoderGemma4::create(models_map, vlm_config.model_type, config_dir_path, device, device_config);
+        AudioEncoderGemma4::create(models_map, vlm_config.model_type, config_dir_path, device, *filtered_properties);
 
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
@@ -378,7 +381,7 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
         model_str,
         weights,
         device,
-        utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
+        utils::get_model_properties(*filtered_properties, "text_embeddings_per_layer", device));
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),

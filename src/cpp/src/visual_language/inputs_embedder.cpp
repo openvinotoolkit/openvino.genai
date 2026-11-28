@@ -37,6 +37,7 @@
 #include "visual_language/lfm3_vl/classes.hpp"
 
 #include "continuous_batching/timer.hpp"
+#include "lora/helper.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -109,8 +110,8 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const std::string& device,
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
-    m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
-    m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
+    m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, *extract_adapters_from_properties(device_config))),
+    m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, *extract_adapters_from_properties(device_config))),
     m_tokenizer{tokenizer},
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
@@ -127,17 +128,23 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         config_dir_path,
         m_vlm_config.model_type,
         device,
-        device_config
+        *extract_adapters_from_properties(device_config)
     )),
     m_embedding(EmbeddingsModel::create(
         utils::get_model_weights_pair(models_map, "text_embeddings").first,
         utils::get_model_weights_pair(models_map, "text_embeddings").second,
         m_vlm_config.scale_emb,
         device,
-        device_config
+        *extract_adapters_from_properties(device_config)
     )),
     m_tokenizer(tokenizer),
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
+
+void InputsEmbedder::IInputsEmbedder::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    OPENVINO_ASSERT(!adapters || !InputsEmbedderQwen2VL::has_visual_lora(*adapters),
+                    "Visual LoRA adapters are not supported by this model's inputs embedder. "
+                    "Only language-model LoRA adapters are supported.");
+}
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     const bool add_special_tokens =
@@ -355,6 +362,7 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const Tokenizer& tokenizer,
                                const std::string& device,
                                const ov::AnyMap device_config) {
+    validate_no_per_model_adapters(device_config);
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -417,6 +425,10 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
+
+    std::optional<AdapterConfig> adapters;
+    update_adapters_from_properties(device_config, adapters);
+    m_impl->set_adapters(adapters);
 }
 
 InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
@@ -424,6 +436,7 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                const std::filesystem::path& config_dir_path,
                                const std::string& device,
                                const ov::AnyMap device_config) {
+    validate_no_per_model_adapters(device_config);
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -486,6 +499,10 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
+
+    std::optional<AdapterConfig> adapters;
+    update_adapters_from_properties(device_config, adapters);
+    m_impl->set_adapters(adapters);
 }
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {

@@ -199,8 +199,7 @@ private:
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
         if (m_generation_config.adapters) {
-            // Forward the adapters to InputsEmbedder sub-models before the language model prefix is set below.
-            properties_copy[utils::FORWARDED_ADAPTERS_PROPERTY] = *m_generation_config.adapters;
+            properties_copy[AdaptersProperty::name()] = *m_generation_config.adapters;
         }
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
@@ -214,8 +213,6 @@ private:
         //     MODEL_PROPERTIES: { "language_model": {...}, "vision_embeddings": {...} }
         // }
         auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
-        // Adapters addressed to the language model role, resolved the same way continuous batching does.
-        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
         lm_properties.erase(AdaptersProperty::name());
 
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
@@ -270,7 +267,8 @@ private:
                 return std::filesystem::exists(models_dir / ("openvino_" + std::string(name) + "_model.xml"));
             })) {
             m_speech_engine =
-                std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device, properties_copy);
+                std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device,
+                                                       *extract_adapters_from_properties(properties_copy));
         }
     }
 
@@ -291,12 +289,10 @@ private:
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
         if (m_generation_config.adapters) {
-            // Forward the adapters to InputsEmbedder sub-models before the language model prefix is set below.
-            properties_copy[utils::FORWARDED_ADAPTERS_PROPERTY] = *m_generation_config.adapters;
+            properties_copy[AdaptersProperty::name()] = *m_generation_config.adapters;
         }
 
         auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
-        update_adapters_from_properties(lm_properties, m_generation_config.adapters);
         lm_properties.erase(AdaptersProperty::name());
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
@@ -334,7 +330,7 @@ private:
                                                                      m_language,
                                                                      m_embedding,
                                                                      device,
-                                                                     properties_copy);
+                                                                     *extract_adapters_from_properties(properties_copy));
         }
     }
 public:

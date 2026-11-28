@@ -28,16 +28,18 @@ bool update_adapters_from_properties (const AnyMap& properties, std::optional<Ad
     return false;
 }
 
-AnyMap forward_adapters_to_submodels (const AnyMap& properties,
-                                     const std::optional<AdapterConfig>& default_adapters) {
-    auto adapters = default_adapters;
-    AnyMap result = *extract_adapters_from_properties(properties, &adapters);
-    if (adapters) {
-        result[utils::FORWARDED_ADAPTERS_PROPERTY] = *adapters;
+void validate_no_per_model_adapters(const AnyMap& properties) {
+    const auto per_model_properties = properties.find(utils::PER_MODEL_PROPERTIES);
+    if (per_model_properties == properties.end()) {
+        return;
     }
-    return result;
+    for (const auto& [role, role_properties] : per_model_properties->second.as<AnyMap>()) {
+        OPENVINO_ASSERT(role_properties.as<AnyMap>().count(AdaptersProperty::name()) == 0,
+                        "LoRA adapters can't be set for a single model role ('", role, "') in ",
+                        utils::PER_MODEL_PROPERTIES, ". Pass them as the top-level '", AdaptersProperty::name(),
+                        "' property.");
+    }
 }
-
 
 void update_adapters_in_properties(utils::SharedOptional<const AnyMap>& properties, const AdapterConfigAction& action) {
     std::optional<AdapterConfig> adapter_config;

@@ -9,6 +9,7 @@
 
 #include "utils.hpp"
 #include "logger.hpp"
+#include "lora/helper.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -364,8 +365,9 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     if (m_use_patched_pos_model) {
         pos_model = patch_weighted_sum_into_pos_model(pos_model);
     }
+    auto filtered_properties = extract_adapters_from_properties(device_config);
     auto pos_compiled = utils::singleton_core().compile_model(
-        pos_model, device, utils::get_model_properties(device_config, "vision_embeddings_pos", device));
+        pos_model, device, utils::get_model_properties(*filtered_properties, "vision_embeddings_pos", device));
     m_ireq_queue_vision_embeddings_pos = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         pos_compiled.get_property(ov::optimal_number_of_infer_requests),
         [&pos_compiled]() -> ov::InferRequest {
@@ -388,8 +390,9 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     if (m_use_patched_pos_model) {
         pos_model = patch_weighted_sum_into_pos_model(pos_model);
     }
+    auto filtered_properties = extract_adapters_from_properties(device_config);
     auto pos_compiled = utils::singleton_core().compile_model(
-        pos_model, device, utils::get_model_properties(device_config, "vision_embeddings_pos", device));
+        pos_model, device, utils::get_model_properties(*filtered_properties, "vision_embeddings_pos", device));
     m_ireq_queue_vision_embeddings_pos = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         pos_compiled.get_property(ov::optimal_number_of_infer_requests),
         [&pos_compiled]() -> ov::InferRequest {

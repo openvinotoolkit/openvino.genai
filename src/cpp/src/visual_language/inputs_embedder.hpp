@@ -221,7 +221,7 @@ private:
 
     public:
         // Architectures that support LoRA for the vision part override this to pick up the per-generation config.
-        virtual void set_adapters(const std::optional<AdapterConfig>& adapters) {}
+        virtual void set_adapters(const std::optional<AdapterConfig>& adapters);
         virtual std::optional<std::string> get_lora_tensor_prefix() const { return std::nullopt; }
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 

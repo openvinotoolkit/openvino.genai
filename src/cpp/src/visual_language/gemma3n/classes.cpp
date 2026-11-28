@@ -3,6 +3,7 @@
 
 #include "visual_language/gemma3n/classes.hpp"
 
+#include "lora/helper.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
@@ -56,7 +57,7 @@ InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
     auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
     auto core = utils::singleton_core();
     auto model = core.read_model(per_layer_model_path);
-    const auto properties = utils::get_model_properties(device_config, "text_embeddings_per_layer", device);
+    const auto properties = utils::get_model_properties(*extract_adapters_from_properties(device_config), "text_embeddings_per_layer", device);
     auto compiled_model = core.compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings per layer model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -78,7 +79,7 @@ InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
     OPENVINO_ASSERT(it != models_map.end(), "Per-layer text embeddings model not found in models map");
 
     const auto& [model_str, weights] = it->second;
-    const auto properties = utils::get_model_properties(device_config, "text_embeddings_per_layer", device);
+    const auto properties = utils::get_model_properties(*extract_adapters_from_properties(device_config), "text_embeddings_per_layer", device);
     auto compiled_model = utils::singleton_core().compile_model(model_str, weights, device, properties);
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings per layer model");
