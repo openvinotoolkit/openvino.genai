@@ -572,9 +572,11 @@ def parse_args():
 def check_args(args):
     if args.base_model is None and args.gt_data is None:
         raise ValueError("Whether --base-model or --gt-data should be provided")
-    if args.target_model is None and args.gt_data is None and args.target_data:
+    if args.target_model is None and args.target_data and not os.path.isfile(args.target_data):
         raise ValueError(
-            "Whether --target-model, --target-data or --gt-data should be provided")
+            f"Target data file '{args.target_data}' is not an existing file. "
+            "Provide an existing --target-data file or set --target-model to generate it."
+        )
     if (
         args.genai
         and args.model_type == "text-to-image"
