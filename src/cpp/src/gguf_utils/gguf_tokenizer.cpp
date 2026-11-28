@@ -509,15 +509,24 @@ static void pb_append_tag_len(std::vector<uint8_t>& buf, uint32_t field, const s
     buf.insert(buf.end(), msg.begin(), msg.end());
 }
 
+// SentencePiece flavours of the GGUF tokenizer models. llama is SentencePiece BPE; t5 (llama.cpp
+// UGM) and plamo2/plamo3 are unigram (Viterbi over the piece scores). PLaMo pieces spell spaces
+// literally, so their whitespace is neither escaped to U+2581 nor collapsed.
+struct SpmOptions {
+    bool unigram = false;
+    bool add_dummy_prefix = true;
+    bool remove_extra_whitespaces = true;
+    bool escape_whitespaces = true;
+};
+
 static std::vector<uint8_t> build_spm_model_proto(const std::vector<std::string>& tokens,
-                                                   const std::vector<float>& scores,
-                                                   const std::vector<int32_t>& token_types,
-                                                   bool add_dummy_prefix,
-                                                   bool remove_extra_whitespaces,
-                                                   int32_t unk_id = -1,
-                                                   int32_t bos_id = -1,
-                                                   int32_t eos_id = -1,
-                                                   int32_t pad_id = -1) {
+                                                  const std::vector<float>& scores,
+                                                  const std::vector<int32_t>& token_types,
+                                                  const SpmOptions& options,
+                                                  int32_t unk_id = -1,
+                                                  int32_t bos_id = -1,
+                                                  int32_t eos_id = -1,
+                                                  int32_t pad_id = -1) {
     std::vector<uint8_t> proto;
     // SentencePiece resolves BOS/EOS/UNK/PAD by piece string (TrainerSpec.bos_piece etc.), not by
     // id, so override those strings with the actual vocab pieces at the GGUF's token ids.
@@ -559,12 +568,12 @@ static std::vector<uint8_t> build_spm_model_proto(const std::vector<std::string>
         pb_append_tag_len(proto, 1, piece_msg);
     }
 
-    // trainer_spec (field 2): model_type=BPE, byte_fallback=true, special-token ids/pieces from
+    // trainer_spec (field 2): model_type=BPE/UNIGRAM, byte_fallback=true, special-token ids/pieces from
     // the GGUF (SentencePiece's own bos_id=1/eos_id=2/unk_id=0 defaults don't match GGUF ids).
     {
         std::vector<uint8_t> ts;
         ts.push_back(0x18);  // field 3 varint (model_type)
-        pb_append_varint(ts, 2);  // BPE
+        pb_append_varint(ts, options.unigram ? 1 : 2);  // UNIGRAM : BPE
         auto put_id = [&ts](uint32_t field, int32_t id) {
             if (id < 0)
                 return;
@@ -603,9 +612,11 @@ static std::vector<uint8_t> build_spm_model_proto(const std::vector<std::string>
         ns.insert(ns.end(), name.begin(), name.end());
         // field 3: add_dummy_prefix
         pb_append_varint(ns, (3ULL << 3) | 0);
-        ns.push_back(add_dummy_prefix ? 1 : 0);
+        ns.push_back(options.add_dummy_prefix ? 1 : 0);
         pb_append_varint(ns, (4ULL << 3) | 0);
-        ns.push_back(remove_extra_whitespaces ? 1 : 0);
+        ns.push_back(options.remove_extra_whitespaces ? 1 : 0);
+        pb_append_varint(ns, (5ULL << 3) | 0);
+        ns.push_back(options.escape_whitespaces ? 1 : 0);
         pb_append_tag_len(proto, 3, ns);
     }
 
@@ -693,6 +704,24 @@ static void promote_unknown_token_type(std::vector<int32_t>& token_types,
         token_types[unk_id] = 2;
 }
 
+// Defaults follow llama.cpp (llama-vocab.cpp); explicit GGUF flags win.
+static SpmOptions spm_options(const std::string& model, const std::map<std::string, GGUFMetaData>& tokenizer_config) {
+    SpmOptions options;
+    if (model == "llama") {
+        options.add_dummy_prefix = read_tokenizer_flag(tokenizer_config, "add_space_prefix", true);
+        return options;
+    }
+    options.unigram = true;
+    options.add_dummy_prefix = read_tokenizer_flag(tokenizer_config, "add_space_prefix", false);
+    options.remove_extra_whitespaces = read_tokenizer_flag(tokenizer_config, "remove_extra_whitespaces", false);
+    options.escape_whitespaces = model == "t5";
+    return options;
+}
+
+static bool is_sentencepiece_model(const std::string& model) {
+    return model == "llama" || model == "t5" || model == "plamo2" || model == "plamo3";
+}
+
 // A u8 Constant holding the bytes of @p str, as expected by the string ops.
 static ov::Output<ov::Node> u8_string_constant(const std::string& str) {
     ov::Tensor tensor(ov::element::u8, {str.size()});
@@ -700,11 +729,12 @@ static ov::Output<ov::Node> u8_string_constant(const std::string& str) {
     return std::make_shared<v0::Constant>(tensor)->output(0);
 }
 
-// Build SentencePiece (model="llama") tokenizer outputs from a serialized ModelProto via the
+// Build SentencePiece (llama, t5, plamo2, plamo3) tokenizer outputs from a serialized ModelProto via the
 // SentencepieceTokenizer op.
 static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaData>& tokenizer_config,
-                                          ov::OutputVector inputs,
-                                          const FactoryCreateType& create_func) {
+                                         const std::string& model,
+                                         ov::OutputVector inputs,
+                                         const FactoryCreateType& create_func) {
     // tokenizer_config outlives this call, so read the vocabulary in place instead of copying it.
     const auto* vocab_ptr = std::get_if<std::vector<std::string>>(&tokenizer_config.at("tokens"));
     ov::Tensor token_types_tensor;
@@ -731,9 +761,6 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
 
     promote_unknown_token_type(token_types, tokenizer_config);
 
-    // Leading metaspace prefix; gemma3 sets it false.
-    const bool add_space_prefix = read_tokenizer_flag(tokenizer_config, "add_space_prefix", true);
-
     // Special-token ids from the GGUF, baked into the SP proto's trainer_spec.
     const int32_t unk_id = read_tokenizer_id(tokenizer_config, "unknown_token_id");
     const int32_t bos_id = read_tokenizer_id(tokenizer_config, "bos_token_id");
@@ -741,8 +768,14 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
     const int32_t pad_id = read_tokenizer_id(tokenizer_config, "padding_token_id");
 
     // Build the serialized ModelProto and wrap as a u8 Constant (first input to SentencepieceTokenizer)
-    auto proto_bytes =
-        build_spm_model_proto(vocab, scores, token_types, add_space_prefix, true, unk_id, bos_id, eos_id, pad_id);
+    auto proto_bytes = build_spm_model_proto(vocab,
+                                             scores,
+                                             token_types,
+                                             spm_options(model, tokenizer_config),
+                                             unk_id,
+                                             bos_id,
+                                             eos_id,
+                                             pad_id);
     auto sp_model_const = std::make_shared<v0::Constant>(element::u8, Shape{proto_bytes.size()}, proto_bytes.data());
 
     // inputs = SpecialTokensSplit outputs: [ragged_begins(0), ragged_ends(1), begins(2), ends(3), chars(4), ...]
@@ -797,11 +830,12 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
     if (auto val = std::get_if<std::string>(&tokenizer_config.at("model"))) {
         model = *val;
     }
-    // plamo2 uses the same SentencePiece BPE format as llama
-    const std::string effective_model = (model == "plamo2") ? "llama" : model;
-    OPENVINO_ASSERT(effective_model == "gpt2" || effective_model == "llama" || effective_model == "gemma4",
-                    "[gguf tokenizer] Unsupported tokenizer model '", model,
-                    "'. Supported: 'gpt2' (BPE), 'llama'/'plamo2' (SentencePiece BPE), 'gemma4' (SPM-style BPE).");
+    const bool sentencepiece = is_sentencepiece_model(model);
+    OPENVINO_ASSERT(sentencepiece || model == "gpt2" || model == "gemma4",
+                    "[gguf tokenizer] Unsupported tokenizer model '",
+                    model,
+                    "'. Supported: 'gpt2' (BPE), 'llama' (SentencePiece BPE), 't5'/'plamo2'/'plamo3' (SentencePiece "
+                    "unigram), 'gemma4' (SPM-style BPE).");
 
     OutputVector outputs = create_func("StringTensorUnpack", {tokenizer_input}, {});
 
@@ -809,7 +843,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
     // string (indices 0,1,2 = begins/ends/chars) before the ragged dimension is added. It does
     // NOT prepend a leading metaspace (llama.cpp gemma4: add_space_prefix=false), so only the
     // space->metaspace replacement is applied.
-    if (effective_model == "gemma4") {
+    if (model == "gemma4") {
         const std::string metaspace = "\xe2\x96\x81";  // U+2581 ▁
         ov::OutputVector in(outputs.begin(), outputs.begin() + 3);
         in.push_back(u8_string_constant(" "));
@@ -851,15 +885,28 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
     inputs_to_split.push_back(const_special_tokens->output(0));
     outputs = create_func("SpecialTokensSplit", inputs_to_split, {});
 
-    if (effective_model == "llama") {
+    if (sentencepiece) {
         // SentencePiece: SP handles word splitting internally; skip BPE-style RegexSplit.
         // outputs[0..2] = ragged string (begins, ends, chars) from SpecialTokensSplit.
-        outputs = parse_spm_config(tokenizer_config, outputs, create_func);
+        if (model == "plamo3") {
+            // PLaMo-3 pre-segmentation (llama.cpp llm_tokenizer_plamo2 with pre_segment): isolate
+            // <|plamo:...|> tags, runs of 2+ spaces and runs of 4+ identical characters other than
+            // '\n', and drop the U+EE00 boundary marker.
+            const auto split = [&](const std::string& pattern, const std::string& behaviour) {
+                outputs.push_back(u8_string_constant(pattern));
+                outputs = create_func("RegexSplit",
+                                      outputs,
+                                      {{"behaviour", behaviour}, {"invert", false}, {"max_splits", -1}});
+            };
+            split("<\\|plamo:[^|\\s\\x{1C}-\\x{1F}]{0,64}\\|>| {2,}|([^\\n])\\1{3,}", "isolate");
+            split("\\x{EE00}", "remove");
+        }
+        outputs = parse_spm_config(tokenizer_config, model, outputs, create_func);
         // outputs = [begins, ends, values] (ragged token ids, i32)
     } else {
         // BPE: gpt2 is byte-level BPE with regex pre-tokenization; gemma4 is SPM-style BPE over
         // the raw-UTF8 vocab, split only on newlines (mirrors llama.cpp's GEMMA4 pre-type).
-        if (effective_model == "gemma4") {
+        if (model == "gemma4") {
             const std::string newline_split = "[^\\n]+|[\\n]+";
             ov::Tensor ov_split_re(ov::element::u8, {newline_split.size()});
             std::memcpy(ov_split_re.data<uint8_t>(), newline_split.data(), newline_split.size());
@@ -911,11 +958,10 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
                 pre = *val;
             }
         }
-        const bool default_add_bos =
-            (effective_model == "llama") || (effective_model == "gemma4") || pre_tokenizer_adds_bos(pre);
+        const bool default_add_bos = (model == "llama") || (model == "gemma4") || pre_tokenizer_adds_bos(pre);
 
         const bool add_bos = read_tokenizer_flag(tokenizer_config, "add_bos_token", default_add_bos);
-        const bool add_eos = read_tokenizer_flag(tokenizer_config, "add_eos_token", false);
+        const bool add_eos = read_tokenizer_flag(tokenizer_config, "add_eos_token", model == "t5");
         const int32_t bos_id = read_tokenizer_id(tokenizer_config, "bos_token_id");
         const int32_t eos_id = read_tokenizer_id(tokenizer_config, "eos_token_id");
 
@@ -981,7 +1027,7 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         std::make_shared<v0::Parameter>(element::i64, PartialShape{Dimension::dynamic(), Dimension::dynamic()});
 
     std::shared_ptr<Model> detokenizer;
-    if (effective_model == "llama") {
+    if (sentencepiece) {
         // SentencepieceDetokenizer: takes (sp_model_u8, token_ids_i32) → ragged string
         std::vector<int32_t> spm_types(token_types.data<int32_t>(),
                                        token_types.data<int32_t>() + token_types.get_size());
@@ -994,8 +1040,9 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         // Mirror the tokenizer's add_space_prefix so detokenization strips the leading
         // metaspace symmetrically; SentencePiece otherwise strips leading whitespace even
         // when add_dummy_prefix is false.
-        const bool detok_add_space_prefix = read_tokenizer_flag(tokenizer_config, "add_space_prefix", true);
-        auto proto_bytes = build_spm_model_proto(tokens, spm_scores, spm_types, detok_add_space_prefix, false);
+        auto detok_options = spm_options(model, tokenizer_config);
+        detok_options.remove_extra_whitespaces = false;
+        auto proto_bytes = build_spm_model_proto(tokens, spm_scores, spm_types, detok_options);
         auto sp_model_const =
             std::make_shared<v0::Constant>(element::u8, Shape{proto_bytes.size()}, proto_bytes.data());
         auto ids_i32 = std::make_shared<v0::Convert>(detokenizer_input, element::i32)->output(0);
@@ -1008,9 +1055,9 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
         detokenizer = std::make_shared<Model>(packed, ParameterVector{detokenizer_input}, "detokenizer");
     } else {
         // BPE detokenizer: VocabDecoder + FuzeRagged + UTF8Validate.
-        const bool byte_encode = (effective_model != "gemma4");
+        const bool byte_encode = (model != "gemma4");
         auto vocab = parse_bbpe_vocab(tokens, token_types, byte_encode);
-        if (effective_model == "gemma4") {
+        if (model == "gemma4") {
             // Unescape ordinary pieces before concatenation, preserving literal atomic tokens.
             const std::string metaspace = "\xe2\x96\x81";
             for (size_t i = 0; i < tokens.size(); ++i) {
