@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import logging as log
 import sys
-from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput
+from llm_bench_utils.gen_output_data import get_end_to_end_token_throughput, get_latency_samples
 
 MAX_INPUT_TXT_IN_LOG = 1024
 
@@ -329,8 +329,6 @@ def output_avg_statis_tokens(
 ):
     iter_alias = "C" if chat_mode else "P"
     for iter_idx in inputs_idx_list:
-        avg_1st_token_latency = 0
-        avg_2nd_tokens_latency = 0
         avg_2nd_token_tput = 0
         avg_input_size = 0
         input_sizes = []
@@ -346,12 +344,6 @@ def output_avg_statis_tokens(
             if (chat_mode and iter_data["chat_idx"] == iter_idx) or (
                 not chat_mode and iter_data["prompt_idx"] == iter_idx
             ):
-                avg_1st_token_latency += (
-                    iter_data["first_token_latency"] if iter_data["first_token_latency"] != "" else 0
-                )
-                avg_2nd_tokens_latency += (
-                    iter_data["other_tokens_avg_latency"] if iter_data["other_tokens_avg_latency"] != "" else 0
-                )
                 # chat includes several different inputs, but they are same on all interation
                 # let's collect it once
                 if chat_mode:
@@ -362,8 +354,10 @@ def output_avg_statis_tokens(
                 index_num = index_num + 1
                 input_iter_data_list.append(iter_data)
         if index_num > 0:
-            avg_1st_token_latency = avg_1st_token_latency / index_num
-            avg_2nd_tokens_latency = avg_2nd_tokens_latency / index_num
+            first_latencies = get_latency_samples(data["first_token_latency"] for data in input_iter_data_list)
+            other_latencies = get_latency_samples(data["other_tokens_avg_latency"] for data in input_iter_data_list)
+            avg_1st_token_latency = sum(first_latencies) / len(first_latencies) if first_latencies else -1
+            avg_2nd_tokens_latency = sum(other_latencies) / len(other_latencies) if other_latencies else -1
             if avg_2nd_tokens_latency > 0:
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
             # in chat mode we need just last input size, because it increase with every iteration

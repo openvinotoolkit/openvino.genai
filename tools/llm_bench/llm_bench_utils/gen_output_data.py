@@ -48,6 +48,11 @@ def gen_iterate_data(
     return iter_data
 
 
+def get_latency_samples(values):
+    # Negative values indicate that no latency was measured.
+    return [value for value in values if value is not None and value != "" and value >= 0]
+
+
 def get_end_to_end_token_throughput(iter_data_list):
     measured = [data for data in iter_data_list if data["iteration"] != 0 and "end_to_end_token_throughput" in data]
     total_time = sum(data["generation_time"] for data in measured)
