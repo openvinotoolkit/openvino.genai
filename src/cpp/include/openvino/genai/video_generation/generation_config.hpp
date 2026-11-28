@@ -28,8 +28,7 @@ struct VideoGenerationConfig {
 
     /**
      * Random generator to initialize latents, add noise to initial images in case of image to image / inpainting pipelines
-     * By default, random generator is initialized as `CppStdGenerator(generation_config.rng_seed)`
-     * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
+     * If not specified, the pipeline initializes the generator with seed 42.
      */
     std::shared_ptr<Generator> generator = nullptr;
 
