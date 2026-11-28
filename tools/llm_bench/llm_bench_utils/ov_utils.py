@@ -79,13 +79,12 @@ def get_lora_config(lora_paths, lora_alphas, lora_mode=None):
         lora_mode = modes[lora_mode]
         log.info(f"LoRA adapters loading mode: {lora_mode}")
 
-    adapter_config = list()
     if not lora_paths:
-        return adapter_config
+        return list()
 
     if len(lora_paths) != len(lora_alphas):
         log.warning('Amount of provided LoRA paths and alphas is not eq. LoRA will be ignored.')
-        return adapter_config
+        return list()
 
     adapter_config = None
     for idx in range(len(lora_paths)):
