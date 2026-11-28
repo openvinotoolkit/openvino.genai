@@ -14,15 +14,44 @@ The generated audio signal is a single-channel (mono) waveform, and the sampling
 (for example, SpeechT5 outputs 16 kHz and Qwen3-TTS outputs 24 kHz).
 :::
 
+## Choose a model family
+
+| Model family | Best for | Typical required inputs | Common options |
+| --- | --- | --- | --- |
+| SpeechT5 | Baseline TTS with explicit voice embedding | Text + speaker embedding file | Speaker embedding path |
+| Kokoro | Fast multilingual TTS with fixed voice files | Text + speaker embedding from `voices/*.bin` | `language`, `speed`, optional fallback phonemizer model |
+| Qwen3-TTS CustomVoice | Built-in speaker identities and optional speaking style | Text + speaker name | `speaker`, optional `instruct` |
+| Qwen3-TTS VoiceDesign | Create a new voice from natural language description | Text + `instruct` | `instruct`, optional `seed` |
+| Qwen3-TTS Base | Voice cloning from reference speech | Text + reference audio (or precomputed speaker embedding / codec ids) | `ref_audio`, `ref_text`, `ref_codec_ids` |
+
+See all supported [Speech Generation Models](/docs/supported-models/#speech-generation-models).
+
 <ConvertModelSection>
-    Download and convert model (for example, [speecht5_tts](https://huggingface.co/microsoft/speecht5_tts)) to OpenVINO format from Hugging Face.
-    The command below uses SpeechT5 as an example; SpeechT5 requires specifying a vocoder via `--model-kwargs`:
+    Download and convert model to OpenVINO format from Hugging Face. The examples below show one command path per model family.
+
+    SpeechT5 requires specifying a vocoder via `--model-kwargs`:
 
     <OptimumCLI model='microsoft/speecht5_tts' outputDir='speecht5_tts' weightFormat='int4' modelKwargs={{
         vocoder: "microsoft/speecht5_hifigan"
     }} />
 
-    See all supported [Speech Generation Models](/docs/supported-models/#speech-generation-models).
+    Kokoro export example:
+
+    ```bash
+    pip install --upgrade-strategy eager -r samples/export-requirements.txt
+    pip install kokoro
+    optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
+    ```
+
+    Qwen3-TTS export example:
+
+    ```bash
+    pip install --upgrade-strategy eager -r samples/export-requirements.txt
+    pip install qwen-tts transformers==4.57.3 torch==2.11.0 torchaudio==2.11.0
+    optimum-cli export openvino --model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --trust-remote-code qwen3_tts_customvoice_ov
+    ```
+
+    See all supported [Speech Generation Models](/docs/supported-models/#speech-generation-models) and variant-specific requirements.
 </ConvertModelSection>
 
 <RunModelSection />

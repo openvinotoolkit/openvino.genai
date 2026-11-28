@@ -1,0 +1,44 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "audio_utils.hpp"
+#include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
+
+int main() {
+    ov::genai::Text2SpeechPipeline pipe("./qwen3_tts_base_ov", "CPU");
+
+    // 1) Build cloning prompt from reference audio (24 kHz) + transcript.
+    ov::AnyMap first_props;
+    first_props["ref_audio"] = utils::audio::read_wav_as_tensor("clone.wav", 24000);
+    first_props["ref_text"] = std::string(
+        "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.");
+
+    auto first = pipe.generate("Hello from Qwen3 Base.", ov::Tensor(), first_props);
+    utils::audio::save_to_wav(
+        first.speeches[0].data<const float>(),
+        first.speeches[0].get_size(),
+        "first.wav",
+        first.speeches[0].get_element_type().bitwidth(),
+        first.output_sample_rate);
+
+    // 2) Reuse extracted artifacts for follow-up prompts.
+    ov::AnyMap second_props;
+    second_props["ref_codec_ids"] = first.ref_codec_ids;
+    second_props["ref_text"] = std::string(
+        "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.");
+
+    auto second = pipe.generate(
+        "Hello again, without re-reading reference audio.",
+        first.speaker_embedding,
+        second_props);
+    utils::audio::save_to_wav(
+        second.speeches[0].data<const float>(),
+        second.speeches[0].get_size(),
+        "second.wav",
+        second.speeches[0].get_element_type().bitwidth(),
+        second.output_sample_rate);
+
+    return 0;
+}
+`}
+</CodeBlock>

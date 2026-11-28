@@ -29,6 +29,34 @@ Qwen3-TTS ships as three model variants, and this folder provides one unified C 
 | `qwen3_tts_c` | `voice-design` | VoiceDesign | A new voice created from a natural-language `instruct` description |
 | `qwen3_tts_c` | `base` | Base | Voice cloning from reference audio (x-vector and ICL modes) |
 
+### Sampling and reproducible output
+
+All three `qwen3_tts_c` subcommands accept the same sampling options:
+
+| Option | Meaning |
+| --- | --- |
+| `--do_sample <true\|false>` | Sample the talker's codec tokens (`true`) or always take the most likely one (`false`). |
+| `--subtalker_dosample <true\|false>` | The same for the subtalker, which predicts the remaining codec groups of each frame. |
+| `--seed <N>` | Seed for sampling. The same non-zero seed repeats the output. `0` or no option picks a random seed on every run. |
+
+An option that is not given keeps the value from the model's `generation_config.json`.
+Qwen3-TTS models ship with sampling enabled and no fixed seed, so by default the output differs on every run.
+
+For a repeatable output, disable sampling in both the talker and the subtalker:
+
+```sh
+qwen3_tts_c base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --do_sample false --subtalker_dosample false
+```
+
+Or keep sampling and fix the seed:
+
+```sh
+qwen3_tts_c base qwen3_tts_base_ov "Hello from Qwen3 Base." --ref_audio_wav_path clone.wav --seed 12345
+```
+
+Disabling only one of the two still leaves the other random.
+Repeatable output is expected for the same model, device, inputs and software versions, not across different devices or weight precisions.
+
 ### Qwen3-TTS setup
 
 Convert a Qwen3-TTS model to OpenVINO (choose the variant matching the sample you want to run), for example:

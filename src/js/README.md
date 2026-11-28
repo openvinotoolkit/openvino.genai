@@ -24,7 +24,7 @@
 This library is friendly to PC and laptop execution, and optimized for resource consumption. Prebuilt native addons, the OpenVINO runtime and tokenization are fetched during `npm install`. You do not need a separate OpenVINO SDK install for typical use.
 
 ## Key Features and Benefits:
- - 📦 Pre-built Generative AI Pipelines: Ready-to-use pipelines for text generation (LLMs), visual language models (VLMs), image generation (Diffusers), speech recognition (Whisper), and speech generation (SpeechT5). See all supported [AI scenarios](#supported-generative-ai-scenarios).
+ - 📦 Pre-built Generative AI Pipelines: Ready-to-use pipelines for text generation (LLMs), visual language models (VLMs), image generation (Diffusers), speech recognition (Whisper, Qwen3-ASR), and speech generation (SpeechT5, Kokoro, Qwen3-TTS). See all supported [AI scenarios](#supported-generative-ai-scenarios).
  - 👣 Minimal Footprint: Smaller binary size and reduced memory footprint compared to other frameworks.
  - 📥 Plug-and-play install: Prebuilt native addons and OpenVINO runtime are downloaded on `npm install` — no manual OpenVINO installation for typical use.
  - 🖥️ In-process inference: Run models directly from Node.js in your application process — no separate inference service or access tokens.
@@ -91,8 +91,8 @@ The OpenVINO™ GenAI Node.js package supports the following scenarios (details 
 - [Text generation using Large Language Models (LLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-generation/) - Chat with local Llama, Phi, Qwen and other models
 - [Visual processing using Vision Language Model (VLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/) - Analyze images/videos with LLaVa, MiniCPM-V and other models
 - [Image generation using Diffusers](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-generation/) - Generate images with Stable Diffusion & Flux models
-- [Speech recognition using Whisper](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-recognition/) - Convert speech to text using Whisper models
-- [Speech generation using SpeechT5](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-generation/) - Convert text to speech using SpeechT5 TTS models
+- [Speech recognition using ASRPipeline](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-recognition/) - Convert speech to text using Whisper and Qwen3-ASR models
+- [Speech generation using Text2SpeechPipeline](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-generation/) - Convert text to speech using SpeechT5, Kokoro, and Qwen3-TTS models
 - [Semantic search using Text Embedding](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-embedding) - Compute embeddings for documents and queries to enable efficient retrieval in RAG workflows
 - [Text Rerank for Retrieval-Augmented Generation (RAG)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-rerank) - Analyze the relevance and accuracy of documents and queries for your RAG workflows
 

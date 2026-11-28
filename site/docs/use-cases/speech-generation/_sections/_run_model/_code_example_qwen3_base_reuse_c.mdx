@@ -1,0 +1,81 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="c" showLineNumbers>
+{`#include "openvino/genai/c/speech_generation_config.h"
+#include "openvino/genai/c/text2speech_pipeline.h"
+
+/*
+ * Helper I/O utilities are omitted for brevity.
+ * Reuse the same helper logic from samples/c/speech_generation/qwen3_tts.c:
+ * - load_wav_as_tensor("clone.wav", 24000.0f, &ref_audio)
+ * - write_f32_bin/load_speaker_embedding for speaker embedding
+ * - write_ref_codec_ids/read_ref_codec_ids for codec ids
+ */
+
+int main() {
+  ov_genai_text2speech_pipeline* pipe = NULL;
+  ov_genai_speech_generation_config* first_cfg = NULL;
+  ov_genai_speech_generation_config* second_cfg = NULL;
+  ov_genai_text2speech_decoded_results* first = NULL;
+  ov_genai_text2speech_decoded_results* second = NULL;
+
+  ov_tensor_t* ref_audio = NULL;
+  ov_tensor_t* speaker_embedding = NULL;
+  ov_tensor_t* ref_codec_ids = NULL;
+  ov_tensor_t* saved_speaker_embedding = NULL;
+  ov_tensor_t* saved_ref_codec_ids = NULL;
+
+  /* 1) Build cloning prompt from reference audio + transcript (ICL mode). */
+  ov_genai_text2speech_pipeline_create("./qwen3_tts_base_ov", "CPU", 0, &pipe);
+  ov_genai_text2speech_pipeline_get_generation_config(pipe, &first_cfg);
+
+  load_wav_as_tensor("clone.wav", 24000.0f, &ref_audio);  /* Sample helper from qwen3_tts.c */
+  ov_genai_speech_generation_config_set_ref_audio(first_cfg, ref_audio);
+  ov_genai_speech_generation_config_set_ref_text(
+    first_cfg,
+    "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.");
+
+  ov_genai_text2speech_pipeline_generate(
+    pipe,
+    "Hello from Qwen3 Base.",
+    NULL,
+    first_cfg,
+    &first);
+
+  ov_genai_text2speech_decoded_results_get_speaker_embedding(first, &saved_speaker_embedding);
+  ov_genai_text2speech_decoded_results_get_ref_codec_ids(first, &saved_ref_codec_ids);
+  write_f32_bin("qwen_speaker_embedding.bin", saved_speaker_embedding);  /* Sample helper from qwen3_tts.c */
+  write_ref_codec_ids("qwen_ref_code.bin", saved_ref_codec_ids);         /* Sample helper from qwen3_tts.c */
+
+  /* 2) Reuse extracted artifacts for follow-up prompts. */
+  speaker_embedding = load_speaker_embedding("qwen_speaker_embedding.bin", pipe);  /* Sample helper from qwen3_tts.c */
+  read_ref_codec_ids("qwen_ref_code.bin", &ref_codec_ids);         /* Sample helper from qwen3_tts.c */
+  ov_genai_text2speech_pipeline_get_generation_config(pipe, &second_cfg);
+  ov_genai_speech_generation_config_set_ref_codec_ids(second_cfg, ref_codec_ids);
+  ov_genai_speech_generation_config_set_ref_text(
+    second_cfg,
+    "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.");
+
+  ov_genai_text2speech_pipeline_generate(
+    pipe,
+    "Hello again, without re-reading reference audio.",
+    speaker_embedding,
+    second_cfg,
+    &second);
+
+  /* Save output audio from second->speeches[0] with your WAV helper if needed. */
+
+  ov_tensor_free(saved_ref_codec_ids);
+  ov_tensor_free(saved_speaker_embedding);
+  ov_tensor_free(ref_codec_ids);
+  ov_tensor_free(speaker_embedding);
+  ov_tensor_free(ref_audio);
+  ov_genai_text2speech_decoded_results_free(second);
+  ov_genai_text2speech_decoded_results_free(first);
+  ov_genai_speech_generation_config_free(second_cfg);
+  ov_genai_speech_generation_config_free(first_cfg);
+  ov_genai_text2speech_pipeline_free(pipe);
+  return 0;
+}
+`}
+</CodeBlock>

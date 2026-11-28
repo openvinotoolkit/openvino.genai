@@ -206,22 +206,32 @@ static int str_eq(const char* a, const char* b) {
     return strcmp(a, b) == 0;
 }
 
+static int parse_bool(const char* text, int* value) {
+    if (!str_eq(text, "true") && !str_eq(text, "false"))
+        return 0;
+    *value = str_eq(text, "true");
+    return 1;
+}
+
 static void print_usage(const char* program) {
     fprintf(stderr, "Usage:\n");
     fprintf(stderr,
             "  %s base <MODEL_DIR> \"<PROMPT>\" (--ref_audio_wav_path <PATH.wav> | --speaker_embedding_file_path <PATH.bin>)\n"
             "      [--ref_text \"<TRANSCRIPT>\"] [--ref_codec_ids_file_path <PATH.bin>]\n"
             "      [--save_speaker_embedding_file_path <PATH.bin>] [--save_ref_codec_ids_file_path <PATH.bin>]\n"
-                "      [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]\n",
+            "      [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>]\n"
+            "      [--do_sample <true|false>] [--subtalker_dosample <true|false>] [--seed <N>] [--output_wav_path <PATH.wav>]\n",
             program);
     fprintf(stderr,
             "  %s customvoice <MODEL_DIR> \"<PROMPT>\" --speaker <NAME>\n"
             "      [--language <LANG>] [--instruct \"<STYLE>\"] [--device <DEVICE>]\n"
-                "      [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]\n",
+            "      [--max_new_tokens <N>] [--do_sample <true|false>] [--subtalker_dosample <true|false>]\n"
+            "      [--seed <N>] [--output_wav_path <PATH.wav>]\n",
             program);
     fprintf(stderr,
             "  %s voice-design <MODEL_DIR> \"<PROMPT>\" --instruct \"<VOICE_DESCRIPTION>\"\n"
-                "      [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>] [--seed <N>] [--output_wav_path <PATH.wav>]\n",
+            "      [--language <LANG>] [--device <DEVICE>] [--max_new_tokens <N>]\n"
+            "      [--do_sample <true|false>] [--subtalker_dosample <true|false>] [--seed <N>] [--output_wav_path <PATH.wav>]\n",
             program);
 }
 
@@ -293,6 +303,8 @@ static int run_base(int argc, char** argv) {
     int64_t max_new_tokens = 0;
     uint64_t seed = 0;
     int has_seed = 0;
+    int do_sample = -1;
+    int subtalker_dosample = -1;
 
     ov_status_e status = OK;
     ov_genai_text2speech_pipeline* pipeline = NULL;
@@ -349,6 +361,16 @@ static int run_base(int argc, char** argv) {
                 return 1;
             }
             has_seed = 1;
+        } else if (str_eq(option, "--do_sample")) {
+            if (!parse_bool(value, &do_sample)) {
+                fprintf(stderr, "--do_sample must be true or false.\n");
+                return 1;
+            }
+        } else if (str_eq(option, "--subtalker_dosample")) {
+            if (!parse_bool(value, &subtalker_dosample)) {
+                fprintf(stderr, "--subtalker_dosample must be true or false.\n");
+                return 1;
+            }
         } else if (str_eq(option, "--output_wav_path")) {
             output_wav_path = value;
         } else {
@@ -376,9 +398,14 @@ static int run_base(int argc, char** argv) {
         CHECK_STATUS(ov_genai_speech_generation_config_set_language(config, language));
     if (ref_text && ref_text[0] != '\0')
         CHECK_STATUS(ov_genai_speech_generation_config_set_ref_text(config, ref_text));
-    if (max_new_tokens > 0) {
+    if (subtalker_dosample >= 0)
+        CHECK_STATUS(ov_genai_speech_generation_config_set_subtalker_dosample(config, subtalker_dosample != 0));
+    if (max_new_tokens > 0 || do_sample >= 0) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
-        CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        if (max_new_tokens > 0)
+            CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        if (do_sample >= 0)
+            CHECK_STATUS(ov_genai_generation_config_set_do_sample(generation_config, do_sample != 0));
         CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
@@ -482,6 +509,8 @@ static int run_customvoice(int argc, char** argv) {
     int64_t max_new_tokens = 0;
     uint64_t seed = 0;
     int has_seed = 0;
+    int do_sample = -1;
+    int subtalker_dosample = -1;
 
     ov_genai_text2speech_pipeline* pipeline = NULL;
     ov_genai_speech_generation_config* config = NULL;
@@ -524,6 +553,16 @@ static int run_customvoice(int argc, char** argv) {
                 return 1;
             }
             has_seed = 1;
+        } else if (str_eq(option, "--do_sample")) {
+            if (!parse_bool(value, &do_sample)) {
+                fprintf(stderr, "--do_sample must be true or false.\n");
+                return 1;
+            }
+        } else if (str_eq(option, "--subtalker_dosample")) {
+            if (!parse_bool(value, &subtalker_dosample)) {
+                fprintf(stderr, "--subtalker_dosample must be true or false.\n");
+                return 1;
+            }
         } else if (str_eq(option, "--output_wav_path")) {
             output_wav_path = value;
         } else {
@@ -545,9 +584,14 @@ static int run_customvoice(int argc, char** argv) {
         CHECK_STATUS(ov_genai_speech_generation_config_set_language(config, language));
     if (instruct && instruct[0] != '\0')
         CHECK_STATUS(ov_genai_speech_generation_config_set_instruct(config, instruct));
-    if (max_new_tokens > 0) {
+    if (subtalker_dosample >= 0)
+        CHECK_STATUS(ov_genai_speech_generation_config_set_subtalker_dosample(config, subtalker_dosample != 0));
+    if (max_new_tokens > 0 || do_sample >= 0) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
-        CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        if (max_new_tokens > 0)
+            CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        if (do_sample >= 0)
+            CHECK_STATUS(ov_genai_generation_config_set_do_sample(generation_config, do_sample != 0));
         CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
@@ -589,6 +633,8 @@ static int run_voice_design(int argc, char** argv) {
     int64_t max_new_tokens = 0;
     uint64_t seed = 0;
     int has_seed = 0;
+    int do_sample = -1;
+    int subtalker_dosample = -1;
 
     ov_genai_text2speech_pipeline* pipeline = NULL;
     ov_genai_speech_generation_config* config = NULL;
@@ -629,6 +675,16 @@ static int run_voice_design(int argc, char** argv) {
                 return 1;
             }
             has_seed = 1;
+        } else if (str_eq(option, "--do_sample")) {
+            if (!parse_bool(value, &do_sample)) {
+                fprintf(stderr, "--do_sample must be true or false.\n");
+                return 1;
+            }
+        } else if (str_eq(option, "--subtalker_dosample")) {
+            if (!parse_bool(value, &subtalker_dosample)) {
+                fprintf(stderr, "--subtalker_dosample must be true or false.\n");
+                return 1;
+            }
         } else if (str_eq(option, "--output_wav_path")) {
             output_wav_path = value;
         } else {
@@ -648,9 +704,14 @@ static int run_voice_design(int argc, char** argv) {
     CHECK_STATUS(ov_genai_speech_generation_config_set_instruct(config, instruct));
     if (language && language[0] != '\0')
         CHECK_STATUS(ov_genai_speech_generation_config_set_language(config, language));
-    if (max_new_tokens > 0) {
+    if (subtalker_dosample >= 0)
+        CHECK_STATUS(ov_genai_speech_generation_config_set_subtalker_dosample(config, subtalker_dosample != 0));
+    if (max_new_tokens > 0 || do_sample >= 0) {
         CHECK_STATUS(ov_genai_speech_generation_config_get_generation_config(config, &generation_config));
-        CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        if (max_new_tokens > 0)
+            CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(generation_config, (size_t)max_new_tokens));
+        if (do_sample >= 0)
+            CHECK_STATUS(ov_genai_generation_config_set_do_sample(generation_config, do_sample != 0));
         CHECK_STATUS(ov_genai_speech_generation_config_set_generation_config(config, generation_config));
         ov_genai_generation_config_free(generation_config);
         generation_config = NULL;
