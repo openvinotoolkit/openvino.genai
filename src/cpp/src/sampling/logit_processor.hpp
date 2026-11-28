@@ -31,7 +31,10 @@ public:
                    const std::set<int64_t>& suppressed_token_ids = {}
     ) {
         for (const auto& input_id : input_ids) {
-            m_unique_prompt_token_ids->insert(input_id);
+            // Negative ids are VLM image placeholders whose embeddings are replaced by visual features
+            if (input_id >= 0) {
+                m_unique_prompt_token_ids->insert(input_id);
+            }
         }
 
         // When logprobs > 0: snapshot the full-vocab log-partition function (LSE) and copy

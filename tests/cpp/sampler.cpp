@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -1249,4 +1250,31 @@ TEST(SamplerMinNewTokens, masks_stop_token_for_every_parallel_sample) {
     for (const auto& sequence : group->get_sequences()) {
         EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{1, 2, 2}));
     }
+}
+
+TEST(SamplerBeamSearch, no_repeat_ngram_skips_negative_placeholder_ids) {
+    GenerationConfig sampling_config;
+    sampling_config.num_beams = 2;
+    sampling_config.max_new_tokens = 2;
+    sampling_config.no_repeat_ngram_size = 1;
+    // -1 is a VLM image placeholder; only the real prompt token 1 must be banned
+    std::vector<int64_t> prompt{-1, 1};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, prompt.size()}, prompt.data());
+    auto sequence_group = std::make_shared<SequenceGroup>(0, input_tensor, sampling_config);
+    sequence_group->schedule_tokens(sequence_group->get_num_available_tokens_for_batching());
+    std::vector<SequenceGroup::Ptr> sequence_groups{sequence_group};
+
+    std::vector<float> logits{
+        0, 0, 0,
+        0, 2.f, 1.f,
+    };
+    Sampler sampler;
+    sampler.sample(sequence_groups, ov::Tensor(ov::element::f32, ov::Shape{2, 1, 3}, logits.data()));
+
+    TokenIds first_tokens;
+    for (const auto& sequence : sequence_group->get_sequences()) {
+        first_tokens.push_back(sequence->get_generated_ids().front());
+    }
+    std::sort(first_tokens.begin(), first_tokens.end());
+    EXPECT_EQ(first_tokens, TokenIds({0, 2}));
 }
