@@ -104,6 +104,25 @@ public:
     // Expected shape: [T, G] or [1, T, G].
     ov::Tensor ref_codec_ids;
 
+    // ---------------------------------------------------------------------
+    // Streaming audio decode parameters (Qwen3-TTS)
+    // ---------------------------------------------------------------------
+
+    // Number of codec frames in the initial streamed chunk (controls Time To First Audio).
+    uint32_t first_chunk_frames = 8;
+
+    // Number of codec frames in steady-state streamed chunks (e.g. 12 for low latency or 24 for smooth throughput).
+    uint32_t steady_chunk_frames = 12;
+
+    // Left-context codec frames prepended to the first streamed chunk (0 for low-latency first chunk).
+    uint32_t first_context_frames = 0;
+
+    // Left-context codec frames prepended to steady-state streamed chunks for boundary continuity.
+    uint32_t steady_context_frames = 25;
+
+    // Overlap codec waveform decoding on a dedicated worker thread while talker codegen runs.
+    bool async_audio_decode = true;
+
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
     template <typename... Properties>
@@ -137,6 +156,12 @@ static constexpr ov::Property<float> subtalker_temperature{"subtalker_temperatur
 static constexpr ov::Property<std::string> ref_text{"ref_text"};
 static constexpr ov::Property<ov::Tensor> ref_audio{"ref_audio"};
 static constexpr ov::Property<ov::Tensor> ref_codec_ids{"ref_codec_ids"};
+
+static constexpr ov::Property<uint32_t> first_chunk_frames{"first_chunk_frames"};
+static constexpr ov::Property<uint32_t> steady_chunk_frames{"steady_chunk_frames"};
+static constexpr ov::Property<uint32_t> first_context_frames{"first_context_frames"};
+static constexpr ov::Property<uint32_t> steady_context_frames{"steady_context_frames"};
+static constexpr ov::Property<bool> async_audio_decode{"async_audio_decode"};
 
 }  // namespace genai
 }  // namespace ov

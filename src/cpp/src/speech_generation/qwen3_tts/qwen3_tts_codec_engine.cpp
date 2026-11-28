@@ -145,6 +145,10 @@ Qwen3TTSCodecEngine::Qwen3TTSCodecEngine(const std::filesystem::path& models_pat
             m_speech_tokenizer_decoder = compile_request(decoder_path, roles::SPEECH_TOKENIZER_DECODER, decoder_device, decoder_properties);
         }
         m_perf_device[roles::SPEECH_TOKENIZER_DECODER] = device_of(m_speech_tokenizer_decoder, decoder_device);
+
+        // Compile optional static streaming codec decoder tiers (e.g. c0_t8, c25_t12, c25_t24).
+        m_stream_decoder_pool.initialize(
+            models_path, decoder_device, decoder_properties, m_decoder_num_quantizers, m_decoder_upsample);
     }
 
     const auto speaker_encoder_path = models_path / SPEAKER_ENCODER_NAME;
@@ -1120,6 +1124,23 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer(const std::vecto
     }
 
     return chunks_audio;
+}
+
+std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer_chunk(const std::vector<int64_t>& window_frame_major,
+                                                                      size_t context_frames,
+                                                                      size_t new_frames) {
+    if (window_frame_major.empty() || new_frames == 0) {
+        return {};
+    }
+    auto full_waveform = decode_speech_tokenizer(window_frame_major);
+    const size_t ctx_samples = context_frames * m_decoder_upsample;
+    const size_t emit_samples = new_frames * m_decoder_upsample;
+    if (ctx_samples >= full_waveform.size()) {
+        return {};
+    }
+    const size_t count = std::min(emit_samples, full_waveform.size() - ctx_samples);
+    return std::vector<float>(full_waveform.begin() + static_cast<std::ptrdiff_t>(ctx_samples),
+                              full_waveform.begin() + static_cast<std::ptrdiff_t>(ctx_samples + count));
 }
 
 std::vector<bool> Qwen3TTSCodecEngine::compute_suppress_tokens() const {

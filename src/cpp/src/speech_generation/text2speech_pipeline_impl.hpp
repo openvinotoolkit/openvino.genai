@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "openvino/genai/speech_generation/audio_streamer_base.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
@@ -24,6 +25,11 @@ public:
     virtual Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                                const ov::Tensor& speaker_embedding,
                                                const SpeechGenerationConfig& generation_config) = 0;
+
+    virtual Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
+                                               const ov::Tensor& speaker_embedding,
+                                               const SpeechGenerationConfig& generation_config,
+                                               const AudioStreamerVariant& streamer);
 
     virtual SpeechGenerationPerfMetrics get_performance_metrics();
 

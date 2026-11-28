@@ -510,9 +510,13 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
-    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::OmniSpeechStreamerBase>(py_obj)) &&
-               property_name == ov::genai::utils::SPEECH_STREAMER_ARG_NAME) {
+    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::AudioStreamerBase>(py_obj)) &&
+               (property_name == ov::genai::utils::SPEECH_STREAMER_ARG_NAME ||
+                property_name == ov::genai::utils::AUDIO_STREAMER_ARG_NAME)) {
         auto speech_streamer = py::cast<ov::genai::pybind::utils::PyBindOmniSpeechStreamerVariant>(py_obj);
+        if (property_name == ov::genai::utils::AUDIO_STREAMER_ARG_NAME) {
+            return ov::genai::audio_streamer(py_speech_streamer_to_streamer(speech_streamer)).second;
+        }
         return ov::genai::speech_streamer(py_speech_streamer_to_streamer(speech_streamer)).second;
     } else if (py::isinstance(py_obj, py::module_::import("pathlib").attr("Path"))) {
         return py::cast<std::filesystem::path>(py_obj);

@@ -211,15 +211,31 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
 ov::genai::OmniSpeechStreamerVariant get_speech_streamer_from_map(const ov::AnyMap& config_map) {
     ov::genai::OmniSpeechStreamerVariant streamer = std::monostate();
 
-    if (config_map.count(SPEECH_STREAMER_ARG_NAME)) {
-        auto any_val = config_map.at(SPEECH_STREAMER_ARG_NAME);
-        if (any_val.is<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>()) {
-            streamer = any_val.as<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>();
-        } else if (any_val.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
-            streamer = any_val.as<std::function<StreamingStatus(const ov::Tensor&)>>();
+    auto read_key = [&](const std::string& key) {
+        auto it = config_map.find(key);
+        if (it == config_map.end() || it->second.empty()) {
+            return false;
         }
+        const auto& any_val = it->second;
+        if (any_val.is<std::shared_ptr<ov::genai::AudioStreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::AudioStreamerBase>>();
+            return true;
+        }
+        if (any_val.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(const ov::Tensor&)>>();
+            return true;
+        }
+        return false;
+    };
+
+    if (!read_key(AUDIO_STREAMER_ARG_NAME)) {
+        read_key(SPEECH_STREAMER_ARG_NAME);
     }
     return streamer;
+}
+
+ov::genai::AudioStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map) {
+    return get_speech_streamer_from_map(config_map);
 }
 
 std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
