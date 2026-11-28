@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,10 @@ namespace genai {
 /// The exported graph is a single pass whose data-dependent tensors (rotary 'cos'/'sin', the joint-sequence
 /// 'gather_idx', the dense block-causal 'attn_mask' and the 'modulation_mask') are precomputed by the pipeline
 /// and passed in as graph inputs.
+/// A graph exported with the prefix KV cache keeps the text and condition-image (prefix) keys/values, which do not
+/// change across denoising steps, in its state: a call over the whole joint sequence appends them to the state, and a
+/// call over the target image's tokens only reads them. Every cache context (e.g. each CFG pass) has its own infer
+/// request and thus its own cache.
 class OPENVINO_GENAI_EXPORTS QwenImage21Transformer2DModel {
 public:
     struct OPENVINO_GENAI_EXPORTS Config {
@@ -67,15 +72,30 @@ public:
 
     void set_adapters(const std::optional<AdapterConfig>& adapters);
 
-    /// @brief Denoises the joint sequence.
-    /// @return The transformer output over the whole joint sequence, of shape (batch, joint_sequence_length, out_channels).
+    /// @brief Denoises the tokens selected by the bound joint-sequence inputs.
+    /// @return The transformer output over the processed tokens, of shape (batch, processed_length, out_channels).
     ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
+
+    /// @brief Whether the graph keeps the prefix keys/values in its state. Models exported before the prefix KV
+    /// cache have no state and always process the whole joint sequence.
+    bool has_prefix_cache() const;
+
+    /// @brief Makes the infer request of the given cache context the one that the inputs, the adapters and the
+    /// inference apply to. Context 0 is the request created at compilation, the other ones are created on first use.
+    void set_cache_context(size_t context);
+
+    /// @brief Empties the prefix KV cache of the current cache context, keeping the rest of its state (e.g. LoRA).
+    void reset_prefix_cache();
 
 private:
     Config m_config;
     AdapterController m_adapter_controller;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
+    bool m_has_prefix_cache = false;
+    // Infer requests of the cache contexts, m_request is the current one. Empty until a context is selected.
+    std::vector<ov::InferRequest> m_context_requests;
+    std::optional<AdapterConfig> m_adapters;
 };
 
 }  // namespace genai

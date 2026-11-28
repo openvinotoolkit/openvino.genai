@@ -12,6 +12,17 @@
 namespace ov {
 namespace genai {
 
+namespace {
+
+// State variables of the prefix KV cache, one per block and per key/value.
+constexpr const char* PREFIX_CACHE_STATE_PREFIX = "past_key_values.";
+
+bool is_prefix_cache_state(const std::string& name) {
+    return name.rfind(PREFIX_CACHE_STATE_PREFIX, 0) == 0;
+}
+
+}  // namespace
+
 QwenImage21Transformer2DModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -32,6 +43,9 @@ QwenImage21Transformer2DModel::Config::Config(const std::filesystem::path& confi
 QwenImage21Transformer2DModel::QwenImage21Transformer2DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
+    for (const auto& variable : m_model->get_variables()) {
+        m_has_prefix_cache |= is_prefix_cache_state(variable->get_info().variable_id);
+    }
 }
 
 QwenImage21Transformer2DModel::QwenImage21Transformer2DModel(const std::filesystem::path& root_dir,
@@ -53,6 +67,7 @@ QwenImage21Transformer2DModel QwenImage21Transformer2DModel::clone() {
         cloned.m_model = m_model->clone();
     } else {
         cloned.m_request = m_request.get_compiled_model().create_infer_request();
+        cloned.m_context_requests.clear();
     }
 
     return cloned;
@@ -88,7 +103,13 @@ void QwenImage21Transformer2DModel::set_hidden_states(const std::string& tensor_
 void QwenImage21Transformer2DModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     if (adapters) {
-        m_adapter_controller.apply(m_request, *adapters);
+        m_adapters = adapters;
+        if (m_context_requests.empty()) {
+            m_adapter_controller.apply(m_request, *adapters);
+        }
+        for (ov::InferRequest& request : m_context_requests) {
+            m_adapter_controller.apply(request, *adapters);
+        }
     }
 }
 
@@ -100,6 +121,34 @@ ov::Tensor QwenImage21Transformer2DModel::infer(const ov::Tensor latent, const o
     m_request.infer();
 
     return m_request.get_output_tensor();
+}
+
+bool QwenImage21Transformer2DModel::has_prefix_cache() const {
+    return m_has_prefix_cache;
+}
+
+void QwenImage21Transformer2DModel::set_cache_context(size_t context) {
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+    if (m_context_requests.empty()) {
+        m_context_requests.push_back(m_request);
+    }
+    while (m_context_requests.size() <= context) {
+        ov::InferRequest request = m_request.get_compiled_model().create_infer_request();
+        if (m_adapters) {
+            m_adapter_controller.apply(request, *m_adapters);
+        }
+        m_context_requests.push_back(request);
+    }
+    m_request = m_context_requests[context];
+}
+
+void QwenImage21Transformer2DModel::reset_prefix_cache() {
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+    for (ov::VariableState& state : m_request.query_state()) {
+        if (is_prefix_cache_state(state.get_name())) {
+            state.reset();
+        }
+    }
 }
 
 }  // namespace genai
