@@ -299,6 +299,133 @@ TEST(DFlashModelTransforms, RejectsReplacedRetainedLocatorWhileOriginalRemainsLi
 
 namespace {
 
+// hidden_states [batch, rows, 2] -> 'logits' [batch, rows, vocab_size], where the logit of token v is
+// h[0] * (v + 1) + h[1], and a constant 'd2t' output when d2t is given.
+std::shared_ptr<ov::Model> make_lm_head_model(size_t vocab_size,
+                                              std::optional<std::vector<int64_t>> d2t = std::nullopt,
+                                              const ov::element::Type& d2t_type = ov::element::i64) {
+    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1, 2});
+    hidden_states->output(0).set_names({"hidden_states"});
+    std::vector<float> weights(2 * vocab_size, 1.0f);
+    std::iota(weights.begin(), weights.begin() + vocab_size, 1.0f);
+    auto lm_head = std::make_shared<ov::op::v0::MatMul>(
+        hidden_states,
+        ov::op::v0::Constant::create(ov::element::f32, ov::Shape{2, vocab_size}, weights));
+    auto logits = std::make_shared<ov::op::v0::Result>(lm_head);
+    logits->output(0).set_names({"logits"});
+    ov::ResultVector results{logits};
+    if (d2t) {
+        auto d2t_result =
+            std::make_shared<ov::op::v0::Result>(ov::op::v0::Constant::create(d2t_type, ov::Shape{d2t->size()}, *d2t));
+        d2t_result->output(0).set_names({"d2t"});
+        results.push_back(d2t_result);
+    }
+    return std::make_shared<ov::Model>(results, ov::ParameterVector{hidden_states});
+}
+
+// A candidate scorer stand-in that carries the Markov head metadata extract_pruned_draft_vocabulary() reads.
+std::shared_ptr<ov::Model> make_candidate_scorer_metadata(size_t vocab_size, size_t top_k) {
+    auto draft_logits = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1});
+    draft_logits->output(0).set_names({"draft_logits"});
+    auto model = std::make_shared<ov::Model>(ov::OutputVector{draft_logits}, ov::ParameterVector{draft_logits});
+    model->set_rt_info(std::to_string(vocab_size), {"dflash", "vocab_size"});
+    model->set_rt_info(std::to_string(top_k), {"dflash", "top_k"});
+    return model;
+}
+
+}  // namespace
+
+TEST(DFlashModelTransforms, WidensPrunedDraftLogitsToTheTargetVocabulary) {
+    // a draft without d2t predicts the target vocabulary
+    auto full_vocabulary_draft = make_lm_head_model(6);
+    ASSERT_FALSE(
+        ov::genai::utils::dflash::extract_pruned_draft_vocabulary(make_lm_head_model(6), full_vocabulary_draft, {}));
+    ASSERT_EQ(full_vocabulary_draft->get_results().size(), 1);
+
+    // draft tokens 0, 1 and 2 are target tokens 4, 0 and 2
+    auto draft = make_lm_head_model(3, std::vector<int64_t>{4, -1, 0});
+    ov::genai::utils::dflash::DFlashRTInfo info;
+    info.markov_head_computation = make_candidate_scorer_metadata(6, 3);
+    const auto vocabulary =
+        ov::genai::utils::dflash::extract_pruned_draft_vocabulary(make_lm_head_model(6), draft, info);
+    ASSERT_TRUE(vocabulary);
+    ASSERT_EQ(vocabulary->target_token_ids, (std::vector<int64_t>{4, 0, 2}));
+    ASSERT_EQ(vocabulary->target_vocab_size, 6);
+    ASSERT_EQ(count_outputs_with_name(draft, "d2t"), 0);
+    ASSERT_EQ(draft->get_results().size(), 1);
+
+    ov::genai::utils::apply_gather_before_matmul_transformation(draft);
+    ov::genai::utils::dflash::widen_draft_logits_to_target_vocabulary(draft, *vocabulary);
+    ASSERT_EQ(draft->output("logits").get_partial_shape(), ov::PartialShape({-1, -1, 6}));
+
+    auto request = ov::Core().compile_model(draft, "CPU").create_infer_request();
+    ov::Tensor hidden_states(ov::element::f32, {1, 2, 2});
+    const std::vector<float> rows = {1.0f, 0.0f, 2.0f, 1.0f};
+    std::copy(rows.begin(), rows.end(), hidden_states.data<float>());
+    ov::Tensor sampled_rows(ov::element::i64, {1});
+    sampled_rows.data<int64_t>()[0] = 1;
+    request.set_tensor("hidden_states", hidden_states);
+    request.set_tensor("sampled_tokens_indices", sampled_rows);
+    request.infer();
+
+    // the draft logits of row (2, 1) are 3, 5 and 7
+    const auto logits = request.get_tensor("logits");
+    ASSERT_EQ(logits.get_shape(), ov::Shape({1, 1, 6}));
+    const float inf = std::numeric_limits<float>::infinity();
+    const std::vector<float> expected = {5.0f, -inf, 7.0f, -inf, 3.0f, -inf};
+    ASSERT_EQ(std::vector<float>(logits.data<const float>(), logits.data<const float>() + 6), expected);
+}
+
+TEST(DFlashModelTransforms, RejectsMalformedPrunedDraftVocabularies) {
+    using ov::genai::utils::dflash::DFlashRTInfo;
+    struct Case {
+        std::string name;
+        std::shared_ptr<ov::Model> draft;
+        DFlashRTInfo info;
+        std::string expected_message;
+    };
+    DFlashRTInfo dflash2;
+    dflash2.dflash_version = 2;
+    auto with_scorer = [](size_t vocab_size, size_t top_k) {
+        DFlashRTInfo info;
+        info.markov_head_computation = make_candidate_scorer_metadata(vocab_size, top_k);
+        return info;
+    };
+    // a draft of two tokens by default
+    auto pruned = [](std::vector<int64_t> d2t, size_t vocab_size = 2) {
+        return make_lm_head_model(vocab_size, std::move(d2t));
+    };
+    const std::vector<Case> cases = {
+        {"two draft tokens are one target token", pruned({1, 0}), {}, "got target token id 1 again for draft token 1"},
+        {"negative target token", pruned({-1, 0}), {}, "got offset -1 for draft token 0"},
+        {"target token past the target vocabulary", pruned({0, 5}), {}, "got offset 5 for draft token 1"},
+        {"logits wider than d2t", pruned({0, 0}, 3), {}, "must have one column per 'd2t' entry, 2, got 3"},
+        {"i32 d2t",
+         make_lm_head_model(2, std::vector<int64_t>{0, 0}, ov::element::i32),
+         {},
+         "must be a non-empty rank-1 i64 constant, got i32"},
+        {"DFlash-2", pruned({0, 0}), dflash2, "DFlash-2 drafts with a pruned vocabulary"},
+        {"draft-width Markov head", pruned({0, 0}), with_scorer(2, 2), "its vocab_size must be 6, got 2"},
+        {"top_k past the draft vocabulary",
+         pruned({0, 0}),
+         with_scorer(6, 3),
+         "must be at most the draft vocabulary size 2 of a draft with a pruned vocabulary, got 3"},
+    };
+    for (const auto& [name, draft, info, expected_message] : cases) {
+        SCOPED_TRACE(name);
+        try {
+            ov::genai::utils::dflash::extract_pruned_draft_vocabulary(make_lm_head_model(6), draft, info);
+            FAIL() << "Expected the pruned draft vocabulary to be rejected";
+        } catch (const ov::Exception& exception) {
+            EXPECT_NE(std::string(exception.what()).find(expected_message), std::string::npos) << exception.what();
+        }
+        // a rejected draft keeps its outputs
+        EXPECT_EQ(count_outputs_with_name(draft, "d2t"), 1);
+    }
+}
+
+namespace {
+
 // A target that exports [tokens, 1, 8] hidden states: two copies of its [tokens, 1, 4] input.
 std::shared_ptr<ov::Model> make_fc_move_target_model() {
     auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, 1, 4});
@@ -2094,36 +2221,81 @@ TEST(DFlashCBCandidateSelection, ScaledBackboneDraftsTheArgmaxOfEveryRowForAGree
 TEST(DFlashCBCandidateSelection, SamplerDrawsFromTheScaledAndSoftCappedBackboneLogits) {
     const float output_multiplier = 0.5f;
     const float softcap = 3.0f;
-    ov::Tensor logits(ov::element::f32, {2, 1, SELECTOR_VOCAB_SIZE});
-    for (size_t idx = 0; idx < logits.get_size(); ++idx) {
-        logits.data<float>()[idx] = static_cast<float>(idx % 7) * 1.5f - 4.0f;
-    }
-    auto config = block_config();
-    config.do_sample = true;
-    config.rng_seed = 5;
-    auto request = make_block_request(0, 7, 2, config);
-
-    draft_blocks(make_selector(nullptr, output_multiplier, softcap), {request}, logits);
-
-    const auto sequence = request->get_running_sequences().front();
-    ASSERT_EQ(sequence->get_generated_len(), 3);
-    for (size_t row = 0; row < 2; ++row) {
-        const float* values = logits.data<const float>() + row * SELECTOR_VOCAB_SIZE;
-        std::vector<float> capped(SELECTOR_VOCAB_SIZE);
-        std::transform(values, values + SELECTOR_VOCAB_SIZE, capped.begin(), [&](float logit) {
-            return std::tanh(logit * output_multiplier / softcap) * softcap;
-        });
-        const float max_logit = *std::max_element(capped.begin(), capped.end());
-        float sum = 0.0f;
-        for (const float logit : capped) {
-            sum += std::exp(logit - max_logit);
+    const float inf = std::numeric_limits<float>::infinity();
+    // Widening the logits of a pruned draft vocabulary gives the other target tokens -inf, here the odd ones, which
+    // the soft cap must not lift to -softcap.
+    for (const bool pruned_draft_vocabulary : {false, true}) {
+        SCOPED_TRACE(pruned_draft_vocabulary ? "pruned draft vocabulary" : "target vocabulary");
+        ov::Tensor logits(ov::element::f32, {2, 1, SELECTOR_VOCAB_SIZE});
+        for (size_t idx = 0; idx < logits.get_size(); ++idx) {
+            logits.data<float>()[idx] =
+                pruned_draft_vocabulary && idx % 2 == 1 ? -inf : static_cast<float>(idx % 7) * 1.5f - 4.0f;
         }
-        const auto& proposal = sequence->get_draft_proposal(row + 1);
-        ASSERT_FALSE(proposal.empty());
-        for (size_t token = 0; token < SELECTOR_VOCAB_SIZE; ++token) {
-            EXPECT_NEAR(ov::genai::detail::proposal_probability(proposal, static_cast<int64_t>(token)),
-                        std::exp(capped[token] - max_logit) / sum,
-                        1e-5f);
+        auto config = block_config();
+        config.do_sample = true;
+        config.rng_seed = 5;
+        auto request = make_block_request(0, 7, 2, config);
+
+        draft_blocks(make_selector(nullptr, output_multiplier, softcap), {request}, logits);
+
+        const auto sequence = request->get_running_sequences().front();
+        ASSERT_EQ(sequence->get_generated_len(), 3);
+        for (size_t row = 0; row < 2; ++row) {
+            const float* values = logits.data<const float>() + row * SELECTOR_VOCAB_SIZE;
+            std::vector<float> capped(SELECTOR_VOCAB_SIZE);
+            std::transform(values, values + SELECTOR_VOCAB_SIZE, capped.begin(), [&](float logit) {
+                return logit == -inf ? logit : std::tanh(logit * output_multiplier / softcap) * softcap;
+            });
+            const float max_logit = *std::max_element(capped.begin(), capped.end());
+            float sum = 0.0f;
+            for (const float logit : capped) {
+                sum += std::exp(logit - max_logit);
+            }
+            const auto& proposal = sequence->get_draft_proposal(row + 1);
+            ASSERT_FALSE(proposal.empty());
+            for (size_t token = 0; token < SELECTOR_VOCAB_SIZE; ++token) {
+                EXPECT_NEAR(ov::genai::detail::proposal_probability(proposal, static_cast<int64_t>(token)),
+                            std::exp(capped[token] - max_logit) / sum,
+                            1e-5f);
+            }
+            // the request drafted a token of the draft vocabulary
+            EXPECT_GT(values[drafted(request)[row]], -inf);
+        }
+    }
+}
+
+TEST(DFlashCBCandidateSelection, BlockEndsWhereTheLogitProcessorsMaskTheWholePrunedDraftVocabulary) {
+    // A pruned draft vocabulary of the stop tokens 1 and 2 alone, which min_new_tokens masks: no row has a token left
+    // to draft, with any row source or none, so the block drafts nothing and the target generates on its own.
+    // Without a row source the logit processors mask the rows in place, so every case drafts from rows of its own.
+    const auto make_logits = [] {
+        ov::Tensor logits(ov::element::f32, {2, 1, SELECTOR_VOCAB_SIZE});
+        std::fill_n(logits.data<float>(), logits.get_size(), -std::numeric_limits<float>::infinity());
+        for (size_t row = 0; row < 2; ++row) {
+            logits.data<float>()[row * SELECTOR_VOCAB_SIZE + 1] = 1.0f;
+            logits.data<float>()[row * SELECTOR_VOCAB_SIZE + 2] = 2.0f;
+        }
+        return logits;
+    };
+    auto greedy = block_config();
+    greedy.stop_token_ids = {1, 2};
+    greedy.min_new_tokens = 10;
+    auto sampled = greedy;
+    sampled.do_sample = true;
+    sampled.rng_seed = 5;
+    // the candidates of a scorer are K tokens of the draft vocabulary, so all of it here
+    const auto [edge_scores, candidate_ids] = make_one_block_lattice(std::vector<float>(8, 0.0f), {1, 2, 1, 2});
+    const std::vector<std::shared_ptr<ov::genai::BlockRowSource>> sources = {
+        make_selector(nullptr),
+        make_selector(make_successor_markov_step()),
+        make_selector(make_fixed_candidate_scorer(edge_scores, candidate_ids)),
+        nullptr,
+    };
+    for (const auto& config : {greedy, sampled}) {
+        for (const auto& source : sources) {
+            auto request = make_block_request(0, 7, 2, config);
+            draft_blocks(source, {request}, make_logits());
+            EXPECT_TRUE(drafted(request).empty());
         }
     }
 }

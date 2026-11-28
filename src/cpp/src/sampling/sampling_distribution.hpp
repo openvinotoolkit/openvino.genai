@@ -36,6 +36,11 @@ public:
         return m_candidates != nullptr;
     }
 
+    // Whether some candidate has positive finite mass; a row without is drawn uniformly.
+    bool has_mass() const {
+        return !m_is_uniform;
+    }
+
     int64_t token_id(size_t index) const {
         return is_sparse() ? m_candidates[index].m_index : static_cast<int64_t>(index);
     }
