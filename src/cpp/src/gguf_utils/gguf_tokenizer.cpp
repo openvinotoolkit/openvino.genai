@@ -4,8 +4,11 @@
 #include "gguf_tokenizer.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <limits>
 #include <set>
 
@@ -164,7 +167,11 @@ std::string quote_meta(const std::string& str) {
     return result;
 }
 
-std::string join_special_tokens(const std::vector<std::string>& special_tokens) {
+std::string join_special_tokens(std::vector<std::string> special_tokens) {
+    // Longest match first, as in llama.cpp and HF.
+    std::stable_sort(special_tokens.begin(), special_tokens.end(), [](const std::string& a, const std::string& b) {
+        return a.size() > b.size();
+    });
     std::ostringstream oss;
     for (size_t i = 0; i < special_tokens.size(); ++i) {
         if (i > 0)
@@ -175,6 +182,13 @@ std::string join_special_tokens(const std::vector<std::string>& special_tokens) 
 }
 
 std::vector<std::string> get_split_regex(const std::string& pre) {
+    // llama.cpp GPT4O pre-type
+    static const std::string gpt4o =
+        "[^\\r\\n\\p{L}\\p{N}]?((?=[\\p{L}])([^a-z]))*((?=[\\p{L}])([^A-Z]))+"
+        "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r\\n\\p{L}\\p{N}]?"
+        "((?=[\\p{L}])([^a-z]))+((?=[\\p{L}])([^A-Z]))*"
+        "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|"
+        "\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
     // taken from
     // https://github.com/ggml-org/llama.cpp/blob/8551c44d840a7db50adb958ccaf464dc3ded82e7/src/llama-vocab.cpp#L279
     // TODO: complete for other archs
@@ -192,6 +206,8 @@ std::vector<std::string> get_split_regex(const std::string& pre) {
              "\\p{N}",
              "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)",
          }},
+        {"gpt-4o", {gpt4o}},
+        {"llama4", {gpt4o}},
     };
 
     if (regex_map.count(pre)) {
@@ -343,6 +359,22 @@ int utf8_char_length(unsigned char lead_byte) {
         return -1;  // Invalid
 }
 
+// Byte tokens are spelled "<0xNN>".
+uint8_t byte_token_value(const std::string& token) {
+    uint8_t value = 0;
+    const bool valid = token.size() == 6 && token.compare(0, 3, "<0x") == 0 && token[5] == '>' &&
+                       std::isxdigit(static_cast<unsigned char>(token[3])) &&
+                       std::isxdigit(static_cast<unsigned char>(token[4])) &&
+                       std::from_chars(token.data() + 3, token.data() + 5, value, 16).ec == std::errc{};
+    OPENVINO_ASSERT(valid, "[gguf tokenizer] BYTE token must be spelled <0xNN>: ", token);
+    return value;
+}
+
+// A merge is "left right"; the left piece may itself start with a space.
+size_t merge_separator(const std::string& merge) {
+    return merge.find(' ', 1);
+}
+
 std::vector<std::string> split_utf8_chars(const std::string& input) {
     std::vector<std::string> result;
     size_t i = 0;
@@ -417,15 +449,42 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
         token_types = *val;
     }
     auto vocab = parse_bbpe_vocab(vocab_from_config, token_types, byte_encode);
-    auto vocab_const = create_string_constant(vocab);
-
-    inputs.insert(inputs.end(), vocab_const.begin(), vocab_const.end());
 
     // 2. Parse merges
     std::vector<std::string> merges{};
     if (auto val = std::get_if<std::vector<std::string>>(&tokenizer_config.at("merges"))) {
         merges = *val;
     }
+
+    if (!byte_encode) {
+        // BPETokenizer's initial trie must not consume ordinary multi-character entries without merges.
+        const auto& types = std::get<ov::Tensor>(tokenizer_config.at("token_type"));
+        std::set<std::string> merged_tokens;
+        std::set<uint8_t> ordinary_bytes;
+        for (const auto& token : vocab_from_config) {
+            if (token.size() == 1)
+                ordinary_bytes.insert(static_cast<uint8_t>(token[0]));
+        }
+        for (const auto& merge : merges) {
+            const auto space = merge_separator(merge);
+            merged_tokens.insert(merge.substr(0, space) + merge.substr(space + 1));
+        }
+        for (size_t i = 0; i < vocab.size(); ++i) {
+            if (types.data<const int32_t>()[i] == 6) {
+                const auto byte = byte_token_value(vocab_from_config[i]);
+                vocab[i] = {byte};
+                if (ordinary_bytes.count(byte))
+                    vocab[i].clear();
+            } else if (types.data<const int32_t>()[i] == 1 &&
+                       vocab_from_config[i].find_first_not_of('\n') != std::string::npos &&
+                       split_utf8_chars(vocab_from_config[i]).size() > 1 &&
+                       !merged_tokens.count(vocab_from_config[i])) {
+                vocab[i].clear();
+            }
+        }
+    }
+    auto vocab_const = create_string_constant(vocab);
+    inputs.insert(inputs.end(), vocab_const.begin(), vocab_const.end());
 
     std::vector<std::vector<uint8_t>> left_merges;
     std::vector<std::vector<uint8_t>> right_merges;
@@ -434,7 +493,7 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
         return byte_encode ? apply_unicode_to_bytes(piece) : std::vector<uint8_t>(piece.begin(), piece.end());
     };
     for (const auto& merge : merges) {
-        size_t space = merge.find(' ');
+        size_t space = merge_separator(merge);
         std::string left = merge.substr(0, space);
         std::string right = merge.substr(space + 1);
 
@@ -742,7 +801,7 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
 
     // Build the serialized ModelProto and wrap as a u8 Constant (first input to SentencepieceTokenizer)
     auto proto_bytes =
-        build_spm_model_proto(vocab, scores, token_types, add_space_prefix, true, unk_id, bos_id, eos_id, pad_id);
+        build_spm_model_proto(vocab, scores, token_types, add_space_prefix, false, unk_id, bos_id, eos_id, pad_id);
     auto sp_model_const = std::make_shared<v0::Constant>(element::u8, Shape{proto_bytes.size()}, proto_bytes.data());
 
     // inputs = SpecialTokensSplit outputs: [ragged_begins(0), ragged_ends(1), begins(2), ends(3), chars(4), ...]
@@ -752,14 +811,18 @@ static ov::OutputVector parse_spm_config(const std::map<std::string, GGUFMetaDat
     // SentencePiece deliberately does not encode CONTROL pieces from their spelling.
     // Chat delimiters and media markers must use their GGUF IDs even when automatic
     // BOS/EOS insertion is disabled. Use the tokenizer op's explicit special-token map.
-    std::vector<std::vector<uint8_t>> special_pieces;
     std::vector<int32_t> special_ids;
     for (size_t i = 0; i < vocab.size(); ++i) {
-        if (is_atomic_token(token_types[i])) {
-            special_pieces.emplace_back(vocab[i].begin(), vocab[i].end());
+        if (is_atomic_token(token_types[i]))
             special_ids.push_back(static_cast<int32_t>(i));
-        }
     }
+    // Longest match first, as in llama.cpp and HF.
+    std::stable_sort(special_ids.begin(), special_ids.end(), [&vocab](int32_t a, int32_t b) {
+        return vocab[a].size() > vocab[b].size();
+    });
+    std::vector<std::vector<uint8_t>> special_pieces;
+    for (const auto id : special_ids)
+        special_pieces.emplace_back(vocab[id].begin(), vocab[id].end());
     if (!special_ids.empty()) {
         auto pieces = create_string_constant(special_pieces);
         sp_inputs.insert(sp_inputs.end(), pieces.begin(), pieces.end());
@@ -943,16 +1006,16 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
             add_token_segment(eos_id);
         }
 
-        if (segment_ids.size() > 1) {
-            cs_inputs.push_back(
-                std::make_shared<v0::Constant>(element::i32, ov::Shape{segment_ids.size()}, segment_ids)->output(0));
-            auto combined = create_func("CombineSegments", cs_inputs, {});
-            // CombineSegments returns [begins, ends, values, ...]; keep the ragged token ids.
-            OPENVINO_ASSERT(combined.size() >= 3, "[gguf tokenizer] CombineSegments must have >=3 outputs");
-            outputs[0] = combined[0];
-            outputs[1] = combined[1];
-            outputs[2] = combined[2];
-        }
+        // Emitted even for a lone main segment: MakeCombineSegmentsStateful only turns the
+        // truncation above into the runtime `truncation` flag (default off) through CombineSegments.
+        cs_inputs.push_back(
+            std::make_shared<v0::Constant>(element::i32, ov::Shape{segment_ids.size()}, segment_ids)->output(0));
+        auto combined = create_func("CombineSegments", cs_inputs, {});
+        // CombineSegments returns [begins, ends, values, ...]; keep the ragged token ids.
+        OPENVINO_ASSERT(combined.size() >= 3, "[gguf tokenizer] CombineSegments must have >=3 outputs");
+        outputs[0] = combined[0];
+        outputs[1] = combined[1];
+        outputs[2] = combined[2];
     }
 
     // Left padding
@@ -1014,6 +1077,10 @@ build_tokenizer_models(const std::shared_ptr<void>& shared_object_ov_tokenizers,
             // Unescape ordinary pieces before concatenation, preserving literal atomic tokens.
             const std::string metaspace = "\xe2\x96\x81";
             for (size_t i = 0; i < tokens.size(); ++i) {
+                if (token_types_data[i] == GGUF_TOKEN_BYTE) {
+                    vocab[i] = {byte_token_value(tokens[i])};
+                    continue;
+                }
                 if (is_atomic_token(token_types_data[i])) {
                     continue;
                 }
@@ -1103,6 +1170,60 @@ create_tokenizer_from_parameters(const std::shared_ptr<void>& shared_object_ov_t
                     "[gguf tokenizer] empty GGUF tokenizer metadata: there is nothing to build a tokenizer from.");
     auto tokenizer_config = tokenizer_config_from_rt_info(tokenizer_metadata);
     return build_tokenizer_models(shared_object_ov_tokenizers, std::move(tokenizer_config));
+}
+
+std::set<int64_t> gguf_stop_token_ids(const ov::AnyMap& tokenizer_metadata) {
+    // Mirrors llama.cpp's end-of-generation set: eos/eot/eom/fim plus known end-of-turn texts.
+    static const std::set<std::string> eog_texts{
+        "<|eot_id|>", "<|im_end|>", "<|end|>", "<|return|>", "<|call|>", "<|flush|>", "<|calls|>",
+        "<end_of_turn>", "<|endoftext|>", "</s>", "<|eom_id|>", "<EOT>", "_<EOT>", "[EOT]", "[EOS]",
+        "<|end_of_text|>", "<end_of_utterance>", "<eos>", "<turn|>", "<|tool_response>",
+        "<｜end▁of▁sentence｜>", "[e~["};
+    std::set<int64_t> ids;
+    std::map<std::string, int64_t> found;
+    if (const auto it = tokenizer_metadata.find("tokens");
+        it != tokenizer_metadata.end() && it->second.is<std::vector<std::string>>()) {
+        const auto& tokens = it->second.as<std::vector<std::string>>();
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            if (eog_texts.count(tokens[i])) {
+                ids.insert(int64_t(i));
+                found.emplace(tokens[i], int64_t(i));
+            }
+        }
+    }
+    for (const char* key : {"eos_token_id", "eot_token_id", "eom_token_id"}) {
+        const auto it = tokenizer_metadata.find(key);
+        if (it == tokenizer_metadata.end())
+            continue;
+        if (const auto id = read_tokenizer_id(tokenizer_config_from_rt_info({*it}), key); id >= 0)
+            ids.insert(id);
+    }
+    // llama.cpp: harmony-style vocabularies end messages, not generation, with <|end|>;
+    // Gemma4 uses </s> as ordinary text.
+    if (found.count("<|end|>") && found.count("<|call|>") + found.count("<|calls|>") &&
+        found.count("<|return|>") + found.count("<|flush|>"))
+        ids.erase(found["<|end|>"]);
+    if (found.count("</s>") && found.count("<|tool_response>"))
+        ids.erase(found["</s>"]);
+    const auto add_fim_stop = [&](const char* key, std::initializer_list<const char*> aliases) {
+        int64_t id = -1;
+        if (const auto it = tokenizer_metadata.find(key); it != tokenizer_metadata.end())
+            id = read_tokenizer_id(tokenizer_config_from_rt_info({*it}), key);
+        if (const auto it = tokenizer_metadata.find("tokens");
+            it != tokenizer_metadata.end() && it->second.is<std::vector<std::string>>()) {
+            const auto& tokens = it->second.as<std::vector<std::string>>();
+            if (id < 0 || static_cast<size_t>(id) >= tokens.size()) {
+                const auto token = std::find_first_of(tokens.begin(), tokens.end(), aliases.begin(), aliases.end());
+                id = token == tokens.end() ? -1 : std::distance(tokens.begin(), token);
+            }
+        }
+        if (id >= 0)
+            ids.insert(id);
+    };
+    add_fim_stop("fim_pad_token_id", {"<|fim_pad|>", "<fim-pad>", "<fim_pad>", "<PAD>", "[PAD]"});
+    add_fim_stop("fim_rep_token_id", {"<|fim_repo|>", "<|repo_name|>", "<fim-repo>", "<REPO>", "<reponame>"});
+    add_fim_stop("fim_sep_token_id", {"<|file_sep|>"});
+    return ids;
 }
 
 #ifdef ENABLE_GGUF

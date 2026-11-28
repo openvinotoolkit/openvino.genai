@@ -21,6 +21,11 @@ public:
 
 class InputsEmbedderLLaVA : public InputsEmbedder::IInputsEmbedder {
 public:
+    InputsEmbedderLLaVA(const VLMModels& models,
+                        const Tokenizer& tokenizer,
+                        const std::string& device,
+                        const ov::AnyMap& properties);
+
     InputsEmbedderLLaVA(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,

@@ -62,10 +62,14 @@ void assert_size(size_t size, VLMModelType model_type) {
 
 }  // namespace
 
-VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
-    std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
-    nlohmann::json parsed = nlohmann::json::parse(stream);
+VLMConfig::VLMConfig(const std::filesystem::path& json_path)
+    : VLMConfig([&json_path] {
+          std::ifstream stream(json_path);
+          OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
+          return nlohmann::json::parse(stream);
+      }()) {}
+
+VLMConfig::VLMConfig(const nlohmann::json& parsed) {
     using ov::genai::utils::read_json_param;
     model_type = to_vlm_model_type(parsed.at("model_type"));
     read_json_param(parsed, "hidden_size", hidden_size);

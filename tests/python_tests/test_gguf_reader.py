@@ -413,7 +413,8 @@ def test_gguf_default_reader_failure_hint(tmp_path, reader, with_tokenizer):
         assert "preview" in message
 
 
-def test_gguf_frontend_rejects_mmproj_as_language_model(tmp_path):
+@pytest.mark.parametrize("pipeline_type", ["llm", "vlm"])
+def test_gguf_frontend_rejects_mmproj_as_language_model(tmp_path, pipeline_type):
     gguf_path = tmp_path / "audio_mmproj.gguf"
     writer = GGUFWriter(gguf_path, "clip")
     writer.add_bool("clip.has_audio_encoder", True)
@@ -425,7 +426,10 @@ def test_gguf_frontend_rejects_mmproj_as_language_model(tmp_path):
     writer.close()
 
     with pytest.raises(RuntimeError, match="is an mmproj and cannot be loaded as a language model"):
-        ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER="FRONTEND")
+        if pipeline_type == "llm":
+            ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER="FRONTEND")
+        else:
+            ov_genai.VLMPipeline(str(gguf_path), "CPU", GGUF_READER="FRONTEND", mmproj_path=str(gguf_path))
 
 
 @pytest.fixture

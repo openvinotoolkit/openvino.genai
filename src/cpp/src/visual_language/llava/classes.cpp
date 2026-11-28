@@ -61,6 +61,12 @@ EncodedImage VisionEncoderLLaVA::encode( const ov::Tensor& image, const ov::AnyM
     return {std::move(image_features), resized_source_size};
 }
 
+InputsEmbedderLLaVA::InputsEmbedderLLaVA(const VLMModels& models,
+                                         const Tokenizer& tokenizer,
+                                         const std::string& device,
+                                         const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties) {}
+
 InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,

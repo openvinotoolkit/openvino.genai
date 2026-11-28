@@ -44,6 +44,11 @@ public:
                     const std::string& device,
                     const ov::AnyMap& properties);
 
+    EmbeddingsModel(const std::shared_ptr<ov::Model>& model,
+                    const float scale_emb,
+                    const std::string& device,
+                    const ov::AnyMap& properties);
+
     EmbeddingsModel() = default;
 
     static Ptr create(const std::filesystem::path& model_dir,
@@ -66,6 +71,10 @@ public:
     std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& get_request_queue();
     ov::Tensor infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor=false);
 private:
+    void compile(const std::shared_ptr<ov::Model>& model,
+                 float scale_emb,
+                 const std::string& device,
+                 const ov::AnyMap& properties);
     void merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const;
 
     std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>> m_embeddings_requests_queue;

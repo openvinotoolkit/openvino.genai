@@ -51,6 +51,14 @@ EncodedImage VisionEncoderGemma3::encode(const ov::Tensor& image, const ov::AnyM
     return {std::move(image_features)};
 }
 
+InputsEmbedderGemma3::InputsEmbedderGemma3(const VLMModels& models,
+                                           const Tokenizer& tokenizer,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties) {
+    patch_chat_template();
+}
+
 InputsEmbedderGemma3::InputsEmbedderGemma3(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,

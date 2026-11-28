@@ -21,6 +21,7 @@
 #include "openvino/core/graph_util.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/assign.hpp"
+#include "openvino/op/broadcast.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
@@ -33,6 +34,7 @@
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
+#include "openvino/op/shape_of.hpp"
 #include "openvino/op/topk.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/op/unsqueeze.hpp"
@@ -41,6 +43,7 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "model_desc.hpp"
+#include "gguf_utils/gguf_utils.hpp"
 #include "sampling/candidates_validation.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
@@ -249,6 +252,37 @@ TEST(DFlashModelTransforms, ValidatesLocatorsAcrossPagedAttentionAndGatherBefore
     ASSERT_EQ(count_outputs_with_name(model, "last_hidden_state"), 1);
     ASSERT_EQ(model->get_results().size(), original_result_count + 1);
     ASSERT_EQ(model->output("last_hidden_state").get_partial_shape()[2].get_length(), 8);
+}
+
+TEST(GatherBeforeMatmul, MarkedLogitsConcatAfterPagedAttention) {
+    auto model = make_annotated_stateful_sdpa_model();
+    const auto result = model->get_results().front();
+    const auto logits = result->input_value(0);
+    auto shape = std::make_shared<ov::op::v3::ShapeOf>(logits);
+    auto indices = ov::op::v0::Constant::create(ov::element::i64, {2}, {0, 1});
+    auto axis = ov::op::v0::Constant::create(ov::element::i64, {}, {0});
+    auto prefix_shape = std::make_shared<ov::op::v8::Gather>(shape, indices, axis);
+    auto one = ov::op::v0::Constant::create(ov::element::i64, {1}, {1});
+    auto padding_shape = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{prefix_shape, one}, 0);
+    auto padding_value =
+        ov::op::v0::Constant::create(ov::element::f32, {}, {-std::numeric_limits<float>::infinity()});
+    auto padding = std::make_shared<ov::op::v3::Broadcast>(padding_value, padding_shape);
+    auto concat = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{logits, padding}, 2);
+    concat->get_rt_info()[ov::genai::gguf_utils::LOGITS_VOCAB_EXTENSION] = true;
+    result->input(0).replace_source_output(concat);
+    model->validate_nodes_and_infer_types();
+
+    ov::pass::SDPAToPagedAttention(false, false, true, false).run_on_model(model);
+    model->validate_nodes_and_infer_types();
+    ov::genai::utils::apply_gather_before_matmul_transformation(model);
+    const auto head = std::get<0>(ov::genai::utils::find_llm_matmul(model));
+    ASSERT_TRUE(head);
+    const auto gather = ov::as_type_ptr<ov::op::v8::Gather>(head->input_value(0).get_node_shared_ptr());
+    ASSERT_TRUE(gather);
+    const auto gather_axis = ov::as_type_ptr<ov::op::v0::Constant>(gather->input_value(2).get_node_shared_ptr());
+    ASSERT_TRUE(gather_axis);
+    EXPECT_EQ(gather_axis->cast_vector<int64_t>(), (std::vector<int64_t>{0}));
+    EXPECT_EQ(model->input("sampled_tokens_indices").get_element_type(), ov::element::i64);
 }
 
 TEST(DFlashModelTransforms, RejectsMalformedRequestedLocators) {

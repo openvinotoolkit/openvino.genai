@@ -327,6 +327,26 @@ EncodedVideo VisionEncoderGemma4::encode_frames(const std::vector<ov::Tensor>& f
     return result;
 }
 
+InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMModels& models,
+                                           const Tokenizer& tokenizer,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties)
+    : IInputsEmbedder(models, tokenizer, device, properties) {
+    patch_chat_template();
+    if (const auto audio = models.find("audio_embeddings"))
+        m_audio_encoder = AudioEncoderGemma4::create(audio, models.config.model_type, device, properties);
+    if (has_per_layer_embeddings()) {
+        auto compiled = utils::singleton_core().compile_model(
+            models.at("text_embeddings_per_layer"),
+            device,
+            utils::get_model_properties(properties, "text_embeddings_per_layer", device));
+        utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
+        m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled] { return compiled.create_infer_request(); });
+    }
+}
+
 InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::filesystem::path& model_dir,
                                            const Tokenizer& tokenizer,
