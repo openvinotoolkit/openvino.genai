@@ -4,11 +4,13 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdio>
 #include <functional>
 #include <limits>
 #include <list>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <numeric>
 #include <optional>
 #include <set>
@@ -21,8 +23,14 @@
 #include "continuous_batching/cache/cache_type.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
+#include "continuous_batching/cache/cache_offload_coordinator.hpp"
+#include "continuous_batching/cache/offload_plan.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "continuous_batching/cache/linear_attention_offload_cache.hpp"
+#include "continuous_batching/cache/store_registry.hpp"
+#include "content_hash.hpp"
 #include "logger.hpp"
 
 namespace ov::genai {
@@ -155,6 +163,21 @@ public:
 
     CacheOrchestrator() = default;
 
+    const CacheOffloadCoordinator& get_offload_coordinator() const {
+        return *m_offload;
+    }
+
+    /// The lock the pipeline holds while it runs a step; a prefix warm-up takes it before it allocates or writes cache.
+    void set_execution_mutex(std::recursive_mutex* execution_mutex) {
+        m_execution_mutex = execution_mutex;
+    }
+
+    /// @return The lock on the execution mutex of the pipeline, or no lock when none is set.
+    std::unique_lock<std::recursive_mutex> lock_execution() const {
+        return m_execution_mutex != nullptr ? std::unique_lock<std::recursive_mutex>(*m_execution_mutex)
+                                            : std::unique_lock<std::recursive_mutex>();
+    }
+
     /**
      * @brief Detect model cache types, create managers and block managers, normalize config,
      *        and return a fully populated CacheOrchestrator.
@@ -166,15 +189,20 @@ public:
      *                              string and number of cache tensors across all cache types.
      * @param hidden_state_bytes_per_token  Bytes the pipeline's HiddenStateCache keeps per KV token.
      *                              They share the cache_size budget with KV. 0 when there is no such cache.
+     * @param model_identity        Digest of the model's weights. When non-empty, the offload stores are
+     *                              opened under namespaces derived from it, so entries a persistent store
+     *                              plugin keeps for one model are never served to another.
      */
     static std::shared_ptr<CacheOrchestrator> create(
             ov::InferRequest& infer_request,
             SchedulerConfig& config,
             std::function<size_t(const std::string&, size_t)> get_available_memory,
-            size_t hidden_state_bytes_per_token = 0) {
+            size_t hidden_state_bytes_per_token = 0,
+            const std::string& model_identity = {}) {
         config.validate();
 
         auto orchestrator = std::make_shared<CacheOrchestrator>();
+        orchestrator->m_offload = std::make_unique<CacheOffloadCoordinator>(model_identity);
 
         auto [kv_mgr, la_mgr] = detect_cache_managers(infer_request, config);
 
@@ -196,6 +224,16 @@ public:
         config.num_kv_blocks = num_kv_blocks;
         config.num_linear_attention_blocks = num_la_blocks;
 
+        GENAI_INFO("[KV_TRACE] orchestrator kv_cache=%s linear_cache=%s cache_tensors=%zu device=%s kv_blocks=%zu linear_blocks=%zu cache_interval=%zu prefix=%s",
+               kv_mgr ? "true" : "false",
+               la_mgr ? "true" : "false",
+               num_cache_tensors,
+               allocation_device.c_str(),
+               num_kv_blocks,
+               num_la_blocks,
+               cache_interval,
+               config.enable_prefix_caching ? "true" : "false");
+
         if (kv_mgr) {
             orchestrator->register_kv_cache(std::move(kv_mgr), config);
         }
@@ -206,7 +244,45 @@ public:
 
         OPENVINO_ASSERT(orchestrator->has_registered_types(), "No supported cache types detected in the model");
 
+        if (config.cache_offload.has_value()) {
+            orchestrator->enable_cache_offload(*config.cache_offload, allocation_device);
+        }
+
         return orchestrator;
+    }
+
+    /**
+     * @brief Creates the offload caches of the KV blocks and, for a model with linear attention, of its state blocks,
+     * and attaches each to its block manager. Both go to one store set, see CacheOffloadCoordinator::enable, and share
+     * the budget of @p offload_config.
+     */
+    void enable_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
+        auto cache_mgr_it = m_cache_managers.find(CacheType::KV_CACHE);
+        OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
+                        "KV cache offload requires a model with KV cache inputs");
+        auto& kv_manager = static_cast<KVCacheManager&>(*cache_mgr_it->second);
+        // The offload slot holds only the key/value blocks; the index caches of the same block would come back stale.
+        OPENVINO_ASSERT(!kv_manager.has_qsa_index_caches(),
+                        "KV cache offload is not supported yet for models with sparse attention index caches (QSA)");
+        BlockManager& kv_block_manager = *m_block_managers.at(CacheType::KV_CACHE);
+        std::vector<GroupCost> groups{{kv_manager.get_block_layout().get_slot_size(), kv_block_manager.get_block_size()}};
+
+        LinearAttentionCacheManager* la_manager = nullptr;
+        BlockManager* la_block_manager = nullptr;
+        if (const auto la_mgr_it = m_cache_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+            la_mgr_it != m_cache_managers.end()) {
+            la_manager = &static_cast<LinearAttentionCacheManager&>(*la_mgr_it->second);
+            la_block_manager = m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE).get();
+            // The LA block manager's block size is the checkpoint interval in tokens.
+            groups.push_back({la_manager->get_block_layout().get_slot_size(), la_block_manager->get_block_size()});
+        }
+
+        m_offload->enable(kv_manager,
+                          kv_block_manager,
+                          la_manager,
+                          la_block_manager,
+                          resolve_offload_settings(offload_config, groups),
+                          device);
     }
 
     /**
@@ -244,7 +320,14 @@ public:
 
     void allocate_cache_if_needed() {
         for (auto& [type, block_mgr] : m_block_managers) {
-            m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_block_count());
+            const size_t requested_blocks = block_mgr->get_total_block_count();
+            if (m_cache_managers.at(type)->get_num_allocated_blocks() < requested_blocks) {
+                GENAI_INFO("[KV_TRACE] allocate_cache_if_needed type=%d blocks=%zu free_blocks=%zu",
+                           static_cast<int>(type),
+                           requested_blocks,
+                           block_mgr->num_free_blocks());
+                m_cache_managers.at(type)->allocate_cache_if_needed(requested_blocks);
+            }
         }
         for (auto& [type, block_indices] : m_pending_zero_blocks) {
             m_cache_managers.at(type)->zero_blocks(block_indices);
@@ -254,6 +337,9 @@ public:
 
     void copy_blocks(const std::map<CacheType, std::map<size_t, std::list<size_t>>>& per_type_copy_map) {
         for (const auto& [type, copy_map] : per_type_copy_map) {
+            GENAI_INFO("[KV_TRACE] copy_blocks type=%d source_blocks=%zu",
+                       static_cast<int>(type),
+                       copy_map.size());
             m_cache_managers.at(type)->copy_blocks(copy_map);
         }
     }
@@ -406,6 +492,22 @@ public:
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group,
                                size_t max_processed_tokens = std::numeric_limits<size_t>::max()) {
+        CacheOffloadCoordinator::WarmupReport found;
+        size_t reused_tokens = 0;
+        restore_cached_blocks_impl(sequence_group, max_processed_tokens, found, reused_tokens);
+        // Once per restore, after it is decided, also when nothing was found, so a store sees every request.
+        if (m_offload->enabled()) {
+            m_offload->report_restore(sequence_group, found, reused_tokens);
+        }
+    }
+
+private:
+    /// Restores the cached prefix of @p sequence_group. @p found and @p reused_tokens tell what the warm-up found and
+    /// the prefix length that was finally restored; the latter stays 0 when the restore did not happen.
+    void restore_cached_blocks_impl(const SequenceGroup::Ptr& sequence_group,
+                                    size_t max_processed_tokens,
+                                    CacheOffloadCoordinator::WarmupReport& found,
+                                    size_t& reused_tokens) {
         if (m_block_managers.empty()) {
             return;
         }
@@ -415,6 +517,23 @@ public:
         OPENVINO_ASSERT(m_block_managers.size() == (kv_it != m_block_managers.end()) +
                               (la_it != m_block_managers.end()),
                 "Prefix restore supports only KV and linear-attention caches");
+
+        // Refill the in-memory prefix cache from disk first, so the restore below sees those blocks as cached.
+        if (m_offload->enabled()) {
+            // Warming writes into physical blocks, which a pipeline that has not scheduled anything yet has not
+            // allocated. Allocating rebinds the cache tensors, so it must not overlap a step of the pipeline.
+            const DevicePhaseGuard begin_device_phase = [this] {
+                auto execution_lock = lock_execution();
+                allocate_cache_if_needed();
+                return execution_lock;
+            };
+            found = m_offload->warm(kv_it != m_block_managers.end() ? kv_it->second.get() : nullptr,
+                                    la_it != m_block_managers.end() ? la_it->second.get() : nullptr,
+                                    sequence_group,
+                                    max_processed_tokens,
+                                    begin_device_phase);
+        }
+
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
             auto& kv_block_mgr = *kv_it->second;
             auto& la_block_mgr = *la_it->second;
@@ -451,7 +570,8 @@ public:
             }
             prepared_kv->apply();
             prepared_la->apply();
-            sequence_group->update_processed_tokens_num(std::min(kv_plan.processed_tokens, la_plan.processed_tokens));
+            reused_tokens = std::min(kv_plan.processed_tokens, la_plan.processed_tokens);
+            sequence_group->update_processed_tokens_num(reused_tokens);
             GENAI_DEBUG("Hybrid prefix restore: request=%llu endpoint=%zu",
                         static_cast<unsigned long long>(sequence_group->get_request_id()), la_plan.cache_token_position);
             return;
@@ -463,12 +583,14 @@ public:
             auto prepared = manager.prepare_prefix_restore(sequence_group, plan);
             if (prepared) {
                 prepared->apply();
-                sequence_group->update_processed_tokens_num(plan.processed_tokens);
+                reused_tokens = plan.processed_tokens;
+                sequence_group->update_processed_tokens_num(reused_tokens);
             }
             return;
         }
     }
 
+public:
     void free_blocks_from_sequence(size_t seq_id,
                                    const std::vector<std::set<size_t>>& per_layer_logical_block_indices,
                                    CacheType cache_type) {
@@ -1306,6 +1428,9 @@ private:
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
+    std::recursive_mutex* m_execution_mutex = nullptr;
+    // Declared after the block managers so that it is destroyed first and can detach its observers from them.
+    std::unique_ptr<CacheOffloadCoordinator> m_offload = std::make_unique<CacheOffloadCoordinator>();
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
 

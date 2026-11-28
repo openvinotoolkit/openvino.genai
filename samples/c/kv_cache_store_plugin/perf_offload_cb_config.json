@@ -1,0 +1,15 @@
+{
+  "num_kv_blocks": 120,
+  "max_num_batched_tokens": 4096,
+  "max_num_seqs": 1,
+  "dynamic_split_fuse": true,
+  "enable_prefix_caching": true,
+  "cache_offload": {
+    "ssd_cache_capacity_gb": 5,
+    "kv_cache_dir": "REPLACE_WITH_AN_EXISTING_DIRECTORY",
+    "plugin": {
+      "library_path": "REPLACE_WITH_PATH_TO_YOUR_PLUGIN",
+      "provider_name": "sample-in-memory"
+    }
+  }
+}

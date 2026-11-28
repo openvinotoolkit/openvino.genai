@@ -17,6 +17,9 @@ from optimum.intel.utils.import_utils import is_transformers_version
 import openvino as ov
 import openvino.properties.hint as hints
 from openvino_genai import (
+    CacheOffloadConfig,
+    CacheOffloadWritePolicy,
+    CacheStorePluginConfig,
     ContinuousBatchingPipeline,
     LLMPipeline,
     GenerationConfig,
@@ -189,6 +192,157 @@ def test_generation_handle_echo_only_publishes_output_and_finished_status(
     assert handle.get_status() == GenerationStatus.FINISHED
     assert len(outputs) == 1
     assert outputs[0].generated_ids
+
+
+def test_cache_offload_config_defaults():
+    config = CacheOffloadConfig()
+
+    assert config.write_policy == CacheOffloadWritePolicy.ON_EVICT
+    assert config.dram_cache_capacity_gb == 0
+    assert config.ssd_cache_capacity_gb == 0
+    assert config.kv_cache_dir == ""
+    assert config.reuse_ssd_cache is True
+    assert config.plugin is None
+
+    plugin = CacheStorePluginConfig()
+    assert plugin.library_path == ""
+    assert plugin.provider_name == ""
+    assert plugin.debug_log_path == ""
+    assert plugin.timeout_ms == 10000
+    assert plugin.properties == {}
+
+    assert SchedulerConfig().cache_offload is None
+
+
+def test_cache_offload_config_keyword_construction_and_assignment(tmp_path: Path):
+    config = CacheOffloadConfig(
+        write_policy=CacheOffloadWritePolicy.WRITE_THROUGH,
+        dram_cache_capacity_gb=2,
+        ssd_cache_capacity_gb=0.5,
+        kv_cache_dir=str(tmp_path),
+        reuse_ssd_cache=False,
+        plugin=CacheStorePluginConfig(
+            library_path="plugin.dll",
+            provider_name="provider",
+            debug_log_path=str(tmp_path / "logs"),
+            timeout_ms=2500,
+            properties={"tier": "ssd"},
+        ),
+    )
+
+    assert config.write_policy == CacheOffloadWritePolicy.WRITE_THROUGH
+    assert config.dram_cache_capacity_gb == 2
+    assert config.ssd_cache_capacity_gb == 0.5
+    assert config.kv_cache_dir == str(tmp_path)
+    assert config.reuse_ssd_cache is False
+    assert config.plugin.library_path == "plugin.dll"
+    assert config.plugin.provider_name == "provider"
+    assert config.plugin.debug_log_path == str(tmp_path / "logs")
+    assert config.plugin.timeout_ms == 2500
+    assert config.plugin.properties == {"tier": "ssd"}
+    config.validate()
+    assert "ssd_cache_capacity_gb: 0.5" in config.to_string()
+    assert "WRITE_THROUGH" in config.to_string()
+
+    scheduler_config = SchedulerConfig()
+    scheduler_config.cache_offload = config
+    assert scheduler_config.cache_offload.ssd_cache_capacity_gb == 0.5
+    assert scheduler_config.cache_offload.plugin.library_path == "plugin.dll"
+
+    scheduler_config.cache_offload = None
+    assert scheduler_config.cache_offload is None
+
+
+def test_cache_offload_members_are_edited_in_place(tmp_path: Path):
+    scheduler_config = SchedulerConfig()
+    scheduler_config.cache_offload = CacheOffloadConfig(ssd_cache_capacity_gb=1, kv_cache_dir=str(tmp_path))
+
+    # The getters return references to the members, so an assignment through them changes the config.
+    scheduler_config.cache_offload.ssd_cache_capacity_gb = 8
+    assert scheduler_config.cache_offload.ssd_cache_capacity_gb == 8
+
+    scheduler_config.cache_offload.plugin = CacheStorePluginConfig(library_path="plugin.dll")
+    scheduler_config.cache_offload.plugin.timeout_ms = 500
+    assert scheduler_config.cache_offload.plugin.timeout_ms == 500
+
+    scheduler_config.cache_offload.plugin = None
+    assert scheduler_config.cache_offload.plugin is None
+
+
+@pytest.mark.parametrize(
+    "scheduler_params",
+    [
+        pytest.param(
+            {"enable_prefix_caching": False, "ssd_cache_capacity_gb": 1, "use_dir": True}, id="without_prefix_caching"
+        ),
+        pytest.param(
+            {"enable_prefix_caching": True, "ssd_cache_capacity_gb": 0, "use_dir": False}, id="without_a_tier"
+        ),
+        pytest.param(
+            {"enable_prefix_caching": True, "ssd_cache_capacity_gb": 1, "use_dir": False}, id="without_a_directory"
+        ),
+        pytest.param(
+            {"enable_prefix_caching": True, "ssd_cache_capacity_gb": -1, "use_dir": True}, id="negative_ssd_capacity"
+        ),
+    ],
+)
+def test_cache_offload_rejects_invalid_scheduler_config(
+    model_facebook_opt_125m: OVConvertedModelSchema, scheduler_params: dict, tmp_path: Path
+):
+    scheduler_config = SchedulerConfig()
+    scheduler_config.enable_prefix_caching = scheduler_params["enable_prefix_caching"]
+    scheduler_config.cache_offload = CacheOffloadConfig(
+        ssd_cache_capacity_gb=scheduler_params["ssd_cache_capacity_gb"],
+        kv_cache_dir=str(tmp_path) if scheduler_params["use_dir"] else "",
+    )
+
+    with pytest.raises(RuntimeError):
+        ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, scheduler_config, "CPU")
+
+
+def test_cache_offload_restores_an_evicted_prefix_with_the_same_output(
+    model_facebook_opt_125m: OVConvertedModelSchema, tmp_path: Path
+):
+    def make_scheduler_config(use_offload: bool) -> SchedulerConfig:
+        scheduler_config = SchedulerConfig()
+        scheduler_config.enable_prefix_caching = True
+        scheduler_config.dynamic_split_fuse = False
+        scheduler_config.max_num_batched_tokens = 512
+        scheduler_config.max_num_seqs = 1
+        # Small enough that the filler request below displaces the first prompt from the device cache.
+        scheduler_config.num_kv_blocks = 8
+        if use_offload:
+            scheduler_config.cache_offload = CacheOffloadConfig(ssd_cache_capacity_gb=0.25, kv_cache_dir=str(tmp_path))
+        return scheduler_config
+
+    prompt = "The quick brown fox jumps over the lazy dog. " * 12
+    filler = "Completely unrelated tokens to evict the cached prefix. " * 18
+    generation_config = GenerationConfig(max_new_tokens=8, do_sample=False, ignore_eos=True)
+
+    def run(pipe: ContinuousBatchingPipeline, request_id: int, text: str):
+        handle = pipe.add_request(request_id, text, generation_config)
+        while pipe.has_non_finished_requests():
+            pipe.step()
+        return handle.read_all()[0].generated_ids, handle.get_perf_metrics().get_num_prefix_cache_hit_tokens()
+
+    reference_pipe = ContinuousBatchingPipeline(
+        model_facebook_opt_125m.models_path, make_scheduler_config(use_offload=False), "CPU"
+    )
+    reference_ids, _ = run(reference_pipe, 0, prompt)
+    del reference_pipe
+
+    pipe = ContinuousBatchingPipeline(
+        model_facebook_opt_125m.models_path, make_scheduler_config(use_offload=True), "CPU"
+    )
+    first_ids, first_hit_tokens = run(pipe, 1, prompt)
+    run(pipe, 2, filler)
+    repeated_ids, repeated_hit_tokens = run(pipe, 3, prompt)
+
+    assert first_hit_tokens == 0
+    assert first_ids == reference_ids
+    assert repeated_ids == reference_ids
+    assert repeated_hit_tokens > 0
+
 
 @pytest.mark.transformers_dependent(
     reason="Cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"

@@ -9,6 +9,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/cache_eviction.hpp"
+#include "openvino/genai/cache_offload.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/sparse_attention.hpp"
 #include "tokenizer/tokenizers_path.hpp"
@@ -21,6 +22,9 @@ namespace pyutils = ov::genai::pybind::utils;
 using ov::genai::AggregationMode;
 using ov::genai::SparseAttentionMode;
 using ov::genai::CacheEvictionConfig;
+using ov::genai::CacheOffloadConfig;
+using ov::genai::CacheOffloadWritePolicy;
+using ov::genai::CacheStorePluginConfig;
 using ov::genai::SparseAttentionConfig;
 using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::GenerationResult;
@@ -103,6 +107,62 @@ auto sparse_attention_config_docstring = R"(
      place.  Directly influences the overhead portion of the importance score computations - if full (dense) attention takes
      M time to be calculated, then the importance score calculation would be taking `M / xattention_stride` time as overhead.
     :type xattention_stride: int
+)";
+auto cache_offload_config_docstring = R"(
+    Configuration of the tiered KV / linear attention cache offload. Setting SchedulerConfig.cache_offload enables it.
+
+    Offloaded blocks are rediscovered through the prefix-cache block hash, so offload requires
+    SchedulerConfig.enable_prefix_caching and is currently not supported together with
+    SchedulerConfig.use_cache_eviction, SchedulerConfig.use_sparse_attention, or models whose
+    sparse attention keeps index caches per block (QSA). A model with linear attention layers offloads those too,
+    out of the same budget.
+
+    The built-in host DRAM tier is not implemented yet: dram_cache_capacity_gb is only honored by a plugin that
+    advertises OV_KVCACHE_CAP_DRAM_TIER, and is otherwise ignored with a warning when an SSD tier is configured.
+
+    Parameters:
+    :param write_policy: when blocks are written to the store: ON_EVICT (default) writes the blocks that are about to be
+        overwritten in device memory, WRITE_THROUGH also writes every block right after the forward pass that completed it.
+    :type write_policy: openvino_genai.CacheOffloadWritePolicy
+
+    :param dram_cache_capacity_gb: upper bound of the DRAM tier in GiB (fractions allowed). 0 disables the tier.
+    :type dram_cache_capacity_gb: float
+
+    :param ssd_cache_capacity_gb: upper bound of the SSD tier in GiB (fractions allowed). 0 disables the tier.
+    :type ssd_cache_capacity_gb: float
+
+    :param kv_cache_dir: existing, writable directory of the SSD tier. Required when ssd_cache_capacity_gb is greater than
+        0 and must be empty otherwise.
+    :type kv_cache_dir: str
+
+    :param reuse_ssd_cache: whether the cache an earlier run left in kv_cache_dir for the same model is loaded (True,
+        default) or purged when the store is opened (False).
+    :type reuse_ssd_cache: bool
+
+    :param plugin: a third-party store plugin; None uses the in-tree store.
+    :type plugin: openvino_genai.CacheStorePluginConfig | None
+)";
+
+auto cache_store_plugin_config_docstring = R"(
+    A third-party KV cache store plugin. Setting CacheOffloadConfig.plugin with a non-empty library_path is the explicit
+    opt-in to load that library. A failure to load, handshake, open or purge it raises when the pipeline is created.
+
+    Parameters:
+    :param library_path: path to the plugin shared library. Must not be empty.
+    :type library_path: str
+
+    :param provider_name: provider to select from the plugin module. Empty uses the module's first provider.
+    :type provider_name: str
+
+    :param debug_log_path: directory for the debug logs of the plugin. Empty: none.
+    :type debug_log_path: str
+
+    :param timeout_ms: longest wait for one asynchronous batch of the plugin, in milliseconds. A batch that is not done
+        by then is cancelled and counted as a cache miss. Must be greater than 0.
+    :type timeout_ms: int
+
+    :param properties: plugin-specific settings handed to the plugin when it opens a store.
+    :type properties: dict[str, str]
 )";
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
@@ -434,6 +494,68 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readwrite("xattention_stride", &SparseAttentionConfig::xattention_stride)
             .def("to_string", &SparseAttentionConfig::to_string);
 
+    py::enum_<CacheOffloadWritePolicy>(m, "CacheOffloadWritePolicy", "Controls when blocks are written to the offload store.")
+            .value("ON_EVICT", CacheOffloadWritePolicy::ON_EVICT)
+            .value("WRITE_THROUGH", CacheOffloadWritePolicy::WRITE_THROUGH);
+
+    py::class_<CacheStorePluginConfig>(m, "CacheStorePluginConfig", cache_store_plugin_config_docstring)
+            .def(py::init([](const std::string& library_path, const std::string& provider_name,
+                             const std::string& debug_log_path, std::uint32_t timeout_ms,
+                             const std::map<std::string, std::string>& properties) {
+                CacheStorePluginConfig config;
+                config.library_path = library_path;
+                config.provider_name = provider_name;
+                config.debug_log_path = debug_log_path;
+                config.timeout_ms = timeout_ms;
+                config.properties = properties;
+                return config; }),
+                 py::arg("library_path") = std::string{},
+                 py::arg("provider_name") = std::string{},
+                 py::arg("debug_log_path") = std::string{},
+                 py::arg("timeout_ms") = CacheStorePluginConfig::DEFAULT_TIMEOUT_MS,
+                 py::arg("properties") = std::map<std::string, std::string>{})
+            .def_readwrite("library_path", &CacheStorePluginConfig::library_path)
+            .def_readwrite("provider_name", &CacheStorePluginConfig::provider_name)
+            .def_readwrite("debug_log_path", &CacheStorePluginConfig::debug_log_path)
+            .def_readwrite("timeout_ms", &CacheStorePluginConfig::timeout_ms)
+            .def_readwrite("properties", &CacheStorePluginConfig::properties);
+
+    py::class_<CacheOffloadConfig>(m, "CacheOffloadConfig", cache_offload_config_docstring)
+            .def(py::init([](CacheOffloadWritePolicy write_policy, double dram_cache_capacity_gb,
+                             double ssd_cache_capacity_gb, const std::string& kv_cache_dir, bool reuse_ssd_cache,
+                             const std::optional<CacheStorePluginConfig>& plugin) {
+                CacheOffloadConfig config;
+                config.write_policy = write_policy;
+                config.dram_cache_capacity_gb = dram_cache_capacity_gb;
+                config.ssd_cache_capacity_gb = ssd_cache_capacity_gb;
+                config.kv_cache_dir = kv_cache_dir;
+                config.reuse_ssd_cache = reuse_ssd_cache;
+                config.plugin = plugin;
+                return config; }),
+                 py::arg("write_policy") = CacheOffloadWritePolicy::ON_EVICT,
+                 py::arg("dram_cache_capacity_gb") = 0.0,
+                 py::arg("ssd_cache_capacity_gb") = 0.0,
+                 py::arg("kv_cache_dir") = std::string{},
+                 py::arg("reuse_ssd_cache") = true,
+                 py::arg("plugin") = py::none())
+            .def_readwrite("write_policy", &CacheOffloadConfig::write_policy)
+            .def_readwrite("dram_cache_capacity_gb", &CacheOffloadConfig::dram_cache_capacity_gb)
+            .def_readwrite("ssd_cache_capacity_gb", &CacheOffloadConfig::ssd_cache_capacity_gb)
+            .def_readwrite("kv_cache_dir", &CacheOffloadConfig::kv_cache_dir)
+            .def_readwrite("reuse_ssd_cache", &CacheOffloadConfig::reuse_ssd_cache)
+            // An optional member is exposed through a reference to the member, not a copy, so that
+            // `config.plugin.library_path = ...` changes the config.
+            .def_property("plugin",
+                          [](CacheOffloadConfig& self) -> CacheStorePluginConfig* {
+                              return self.plugin.has_value() ? &*self.plugin : nullptr;
+                          },
+                          [](CacheOffloadConfig& self, const std::optional<CacheStorePluginConfig>& plugin) {
+                              self.plugin = plugin;
+                          },
+                          py::return_value_policy::reference_internal)
+            .def("validate", &CacheOffloadConfig::validate)
+            .def("to_string", &CacheOffloadConfig::to_string);
+
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
         .def(py::init<>())
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
@@ -448,6 +570,16 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config)
         .def_readwrite("use_sparse_attention", &SchedulerConfig::use_sparse_attention)
         .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config)
+        // An optional member is exposed through a reference to the member, not a copy, so that
+        // `scheduler_config.cache_offload.ssd_cache_capacity_gb = 8` changes the config.
+        .def_property("cache_offload",
+                      [](SchedulerConfig& self) -> CacheOffloadConfig* {
+                          return self.cache_offload.has_value() ? &*self.cache_offload : nullptr;
+                      },
+                      [](SchedulerConfig& self, const std::optional<CacheOffloadConfig>& cache_offload) {
+                          self.cache_offload = cache_offload;
+                      },
+                      py::return_value_policy::reference_internal)
         .def("to_string", &SchedulerConfig::to_string);
 
     py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)
@@ -506,6 +638,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const py::kwargs& kwargs
             ) -> std::shared_ptr<GenerationHandleImpl> {
                 const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+                py::gil_scoped_release rel;
                 return pipe.add_request(
                     request_id,
                     prompt,
@@ -530,6 +663,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const ov::Tensor& input_ids,
                const ov::genai::GenerationConfig& generation_config
             ) -> std::shared_ptr<GenerationHandleImpl> {
+                py::gil_scoped_release rel;
                 return pipe.add_request(request_id, input_ids, generation_config);
             },
             py::arg("request_id"),
@@ -543,6 +677,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::string& prompt,
                const ov::genai::GenerationConfig& generation_config
             ) -> std::shared_ptr<GenerationHandleImpl> {
+                py::gil_scoped_release rel;
                 return pipe.add_request(request_id, prompt, generation_config);
             },
             py::arg("request_id"),
@@ -560,6 +695,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const py::kwargs& kwargs
             ) -> std::shared_ptr<GenerationHandleImpl> {
                 const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+                py::gil_scoped_release rel;
                 return pipe.add_request(
                     request_id,
                     prompt,
@@ -583,6 +719,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<ov::Tensor>& images,
                const ov::genai::GenerationConfig& generation_config
             ) -> std::shared_ptr<GenerationHandleImpl> {
+                py::gil_scoped_release rel;
                 return pipe.add_request(request_id, prompt, images, generation_config);
             },
             py::arg("request_id"),

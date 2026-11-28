@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <future>
 #include <optional>
+#include <random>
 #include <thread>
 #include <utility>
 
@@ -18,11 +20,15 @@
 
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/cache_state_dumper.hpp"
+#include "continuous_batching/cache/default_file_store.hpp"
+#include "continuous_batching/cache/model_identity.hpp"
+#include "continuous_batching/cache/model_identity_memo.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
+#include "logger.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -181,12 +187,64 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     SchedulerConfig normalized_config = scheduler_config;
     normalized_config.validate();
 
+    // Offloaded blocks stay in the SSD tier after this pipeline (a plugin or the in-tree store), so the namespaces
+    // they are stored under need to tell models apart.
+    std::string model_identity;
+    const bool offload_requested = normalized_config.cache_offload.has_value();
+
     // Resolve per-role MODEL_PROPERTIES overlay for the language model and
     // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
     const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
 
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
+    // The namespace a plugin-backed store opens under is derived from the base model's weights alone (see
+    // compute_model_identity), computed before any adapter is applied below. A pipeline configured with a static
+    // LoRA adapter would therefore share that namespace with the same base model under a different adapter (or
+    // none), silently reusing KV blocks computed under the wrong weights. Until adapters are folded into cache
+    // identity, reject the combination instead of risking that.
+    OPENVINO_ASSERT(!offload_requested || !m_generation_config.adapters,
+                    "KV cache offload is not supported together with LoRA adapters yet, since the store namespace "
+                    "does not distinguish adapters from the base model. Remove cache_offload or the adapters to proceed.");
+
+    // The digest reads the weights while the device compiles the model; both only read the model.
+    std::future<std::string> model_identity_future;
+    if (offload_requested) {
+        // A model read from a directory remembers its weights digest in the offload directory, so a later run
+        // checks a few pages of the files instead of hashing every weight.
+        std::optional<std::filesystem::path> model_directory;
+        std::filesystem::path memo_directory;
+        if (const auto path_property = properties.find(ov::cache_model_path.name()); path_property != properties.end()) {
+            if (path_property->second.is<std::filesystem::path>()) {
+                model_directory = path_property->second.as<std::filesystem::path>();
+            } else if (path_property->second.is<std::string>()) {
+                model_directory = std::filesystem::path(path_property->second.as<std::string>());
+            }
+        }
+        const std::string& kv_cache_dir = normalized_config.cache_offload->kv_cache_dir;
+        std::error_code directory_error;
+        if (model_directory.has_value() && !kv_cache_dir.empty() && std::filesystem::is_directory(kv_cache_dir, directory_error)) {
+            memo_directory = std::filesystem::path(kv_cache_dir) / default_file_store_detail::ROOT_DIRECTORY_NAME / ".identity";
+        }
+        model_identity_future = std::async(std::launch::async, [model, model_directory, memo_directory] {
+            const auto identity_start = std::chrono::steady_clock::now();
+            bool memo_hit = false;
+            std::string identity;
+            if (model_directory.has_value() && !memo_directory.empty()) {
+                identity = combine_model_identity(compute_structure_digest(model),
+                                                  compute_weights_digest_memoized(model, *model_directory, memo_directory, memo_hit));
+            } else {
+                identity = compute_model_identity(model);
+            }
+            GENAI_INFO("[KV_TRACE] model_identity=%s computed_in_ms=%lld weights_digest_memo=%s",
+                       identity.c_str(),
+                       static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                  std::chrono::steady_clock::now() - identity_start)
+                                                  .count()),
+                       memo_hit ? "hit" : "miss");
+            return identity;
+        });
+    }
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         set_foreign_tensor_name_prefix(*m_generation_config.adapters,
@@ -212,6 +270,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
                     "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
     const std::string execution_device = execution_devices[0];
 
+    if (model_identity_future.valid()) {
+        try {
+            model_identity = model_identity_future.get() + '|' + compute_numerics_fingerprint(compiled_model, utils::singleton_core());
+        } catch (const ov::Exception& error) {
+            // A model that cannot be told apart from another gets a store of its own for this run: the default store
+            // deletes it on exit, and a plugin gets a namespace that no later run will open.
+            GENAI_WARN("KV cache offload cannot identify the model, so its blocks are not reused by a later run: %s", error.what());
+            if (normalized_config.cache_offload->plugin.has_value()) {
+                std::random_device random_device;
+                model_identity = "run_private_" + std::to_string(random_device()) + "_" + std::to_string(random_device());
+            }
+        }
+    }
+
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
@@ -224,8 +296,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     };
     const size_t hidden_state_bytes_per_token =
         normalized_config.enable_prefix_caching ? get_hidden_state_bytes_per_token(compiled_model) : 0;
-    auto cache_orchestrator =
-        CacheOrchestrator::create(infer_request, normalized_config, get_available_memory, hidden_state_bytes_per_token);
+    auto cache_orchestrator = CacheOrchestrator::create(infer_request,
+                                                        normalized_config,
+                                                        get_available_memory,
+                                                        hidden_state_bytes_per_token,
+                                                        model_identity);
+    cache_orchestrator->set_execution_mutex(&m_execution_mutex);
     m_num_decoder_layers = cache_orchestrator->get_num_kv_layers();
 
     if (cache_orchestrator->has_kv_cache()) {
@@ -403,8 +479,13 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
         _throw_if_failed();
-        initialize_prefix_cache(sequence_group);
-        sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
+    }
+    // Restoring may read from a slow store, and step() waits for the awaiting-requests lock, so it runs outside it.
+    initialize_prefix_cache(sequence_group);
+    sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        _throw_if_failed();
         m_awaiting_requests.push_back(sequence_group);
     }
 
@@ -712,6 +793,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _throw_if_failed();
     }
 
+    const std::lock_guard<std::recursive_mutex> execution_lock{m_execution_mutex};
     try {
         _step();
     } catch (...) {
