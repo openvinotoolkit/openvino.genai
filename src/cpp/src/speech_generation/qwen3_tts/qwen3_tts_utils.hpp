@@ -9,8 +9,12 @@
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
+#include <map>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -33,6 +37,7 @@ constexpr const char* CODE_PREDICTOR_EMBEDDINGS_NAME = "openvino_code_predictor_
 constexpr const char* TALKER_EMBEDDINGS_NAME = "openvino_talker_embeddings.xml";
 constexpr const char* TALKER_NAME = "openvino_talker_model.xml";  // 4D float attention_mask, last_hidden_state output
 constexpr const char* CODE_PREDICTOR_NAME = "openvino_code_predictor_model.xml";
+constexpr const char* CODE_PREDICTOR_FUSED_NAME = "openvino_code_predictor_fused.xml";
 constexpr const char* CODEC_ENCODER_NAME = "openvino_codec_encoder.xml";
 
 // Constants used for static-window decoder chunking (NPU/GPU).
@@ -52,6 +57,7 @@ constexpr const char* TALKER = "talker_model";
 constexpr const char* TALKER_EMBEDDING = "talker_embeddings";
 constexpr const char* TALKER_TEXT_EMBEDDING = "text_embeddings";
 constexpr const char* CODE_PREDICTOR = "code_predictor_model";
+constexpr const char* CODE_PREDICTOR_FUSED = "code_predictor_fused";
 constexpr const char* CODE_PREDICTOR_EMBEDDING = "code_predictor_embeddings";
 constexpr const char* SPEECH_TOKENIZER_DECODER = "codec_decoder";
 constexpr const char* SPEECH_TOKENIZER_ENCODER = "codec_encoder";
@@ -72,8 +78,9 @@ inline std::string default_device_for_role(const std::string& base_device, const
     }
 
     if (base_device.find("NPU") != std::string::npos) {
-        // NPU can run talker, code predictor, and speech-tokenizer decoder.
-        if (role == roles::TALKER || role == roles::CODE_PREDICTOR || role == roles::SPEECH_TOKENIZER_DECODER) {
+        // NPU can run talker, code predictor (fused or legacy), and speech-tokenizer decoder.
+        if (role == roles::TALKER || role == roles::CODE_PREDICTOR || role == roles::CODE_PREDICTOR_FUSED ||
+            role == roles::SPEECH_TOKENIZER_DECODER) {
             return base_device;
         }
 
@@ -83,16 +90,152 @@ inline std::string default_device_for_role(const std::string& base_device, const
     return base_device;
 }
 
+inline std::optional<std::string> lookup_device_mapping(const ov::AnyMap& base_properties, const std::string& role) {
+    auto it = base_properties.find("device_mapping");
+    if (it == base_properties.end() || it->second.empty()) {
+        return std::nullopt;
+    }
+
+    auto find_in_map = [&](const auto& mapping) -> std::optional<std::string> {
+        auto role_it = mapping.find(role);
+        if (role_it != mapping.end()) {
+            if constexpr (std::is_same_v<std::decay_t<decltype(role_it->second)>, std::string>) {
+                if (!role_it->second.empty()) {
+                    return role_it->second;
+                }
+            } else {
+                const std::string val = role_it->second.template as<std::string>();
+                if (!val.empty()) {
+                    return val;
+                }
+            }
+        }
+        // Allow "code_predictor_model" mapping entry to also apply to "code_predictor_fused".
+        if (role == roles::CODE_PREDICTOR_FUSED) {
+            auto alias_it = mapping.find(roles::CODE_PREDICTOR);
+            if (alias_it != mapping.end()) {
+                if constexpr (std::is_same_v<std::decay_t<decltype(alias_it->second)>, std::string>) {
+                    if (!alias_it->second.empty()) {
+                        return alias_it->second;
+                    }
+                } else {
+                    const std::string val = alias_it->second.template as<std::string>();
+                    if (!val.empty()) {
+                        return val;
+                    }
+                }
+            }
+        }
+        return std::nullopt;
+    };
+
+    if (it->second.is<std::map<std::string, std::string>>()) {
+        return find_in_map(it->second.as<std::map<std::string, std::string>>());
+    }
+    if (it->second.is<ov::AnyMap>()) {
+        return find_in_map(it->second.as<ov::AnyMap>());
+    }
+    OPENVINO_THROW("'device_mapping' property must be a map<string, string> or ov::AnyMap");
+}
+
+// Remove GenAI speech-pipeline routing meta-properties before forwarding properties to plugins.
+inline void strip_speech_routing_properties(ov::AnyMap& properties) {
+    properties.erase("device_mapping");
+    properties.erase("decoder_device");
+    properties.erase("encoder_device");
+    properties.erase("attention_backend");
+    properties.erase("scheduler_config");
+}
+
+inline bool is_non_llm_codec_role(const std::string& role) {
+    return role == roles::SPEECH_TOKENIZER_DECODER || role == roles::SPEECH_TOKENIZER_ENCODER ||
+           role == roles::SPEAKER_ENCODER || role == roles::MEL_PREPROCESS;
+}
+
+inline std::set<std::string> collect_explicit_component_property_keys(const ov::AnyMap& base_properties,
+                                                                      const std::string& device,
+                                                                      const std::string& role) {
+    std::set<std::string> explicit_keys;
+    auto dp_it = base_properties.find(ov::device::properties.name());
+    if (dp_it != base_properties.end() && dp_it->second.is<ov::AnyMap>()) {
+        const auto& dp_map = dp_it->second.as<ov::AnyMap>();
+        auto dev_it = dp_map.find(device);
+        if (dev_it != dp_map.end() && dev_it->second.is<ov::AnyMap>()) {
+            for (const auto& [k, _] : dev_it->second.as<ov::AnyMap>()) {
+                explicit_keys.insert(k);
+            }
+        }
+    }
+    auto mp_it = base_properties.find(ov::genai::utils::PER_MODEL_PROPERTIES);
+    if (mp_it != base_properties.end() && mp_it->second.is<ov::AnyMap>()) {
+        const auto& mp_map = mp_it->second.as<ov::AnyMap>();
+        auto role_it = mp_map.find(role);
+        if (role_it != mp_map.end() && role_it->second.is<ov::AnyMap>()) {
+            for (const auto& [k, _] : role_it->second.as<ov::AnyMap>()) {
+                explicit_keys.insert(k);
+            }
+        }
+    }
+    return explicit_keys;
+}
+
 // Resolve the (device, properties) pair for a component following the VLM
-// `ov::device::properties` convention: when the caller supplies a per-device
-// property map each component picks up the sub-map for the device it actually
-// lands on; otherwise the same top-level properties are reused for every
-// component.
+// `ov::device::properties` convention plus speech-specific heterogeneous overrides:
+//   1. `device_mapping[role]` (highest precedence)
+//   2. `decoder_device` (for `codec_decoder`) / `encoder_device` (for `codec_encoder`, `speaker_encoder`, `mel_preprocess`)
+//   3. `default_device_for_role(base_device, role)`
+// GenAI routing keys are stripped, and inherited GPU-only / LLM-only top-level hints are
+// filtered out when targeting non-GPU devices or non-LLM codec/encoder components unless
+// explicitly set under `ov::device::properties(device, ...)` or `MODEL_PROPERTIES[role]`.
 inline std::pair<std::string, ov::AnyMap> resolve_component_target(const std::string& base_device,
                                                                     const ov::AnyMap& base_properties,
                                                                     const std::string& role) {
-    const std::string device = default_device_for_role(base_device, role);
-    return {device, ov::genai::utils::get_model_properties(base_properties, role, device)};
+    std::string device;
+    if (auto mapped = lookup_device_mapping(base_properties, role); mapped.has_value()) {
+        device = *mapped;
+    } else if (role == roles::SPEECH_TOKENIZER_DECODER) {
+        auto it = base_properties.find("decoder_device");
+        if (it != base_properties.end() && !it->second.empty()) {
+            device = it->second.as<std::string>();
+        }
+    } else if (role == roles::SPEECH_TOKENIZER_ENCODER || role == roles::SPEAKER_ENCODER ||
+               role == roles::MEL_PREPROCESS) {
+        auto it = base_properties.find("encoder_device");
+        if (it != base_properties.end() && !it->second.empty()) {
+            device = it->second.as<std::string>();
+        }
+    }
+
+    if (device.empty()) {
+        device = default_device_for_role(base_device, role);
+    }
+
+    ov::AnyMap resolved_props = ov::genai::utils::get_model_properties(base_properties, role, device);
+    strip_speech_routing_properties(resolved_props);
+
+    const bool target_is_gpu = device.find("GPU") != std::string::npos;
+    const bool non_llm_role = is_non_llm_codec_role(role);
+    if (!target_is_gpu || non_llm_role) {
+        const auto explicit_keys = collect_explicit_component_property_keys(base_properties, device, role);
+        for (auto it = resolved_props.begin(); it != resolved_props.end();) {
+            const std::string& key = it->first;
+            const bool is_explicit = explicit_keys.count(key) > 0;
+            const bool drop_gpu_only =
+                !target_is_gpu && !is_explicit &&
+                (key == "ACTIVATIONS_SCALE_FACTOR" || key.rfind("GPU_", 0) == 0);
+            const bool drop_llm_only =
+                non_llm_role && !is_explicit &&
+                (key == ov::hint::kv_cache_precision.name() ||
+                 key == ov::hint::dynamic_quantization_group_size.name());
+            if (drop_gpu_only || drop_llm_only) {
+                it = resolved_props.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    return {device, std::move(resolved_props)};
 }
 
 inline std::string to_lower(std::string value) {

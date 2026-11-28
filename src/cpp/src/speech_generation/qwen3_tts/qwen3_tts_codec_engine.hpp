@@ -11,6 +11,8 @@
 
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_fused_predictor.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_stream_decoder.hpp"
 
 namespace ov {
 namespace genai {
@@ -132,7 +134,54 @@ public:
                                           const ov::Tensor& trailing_text_hidden,
                                           bool non_streaming_mode);
 
+    bool has_fused_code_predictor() const {
+        return m_fused_predictor.is_available();
+    }
+
+    const qwen3_tts::Qwen3TTSFusedCodePredictor& fused_code_predictor() const {
+        return m_fused_predictor;
+    }
+
+    // Combined per-frame subcode prediction + next talker embedding construction.
+    // Uses the optional single-dispatch `openvino_code_predictor_fused.xml` fast-path when
+    // available (and GPU RemoteTensor zero-copy when `allow_device_zero_copy` is true), falling
+    // back seamlessly to `generate_codec_groups()` + `make_next_talker_embedding()`.
+    qwen3_tts::Qwen3TTSFusedCodePredictor::SingleResult generate_codec_groups_and_next_embed(
+        const ov::Tensor& past_hidden,
+        int64_t first_codec_token,
+        size_t generation_step,
+        const ov::Tensor& tts_pad,
+        const ov::Tensor& trailing_text_hidden,
+        const SpeechGenerationConfig& generation_config,
+        std::mt19937& rng,
+        bool allow_device_zero_copy = false);
+
+    // Batched variant for continuous batching talker steps.
+    qwen3_tts::Qwen3TTSFusedCodePredictor::BatchResult generate_codec_groups_and_next_embed_batch(
+        const ov::Tensor& past_hidden_batch,
+        const std::vector<int64_t>& first_codec_tokens,
+        const std::vector<size_t>& generation_steps,
+        const std::vector<ov::Tensor>& tts_pads,
+        const std::vector<ov::Tensor>& trailing_text_hiddens,
+        const std::vector<SpeechGenerationConfig>& generation_configs,
+        std::mt19937& rng);
+
     std::vector<float> decode_speech_tokenizer(const std::vector<int64_t>& codes);
+    std::vector<float> decode_speech_tokenizer_chunk(const std::vector<int64_t>& window_frame_major,
+                                                     size_t context_frames,
+                                                     size_t new_frames);
+
+    qwen3_tts::Qwen3TTSStreamDecoderPool& stream_decoder_pool() {
+        return m_stream_decoder_pool;
+    }
+
+    uint32_t decode_upsample_rate() const {
+        return m_decoder_upsample;
+    }
+
+    uint32_t decoder_num_quantizers() const {
+        return m_decoder_num_quantizers;
+    }
 
     std::vector<bool> compute_suppress_tokens() const;
     std::vector<int64_t> make_speaker_and_codec_prefill_ids(const std::string& language,
@@ -200,9 +249,20 @@ private:
     ov::InferRequest m_talker_embedding;
     ov::InferRequest m_talker_text_embedding;
     ov::InferRequest m_talker_code_predictor;
+    bool m_has_legacy_code_predictor = false;
     bool m_predictor_static = false;  // true when predictor is converted to stateless+static at runtime
     bool m_predictor_has_beam_idx = false;
     ov::InferRequest m_talker_code_predictor_embedding;
+    bool m_has_code_predictor_embedding = false;
+    qwen3_tts::Qwen3TTSFusedCodePredictor m_fused_predictor;
+
+    // Precomputed invariant embeddings & bounded prompt embedding caches.
+    bool m_has_cached_special_embeds = false;
+    SpecialEmbeds m_cached_special_embeds;
+    ov::Tensor m_cached_codec_pad_embed;
+    ov::Tensor m_cached_codec_bos_embed;
+    std::unordered_map<std::string, ov::Tensor> m_instruct_embed_cache;
+    std::unordered_map<std::string, ov::Tensor> m_role_embed_cache;
 
     // Static all-heads code predictor state. The loaded predictor IR must expose
     // explicit past_key_values inputs (a non-static model is rejected at
@@ -225,6 +285,7 @@ private:
     ov::Tensor m_pred_emb_step;  // generation_steps input, reused across calls
     ov::InferRequest m_speech_tokenizer_decoder;
     bool m_decoder_static = false;  // true when reshaped to a fixed DECODER_WINDOW_LEN window (NPU/GPU)
+    qwen3_tts::Qwen3TTSStreamDecoderPool m_stream_decoder_pool;
     ov::InferRequest m_qwen3_mel_preprocess;
     ov::InferRequest m_speaker_encoder;
     ov::InferRequest m_speech_tokenizer_encoder;

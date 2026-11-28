@@ -62,71 +62,105 @@ Qwen3TTSCodecEngine::Qwen3TTSCodecEngine(const std::filesystem::path& models_pat
     m_talker_embedding = compile_for(models_path / TALKER_EMBEDDINGS_NAME, roles::TALKER_EMBEDDING);
     m_talker_text_embedding = compile_for(models_path / TEXT_EMBEDDINGS_NAME, roles::TALKER_TEXT_EMBEDDING);
     {
-        auto [predictor_device, predictor_properties] = resolve_component_target(device, base_properties, roles::CODE_PREDICTOR);
-
-        if (predictor_device.find("GPU") != std::string::npos &&
-            predictor_properties.find("ACTIVATIONS_SCALE_FACTOR") == predictor_properties.end()) {
-            predictor_properties["ACTIVATIONS_SCALE_FACTOR"] = 8.0f;
-        }
-
-        const auto predictor_path = models_path / CODE_PREDICTOR_NAME;
-        auto predictor_model = ov::genai::utils::singleton_core().read_model(predictor_path);
-        const bool predictor_on_npu = predictor_device.find("NPU") != std::string::npos;
-        if (predictor_on_npu) {
-            // NPU path for code predictor: expose step as [1], convert to stateless,
-            // then freeze to static so explicit KV tensors can be host-managed.
-            expose_scalar_input_as_vector1(predictor_model, "step");
-            ov::pass::StatefulToStateless().run_on_model(predictor_model);
-            predictor_model->validate_nodes_and_infer_types();
-            reshape_predictor_to_static(predictor_model);
-            m_predictor_static = true;
-            init_static_predictor_meta(predictor_model);
-
-            m_talker_code_predictor = compile_request(predictor_model, roles::CODE_PREDICTOR, predictor_device, predictor_properties);
-
-            // Cache KV tensors infer request.
-            for (size_t i = 0; i < m_pred_num_layers; ++i) {
-                m_pred_past_k.emplace_back(m_talker_code_predictor.get_tensor("past_key_values." + std::to_string(i) + ".key"));
-                m_pred_past_v.emplace_back(m_talker_code_predictor.get_tensor("past_key_values." + std::to_string(i) + ".value"));
-                OPENVINO_ASSERT(m_pred_past_k.back().get_element_type() == ov::element::f32,
-                                "Static code predictor past_key_values.", i, ".key must be f32");
-                OPENVINO_ASSERT(m_pred_past_v.back().get_element_type() == ov::element::f32,
-                                "Static code predictor past_key_values.", i, ".value must be f32");
+        const auto fused_predictor_path = models_path / CODE_PREDICTOR_FUSED_NAME;
+        if (std::filesystem::exists(fused_predictor_path)) {
+            auto [fused_device, fused_properties] =
+                resolve_component_target(device, base_properties, roles::CODE_PREDICTOR_FUSED);
+            if (m_fused_predictor.initialize(
+                    fused_predictor_path, fused_device, fused_properties, m_ids.num_code_groups, m_talker_hidden_size)) {
+                m_perf_device[roles::CODE_PREDICTOR_FUSED] = fused_device;
             }
-            m_pred_attn = m_talker_code_predictor.get_tensor("attention_mask");
-            m_pred_pos = m_talker_code_predictor.get_tensor("position_ids");
-        } else {
-            m_talker_code_predictor = compile_request(predictor_model, roles::CODE_PREDICTOR, predictor_device, predictor_properties);
-            m_predictor_static = false;
-        }
-        m_perf_device[roles::CODE_PREDICTOR] = predictor_device;
-
-        m_predictor_has_beam_idx = false;
-        for (const auto& in : m_talker_code_predictor.get_compiled_model().inputs()) {
-            if (in.get_any_name() == "beam_idx") {
-                m_predictor_has_beam_idx = true;
-                break;
-            }
-        }
-        if (m_predictor_has_beam_idx) {
-            ov::Tensor beam_idx(ov::element::i32, ov::Shape{1});
-            beam_idx.data<int32_t>()[0] = 0;
-            m_talker_code_predictor.set_tensor("beam_idx", beam_idx);
         }
     }
-    m_talker_code_predictor_embedding = compile_for(models_path / CODE_PREDICTOR_EMBEDDINGS_NAME, roles::CODE_PREDICTOR_EMBEDDING);
+    {
+        const auto predictor_path = models_path / CODE_PREDICTOR_NAME;
+        const bool predictor_exists = std::filesystem::exists(predictor_path);
+        OPENVINO_ASSERT(predictor_exists || m_fused_predictor.is_available(),
+                        "Qwen3-TTS requires either '",
+                        CODE_PREDICTOR_FUSED_NAME,
+                        "' or '",
+                        CODE_PREDICTOR_NAME,
+                        "' in ",
+                        models_path);
 
-    // Bind fixed-shape input tensors for the code-predictor embedding once. Unlike
-    // the code predictor (reshaped to static), this embedding model may be dynamic,
-    // so a get_tensor() default can have zero-sized dims and set_shape() on it does
-    // not reliably re-bind the new shape into the request. We instead own buffers
-    // with the exact shapes the original per-call path used (input_ids=[1,1],
-    // step=scalar) and set_tensor them a single time here. Subsequent
-    // inferences only rewrite the data in place -- no per-call set_tensor.
-    m_pred_emb_ids = ov::Tensor(ov::element::i64, ov::Shape{1, 1});
-    m_pred_emb_step = ov::Tensor(ov::element::i64, ov::Shape{});
-    m_talker_code_predictor_embedding.set_tensor("input_ids", m_pred_emb_ids);
-    m_talker_code_predictor_embedding.set_tensor("step", m_pred_emb_step);
+        if (predictor_exists) {
+            auto [predictor_device, predictor_properties] =
+                resolve_component_target(device, base_properties, roles::CODE_PREDICTOR);
+
+            if (predictor_device.find("GPU") != std::string::npos &&
+                predictor_properties.find("ACTIVATIONS_SCALE_FACTOR") == predictor_properties.end()) {
+                predictor_properties["ACTIVATIONS_SCALE_FACTOR"] = 8.0f;
+            }
+
+            auto predictor_model = ov::genai::utils::singleton_core().read_model(predictor_path);
+            const bool predictor_on_npu = predictor_device.find("NPU") != std::string::npos;
+            if (predictor_on_npu) {
+                // NPU path for code predictor: expose step as [1], convert to stateless,
+                // then freeze to static so explicit KV tensors can be host-managed.
+                expose_scalar_input_as_vector1(predictor_model, "step");
+                ov::pass::StatefulToStateless().run_on_model(predictor_model);
+                predictor_model->validate_nodes_and_infer_types();
+                reshape_predictor_to_static(predictor_model);
+                m_predictor_static = true;
+                init_static_predictor_meta(predictor_model);
+
+                m_talker_code_predictor =
+                    compile_request(predictor_model, roles::CODE_PREDICTOR, predictor_device, predictor_properties);
+
+                // Cache KV tensors infer request.
+                for (size_t i = 0; i < m_pred_num_layers; ++i) {
+                    m_pred_past_k.emplace_back(
+                        m_talker_code_predictor.get_tensor("past_key_values." + std::to_string(i) + ".key"));
+                    m_pred_past_v.emplace_back(
+                        m_talker_code_predictor.get_tensor("past_key_values." + std::to_string(i) + ".value"));
+                    OPENVINO_ASSERT(m_pred_past_k.back().get_element_type() == ov::element::f32,
+                                    "Static code predictor past_key_values.", i, ".key must be f32");
+                    OPENVINO_ASSERT(m_pred_past_v.back().get_element_type() == ov::element::f32,
+                                    "Static code predictor past_key_values.", i, ".value must be f32");
+                }
+                m_pred_attn = m_talker_code_predictor.get_tensor("attention_mask");
+                m_pred_pos = m_talker_code_predictor.get_tensor("position_ids");
+            } else {
+                m_talker_code_predictor =
+                    compile_request(predictor_model, roles::CODE_PREDICTOR, predictor_device, predictor_properties);
+                m_predictor_static = false;
+            }
+            m_perf_device[roles::CODE_PREDICTOR] = predictor_device;
+            m_has_legacy_code_predictor = true;
+
+            m_predictor_has_beam_idx = false;
+            for (const auto& in : m_talker_code_predictor.get_compiled_model().inputs()) {
+                if (in.get_any_name() == "beam_idx") {
+                    m_predictor_has_beam_idx = true;
+                    break;
+                }
+            }
+            if (m_predictor_has_beam_idx) {
+                ov::Tensor beam_idx(ov::element::i32, ov::Shape{1});
+                beam_idx.data<int32_t>()[0] = 0;
+                m_talker_code_predictor.set_tensor("beam_idx", beam_idx);
+            }
+        }
+    }
+    {
+        const auto pred_emb_path = models_path / CODE_PREDICTOR_EMBEDDINGS_NAME;
+        if (std::filesystem::exists(pred_emb_path)) {
+            m_talker_code_predictor_embedding = compile_for(pred_emb_path, roles::CODE_PREDICTOR_EMBEDDING);
+            m_has_code_predictor_embedding = true;
+
+            // Bind fixed-shape input tensors for the code-predictor embedding once.
+            m_pred_emb_ids = ov::Tensor(ov::element::i64, ov::Shape{1, 1});
+            m_pred_emb_step = ov::Tensor(ov::element::i64, ov::Shape{});
+            m_talker_code_predictor_embedding.set_tensor("input_ids", m_pred_emb_ids);
+            m_talker_code_predictor_embedding.set_tensor("step", m_pred_emb_step);
+        } else {
+            OPENVINO_ASSERT(!m_has_legacy_code_predictor,
+                            "Legacy code predictor requires '",
+                            CODE_PREDICTOR_EMBEDDINGS_NAME,
+                            "' in ",
+                            models_path);
+        }
+    }
     {
         auto [decoder_device, decoder_properties] = resolve_component_target(device, base_properties, roles::SPEECH_TOKENIZER_DECODER);
         const auto decoder_path = models_path / CODEC_DECODER_NAME;
@@ -145,6 +179,10 @@ Qwen3TTSCodecEngine::Qwen3TTSCodecEngine(const std::filesystem::path& models_pat
             m_speech_tokenizer_decoder = compile_request(decoder_path, roles::SPEECH_TOKENIZER_DECODER, decoder_device, decoder_properties);
         }
         m_perf_device[roles::SPEECH_TOKENIZER_DECODER] = device_of(m_speech_tokenizer_decoder, decoder_device);
+
+        // Compile optional static streaming codec decoder tiers (e.g. c0_t8, c25_t12, c25_t24).
+        m_stream_decoder_pool.initialize(
+            models_path, decoder_device, decoder_properties, m_decoder_num_quantizers, m_decoder_upsample);
     }
 
     const auto speaker_encoder_path = models_path / SPEAKER_ENCODER_NAME;
@@ -161,6 +199,17 @@ Qwen3TTSCodecEngine::Qwen3TTSCodecEngine(const std::filesystem::path& models_pat
     if (std::filesystem::exists(speech_tokenizer_encoder_path)) {
         m_speech_tokenizer_encoder = compile_for(speech_tokenizer_encoder_path, roles::SPEECH_TOKENIZER_ENCODER);
         m_has_speech_tokenizer_encoder = true;
+    }
+
+    // Precompute invariant special token and codec pad/bos embeddings once at startup.
+    if (m_ids.tts_bos_token_id >= 0 && m_ids.tts_eos_token_id >= 0 && m_ids.tts_pad_token_id >= 0) {
+        (void)infer_special_embeds();
+    }
+    if (m_ids.codec_pad_id >= 0) {
+        m_cached_codec_pad_embed = infer_embedding(m_talker_embedding, m_ids.codec_pad_id);
+    }
+    if (m_ids.codec_bos_id >= 0) {
+        m_cached_codec_bos_embed = infer_embedding(m_talker_embedding, m_ids.codec_bos_id);
     }
 }
 
@@ -686,6 +735,10 @@ ov::Tensor Qwen3TTSCodecEngine::infer_predictor(const ov::Tensor& inputs_embeds,
 }
 
 ov::Tensor Qwen3TTSCodecEngine::infer_predictor_embedding(int64_t token_id, int64_t generation_step) {
+    OPENVINO_ASSERT(m_has_code_predictor_embedding,
+                    "This operation requires '",
+                    CODE_PREDICTOR_EMBEDDINGS_NAME,
+                    "' in the model directory");
     // Update pre-allocated id tensors in-place (tensors already set on infer request).
     m_pred_emb_ids.data<int64_t>()[0] = token_id;
     m_pred_emb_step.data<int64_t>()[0] = generation_step;
@@ -999,6 +1052,152 @@ ov::Tensor Qwen3TTSCodecEngine::make_next_talker_embedding(const std::vector<int
     return token_embedding;
 }
 
+Qwen3TTSFusedCodePredictor::SingleResult Qwen3TTSCodecEngine::generate_codec_groups_and_next_embed(
+    const ov::Tensor& past_hidden,
+    int64_t first_codec_token,
+    size_t generation_step,
+    const ov::Tensor& tts_pad,
+    const ov::Tensor& trailing_text_hidden,
+    const SpeechGenerationConfig& generation_config,
+    std::mt19937& rng,
+    bool allow_device_zero_copy) {
+    const bool use_fused =
+        m_fused_predictor.is_available() &&
+        (!generation_config.subtalker_dosample || m_fused_predictor.supports_sampling() || !m_has_legacy_code_predictor);
+
+    if (use_fused) {
+        ov::Tensor additive_embed;
+        bool additive_is_tts_pad = false;
+        if (generation_config.non_streaming_mode) {
+            additive_embed = tts_pad;
+            additive_is_tts_pad = true;
+        } else if (trailing_text_hidden) {
+            const ov::Shape trailing_shape = trailing_text_hidden.get_shape();
+            OPENVINO_ASSERT(trailing_shape.size() == 3 && trailing_shape[0] == 1 &&
+                                trailing_shape[2] == m_talker_hidden_size,
+                            "trailing_text_hidden must have shape [1, T, ",
+                            m_talker_hidden_size,
+                            "], got ",
+                            trailing_shape);
+            if (generation_step < trailing_shape[1]) {
+                additive_embed = ov::Tensor(trailing_text_hidden,
+                                            ov::Coordinate{0, generation_step, 0},
+                                            ov::Coordinate{1, generation_step + 1, m_talker_hidden_size});
+                additive_is_tts_pad = false;
+            } else {
+                additive_embed = tts_pad;
+                additive_is_tts_pad = true;
+            }
+        }
+
+        return m_fused_predictor.predict_single(past_hidden,
+                                                first_codec_token,
+                                                additive_embed,
+                                                additive_is_tts_pad,
+                                                generation_config.subtalker_dosample,
+                                                generation_config.subtalker_temperature,
+                                                rng,
+                                                allow_device_zero_copy,
+                                                m_perf_ms,
+                                                m_perf_calls);
+    }
+
+    OPENVINO_ASSERT(m_has_legacy_code_predictor,
+                    "Legacy code predictor is unavailable and fused code predictor was bypassed");
+    Qwen3TTSFusedCodePredictor::SingleResult result;
+    result.codes = generate_codec_groups(past_hidden, first_codec_token, generation_config, rng);
+    result.next_embed = make_next_talker_embedding(
+        result.codes, generation_step, tts_pad, trailing_text_hidden, generation_config.non_streaming_mode);
+    return result;
+}
+
+Qwen3TTSFusedCodePredictor::BatchResult Qwen3TTSCodecEngine::generate_codec_groups_and_next_embed_batch(
+    const ov::Tensor& past_hidden_batch,
+    const std::vector<int64_t>& first_codec_tokens,
+    const std::vector<size_t>& generation_steps,
+    const std::vector<ov::Tensor>& tts_pads,
+    const std::vector<ov::Tensor>& trailing_text_hiddens,
+    const std::vector<SpeechGenerationConfig>& generation_configs,
+    std::mt19937& rng) {
+    const size_t batch_size = first_codec_tokens.size();
+    OPENVINO_ASSERT(batch_size > 0 && generation_steps.size() == batch_size && tts_pads.size() == batch_size &&
+                        trailing_text_hiddens.size() == batch_size && generation_configs.size() == batch_size,
+                    "generate_codec_groups_and_next_embed_batch input vector size mismatch");
+
+    const bool any_sample = std::any_of(generation_configs.begin(), generation_configs.end(), [](const auto& c) {
+        return c.subtalker_dosample;
+    });
+    const bool uniform_sampling_cfg = std::all_of(generation_configs.begin(), generation_configs.end(), [&](const auto& c) {
+        return c.subtalker_dosample == generation_configs.front().subtalker_dosample &&
+               c.subtalker_temperature == generation_configs.front().subtalker_temperature;
+    });
+
+    const bool use_fused_batch =
+        m_fused_predictor.is_available() &&
+        uniform_sampling_cfg &&
+        (!any_sample || m_fused_predictor.supports_sampling() || !m_has_legacy_code_predictor);
+
+    if (use_fused_batch) {
+        bool all_non_streaming_shared_pad = true;
+        const float* first_pad_ptr = tts_pads.front() ? tts_pads.front().data<const float>() : nullptr;
+        std::vector<const float*> per_row_additives(batch_size, nullptr);
+
+        for (size_t b = 0; b < batch_size; ++b) {
+            const auto& cfg = generation_configs[b];
+            if (cfg.non_streaming_mode) {
+                per_row_additives[b] = tts_pads[b] ? tts_pads[b].data<const float>() : nullptr;
+                if (per_row_additives[b] != first_pad_ptr) {
+                    all_non_streaming_shared_pad = false;
+                }
+            } else {
+                all_non_streaming_shared_pad = false;
+                if (trailing_text_hiddens[b]) {
+                    const auto trailing_shape = trailing_text_hiddens[b].get_shape();
+                    if (generation_steps[b] < trailing_shape[1]) {
+                        per_row_additives[b] =
+                            trailing_text_hiddens[b].data<const float>() + generation_steps[b] * m_talker_hidden_size;
+                    } else if (tts_pads[b]) {
+                        per_row_additives[b] = tts_pads[b].data<const float>();
+                    }
+                }
+            }
+        }
+
+        return m_fused_predictor.predict_batch(
+            past_hidden_batch,
+            first_codec_tokens,
+            all_non_streaming_shared_pad ? tts_pads.front() : ov::Tensor{},
+            all_non_streaming_shared_pad ? std::vector<const float*>{} : per_row_additives,
+            generation_configs.front().subtalker_dosample,
+            generation_configs.front().subtalker_temperature,
+            rng,
+            m_perf_ms,
+            m_perf_calls);
+    }
+
+    // Per-row fallback (handles heterogeneous sampling configs or legacy step-by-step predictor).
+    Qwen3TTSFusedCodePredictor::BatchResult result;
+    result.codes.resize(batch_size);
+    result.next_embeds = ov::Tensor(ov::element::f32, ov::Shape{batch_size, 1, m_talker_hidden_size});
+    float* dst = result.next_embeds.data<float>();
+    for (size_t b = 0; b < batch_size; ++b) {
+        ov::Tensor row_hidden(past_hidden_batch,
+                              ov::Coordinate{b, 0, 0},
+                              ov::Coordinate{b + 1, 1, m_talker_hidden_size});
+        auto single = generate_codec_groups_and_next_embed(row_hidden,
+                                                           first_codec_tokens[b],
+                                                           generation_steps[b],
+                                                           tts_pads[b],
+                                                           trailing_text_hiddens[b],
+                                                           generation_configs[b],
+                                                           rng,
+                                                           /*allow_device_zero_copy=*/false);
+        result.codes[b] = std::move(single.codes);
+        std::copy_n(single.next_embed.data<const float>(), m_talker_hidden_size, dst + b * m_talker_hidden_size);
+    }
+    return result;
+}
+
 std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer(const std::vector<int64_t>& codes) {
     if (codes.empty()) {
         return {};
@@ -1122,6 +1321,23 @@ std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer(const std::vecto
     return chunks_audio;
 }
 
+std::vector<float> Qwen3TTSCodecEngine::decode_speech_tokenizer_chunk(const std::vector<int64_t>& window_frame_major,
+                                                                      size_t context_frames,
+                                                                      size_t new_frames) {
+    if (window_frame_major.empty() || new_frames == 0) {
+        return {};
+    }
+    auto full_waveform = decode_speech_tokenizer(window_frame_major);
+    const size_t ctx_samples = context_frames * m_decoder_upsample;
+    const size_t emit_samples = new_frames * m_decoder_upsample;
+    if (ctx_samples >= full_waveform.size()) {
+        return {};
+    }
+    const size_t count = std::min(emit_samples, full_waveform.size() - ctx_samples);
+    return std::vector<float>(full_waveform.begin() + static_cast<std::ptrdiff_t>(ctx_samples),
+                              full_waveform.begin() + static_cast<std::ptrdiff_t>(ctx_samples + count));
+}
+
 std::vector<bool> Qwen3TTSCodecEngine::compute_suppress_tokens() const {
     std::vector<bool> suppress_tokens(m_ids.talker_vocab_size, false);
     const size_t suppress_begin = m_ids.talker_vocab_size > 1024 ? (m_ids.talker_vocab_size - 1024) : 0;
@@ -1158,6 +1374,9 @@ std::vector<int64_t> Qwen3TTSCodecEngine::make_speaker_and_codec_prefill_ids(con
 }
 
 Qwen3TTSCodecEngine::SpecialEmbeds Qwen3TTSCodecEngine::infer_special_embeds() {
+    if (m_has_cached_special_embeds) {
+        return m_cached_special_embeds;
+    }
     auto special_projected = infer_embedding_seq(m_talker_text_embedding,
                                                 {m_ids.tts_bos_token_id, m_ids.tts_eos_token_id, m_ids.tts_pad_token_id});
     OPENVINO_ASSERT(special_projected.get_shape().size() == 3 && special_projected.get_shape()[0] == 1 &&
@@ -1167,21 +1386,32 @@ Qwen3TTSCodecEngine::SpecialEmbeds Qwen3TTSCodecEngine::infer_special_embeds() {
 
     SpecialEmbeds embeds;
     embeds.hidden = special_projected.get_shape()[2];
-    embeds.bos = ov::Tensor(special_projected, ov::Coordinate{0, 0, 0}, ov::Coordinate{1, 1, embeds.hidden});
-    embeds.eos = ov::Tensor(special_projected, ov::Coordinate{0, 1, 0}, ov::Coordinate{1, 2, embeds.hidden});
-    embeds.pad = ov::Tensor(special_projected, ov::Coordinate{0, 2, 0}, ov::Coordinate{1, 3, embeds.hidden});
-    return embeds;
+    embeds.bos = clone_tensor(ov::Tensor(special_projected, ov::Coordinate{0, 0, 0}, ov::Coordinate{1, 1, embeds.hidden}));
+    embeds.eos = clone_tensor(ov::Tensor(special_projected, ov::Coordinate{0, 1, 0}, ov::Coordinate{1, 2, embeds.hidden}));
+    embeds.pad = clone_tensor(ov::Tensor(special_projected, ov::Coordinate{0, 2, 0}, ov::Coordinate{1, 3, embeds.hidden}));
+    m_cached_special_embeds = embeds;
+    m_has_cached_special_embeds = true;
+    return m_cached_special_embeds;
 }
 
 ov::Tensor Qwen3TTSCodecEngine::prepend_instruct_embed(ov::Tensor talker_prefill, const std::string& instruct) {
     if (instruct.empty()) {
         return talker_prefill;
     }
+    constexpr size_t MAX_INSTRUCT_CACHE_ENTRIES = 64;
+    auto it = m_instruct_embed_cache.find(instruct);
+    if (it != m_instruct_embed_cache.end()) {
+        return concat_embed({it->second, talker_prefill});
+    }
     const std::string instruct_text = "<|im_start|>user\n" + instruct + "<|im_end|>\n";
     auto instruct_ids = m_tokenizer.encode(instruct_text).input_ids;
     const int64_t* instr = instruct_ids.data<const int64_t>();
     const size_t instr_len = instruct_ids.get_shape()[1];
     auto instruct_embed = infer_embedding_seq(m_talker_text_embedding, std::vector<int64_t>(instr, instr + instr_len));
+    if (m_instruct_embed_cache.size() >= MAX_INSTRUCT_CACHE_ENTRIES) {
+        m_instruct_embed_cache.clear();
+    }
+    m_instruct_embed_cache.emplace(instruct, instruct_embed);
     return concat_embed({instruct_embed, talker_prefill});
 }
 
@@ -1504,7 +1734,22 @@ Qwen3TTSCodecEngine::PrefillResult Qwen3TTSCodecEngine::build_prefill(const ov::
                     ") must match talker text embedding hidden size (", hidden, ")");
 
     const std::vector<int64_t> role_tokens(input_ids, input_ids + std::min<size_t>(3, input_len));
-    auto role_embed = infer_embedding_seq(m_talker_text_embedding, role_tokens);
+    std::string role_key;
+    for (size_t i = 0; i < role_tokens.size(); ++i) {
+        if (i > 0) role_key.push_back(',');
+        role_key += std::to_string(role_tokens[i]);
+    }
+    ov::Tensor role_embed;
+    auto role_it = m_role_embed_cache.find(role_key);
+    if (role_it != m_role_embed_cache.end()) {
+        role_embed = role_it->second;
+    } else {
+        role_embed = infer_embedding_seq(m_talker_text_embedding, role_tokens);
+        if (m_role_embed_cache.size() >= 32) {
+            m_role_embed_cache.clear();
+        }
+        m_role_embed_cache.emplace(role_key, role_embed);
+    }
 
     const size_t codec_len = codec_input_embedding.get_shape()[1];
     OPENVINO_ASSERT(codec_len >= 2, "codec_input_embedding must contain at least codec_pad_id and codec_bos_id");
@@ -1555,7 +1800,9 @@ Qwen3TTSCodecEngine::PrefillResult Qwen3TTSCodecEngine::build_prefill(const ov::
             text_side.data<float>()[i] = text_with_eos.data<const float>()[i] + codec_pad_for_text.data<const float>()[i];
         }
 
-        auto codec_bos_embed = infer_embedding(m_talker_embedding, m_ids.codec_bos_id);
+        ov::Tensor codec_bos_embed = m_cached_codec_bos_embed
+            ? m_cached_codec_bos_embed
+            : infer_embedding(m_talker_embedding, m_ids.codec_bos_id);
         ov::Tensor pad_plus_codec_bos(ov::element::f32, ov::Shape{1, 1, hidden});
         for (size_t j = 0; j < hidden; ++j) {
             pad_plus_codec_bos.data<float>()[j] = tts_pad.data<const float>()[j] + codec_bos_embed.data<const float>()[j];

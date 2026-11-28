@@ -12,6 +12,8 @@
 #include "kokoro_tts_model.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "speech_generation/qwen3_tts/qwen3_tts_model.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_paged_model.hpp"
+#include "speech_generation/qwen3_tts/qwen3_tts_utils.hpp"
 #include "speecht5_tts_model.hpp"
 #include "utils.hpp"
 
@@ -91,7 +93,30 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
         m_impl = std::make_shared<SpeechT5TTSImpl>(root_dir, device, properties, tokenizer);
     } else if (backend == SpeechBackend::Qwen3TTS) {
         auto tokenizer = ov::genai::Tokenizer(root_dir);
-        m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, properties, tokenizer);
+        auto [talker_device, _] = qwen3_tts::resolve_component_target(device, properties, qwen3_tts::roles::TALKER);
+        const bool is_npu_talker = talker_device.find("NPU") != std::string::npos;
+        const bool has_explicit_attention_backend = properties.find("attention_backend") != properties.end();
+        const bool has_scheduler_config = properties.find(ov::genai::scheduler_config.name()) != properties.end();
+        auto [__, attention_backend] = utils::extract_attention_backend(properties, is_npu_talker);
+
+        const bool request_paged_attention =
+            !is_npu_talker &&
+            ((has_explicit_attention_backend && attention_backend == PA_BACKEND) ||
+             (!has_explicit_attention_backend && has_scheduler_config));
+
+        if (request_paged_attention) {
+            try {
+                m_impl = std::make_shared<Qwen3TTSPagedImpl>(root_dir, device, properties, tokenizer);
+            } catch (const ov::Exception& e) {
+                if (has_explicit_attention_backend && attention_backend == PA_BACKEND) {
+                    throw;
+                }
+                utils::log_paged_attention_fallback(e);
+                m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, properties, tokenizer);
+            }
+        } else {
+            m_impl = std::make_shared<Qwen3TTSImpl>(root_dir, device, properties, tokenizer);
+        }
     } else {
         m_impl = std::make_shared<KokoroTTSImpl>(root_dir, device, properties);
     }
@@ -101,18 +126,30 @@ Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::s
                                                         const ov::Tensor& speaker_embedding,
                                                         const ov::AnyMap& properties) {
     SpeechGenerationConfig request_config = m_speech_gen_config;
-    request_config.update_generation_config(properties);
+    ov::AnyMap filtered_properties = properties;
+    const AudioStreamerVariant streamer = utils::get_audio_streamer_from_map(filtered_properties);
+    filtered_properties.erase(utils::AUDIO_STREAMER_ARG_NAME);
+    filtered_properties.erase(utils::SPEECH_STREAMER_ARG_NAME);
+    request_config.update_generation_config(filtered_properties);
     request_config.validate();
-    return m_impl->generate(texts, speaker_embedding, request_config);
+    return m_impl->generate(texts, speaker_embedding, request_config, streamer);
 }
 
 Text2SpeechDecodedResults Text2SpeechPipeline::generate(
     const std::vector<std::string>& texts,
     const ov::Tensor& speaker_embedding,
     const std::optional<SpeechGenerationConfig>& generation_config) {
+    return generate(texts, speaker_embedding, generation_config, std::monostate{});
+}
+
+Text2SpeechDecodedResults Text2SpeechPipeline::generate(
+    const std::vector<std::string>& texts,
+    const ov::Tensor& speaker_embedding,
+    const std::optional<SpeechGenerationConfig>& generation_config,
+    const AudioStreamerVariant& streamer) {
     const SpeechGenerationConfig request_config = generation_config.has_value() ? *generation_config : m_speech_gen_config;
     request_config.validate();
-    return m_impl->generate(texts, speaker_embedding, request_config);
+    return m_impl->generate(texts, speaker_embedding, request_config, streamer);
 }
 
 SpeechGenerationConfig Text2SpeechPipeline::get_generation_config() const {

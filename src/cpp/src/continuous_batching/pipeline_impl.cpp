@@ -88,6 +88,11 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
                                        const SchedulerConfig& scheduler_config) {
+    // Allow callers/tests to pass a model already lowered to PagedAttention.
+    if (utils::has_input(model, "past_lens")) {
+        return;
+    }
+
     const bool need_per_layer_kv_cache_control = scheduler_config.use_cache_eviction;
     const bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
     const bool allow_xattention = scheduler_config.use_sparse_attention &&
@@ -103,6 +108,25 @@ void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
                                    allow_xattention,
                                    allow_adaptive_rkv)
         .run_on_model(model);
+
+    // Guard against graph passes leaving a live Parameter node unregistered in model->get_parameters().
+    {
+        std::set<std::shared_ptr<ov::op::v0::Parameter>> registered(model->get_parameters().begin(),
+                                                                    model->get_parameters().end());
+        ov::ParameterVector missing_params;
+        for (const auto& op : model->get_ordered_ops()) {
+            if (auto param = ov::as_type_ptr<ov::op::v0::Parameter>(op)) {
+                if (registered.find(param) == registered.end()) {
+                    missing_params.push_back(param);
+                    registered.insert(param);
+                }
+            }
+        }
+        if (!missing_params.empty()) {
+            model->add_parameters(missing_params);
+        }
+    }
+
     model->validate_nodes_and_infer_types();
     utils::apply_gather_before_matmul_transformation(model);
 }
@@ -145,6 +169,34 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
     m_embeddings_registry = std::make_shared<EmbeddingsRegistry>();
+}
+
+ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
+    const std::shared_ptr<ov::Model>& model,
+    const Tokenizer& tokenizer,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config,
+    PostSampleEmbedCallback post_sample_embed_cb,
+    std::set<int64_t> suppressed_token_ids,
+    bool enable_hidden_state_export)
+    : m_post_sample_embed_cb(std::move(post_sample_embed_cb)),
+      m_suppressed_token_ids(std::move(suppressed_token_ids)) {
+    m_tokenizer = tokenizer;
+    m_generation_config = generation_config;
+    m_is_validation_mode_enabled = false;
+    m_model_input_type = ModelInputType::EMBEDDINGS;
+
+    prepare_model_for_paged_attention(model, scheduler_config);
+    initialize_pipeline(model, scheduler_config, device, properties);
+
+    if (!m_suppressed_token_ids.empty()) {
+        m_sampler->set_suppressed_token_ids(m_suppressed_token_ids);
+    }
+    if (enable_hidden_state_export) {
+        m_model_runner->enable_hidden_state_export(true);
+    }
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
@@ -291,7 +343,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
 
     // If eos_token_id was not provided, take value
-    if (m_generation_config.eos_token_id == -1)
+    if (m_generation_config.eos_token_id == -1 && m_tokenizer.get_eos_token_id() != -1)
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
 };
 
@@ -396,6 +448,61 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
 
     // Enable hidden state accumulation for speech output (Qwen3-Omni).
     // Always collect when model outputs hidden states.
+    for (auto& seq : sequence_group->get_running_sequences()) {
+        seq->set_accumulate_hidden_states(true);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        _throw_if_failed();
+        initialize_prefix_cache(sequence_group);
+        sequence_group->set_num_prefix_cache_hit_tokens(sequence_group->get_num_processed_tokens());
+        m_awaiting_requests.push_back(sequence_group);
+    }
+
+    return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params_copy);
+}
+
+GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request_with_embeddings(
+    uint64_t request_id,
+    const ov::Tensor& inputs_embeds,
+    const ov::Tensor& position_ids,
+    const ov::genai::GenerationConfig& sampling_params,
+    std::optional<int64_t> rope_delta,
+    std::optional<ov::Tensor> prompt_ids) {
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        _throw_if_failed();
+    }
+
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS,
+                    "add_request_with_embeddings requires ModelInputType::EMBEDDINGS");
+    OPENVINO_ASSERT(inputs_embeds && inputs_embeds.get_element_type() == ov::element::f32 &&
+                        inputs_embeds.get_shape().size() == 3 && inputs_embeds.get_shape()[0] == 1,
+                    "add_request_with_embeddings expects f32 inputs_embeds shaped [1, T, H]");
+
+    auto sampling_params_copy = sampling_params;
+    if (sampling_params_copy.stop_token_ids.empty()) {
+        sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
+    }
+    if (sampling_params_copy.eos_token_id == -1) {
+        sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
+    }
+    sampling_params_copy.validate();
+    OPENVINO_ASSERT(!sampling_params_copy.is_beam_search() || m_suppressed_token_ids.empty(),
+                    "Beam search is not supported when suppressed token ids are configured");
+
+    const size_t prompt_len = inputs_embeds.get_shape()[1];
+    OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len,
+                    "'max_length' must be greater than the number of prompt tokens");
+
+    auto sequence_group = std::make_shared<SequenceGroup>(request_id,
+                                                          inputs_embeds,
+                                                          sampling_params_copy,
+                                                          std::nullopt,
+                                                          position_ids,
+                                                          rope_delta,
+                                                          prompt_ids);
     for (auto& seq : sequence_group->get_running_sequences()) {
         seq->set_accumulate_hidden_states(true);
     }
@@ -706,6 +813,110 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
     }
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_invoke_post_sample_embed_callback(
+    const ContinuousBatchingScheduler::Output& scheduler_output) {
+    struct TargetRef {
+        SequenceGroup::Ptr group;
+        Sequence::Ptr seq;
+    };
+
+    std::vector<StepSampledSequence> batch_items;
+    std::vector<TargetRef> targets;
+
+    for (const size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
+        const size_t prompt_len = sequence_group->get_prompt_len();
+        for (const auto& seq : sequence_group->get_sequences()) {
+            const size_t gen_len = seq->get_generated_len();
+            const size_t emb_len = seq->get_generated_ids_embeds().size();
+            if (gen_len <= emb_len) {
+                continue;
+            }
+            const auto& generated_ids = seq->get_generated_ids();
+            StepSampledSequence item;
+            item.request_id = sequence_group->get_request_id();
+            item.sequence_id = seq->get_id();
+            item.sampled_token_id = generated_ids.back();
+            item.generated_index = gen_len - 1;
+            item.prompt_len = prompt_len;
+            item.is_finished = seq->has_finished();
+
+            const ov::Tensor hs = seq->get_hidden_state();
+            if (hs && hs.get_size() > 0) {
+                const auto hs_shape = hs.get_shape();
+                OPENVINO_ASSERT(hs_shape.size() >= 2,
+                                "Exported hidden state must have rank >= 2, got ",
+                                hs_shape.size());
+                const size_t hidden_dim = hs_shape.back();
+                const size_t num_rows = hs.get_size() / hidden_dim;
+                ov::Tensor last_row(ov::element::f32, ov::Shape{1, 1, hidden_dim});
+                const auto [roi_begin, roi_end] = ov::genai::utils::make_roi(hs_shape, 0, num_rows - 1, num_rows);
+                ov::Tensor hs_last_view(hs, roi_begin, roi_end);
+                ov::Tensor hs_last_flat(ov::element::f32, ov::Shape{hidden_dim}, last_row.data<float>());
+                if (hs_last_view.is_continuous()) {
+                    std::memcpy(last_row.data<float>(), hs_last_view.data<const float>(), hidden_dim * sizeof(float));
+                } else {
+                    ov::Tensor contiguous(hs_last_view.get_element_type(), hs_last_view.get_shape());
+                    hs_last_view.copy_to(contiguous);
+                    std::memcpy(last_row.data<float>(), contiguous.data<const float>(), hidden_dim * sizeof(float));
+                }
+                item.last_hidden_state = std::move(last_row);
+            }
+
+            batch_items.push_back(std::move(item));
+            targets.push_back(TargetRef{sequence_group, seq});
+        }
+    }
+
+    if (batch_items.empty()) {
+        return;
+    }
+
+    std::vector<StepNextEmbed> next_embeds = m_post_sample_embed_cb(batch_items);
+    OPENVINO_ASSERT(next_embeds.size() == targets.size(),
+                    "PostSampleEmbedCallback returned ",
+                    next_embeds.size(),
+                    " entries, expected ",
+                    targets.size());
+
+    const bool use_mrope_pos = m_model_runner && m_model_runner->has_mrope_position_ids();
+    for (size_t i = 0; i < targets.size(); ++i) {
+        auto& seq = targets[i].seq;
+        auto& next = next_embeds[i];
+        if (next.stop_sequence && !seq->has_finished()) {
+            seq->set_status(SequenceStatus::FINISHED);
+            seq->set_finish_reason(GenerationFinishReason::STOP);
+            m_scheduler->free_sequence(seq->get_id());
+            continue;
+        }
+        if (seq->has_finished()) {
+            continue;
+        }
+        OPENVINO_ASSERT(next.next_embed && next.next_embed.get_shape().size() == 3 &&
+                            next.next_embed.get_shape()[0] == 1 && next.next_embed.get_shape()[1] == 1,
+                        "PostSampleEmbedCallback must return next_embed shaped [1, 1, H] for active sequences");
+        seq->append_generated_ids_embeds(next.next_embed);
+
+        if (next.next_position_ids) {
+            seq->append_position_ids(next.next_position_ids);
+        } else {
+            const int64_t pos_val = static_cast<int64_t>(batch_items[i].prompt_len + batch_items[i].generated_index);
+            if (use_mrope_pos) {
+                ov::Tensor pos(ov::element::i64, ov::Shape{3, 1, 1});
+                int64_t* ptr = pos.data<int64_t>();
+                ptr[0] = pos_val;
+                ptr[1] = pos_val;
+                ptr[2] = pos_val;
+                seq->append_position_ids(pos);
+            } else {
+                ov::Tensor pos(ov::element::i64, ov::Shape{1, 1});
+                pos.data<int64_t>()[0] = pos_val;
+                seq->append_position_ids(pos);
+            }
+        }
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
@@ -908,7 +1119,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_step() {
     // it appends validation candidates after sampling and must keep embeddings in sync
     // before the next scheduling/hash step.
     if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
-        m_model_runner->append_embeddings(m_requests, scheduler_output);
+        if (m_post_sample_embed_cb) {
+            _invoke_post_sample_embed_callback(scheduler_output);
+        } else if (m_inputs_embedder) {
+            m_model_runner->append_embeddings(m_requests, scheduler_output);
+        }
     }
 
     const auto step_end_time = std::chrono::steady_clock::now();
