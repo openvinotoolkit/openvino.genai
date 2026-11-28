@@ -4,6 +4,7 @@
 """Model export for tests: genai-cli for the models it converts natively, optimum-cli for all others."""
 
 import logging
+import os
 import subprocess  # nosec B404
 import sys
 from functools import cache
@@ -35,13 +36,22 @@ def export_command(model: str, output: Path | str, options: list[str] | tuple[st
     return ["optimum-cli", "export", "openvino", "--model", str(model), *options, str(output)]
 
 
-def export_with_genai_cli(model: str, output: Path | str, options: list[str] | tuple[str, ...] = ()) -> None:
-    """Exports a model with genai-cli; raises CalledProcessError with the tool output on failure."""
+def export_with_genai_cli(model: str, output: Path | str, options: list[str] | tuple[str, ...] = ()) -> str:
+    """Exports a model with genai-cli and returns the tool output; raises CalledProcessError with it on failure."""
     command = genai_cli_command(model, output, options)
     logger.info(f"Conversion command: {' '.join(command)}")
+    # On Windows, Python writes to a pipe in the ANSI code page unless UTF-8 mode is on. The genai-cli processes,
+    # including the one it re-runs under uv, inherit the environment.
     result = subprocess.run(
-        command, check=False, text=True, encoding="utf-8", stderr=subprocess.STDOUT, stdout=subprocess.PIPE
+        command,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONUTF8": "1"},
+        stderr=subprocess.STDOUT,
+        stdout=subprocess.PIPE,
     )
     if result.returncode != 0:
         logger.error(f"genai-cli returned {result.returncode}. Output:\n{result.stdout}")
         raise subprocess.CalledProcessError(result.returncode, command, output=result.stdout)
+    return result.stdout
