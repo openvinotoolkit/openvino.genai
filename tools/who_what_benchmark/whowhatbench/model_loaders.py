@@ -278,6 +278,9 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
 
     ov_config = {} if ov_config is None else ov_config
     _add_genai_draft_model_config(ov_config, device, "text", **kwargs)
+    if kwargs.get("les_predictor"):
+        logger.info(f"LES predictor: {kwargs['les_predictor']}")
+        ov_config = {**ov_config, "les_predictor": kwargs["les_predictor"]}
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 

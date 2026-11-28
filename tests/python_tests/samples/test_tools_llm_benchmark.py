@@ -17,10 +17,14 @@ from utils.hugging_face import download_gguf_model
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.kokoro_test_assets import prepare_tiny_kokoro_model_path
 from utils.kokoro_test_assets import prepare_tiny_kokoro_ov_path
+from utils.les_predictor import write_les_predictor
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
+
+# CPU ignores the LES predictor after reading it: checks that --les_predictor reaches the pipeline
+les_predictor_path = write_les_predictor(get_ov_cache_converted_models_dir() / "les_predictor.safetensors")
 
 image_generation_prompt = \
    "side profile centered painted portrait, Gandhi rolling a blunt, "\
@@ -1728,6 +1732,12 @@ class TestBenchmarkLLM:
                 "tiny-random-qwen2",
                 ["--optimum", "--num_prefill_tokens", "30"],
                 "The reqested number num_prefill_tokens(30tokens) is larger than the actual number of input tokens in prompt",
+            ),
+            pytest.param(
+                "tiny-random-qwen2",
+                ["--num_prefill_tokens", "4", "--les_predictor", les_predictor_path],
+                f"LES predictor: {les_predictor_path}",
+                id="tiny-random-qwen2-les_predictor",
             ),
         ],
         indirect=["convert_model"],

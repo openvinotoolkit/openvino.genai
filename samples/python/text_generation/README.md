@@ -342,6 +342,16 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   The sample prints finish reason for each generation turn. In the tool-calling turn, generation is stopped with `TOOL_CALL` as soon as the incremental parser successfully parses the `functools[...]` payload.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
+### 14. LES Greedy Causal LM (`les_greedy_causal_lm`)
+- **Description:**
+This sample demonstrates lookahead expert scheduling (LES) for Mixture-of-Experts models with MoE offloading on GPU. With `OFFLOAD_RATIO` > 0, that share (%) of the routed experts stays in host memory and is uploaded to the GPU on demand. A LES predictor (`LESPredictor`, a safetensors file with one small head per MoE layer) predicts, one layer ahead, which experts the router of the next MoE layer selects, so the GPU plugin can upload them in advance. The generated text does not change; only the decode speed does.
+- **Main Feature:** Faster decoding of MoE models with offloaded experts
+- **Run Command:**
+  ```bash
+  python les_greedy_causal_lm.py model_dir predictor_safetensors_file prompt [--offload_ratio 50]
+  ```
+  The predictor must be trained for the model. It predicts as many experts per token as the model router selects, from the current and the previous token.
+  The predictor can also be given by its path, without creating `LESPredictor`: `les_predictor=predictor_path` (str or `pathlib.Path`).
 
 ## Troubleshooting
 

@@ -9,6 +9,10 @@
 #include <utility>
 #include <tuple>
 #include <cstdint>
+#include <filesystem>
+#include <map>
+#include <memory>
+#include <string>
 
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/extensions.hpp"
@@ -17,6 +21,7 @@
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
+#include "openvino/op/constant.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/scheduler_config.hpp"
@@ -517,6 +522,25 @@ std::string patch_chat_template_multiline_strings(const std::string& chat_templa
  * @brief Rewrites "var is undefined" tests, which minja does not support, to the equivalent "not var is defined".
  */
 std::string patch_chat_template_undefined_tests(const std::string& chat_template);
+
+/**
+ * @brief Converts a safetensors element type (SAFETENSORS_* from safetensors.h) to the OpenVINO element type.
+ * Supports f32, f16, bf16, i64 and i32.
+ */
+ov::element::Type safetensors_to_ov_element_type(int dtype);
+
+using ConstantMap = std::map<std::string, std::shared_ptr<ov::op::v0::Constant>>;
+
+/**
+ * @brief Parses a buffer in safetensors format. The key in the map is a tensor name; each Constant uses a region of the
+ * buffer without a copy and keeps the buffer alive in its runtime info, so the buffer is released with the last Constant.
+ */
+ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor);
+
+/**
+ * @brief Reads a file in safetensors format: the file is mapped to memory, see safetensor_to_constant_map.
+ */
+ConstantMap read_safetensors(const std::filesystem::path& filename);
 
 }  // namespace utils
 }  // namespace genai

@@ -72,6 +72,9 @@ from .py_openvino_genai import (
 # LoRA
 from .py_openvino_genai import Adapter, AdapterConfig
 
+# Lookahead expert scheduling for MoE models
+from .py_openvino_genai import LESPredictor
+
 # Generation config
 from .py_openvino_genai import (
     GenerationConfig,
