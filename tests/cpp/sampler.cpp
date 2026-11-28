@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <future>
+#include <limits>
+#include <memory>
 #include <numeric>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <vector>
 #include "sampling/sampler.hpp"
@@ -129,6 +133,52 @@ ov::Tensor make_logits(size_t num_tokens) {
     return logits;
 }
 
+ov::Tensor make_logits_row(const std::vector<float>& values) {
+    ov::Tensor logits(ov::element::f32, ov::Shape{1, 1, values.size()});
+    std::copy(values.begin(), values.end(), logits.data<float>());
+    return logits;
+}
+
+TokenIds sample_steps(const SequenceGroup::Ptr& group, const std::vector<float>& logits_row, size_t num_steps) {
+    Sampler sampler;
+    for (size_t step = 0; step < num_steps; ++step) {
+        // sample() already finished the previous iteration, so scheduling the next token is all a step needs.
+        if (step > 0) {
+            group->schedule_tokens(1);
+        }
+        sampler.sample({group}, make_logits_row(logits_row));
+    }
+    return group->get_sequences().front()->get_generated_ids();
+}
+
+GenerationConfig make_repetition_penalty_config() {
+    auto config = ov::genai::utils::get_greedy_config();
+    config.repetition_penalty = 2.0f;
+    return config;
+}
+
+// Greedy decoding picks token 1 from this row, so a generated 0 can only be forced.
+const std::vector<float> TOKEN_ONE_WINS{0.0f, 1.0f};
+
+class SamplerForcedTokenTest : public testing::Test {
+protected:
+    // Forces token 0 at the first num_forced samplings of group, then lets it sample.
+    static void force_token_zero(const SequenceGroup::Ptr& group,
+                                 size_t num_forced = std::numeric_limits<size_t>::max(),
+                                 SamplingOverrides overrides = {}) {
+        overrides.forced_token = [num_forced, calls = std::make_shared<size_t>(0)]() -> std::optional<int64_t> {
+            return (*calls)++ < num_forced ? std::optional<int64_t>{0} : std::nullopt;
+        };
+        group->set_sampling_overrides(std::move(overrides));
+    }
+
+    SamplerOutput sample_one_row(const SequenceGroup::Ptr& group) {
+        return m_sampler.sample({group}, make_logits_row(TOKEN_ONE_WINS));
+    }
+
+    Sampler m_sampler;
+};
+
 }  // namespace
 
 TEST(SamplerWorkerJoiningTest, waits_for_blocked_worker_and_preserves_worker_exception) {
@@ -239,6 +289,105 @@ TEST(SamplerWorkerJoiningTest, preserves_successful_multi_request_results) {
     EXPECT_EQ(second_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
     EXPECT_TRUE(first_group->get_generation_stream()->can_read());
     EXPECT_TRUE(second_group->get_generation_stream()->can_read());
+}
+
+TEST_F(SamplerForcedTokenTest, records_forced_token_instead_of_sampling) {
+    const auto group = make_scheduled_group(0);
+    force_token_zero(group);
+
+    sample_one_row(group);
+
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), TokenIds({0}));
+}
+
+TEST_F(SamplerForcedTokenTest, forced_token_wins_over_its_suppression) {
+    // LFM3-Omni suppresses <|audio_out|> in text slots and forces it in frame slots.
+    const auto group = make_scheduled_group(0);
+    SamplingOverrides overrides;
+    overrides.suppressed_token_ids = std::set<int64_t>{0};
+    force_token_zero(group, 1, std::move(overrides));
+
+    EXPECT_EQ(sample_steps(group, {0.0f, 1.0f, 0.5f}, 2), TokenIds({0, 1}));
+}
+
+TEST_F(SamplerForcedTokenTest, forced_draw_advances_random_engine_as_sampled_one) {
+    // SDPA and PA draw a forced slot too, so the text tokens after it are the same on both.
+    GenerationConfig config;
+    config.do_sample = true;
+    config.max_new_tokens = 8;
+    const std::vector<float> uniform(16, 0.0f);
+    const auto sampled_group = make_scheduled_group(0, config);
+    const auto forced_group = make_scheduled_group(1, config);
+    force_token_zero(forced_group, 1);
+
+    const auto sampled = sample_steps(sampled_group, uniform, 6);
+    const auto forced = sample_steps(forced_group, uniform, 6);
+
+    EXPECT_EQ(forced.front(), 0);
+    EXPECT_EQ(TokenIds(forced.begin() + 1, forced.end()), TokenIds(sampled.begin() + 1, sampled.end()));
+}
+
+TEST_F(SamplerForcedTokenTest, forced_token_still_counts_towards_max_new_tokens) {
+    auto config = ov::genai::utils::get_greedy_config();
+    config.max_new_tokens = 1;
+    const auto group = make_scheduled_group(0, config);
+    const auto sequence = group->get_sequences().front();
+    force_token_zero(group);
+
+    const auto output = sample_one_row(group);
+
+    EXPECT_TRUE(sequence->has_finished());
+    EXPECT_EQ(sequence->get_finish_reason(), GenerationFinishReason::LENGTH);
+    EXPECT_EQ(output.m_dropped_sequences, std::vector<uint64_t>({sequence->get_id()}));
+}
+
+TEST_F(SamplerForcedTokenTest, samples_when_callback_returns_none) {
+    const auto group = make_scheduled_group(0);
+    force_token_zero(group, 1);
+
+    EXPECT_EQ(sample_steps(group, TOKEN_ONE_WINS, 2), TokenIds({0, 1}));
+}
+
+TEST_F(SamplerForcedTokenTest, goes_only_to_its_request) {
+    const auto forced_group = make_scheduled_group(0);
+    const auto sampled_group = make_scheduled_group(1);
+    force_token_zero(forced_group);
+
+    m_sampler.sample({forced_group, sampled_group}, make_logits(2));
+
+    EXPECT_EQ(forced_group->get_sequences().front()->get_generated_ids(), TokenIds({0}));
+    EXPECT_EQ(sampled_group->get_sequences().front()->get_generated_ids(), TokenIds({1}));
+}
+
+TEST(SamplerSamplingOverridesTest, suppressed_ids_replace_pipeline_set) {
+    const auto group = make_scheduled_group(0);
+    SamplingOverrides overrides;
+    overrides.suppressed_token_ids = std::set<int64_t>{1};
+    group->set_sampling_overrides(std::move(overrides));
+    Sampler sampler;
+    sampler.set_suppressed_token_ids({0});
+
+    sampler.sample({group}, make_logits_row({0.5f, 1.0f, 0.2f}));
+
+    // A union of both sets would leave token 2 as the only candidate.
+    EXPECT_EQ(group->get_sequences().front()->get_generated_ids(), TokenIds({0}));
+}
+
+TEST(SamplerSamplingOverridesTest, repetition_window_reaches_logit_processor) {
+    // Prompt {0} is outside the window, and a window of one penalizes only the previous token.
+    const auto group = make_scheduled_group(0, make_repetition_penalty_config());
+    SamplingOverrides overrides;
+    overrides.repetition_window = RepetitionWindow{1, {}};
+    group->set_sampling_overrides(std::move(overrides));
+
+    EXPECT_EQ(sample_steps(group, {0.95f, 1.0f, 0.9f}, 3), TokenIds({1, 0, 1}));
+}
+
+TEST(SamplerSamplingOverridesTest, without_window_penalty_covers_prompt_and_history) {
+    // Prompt {0} is penalized from the first step, and every generated token stays penalized.
+    const auto group = make_scheduled_group(0, make_repetition_penalty_config());
+
+    EXPECT_EQ(sample_steps(group, {0.95f, 1.0f, 0.9f}, 3), TokenIds({1, 2, 1}));
 }
 
 TEST(SamplerNotificationTest, defers_generated_output_until_explicit_notification) {

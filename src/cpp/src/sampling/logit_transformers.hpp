@@ -5,6 +5,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
+#include <functional>
+#include <optional>
+#include <set>
 
 #include "openvino/genai/generation_config.hpp"
 
@@ -495,6 +499,48 @@ protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = nullptr;
 };
 
+// Penalizes each distinct id among the last window_size accepted tokens, as RepetitionPenaltyTransform does, but
+// without the prompt and without the ignored ids, e.g. a placeholder that a step hook forces.
+class WindowedRepetitionPenaltyTransform : public IStatefulLogitTransformer {
+public:
+    WindowedRepetitionPenaltyTransform(double repetition_penalty, size_t window_size, std::set<int64_t> ignored_token_ids)
+        : m_penalty(repetition_penalty),
+          m_window_size(window_size),
+          m_ignored_token_ids(std::move(ignored_token_ids)) {}
+
+    void apply(Logits& logits) override {
+        auto logit_ref = [&](int64_t id) -> float& {
+            return logits.is_vector_initialized() ? logits.m_vector[id].m_log_prob : logits.m_data[id];
+        };
+        const std::set<int64_t> unique_ids(m_history.begin(), m_history.end());
+        for (const int64_t token_id : unique_ids) {
+            OPENVINO_ASSERT(token_id >= 0 && static_cast<size_t>(token_id) < logits.m_size,
+                            "Repetition window token id is out of vocabulary range: ",
+                            token_id);
+            auto& value = logit_ref(token_id);
+            if (value >= 0) value /= m_penalty; else value *= m_penalty;
+        }
+    }
+
+    void accept_tokens(const TokenIds& input_ids) override {
+        for (const int64_t token_id : input_ids) {
+            if (m_ignored_token_ids.count(token_id)) {
+                continue;
+            }
+            m_history.push_back(token_id);
+            if (m_history.size() > m_window_size) {
+                m_history.pop_front();
+            }
+        }
+    }
+
+private:
+    double m_penalty;
+    size_t m_window_size;
+    std::set<int64_t> m_ignored_token_ids;
+    std::deque<int64_t> m_history;
+};
+
 class EOSPenaltyTransform : public ILogitTransformer {
 public:
     EOSPenaltyTransform(const std::set<int64_t>& stop_token_ids, size_t min_generated_tokens) :
@@ -525,6 +571,38 @@ public:
 protected:
     size_t m_applicable_tensor_len = std::numeric_limits<size_t>::max();
     std::set<int64_t> m_stop_token_ids;
+};
+
+/// @brief Leaves only the token a callback returns, so the later rules and the draw can pick nothing else.
+class ForcedTokenTransform : public ILogitTransformer {
+public:
+    explicit ForcedTokenTransform(std::function<std::optional<int64_t>()> forced_token)
+        : m_forced_token(std::move(forced_token)) {}
+
+    void apply(Logits& logits) override {
+        const std::optional<int64_t> token = m_forced_token();
+        if (!token) {
+            return;
+        }
+        OPENVINO_ASSERT(*token >= 0 && *token < static_cast<int64_t>(logits.m_size),
+                        "Forced token id is out of vocabulary range: ",
+                        *token);
+        constexpr float masked = -std::numeric_limits<float>::infinity();
+        if (logits.is_vector_initialized()) {
+            // The log-probability snapshot copied the whole vocabulary in order; no filter has run yet.
+            OPENVINO_ASSERT(logits.m_vector.size() == logits.m_size, "A forced token must precede the top_k filter");
+            for (auto& candidate : logits.m_vector) {
+                candidate.m_log_prob = masked;
+            }
+            logits.m_vector[*token].m_log_prob = 0.0f;
+        } else {
+            std::fill_n(logits.m_data, logits.m_size, masked);
+            logits.m_data[*token] = 0.0f;
+        }
+    }
+
+private:
+    std::function<std::optional<int64_t>()> m_forced_token;
 };
 
 class SuppressTokensTransform : public ILogitTransformer {

@@ -137,6 +137,10 @@ private:
     size_t m_max_depth = 0;
 };
 
+/// @brief The most likely token of logits processed by a LogitProcessor; its log-probability is 0 unless
+/// top_logprobs > 0.
+Token greedy_sample(const Logits& logits, size_t top_logprobs);
+
 class Sampler {
     class Searcher;
     class TreeSearcher;
@@ -155,7 +159,6 @@ class Sampler {
     };
 
     Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
-    Token _greedy_sample(const Logits& logits, size_t top_logprobs) const;
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr& sequence_group,
                                                  const std::pair<size_t, std::set<std::string>>& stop_strings);
 

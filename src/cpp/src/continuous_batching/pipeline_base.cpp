@@ -348,7 +348,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::vector<ov::Tensor>>& audios_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             std::shared_ptr<OmniStreamerBase> omni_streamer) {
+             std::shared_ptr<OmniStreamerBase> omni_streamer,
+             const std::vector<std::shared_ptr<StepRequestPayload>>& step_payloads) {
     PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
@@ -524,23 +525,48 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         }
     }
+    auto rollback_turn = [&]() {
+        m_history.pop_back();
+        for (size_t idx = 0; idx < encoded_images.size(); idx++) {
+            m_history_image_ids.pop_back();
+            m_history_images.pop_back();
+        }
+        for (size_t idx = 0; idx < encoded_videos.size(); idx++) {
+            m_history_video_ids.pop_back();
+            m_history_videos.pop_back();
+        }
+        m_history_audios.resize(history_audios_before);
+        m_history_audio_ids.resize(history_audio_ids_before);
+        m_history_vision_count.pop_back();
+    };
+
     std::vector<VLMDecodedResults> results;
     std::vector<EncodedGenerationResult> encoded_results;
-    if (omni_streamer) {
-        encoded_results = generate_with_omni_streamer(input_embeds_list,
-                                                      sampling_params,
-                                                      streamer,
-                                                      std::exchange(omni_streamer, nullptr),
-                                                      position_ids_list,
-                                                      original_prompt_ids_list,
-                                                      lm_extra_inputs_list);
-    } else {
-        encoded_results = generate(input_embeds_list,
-                                   sampling_params,
-                                   streamer,
-                                   position_ids_list,
-                                   original_prompt_ids_list,
-                                   lm_extra_inputs_list);
+    try {
+        if (omni_streamer || !step_payloads.empty()) {
+            encoded_results = generate_with_omni_streamer(input_embeds_list,
+                                                          sampling_params,
+                                                          streamer,
+                                                          std::exchange(omni_streamer, nullptr),
+                                                          position_ids_list,
+                                                          original_prompt_ids_list,
+                                                          lm_extra_inputs_list,
+                                                          step_payloads);
+        } else {
+            encoded_results = generate(input_embeds_list,
+                                       sampling_params,
+                                       streamer,
+                                       position_ids_list,
+                                       original_prompt_ids_list,
+                                       lm_extra_inputs_list);
+        }
+    } catch (...) {
+        // A failed generate must leave the chat exactly as a cancelled turn would.
+        if (m_is_chat_conversation) {
+            m_inputs_embedder->update_chat_history({}, ov::genai::GenerationStatus::CANCEL);
+            rollback_turn();
+        }
+        throw;
     }
     for (size_t i = 0; i < prompts.size(); i++) {
         utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
@@ -584,18 +610,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             m_audio_id += encoded_audios.size();
             m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
         } else {
-            m_history.pop_back();
-            for (size_t idx = 0; idx < encoded_images.size(); idx++) {
-                m_history_image_ids.pop_back();
-                m_history_images.pop_back();
-            }
-            for (size_t idx = 0; idx < encoded_videos.size(); idx++) {
-                m_history_video_ids.pop_back();
-                m_history_videos.pop_back();
-            }
-            m_history_audios.resize(history_audios_before);
-            m_history_audio_ids.resize(history_audio_ids_before);
-            m_history_vision_count.pop_back();
+            rollback_turn();
         }
     }
     return results;
@@ -678,10 +693,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate_with_omni_stre
     std::shared_ptr<OmniStreamerBase> omni_streamer,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
-    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list
+    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list,
+    const std::vector<std::shared_ptr<StepRequestPayload>>& step_payloads
 ) {
     PendingOmniStreamerGuard bridge_guard{omni_streamer};
     OPENVINO_ASSERT(!omni_streamer, OMNI_STREAMER_UNSUPPORTED_BACKEND);
+    OPENVINO_ASSERT(step_payloads.empty(), "Model-specific step work needs the plain continuous batching core");
     return generate(input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list);
 }
 
@@ -694,7 +711,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::vector<ov::Tensor>>& audios_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    std::shared_ptr<OmniStreamerBase> omni_streamer
+    std::shared_ptr<OmniStreamerBase> omni_streamer,
+    const std::vector<std::shared_ptr<StepRequestPayload>>& step_payloads
 ) {
     PendingOmniStreamerGuard bridge_guard{omni_streamer};
     auto generate_start_time = std::chrono::steady_clock::now();
@@ -718,7 +736,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
     // Omni speech needs the exact prompt-token slice the Thinker consumed, but collecting it must
     // not force ChatHistory through the string path (which would misplace multimodal tokens).
-    const bool capture_prompt_ids = omni_streamer ||
+    // A step hook reads the prompt tail too, as LFM3-Omni does to skip a speech marker the template already added.
+    const bool capture_prompt_ids = omni_streamer || !step_payloads.empty() ||
                                     std::any_of(sampling_params.begin(), sampling_params.end(),
                                                 [](const GenerationConfig& params) {
                                                     return params.return_omni_outputs ||
@@ -807,21 +826,31 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     }
 
     std::vector<EncodedGenerationResult> encoded_results;
-    if (omni_streamer) {
-        encoded_results = generate_with_omni_streamer(input_embeds_list,
-                                                      sampling_params,
-                                                      streamer,
-                                                      std::exchange(omni_streamer, nullptr),
-                                                      position_ids_list,
-                                                      original_prompt_ids_list,
-                                                      lm_extra_inputs_list);
-    } else {
-        encoded_results = generate(input_embeds_list,
-                                   sampling_params,
-                                   streamer,
-                                   position_ids_list,
-                                   original_prompt_ids_list,
-                                   lm_extra_inputs_list);
+    try {
+        if (omni_streamer || !step_payloads.empty()) {
+            encoded_results = generate_with_omni_streamer(input_embeds_list,
+                                                          sampling_params,
+                                                          streamer,
+                                                          std::exchange(omni_streamer, nullptr),
+                                                          position_ids_list,
+                                                          original_prompt_ids_list,
+                                                          lm_extra_inputs_list,
+                                                          step_payloads);
+        } else {
+            encoded_results = generate(input_embeds_list,
+                                       sampling_params,
+                                       streamer,
+                                       position_ids_list,
+                                       original_prompt_ids_list,
+                                       lm_extra_inputs_list);
+        }
+    } catch (...) {
+        // A failed generate must leave every history as a cancelled turn would.
+        for (auto& chat_context : chat_contexts) {
+            m_inputs_embedder->update_chat_history({}, ov::genai::GenerationStatus::CANCEL);
+            chat_context.rollback();
+        }
+        throw;
     }
     std::vector<VLMDecodedResults> results;
     results.reserve(encoded_results.size());

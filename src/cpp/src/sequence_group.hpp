@@ -14,12 +14,14 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
 #include "logger.hpp"
 #include "sampling/draft_proposal.hpp"
+#include "sampling/sampling_overrides.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
@@ -499,6 +501,14 @@ public:
     }
 };
 
+/// @brief Model-specific state of one request: created by IStepHook::before_add_request(), owned by its
+/// SequenceGroup. The destructor must not call into the hook or user code: it is only the backstop after
+/// after_remove_request().
+class StepRequestState {
+public:
+    virtual ~StepRequestState() = default;
+};
+
 // contains a list of Sequences in generic case (beam search or parallel sampling)
 // - each sequence shares the same prompt and KV-caches for prompt
 // - in case of beam search each sequence also shares specific part of generic phase
@@ -507,6 +517,8 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
     ov::genai::GenerationConfig m_sampling_params;
+    SamplingOverrides m_sampling_overrides;
+    std::unique_ptr<StepRequestState> m_step_state;
     TokenIds m_prompt_ids;
     std::vector<std::vector<float>> m_input_embeds;
     std::optional<std::vector<int64_t>> m_token_type_ids;
@@ -1029,6 +1041,29 @@ public:
 
     const ov::genai::GenerationConfig& get_sampling_parameters() const {
         return m_sampling_params;
+    }
+
+    const SamplingOverrides& get_sampling_overrides() const {
+        return m_sampling_overrides;
+    }
+
+    /// @brief Takes effect only before the first sampling of the request, when the sampler builds its state.
+    void set_sampling_overrides(SamplingOverrides sampling_overrides) {
+        m_sampling_overrides = std::move(sampling_overrides);
+    }
+
+    /// @brief State a step hook took the request with; null for requests no hook took.
+    StepRequestState* get_step_state() const {
+        return m_step_state.get();
+    }
+
+    void set_step_state(std::unique_ptr<StepRequestState> state) {
+        m_step_state = std::move(state);
+    }
+
+    /// @brief Detaches the state for IStepHook::after_remove_request(); null once taken, so each state ends once.
+    std::unique_ptr<StepRequestState> take_step_state() {
+        return std::exchange(m_step_state, nullptr);
     }
 
     LogitsType get_logits_type() const {

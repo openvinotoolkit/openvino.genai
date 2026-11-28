@@ -3,8 +3,6 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 
-#include <algorithm>
-#include <array>
 #include <optional>
 #include <random>
 
@@ -64,8 +62,6 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
 
     device_properties["AUTO"] = auto_properties;
 }
-
-constexpr std::array<const char*, 3> LFM3_SPEECH_MODELS{"depth_decoder", "audio_out_embeddings", "audio_decoder"};
 
 }
 
@@ -265,10 +261,7 @@ private:
         }
 
         finalize_initialization(language_model, kv_pos);
-        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && !m_is_npu &&
-            std::all_of(LFM3_SPEECH_MODELS.begin(), LFM3_SPEECH_MODELS.end(), [&models_dir](const char* name) {
-                return std::filesystem::exists(models_dir / ("openvino_" + std::string(name) + "_model.xml"));
-            })) {
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && !m_is_npu && has_lfm3_speech_models(models_dir)) {
             m_speech_engine =
                 std::make_unique<LFM3OmniSpeechEngine>(models_dir, m_language, m_embedding, device, properties_copy);
         }
@@ -325,10 +318,7 @@ private:
             m_adapter_controller->apply(m_language);
         }
         finalize_initialization(language_model, kv_pos);
-        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI &&
-            std::all_of(LFM3_SPEECH_MODELS.begin(), LFM3_SPEECH_MODELS.end(), [&models_map](const char* name) {
-                return models_map.count(name) > 0;
-            })) {
+        if (m_vlm_config.model_type == VLMModelType::LFM3_OMNI && has_lfm3_speech_models(models_map)) {
             m_speech_engine = std::make_unique<LFM3OmniSpeechEngine>(models_map,
                                                                      config_dir_path,
                                                                      m_language,
@@ -555,22 +545,48 @@ public:
                 generation_config.apply_chat_template ? PromptFormatting::NeedsTemplate : PromptFormatting::Raw);
         }
 
-        auto finish_info = prepare_inputs_and_generate(
-            unified_prompt,
-            encoded_images,
-            encoded_videos,
-            encoded_audios,
-            image_sequence,
-            video_sequence,
-            audio_sequence,
-            m_history_vision_count,
-            generation_config,
-            perf_metrics,
-            streamer,
-            speech_request,
-            intermediate_remote_tensor,
-            embeddings_start_time
-        );
+        const auto rollback_turn = [&]() {
+            m_history.pop_back();
+            if (m_use_full_chat_history) {
+                OPENVINO_ASSERT(new_image_count <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
+                m_encoded_images.resize(m_encoded_images.size() - new_image_count);
+                m_history_image_sequence.resize(history_image_sequence_before);
+
+                OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
+                m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
+                m_history_video_sequence.resize(history_video_sequence_before);
+
+                OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
+                m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
+                m_history_audio_sequence.resize(history_audio_sequence_before);
+
+                m_history_vision_count.pop_back();
+            }
+        };
+
+        utils::GenerationFinishInfo finish_info;
+        try {
+            finish_info = prepare_inputs_and_generate(unified_prompt,
+                                                      encoded_images,
+                                                      encoded_videos,
+                                                      encoded_audios,
+                                                      image_sequence,
+                                                      video_sequence,
+                                                      audio_sequence,
+                                                      m_history_vision_count,
+                                                      generation_config,
+                                                      perf_metrics,
+                                                      streamer,
+                                                      speech_request,
+                                                      intermediate_remote_tensor,
+                                                      embeddings_start_time);
+        } catch (...) {
+            if (m_is_chat_conversation) {
+                reset_cache_after_failed_turn();
+                rollback_turn();
+            }
+            throw;
+        }
 
         EncodedResults& encoded_result = finish_info.results;
 
@@ -607,22 +623,7 @@ public:
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
             } else {
-                m_history.pop_back();
-                if (m_use_full_chat_history) {
-                    OPENVINO_ASSERT(new_image_count <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
-                    m_encoded_images.resize(m_encoded_images.size() - new_image_count);
-                    m_history_image_sequence.resize(history_image_sequence_before);
-
-                    OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
-                    m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
-                    m_history_video_sequence.resize(history_video_sequence_before);
-
-                    OPENVINO_ASSERT(audios.size() <= m_encoded_audios.size(), "Number of audios to remove is more than stored audios!");
-                    m_encoded_audios.resize(m_encoded_audios.size() - audios.size());
-                    m_history_audio_sequence.resize(history_audio_sequence_before);
-
-                    m_history_vision_count.pop_back();
-                }
+                rollback_turn();
             }
         } else {
             utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
@@ -843,22 +844,26 @@ public:
 
         vlm_utils::update_image_slice_counts(perf_metrics, images_embeds);
 
-        generation_finish_info = prepare_inputs_and_generate(
-            templated_history,
-            images_embeds,
-            videos_embeds,
-            audios_embeds,
-            image_seq,
-            video_seq,
-            audio_seq,
-            vision_counts,
-            generation_config,
-            perf_metrics,
-            streamer,
-            speech_request,
-            intermediate_remote_tensor,
-            embeddings_start_time
-        );
+        try {
+            generation_finish_info = prepare_inputs_and_generate(templated_history,
+                                                                 images_embeds,
+                                                                 videos_embeds,
+                                                                 audios_embeds,
+                                                                 image_seq,
+                                                                 video_seq,
+                                                                 audio_seq,
+                                                                 vision_counts,
+                                                                 generation_config,
+                                                                 perf_metrics,
+                                                                 streamer,
+                                                                 speech_request,
+                                                                 intermediate_remote_tensor,
+                                                                 embeddings_start_time);
+        } catch (...) {
+            reset_cache_after_failed_turn();
+            chat_context.rollback();
+            throw;
+        }
 
         EncodedResults& encoded_result = generation_finish_info.results;
 
@@ -1015,6 +1020,14 @@ public:
     }
 
 private:
+    void reset_cache_after_failed_turn() {
+        m_inputs_embedder->update_chat_history({}, ov::genai::GenerationStatus::CANCEL);
+        // The KV cache length after a failed turn is unknown, so the next turn encodes the whole history again.
+        auto& cache_state = m_inputs_embedder->get_cache_state();
+        cache_state.reset_state();
+        cache_state.reset_mem_state = true;
+    }
+
     void reset_language_state() {
         if (m_adapter_controller) {
             // Preserve adapter-owned state variables
@@ -1197,10 +1210,7 @@ private:
         if (m_vlm_config.model_type != VLMModelType::LFM3_OMNI || m_is_npu) {
             VLMBackend::check_speech_in_stream(speech_config);
         }
-        OPENVINO_ASSERT(
-            m_speech_engine,
-            "LFM3-Omni speech output needs openvino_depth_decoder_model, openvino_audio_out_embeddings_model "
-            "and openvino_audio_decoder_model");
+        check_lfm3_speech_models_loaded(m_speech_engine != nullptr);
         LFM3SpeechRequest::validate(speech_config);
     }
 
@@ -1236,10 +1246,8 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    // Force models to use SDPA backend by default until PA is supported. An explicit PA request still gets PA.
-    // LFM3-Omni speech output is decoded in the stateful language model loop, which only SDPA provides.
-    const auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::LFM3_OMNI;
+    // No model needs the SDPA backend by default; read the model type from models_dir here for one that does.
+    return false;
 }
 
 VLMPipeline::VLMPipeline(

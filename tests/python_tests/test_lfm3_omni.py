@@ -5,7 +5,7 @@
 Tests for LFM3-Omni in VLMPipeline and OmniPipeline.
 
 LFM3-Omni has no separate talker: its language model emits text tokens and speech frames in one
-stream, and OmniPipeline decodes the speech inside the VLM (SDPA backend). The checks run on
+stream, and OmniPipeline decodes the speech inside the VLM, on PA and on SDPA. The checks run on
 `optimum-intel-internal-testing/tiny-random-lfm3-omni` and compare with optimum-intel on the
 same export. The tiny checkpoint sets no audio sampling, so each code is the argmax, but the
 MaskGIT codebook order is drawn from a random generator that differs between torch and GenAI.
@@ -24,8 +24,11 @@ import platform
 import shutil
 import sys
 import tempfile
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import openvino as ov
@@ -110,15 +113,26 @@ def omni_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
     return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", **F32)
 
 
-@pytest.fixture(scope="module")
-def omni_chat_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
+@pytest.fixture(scope="module", params=["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+def omni_chat_pipe(request: pytest.FixtureRequest, lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
     # A ChatHistory call keeps the pipeline in chat mode, so prompt calls on it would continue that chat.
-    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU")
+    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND=request.param)
+
+
+@pytest.fixture(scope="module", params=["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+def speech_pipe(request: pytest.FixtureRequest, lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
+    # Both backends decode speech with the same sampler, so every speech behaviour is checked on each.
+    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND=request.param, **F32)
+
+
+@pytest.fixture(scope="module")
+def omni_sdpa_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
+    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND="SDPA", **F32)
 
 
 @pytest.fixture(scope="module")
 def omni_pa_pipe(lfm3_omni_model_path: Path) -> ov_genai.OmniPipeline:
-    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND="PA")
+    return ov_genai.OmniPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND="PA", **F32)
 
 
 @pytest.fixture(scope="module", params=["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
@@ -196,15 +210,16 @@ def _optimum_inputs(reference: OptimumReference, case: str, media: Media) -> dic
 
 
 class TokenCollector(ov_genai.StreamerBase):
-    def __init__(self, status: ov_genai.StreamingStatus = ov_genai.StreamingStatus.RUNNING) -> None:
+    def __init__(self, status: ov_genai.StreamingStatus = ov_genai.StreamingStatus.RUNNING, after: int = 1) -> None:
         super().__init__()
         self.tokens: list[int] = []
         self.status = status
+        self.after = after
         self.ends = 0
 
     def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
         self.tokens.extend(token if isinstance(token, list) else [token])
-        return self.status
+        return self.status if len(self.tokens) >= self.after else ov_genai.StreamingStatus.RUNNING
 
     def end(self) -> None:
         self.ends += 1
@@ -364,7 +379,7 @@ def test_interleaved_matches_optimum_layout(
 
 @pytest.mark.parametrize("chunk_frames", [1, 3])
 def test_streamed_chunks_form_the_waveform(
-    omni_pipe: ov_genai.OmniPipeline, frame_samples: int, chunk_frames: int
+    speech_pipe: ov_genai.OmniPipeline, frame_samples: int, chunk_frames: int
 ) -> None:
     chunks: list[np.ndarray] = []
 
@@ -372,7 +387,7 @@ def test_streamed_chunks_form_the_waveform(
         chunks.append(np.array(chunk.data, dtype=np.float32).reshape(-1))
         return ov_genai.StreamingStatus.RUNNING
 
-    result = omni_pipe.generate(
+    result = speech_pipe.generate(
         PROMPT,
         text_config=_text_config(1000),
         talker_speech_config=_speech_config(7, audio_chunk_frames=chunk_frames),
@@ -391,11 +406,11 @@ def _speech(pipe: ov_genai.OmniPipeline, streamed: bool, **fields) -> np.ndarray
 
 
 @pytest.mark.parametrize("left_context_frames", [None, 0], ids=["default", "no_context"])
-def test_streaming_left_context(omni_pipe: ov_genai.OmniPipeline, left_context_frames: int | None) -> None:
+def test_streaming_left_context(speech_pipe: ov_genai.OmniPipeline, left_context_frames: int | None) -> None:
     # 30 frames is more than the default left context, so later chunks drop the start.
     fields = {} if left_context_frames is None else {"audio_chunk_left_context_frames": left_context_frames}
-    streamed = _speech(omni_pipe, True, audio_chunk_frames=2, **fields)
-    one_shot = _speech(omni_pipe, False)
+    streamed = _speech(speech_pipe, True, audio_chunk_frames=2, **fields)
+    one_shot = _speech(speech_pipe, False)
     if left_context_frames is None:
         np.testing.assert_allclose(streamed, one_shot, atol=1e-5)
     else:
@@ -403,23 +418,23 @@ def test_streaming_left_context(omni_pipe: ov_genai.OmniPipeline, left_context_f
         assert not np.allclose(streamed, one_shot, atol=1e-5)
 
 
-def test_chunk_settings_do_not_change_unstreamed_speech(omni_pipe: ov_genai.OmniPipeline) -> None:
-    chunked = _speech(omni_pipe, False, audio_chunk_frames=2, audio_chunk_left_context_frames=0)
-    np.testing.assert_array_equal(chunked, _speech(omni_pipe, False))
+def test_chunk_settings_do_not_change_unstreamed_speech(speech_pipe: ov_genai.OmniPipeline) -> None:
+    chunked = _speech(speech_pipe, False, audio_chunk_frames=2, audio_chunk_left_context_frames=0)
+    np.testing.assert_array_equal(chunked, _speech(speech_pipe, False))
 
 
 @pytest.mark.parametrize("field, value", [("cp_temperature", 0.5), ("cp_top_k", 4), ("cp_repetition_penalty", 2.0)])
-def test_speech_sampling_fields_change_speech(omni_pipe: ov_genai.OmniPipeline, field: str, value: float) -> None:
+def test_speech_sampling_fields_change_speech(speech_pipe: ov_genai.OmniPipeline, field: str, value: float) -> None:
     def speech(**fields) -> np.ndarray:
         config = _speech_config(8, rng_seed=0, **fields)
-        return _waveform(omni_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
+        return _waveform(speech_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
 
     assert not np.array_equal(speech(**{field: value}), speech())
 
 
-def test_max_new_tokens_caps_text_and_speech_slots(omni_pipe: ov_genai.OmniPipeline, frame_samples: int) -> None:
+def test_max_new_tokens_caps_text_and_speech_slots(speech_pipe: ov_genai.OmniPipeline, frame_samples: int) -> None:
     collector = TokenCollector()
-    result = omni_pipe.generate(
+    result = speech_pipe.generate(
         PROMPT,
         text_config=_text_config(INTERLEAVED_TEXT_SLOTS + 3),
         talker_speech_config=_speech_config(100),
@@ -429,22 +444,70 @@ def test_max_new_tokens_caps_text_and_speech_slots(omni_pipe: ov_genai.OmniPipel
     assert _waveform(result).size == 3 * frame_samples
 
 
-@pytest.mark.parametrize("status", [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.CANCEL])
+@pytest.mark.parametrize("after", [1, INTERLEAVED_TEXT_SLOTS], ids=["first_token", "last_token_of_block"])
+@pytest.mark.parametrize(
+    "status",
+    [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.CANCEL, ov_genai.StreamingStatus.TOOL_CALL_STOP],
+)
 def test_text_streamer_ends_speech_generation(
-    omni_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus
+    omni_sdpa_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, after: int
 ) -> None:
-    # The interleaved answer opens with text, so no frame is generated before the streamer ends the turn.
-    collector = TokenCollector(status)
-    result = omni_pipe.generate(
-        PROMPT, text_config=_text_config(1000), talker_speech_config=_speech_config(8), streamer=collector
+    # SDPA writes the text streamer on the decoding thread, and the interleaved answer opens with a text block, so no
+    # frame may follow the token on which the streamer ends the turn. PA streams text asynchronously, as CB does.
+    collector = TokenCollector(status, after)
+    chunks: list[ov.Tensor] = []
+
+    def on_chunk(chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+        chunks.append(chunk)
+        return ov_genai.StreamingStatus.RUNNING
+
+    result = omni_sdpa_pipe.generate(
+        PROMPT,
+        text_config=_text_config(1000),
+        talker_speech_config=_speech_config(8, audio_chunk_frames=1),
+        streamer=collector,
+        speech_streamer=on_chunk,
     )
-    assert len(collector.tokens) == 1
+    assert len(collector.tokens) == after
+    assert chunks == []
     assert result.speech_result.waveforms == []
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_slow_text_streamer_does_not_stall_speech(omni_pa_pipe: ov_genai.OmniPipeline) -> None:
+    # The first write waits for a speech chunk, which only a decode that goes on without the text streamer can make.
+    chunk_streamed = threading.Event()
+
+    class BlockingStreamer(TokenCollector):
+        unblocked = False
+
+        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+            super().write(token)
+            self.unblocked = chunk_streamed.wait(timeout=60)
+            return ov_genai.StreamingStatus.STOP
+
+    def on_chunk(chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+        chunk_streamed.set()
+        return ov_genai.StreamingStatus.RUNNING
+
+    collector = BlockingStreamer()
+    result = omni_pa_pipe.generate(
+        PROMPT,
+        text_config=_text_config(1000),
+        talker_speech_config=_speech_config(8, audio_chunk_frames=1),
+        streamer=collector,
+        speech_streamer=on_chunk,
+    )
+    assert collector.unblocked
+    # The stop takes effect in a later step: the slots generated meanwhile stay, but no later token is streamed.
+    assert len(collector.tokens) == 1
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.STOP]
+    assert result.speech_result.waveforms
 
 
 @pytest.mark.parametrize("status", [ov_genai.StreamingStatus.STOP, ov_genai.StreamingStatus.CANCEL])
 def test_speech_streamer_ends_speech_generation(
-    omni_pipe: ov_genai.OmniPipeline, frame_samples: int, status: ov_genai.StreamingStatus
+    speech_pipe: ov_genai.OmniPipeline, frame_samples: int, status: ov_genai.StreamingStatus
 ) -> None:
     chunks: list[np.ndarray] = []
 
@@ -452,7 +515,7 @@ def test_speech_streamer_ends_speech_generation(
         chunks.append(np.array(chunk.data, dtype=np.float32).reshape(-1))
         return status
 
-    result = omni_pipe.generate(
+    result = speech_pipe.generate(
         PROMPT,
         text_config=_text_config(1000),
         talker_speech_config=_speech_config(10, audio_chunk_frames=2),
@@ -465,18 +528,18 @@ def test_speech_streamer_ends_speech_generation(
     assert waveform.size < 2 * frame_samples
 
 
-def test_seed_controls_speech(omni_pipe: ov_genai.OmniPipeline) -> None:
+def test_seed_controls_speech(speech_pipe: ov_genai.OmniPipeline) -> None:
     def speech(seed: int) -> np.ndarray:
         config = _speech_config(4, rng_seed=seed)
-        return _waveform(omni_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
+        return _waveform(speech_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
 
     np.testing.assert_array_equal(speech(0), speech(0))
     assert not np.array_equal(speech(0), speech(1))
 
 
-def test_speech_only_mode(omni_pipe: ov_genai.OmniPipeline, frame_samples: int) -> None:
+def test_speech_only_mode(speech_pipe: ov_genai.OmniPipeline, frame_samples: int) -> None:
     collector = TokenCollector()
-    result = omni_pipe.generate(
+    result = speech_pipe.generate(
         PROMPT,
         text_config=_text_config(1000),
         talker_speech_config=_speech_config(5, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY),
@@ -495,6 +558,27 @@ def test_chat_history_speech(omni_chat_pipe: ov_genai.OmniPipeline, frame_sample
     config = _speech_config(4, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
     result = omni_chat_pipe.generate(history, text_config=_text_config(1000), talker_speech_config=config)
     assert _waveform(result).size == 4 * frame_samples
+
+
+@pytest.mark.parametrize("backend", ["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+def test_chat_history_keeps_a_templated_speech_marker(lfm3_omni_model_path: Path, backend: str) -> None:
+    # A template that already ends with the speech marker gets no second one, on ChatHistory as on a prompt.
+    # A fresh pipeline, since the chat template is changed.
+    config = json.loads((lfm3_omni_model_path / "config.json").read_text())
+    pipe = ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND=backend, **F32)
+    tokenizer = pipe.get_tokenizer()
+    marker = tokenizer.decode([config["audio_start_token_id"]], skip_special_tokens=False)
+    pipe.set_chat_template(tokenizer.chat_template + marker)
+    speech_only = _speech_config(4, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
+
+    def speech(prompt: str | ov_genai.ChatHistory) -> np.ndarray:
+        return _waveform(pipe.generate(prompt, generation_config=_text_config(1000), talker_speech_config=speech_only))
+
+    # A prompt call first: a ChatHistory call leaves the pipeline in chat mode.
+    from_prompt = speech(PROMPT)
+    history = ov_genai.ChatHistory()
+    history.append({"role": "user", "content": PROMPT})
+    np.testing.assert_allclose(speech(history), from_prompt, atol=1e-5)
 
 
 def test_chat_turn_after_speech_matches_text_turn(omni_chat_pipe: ov_genai.OmniPipeline) -> None:
@@ -534,11 +618,34 @@ def test_empty_audio_keeps_its_index(vlm_pipe: ov_genai.VLMPipeline, media: Medi
     assert first == tokens("<ov_genai_audio_1><ov_genai_audio_0> What is it?", [audio, empty])
 
 
-def test_speech_only_first_frame_follows_the_prompt(omni_pipe: ov_genai.OmniPipeline) -> None:
+@SKIP_PA_ON_MACOS_ARM64
+def test_default_backend_sets_chat_template(lfm3_omni_model_path: Path) -> None:
+    # PA is the default backend, so it must take a custom template as SDPA does. Fresh pipelines keep fixtures intact.
+    plain_template = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
+
+    def tokens(pipe: ov_genai.VLMPipeline) -> list[int]:
+        pipe.set_chat_template(plain_template)
+        collector = TokenCollector()
+        pipe.generate(PROMPT, generation_config=_text_config(TEXT_TOKENS), streamer=collector)
+        return collector.tokens
+
+    default_pipe = ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", **F32)
+    sdpa_pipe = ov_genai.VLMPipeline(lfm3_omni_model_path, "CPU", ATTENTION_BACKEND="SDPA", **F32)
+    assert tokens(default_pipe) == tokens(sdpa_pipe)
+    assert default_pipe.get_tokenizer().chat_template == plain_template
+
+    default_pipe.start_chat()
+    with pytest.raises(RuntimeError, match="Chat template cannot be changed"):
+        default_pipe.set_chat_template(plain_template)
+    default_pipe.finish_chat()
+    default_pipe.set_chat_template(plain_template)
+
+
+def test_speech_only_first_frame_follows_the_prompt(speech_pipe: ov_genai.OmniPipeline) -> None:
     # The first frame comes from the prefill hidden state, which must be the one of the last prompt position.
     def first_frame(prompt: str) -> np.ndarray:
         config = _speech_config(1, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
-        return _waveform(omni_pipe.generate(prompt, text_config=_text_config(1000), talker_speech_config=config))
+        return _waveform(speech_pipe.generate(prompt, text_config=_text_config(1000), talker_speech_config=config))
 
     assert not np.array_equal(first_frame(PROMPT), first_frame("Say something else."))
 
@@ -558,12 +665,12 @@ def test_top_k_zero_disables_top_k(omni_pipe: ov_genai.OmniPipeline) -> None:
 
 
 @pytest.mark.parametrize("do_sample", [False, True])
-def test_speech_score_follows_text_sampling(omni_pipe: ov_genai.OmniPipeline, do_sample: bool) -> None:
+def test_speech_score_follows_text_sampling(speech_pipe: ov_genai.OmniPipeline, do_sample: bool) -> None:
     # As in the text pipelines: a sampled answer scores the sum of its token log-probabilities, a greedy one 0.
     config = _text_config(8)
     config.do_sample = do_sample
     config.rng_seed = 7
-    result = omni_pipe.generate(PROMPT, text_config=config, talker_speech_config=_speech_config(2))
+    result = speech_pipe.generate(PROMPT, text_config=config, talker_speech_config=_speech_config(2))
     if do_sample:
         assert result.scores[0] < 0.0
     else:
@@ -618,13 +725,13 @@ class EndCounter(ov_genai.OmniSpeechStreamerBase):
     ],
 )
 def test_speech_streamer_end_is_called_once(
-    omni_pipe: ov_genai.OmniPipeline, fields: dict, streamer: str | None, error: str | None
+    speech_pipe: ov_genai.OmniPipeline, fields: dict, streamer: str | None, error: str | None
 ) -> None:
     counter = EndCounter(fail_end=streamer == "failing_end")
     kwargs = {"streamer": FailingStreamer()} if streamer == "failing" else {}
 
     def run() -> None:
-        omni_pipe.generate(
+        speech_pipe.generate(
             PROMPT,
             text_config=_text_config(1000),
             talker_speech_config=_speech_config(2, **fields),
@@ -648,10 +755,10 @@ class FailingSpeechStreamer(ov_genai.OmniSpeechStreamerBase):
         pass
 
 
-def test_speech_streamer_failure_ends_text_streamer(omni_pipe: ov_genai.OmniPipeline) -> None:
+def test_speech_streamer_failure_ends_text_streamer(speech_pipe: ov_genai.OmniPipeline) -> None:
     collector = TokenCollector()
     with pytest.raises(Exception, match="speech chunk failure"):
-        omni_pipe.generate(
+        speech_pipe.generate(
             PROMPT,
             text_config=_text_config(1000),
             talker_speech_config=_speech_config(8, audio_chunk_frames=1),
@@ -663,7 +770,7 @@ def test_speech_streamer_failure_ends_text_streamer(omni_pipe: ov_genai.OmniPipe
 
 
 def test_vlm_pipeline_ends_speech_streamer_on_rejected_config(vlm_pipe: ov_genai.VLMPipeline) -> None:
-    # Called on VLMPipeline directly: PA rejects speech output, SDPA rejects the speaker.
+    # Called on VLMPipeline directly: both backends reject the speaker.
     counter = EndCounter()
     with pytest.raises(RuntimeError):
         vlm_pipe.generate(
@@ -675,6 +782,7 @@ def test_vlm_pipeline_ends_speech_streamer_on_rejected_config(vlm_pipe: ov_genai
     assert counter.ends == 1
 
 
+@pytest.mark.parametrize("backend", ["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
 @pytest.mark.parametrize(
     "missing, request_kwargs",
     [
@@ -684,14 +792,14 @@ def test_vlm_pipeline_ends_speech_streamer_on_rejected_config(vlm_pipe: ov_genai
     ids=["speech_models", "audio_encoder"],
 )
 def test_text_works_without_unused_models(
-    lfm3_omni_model_path: Path, tmp_path: Path, missing: list[str], request_kwargs: dict
+    lfm3_omni_model_path: Path, tmp_path: Path, missing: list[str], request_kwargs: dict, backend: str
 ) -> None:
     # These models are optional: a text-only call works without their files, and a call that needs them names them.
     skipped = {f"openvino_{name}_model.{suffix}" for name in missing for suffix in ("xml", "bin")}
     for item in lfm3_omni_model_path.iterdir():
         if item.name not in skipped:
             (tmp_path / item.name).symlink_to(item)
-    pipe = ov_genai.VLMPipeline(tmp_path, "CPU")
+    pipe = ov_genai.VLMPipeline(tmp_path, "CPU", ATTENTION_BACKEND=backend)
     assert pipe.generate(PROMPT, generation_config=_text_config(TEXT_TOKENS)).texts[0]
     with pytest.raises(RuntimeError, match=f"openvino_{missing[0]}_model"):
         pipe.generate(PROMPT, generation_config=_text_config(TEXT_TOKENS), **request_kwargs)
@@ -712,14 +820,14 @@ def test_vlm_pipeline_returns_omni_pipeline_speech(
 
 @pytest.mark.parametrize("chat_history", [False, True], ids=["prompt", "chat_history"])
 def test_vlm_pipeline_speech_with_image(
-    vlm_speech_pipe: ov_genai.VLMPipeline, media: Media, frame_samples: int, chat_history: bool
+    vlm_pipe: ov_genai.VLMPipeline, media: Media, frame_samples: int, chat_history: bool
 ) -> None:
     # images= selects the typed Python overload, which must still pass the speech config on.
     prompt: str | ov_genai.ChatHistory = PROMPT
     if chat_history:
         prompt = ov_genai.ChatHistory()
         prompt.append({"role": "user", "content": PROMPT})
-    result = vlm_speech_pipe.generate(
+    result = vlm_pipe.generate(
         prompt,
         images=[ov.Tensor(media.image[None])],
         generation_config=_text_config(1000),
@@ -740,14 +848,94 @@ def test_vlm_pipeline_text_only_does_not_end_speech_streamer(vlm_pipe: ov_genai.
     assert counter.ends == 0
 
 
-def test_tool_call_stop_ends_the_turn(omni_pipe: ov_genai.OmniPipeline) -> None:
+def test_tool_call_stop_ends_the_turn(speech_pipe: ov_genai.OmniPipeline) -> None:
     collector = TokenCollector(ov_genai.StreamingStatus.TOOL_CALL_STOP)
-    result = omni_pipe.generate(
+    result = speech_pipe.generate(
         PROMPT, text_config=_text_config(1000), talker_speech_config=_speech_config(8), streamer=collector
     )
     assert len(collector.tokens) == 1
     assert result.finish_reasons == [ov_genai.GenerationFinishReason.TOOL_CALL]
-    assert result.speech_result.waveforms == []
+
+
+@pytest.mark.parametrize(
+    "status, reason",
+    [
+        (ov_genai.StreamingStatus.STOP, ov_genai.GenerationFinishReason.STOP),
+        (ov_genai.StreamingStatus.TOOL_CALL_STOP, ov_genai.GenerationFinishReason.TOOL_CALL),
+        (ov_genai.StreamingStatus.CANCEL, ov_genai.GenerationFinishReason.STOP),
+    ],
+)
+def test_streamer_stop_on_last_allowed_token_keeps_its_reason(
+    speech_pipe: ov_genai.OmniPipeline, status: ov_genai.StreamingStatus, reason: ov_genai.GenerationFinishReason
+) -> None:
+    # max_new_tokens ends the request on the same token, but the streamer's reason is reported, even when PA streams
+    # text asynchronously and the callback replies after the sampler ended the request.
+    collector = TokenCollector(status)
+    result = speech_pipe.generate(
+        PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=collector
+    )
+    assert len(collector.tokens) == 1
+    assert result.finish_reasons == [reason]
+
+
+@pytest.mark.parametrize("ending", ["cancel", "error"])
+def test_text_streamer_ending_on_last_token_leaves_chat_unchanged(vlm_pipe: ov_genai.VLMPipeline, ending: str) -> None:
+    # The cancel or error of the last token's callback must roll the turn back before the chat history is kept.
+    # Only the failing turn decodes speech: return_audio=False runs plain VLM text generation, without the speech hook.
+    text_only = _speech_config(2, return_audio=False)
+    speech = _speech_config(2)
+
+    def text_turn() -> str:
+        return vlm_pipe.generate(
+            PROMPT, generation_config=_text_config(TEXT_TOKENS), talker_speech_config=text_only
+        ).texts[0]
+
+    vlm_pipe.start_chat()
+    expected = text_turn()
+    vlm_pipe.finish_chat()
+    vlm_pipe.start_chat()
+    if ending == "cancel":
+        streamer = TokenCollector(ov_genai.StreamingStatus.CANCEL)
+        vlm_pipe.generate(PROMPT, generation_config=_text_config(1), talker_speech_config=speech, streamer=streamer)
+    else:
+        with pytest.raises(Exception, match="streamer failure"):
+            vlm_pipe.generate(
+                PROMPT, generation_config=_text_config(1), talker_speech_config=speech, streamer=FailingStreamer()
+            )
+    actual = text_turn()
+    vlm_pipe.finish_chat()
+    assert expected
+    assert actual == expected
+
+
+def test_text_streamer_cancel_reports_speech_reason(speech_pipe: ov_genai.OmniPipeline) -> None:
+    # The request is cancelled long before max_new_tokens, so the sampler has not set a reason.
+    result = speech_pipe.generate(
+        PROMPT,
+        text_config=_text_config(1000),
+        talker_speech_config=_speech_config(8),
+        streamer=TokenCollector(ov_genai.StreamingStatus.CANCEL, after=2),
+    )
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.STOP]
+
+
+def test_default_stop_token_ids_end_speech_generation(speech_pipe: ov_genai.OmniPipeline) -> None:
+    first = TokenCollector(ov_genai.StreamingStatus.STOP)
+    speech_pipe.generate(PROMPT, text_config=_text_config(1), talker_speech_config=_speech_config(8), streamer=first)
+    vlm = speech_pipe.get_vlm()
+    defaults = vlm.get_generation_config()
+    config = vlm.get_generation_config()
+    config.stop_token_ids = set(defaults.stop_token_ids) | {first.tokens[0]}
+    vlm.set_generation_config(config)
+    collector = TokenCollector()
+    try:
+        # A request without stop ids or EOS takes both from the pipeline defaults.
+        speech_pipe.generate(
+            PROMPT, text_config=_text_config(1000), talker_speech_config=_speech_config(8), streamer=collector
+        )
+    finally:
+        vlm.set_generation_config(defaults)
+    assert collector.tokens == first.tokens
 
 
 def test_speech_submodel_properties_are_accepted(lfm3_omni_model_path: Path, frame_samples: int) -> None:
@@ -758,8 +946,8 @@ def test_speech_submodel_properties_are_accepted(lfm3_omni_model_path: Path, fra
     assert _waveform(result).size == 2 * frame_samples
 
 
-def test_text_only_returns_no_speech(omni_pipe: ov_genai.OmniPipeline) -> None:
-    result = omni_pipe.generate(
+def test_text_only_returns_no_speech(speech_pipe: ov_genai.OmniPipeline) -> None:
+    result = speech_pipe.generate(
         PROMPT, text_config=_text_config(TEXT_TOKENS), talker_speech_config=_speech_config(4, return_audio=False)
     )
     assert result.speech_result.waveforms == []
@@ -777,9 +965,9 @@ def test_has_no_talker(omni_pipe: ov_genai.OmniPipeline) -> None:
         ({"talker_top_k": 5}, "no separate talker"),
     ],
 )
-def test_rejects_talker_fields(omni_pipe: ov_genai.OmniPipeline, fields: dict, message: str) -> None:
+def test_rejects_talker_fields(speech_pipe: ov_genai.OmniPipeline, fields: dict, message: str) -> None:
     with pytest.raises(RuntimeError, match=message):
-        omni_pipe.generate(PROMPT, text_config=_text_config(4), talker_speech_config=_speech_config(4, **fields))
+        speech_pipe.generate(PROMPT, text_config=_text_config(4), talker_speech_config=_speech_config(4, **fields))
 
 
 def test_rejects_talker_construction(lfm3_omni_model_path: Path) -> None:
@@ -787,36 +975,386 @@ def test_rejects_talker_construction(lfm3_omni_model_path: Path) -> None:
         ov_genai.Talker(lfm3_omni_model_path, "CPU")
 
 
+# Seed 2 with 14 frames keeps the greedy text away from near-tied logits of the tiny random model, which CPU kernels
+# on Windows break differently for both backends.
+STABLE_GREEDY_SPEECH = {"max_new_tokens": 14, "rng_seed": 2}
+PA_MATCHES_SDPA_CASES = [
+    pytest.param({}, STABLE_GREEDY_SPEECH, False, id="interleaved"),
+    pytest.param({}, {"output_mode": ov_genai.SpeechOutputMode.SPEECH_ONLY}, False, id="speech_only"),
+    pytest.param(
+        {"do_sample": True, "temperature": 0.7, "top_p": 0.9, "rng_seed": 5},
+        {"cp_temperature": 0.5, "cp_top_k": 4, "cp_repetition_penalty": 2.0, "rng_seed": 7},
+        False,
+        id="sampled",
+    ),
+    pytest.param({}, {**STABLE_GREEDY_SPEECH, "audio_chunk_frames": 2}, True, id="streamed"),
+]
+
+
+class SpeechRun(NamedTuple):
+    texts: list[str]
+    finish_reasons: list[ov_genai.GenerationFinishReason]
+    streamed_tokens: list[int]
+    waveform: np.ndarray
+    chunks: list[np.ndarray]
+
+
 @SKIP_PA_ON_MACOS_ARM64
-def test_paged_attention_returns_text_only(omni_pa_pipe: ov_genai.OmniPipeline) -> None:
-    result = omni_pa_pipe.generate(
-        PROMPT, text_config=_text_config(TEXT_TOKENS), talker_speech_config=_speech_config(4, return_audio=False)
+@pytest.mark.parametrize("text_fields, speech_fields, streamed", PA_MATCHES_SDPA_CASES)
+def test_paged_attention_speech_matches_sdpa(
+    omni_sdpa_pipe: ov_genai.OmniPipeline,
+    omni_pa_pipe: ov_genai.OmniPipeline,
+    text_fields: dict,
+    speech_fields: dict,
+    streamed: bool,
+) -> None:
+    # Both backends sample text with the continuous batching sampler and frames with the same frame sampler.
+    def run(pipe: ov_genai.OmniPipeline) -> SpeechRun:
+        text_config = _text_config(1000)
+        for name, value in text_fields.items():
+            setattr(text_config, name, value)
+        collector = TokenCollector()
+        chunks: list[np.ndarray] = []
+
+        def on_chunk(chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+            chunks.append(np.array(chunk.data, dtype=np.float32).reshape(-1))
+            return ov_genai.StreamingStatus.RUNNING
+
+        kwargs = {"speech_streamer": on_chunk} if streamed else {}
+        result = pipe.generate(
+            PROMPT,
+            text_config=text_config,
+            talker_speech_config=_speech_config(26, **speech_fields),
+            streamer=collector,
+            **kwargs,
+        )
+        return SpeechRun(result.texts, result.finish_reasons, collector.tokens, _waveform(result), chunks)
+
+    sdpa, pa = run(omni_sdpa_pipe), run(omni_pa_pipe)
+    assert pa.texts == sdpa.texts
+    assert pa.finish_reasons == sdpa.finish_reasons
+    assert pa.streamed_tokens == sdpa.streamed_tokens
+    np.testing.assert_array_equal(pa.waveform, sdpa.waveform)
+    assert len(pa.chunks) == len(sdpa.chunks)
+    for pa_chunk, sdpa_chunk in zip(pa.chunks, sdpa.chunks):
+        np.testing.assert_array_equal(pa_chunk, sdpa_chunk)
+
+
+@SKIP_PA_ON_MACOS_ARM64
+@pytest.mark.parametrize("output_mode", [ov_genai.SpeechOutputMode.INTERLEAVED, ov_genai.SpeechOutputMode.SPEECH_ONLY])
+def test_paged_attention_text_end_as_eos_matches_sdpa(
+    omni_sdpa_pipe: ov_genai.OmniPipeline,
+    omni_pa_pipe: ov_genai.OmniPipeline,
+    lfm3_omni_model_path: Path,
+    output_mode: ov_genai.SpeechOutputMode,
+) -> None:
+    # The speech decode reads <|text_end|> before the stop ids, so it may also be the EOS on both backends.
+    text_end = json.loads((lfm3_omni_model_path / "config.json").read_text())["text_end_token_id"]
+
+    def run(pipe: ov_genai.OmniPipeline) -> ov_genai.VLMDecodedResults:
+        text_config = _text_config(1000)
+        text_config.set_eos_token_id(text_end)
+        return pipe.generate(
+            PROMPT,
+            text_config=text_config,
+            talker_speech_config=_speech_config(14, output_mode=output_mode, rng_seed=2),
+        )
+
+    sdpa, pa = run(omni_sdpa_pipe), run(omni_pa_pipe)
+    assert (pa.texts, pa.finish_reasons) == (sdpa.texts, sdpa.finish_reasons)
+    np.testing.assert_array_equal(_waveform(pa), _waveform(sdpa))
+
+
+@SKIP_PA_ON_MACOS_ARM64
+@pytest.mark.parametrize("as_eos", [True, False], ids=["eos", "stop_token_ids"])
+def test_paged_attention_audio_out_as_stop_token_matches_sdpa(
+    omni_sdpa_pipe: ov_genai.OmniPipeline,
+    omni_pa_pipe: ov_genai.OmniPipeline,
+    lfm3_omni_model_path: Path,
+    as_eos: bool,
+) -> None:
+    # Every frame slot is the audio output token, which the speech decode never checks against the stop ids.
+    audio_out = json.loads((lfm3_omni_model_path / "config.json").read_text())["audio_out_token_id"]
+
+    def run(pipe: ov_genai.OmniPipeline) -> ov_genai.VLMDecodedResults:
+        text_config = _text_config(1000)
+        if as_eos:
+            text_config.set_eos_token_id(audio_out)
+        else:
+            text_config.stop_token_ids = {audio_out}
+        return pipe.generate(PROMPT, text_config=text_config, talker_speech_config=_speech_config(14, rng_seed=2))
+
+    sdpa, pa = run(omni_sdpa_pipe), run(omni_pa_pipe)
+    assert (pa.texts, pa.finish_reasons) == (sdpa.texts, sdpa.finish_reasons)
+    np.testing.assert_array_equal(_waveform(pa), _waveform(sdpa))
+
+
+def test_speech_streamer_stop_on_final_flush_keeps_length(speech_pipe: ov_genai.OmniPipeline) -> None:
+    # The frame limit ends the turn before a chunk is due, so the STOP comes from the final flush.
+    result = speech_pipe.generate(
+        PROMPT,
+        text_config=_text_config(1000),
+        talker_speech_config=_speech_config(1, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY, audio_chunk_frames=4),
+        speech_streamer=lambda chunk: ov_genai.StreamingStatus.STOP,
     )
-    assert result.texts[0]
-    with pytest.raises(RuntimeError, match="ATTENTION_BACKEND=SDPA"):
-        omni_pa_pipe.generate(PROMPT, text_config=_text_config(4), talker_speech_config=_speech_config(4))
+    assert result.finish_reasons == [ov_genai.GenerationFinishReason.LENGTH]
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_chunked_prefill_matches_sdpa(
+    lfm3_omni_model_path: Path, omni_sdpa_pipe: ov_genai.OmniPipeline
+) -> None:
+    # A batch of 4 tokens splits the prompt into several prefill steps; only the last one samples a slot.
+    scheduler_config = ov_genai.SchedulerConfig()
+    scheduler_config.max_num_batched_tokens = 4
+    scheduler_config.dynamic_split_fuse = True
+    pipe = ov_genai.OmniPipeline(
+        lfm3_omni_model_path,
+        "CPU",
+        ATTENTION_BACKEND="PA",
+        scheduler_config=scheduler_config,
+        **F32,
+    )
+    config = _speech_config(14, rng_seed=2)
+    expected = omni_sdpa_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config)
+    actual = pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config)
+    assert actual.texts == expected.texts
+    np.testing.assert_array_equal(_waveform(actual), _waveform(expected))
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_prefix_cache_does_not_change_speech(lfm3_omni_model_path: Path) -> None:
+    # Later calls reuse the cached prompt blocks of earlier ones; the speech must still follow only its own seed.
+    scheduler_config = ov_genai.SchedulerConfig()
+    scheduler_config.enable_prefix_caching = True
+    pipe = ov_genai.OmniPipeline(
+        lfm3_omni_model_path, "CPU", ATTENTION_BACKEND="PA", scheduler_config=scheduler_config, **F32
+    )
+
+    def run(seed: int) -> np.ndarray:
+        config = _speech_config(
+            26, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY, cp_temperature=1.0, rng_seed=seed
+        )
+        return _waveform(pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
+
+    first, other, rerun = run(0), run(1), run(0)
+    assert not np.array_equal(other, first)
+    np.testing.assert_array_equal(rerun, first)
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_failed_speech_request_leaves_no_state(
+    omni_pa_pipe: ov_genai.OmniPipeline, lfm3_omni_model_path: Path
+) -> None:
+    # The request is rejected after the speech step hook took it, so the hook must forget it: a leaked speech state
+    # would turn the next text-only answer into speech frames.
+    audio_out_token_id = json.loads((lfm3_omni_model_path / "config.json").read_text())["audio_out_token_id"]
+    text_config = _text_config(1000)
+    text_config.max_length = 3
+    with pytest.raises(RuntimeError, match="max_length"):
+        omni_pa_pipe.generate(PROMPT, text_config=text_config, talker_speech_config=_speech_config(2))
+    collector = TokenCollector()
+    omni_pa_pipe.generate(
+        PROMPT,
+        text_config=_text_config(TEXT_TOKENS),
+        talker_speech_config=_speech_config(2, return_audio=False),
+        streamer=collector,
+    )
+    assert len(collector.tokens) == TEXT_TOKENS
+    assert audio_out_token_id not in collector.tokens
+    _waveform(omni_pa_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=_speech_config(2)))
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_speech_after_omni_outputs_call(omni_pa_pipe: ov_genai.OmniPipeline) -> None:
+    # A call that asks for omni outputs must not switch off the hidden states the speech hook reads.
+    text_config = _text_config(TEXT_TOKENS)
+    text_config.return_omni_outputs = True
+    omni_pa_pipe.generate(PROMPT, text_config=text_config, talker_speech_config=_speech_config(2, return_audio=False))
+    _waveform(omni_pa_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=_speech_config(2)))
+
+
+def test_speech_rejects_invalid_text_config(speech_pipe: ov_genai.OmniPipeline) -> None:
+    text_config = _text_config(1000)
+    text_config.do_sample = True
+    text_config.temperature = 0.0
+    with pytest.raises(RuntimeError, match="temperature"):
+        speech_pipe.generate(PROMPT, text_config=text_config, talker_speech_config=_speech_config(2))
+
+
+def _link_export(source: Path, target: Path, replaced: set[str]) -> None:
+    # Links every file of the export except the replaced ones, which the test writes itself.
+    for item in source.iterdir():
+        if item.name not in replaced:
+            (target / item.name).symlink_to(item)
+
+
+def _write_config(source: Path, target: Path, **fields: object) -> None:
+    _link_export(source, target, {"config.json"})
+    config = json.loads((source / "config.json").read_text())
+    config.update(fields)
+    (target / "config.json").write_text(json.dumps(config))
 
 
 def test_rejects_maskgit_schedule_that_wraps(lfm3_omni_model_path: Path, tmp_path: Path) -> None:
     # The pass sizes sum to 12 only after wrapping around; each pass must fit in the codebooks still hidden.
-    config = json.loads((lfm3_omni_model_path / "config.json").read_text())
-    config["maskgit_schedule"] = [2**64 - 1, 13]
-    for item in lfm3_omni_model_path.iterdir():
-        if item.name != "config.json":
-            (tmp_path / item.name).symlink_to(item)
-    (tmp_path / "config.json").write_text(json.dumps(config))
+    _write_config(lfm3_omni_model_path, tmp_path, maskgit_schedule=[2**64 - 1, 13])
     # The speech models are compiled in the constructor, which reads the schedule.
     with pytest.raises(RuntimeError, match="maskgit_schedule"):
         ov_genai.OmniPipeline(tmp_path, "CPU")
 
 
-def test_speech_decode_recovers_after_failed_call(omni_pipe: ov_genai.OmniPipeline) -> None:
+def test_rejects_speech_token_ids_outside_vocab(lfm3_omni_model_path: Path, tmp_path: Path) -> None:
+    # The decode indexes the logits with these ids, so a mismatched config.json must fail at load, not mid-step.
+    vocab_size = json.loads((lfm3_omni_model_path / "config.json").read_text())["text_config"]["vocab_size"]
+    _write_config(lfm3_omni_model_path, tmp_path, text_end_token_id=vocab_size)
+    with pytest.raises(RuntimeError, match="vocab_size"):
+        ov_genai.OmniPipeline(tmp_path, "CPU")
+
+
+def _write_model(source: Path, target: Path, name: str, edit: Callable[[ov.Model], ov.Model]) -> None:
+    # Writes an edited copy of openvino_<name>_model and links the rest of the export.
+    _link_export(source, target, {f"openvino_{name}_model.xml", f"openvino_{name}_model.bin"})
+    model = edit(ov.Core().read_model(source / f"openvino_{name}_model.xml"))
+    ov.save_model(model, target / f"openvino_{name}_model.xml", compress_to_fp16=False)
+
+
+def _write_failing_speech_model(source: Path, target: Path, name: str, output: str, row_shape: list[int]) -> None:
+    # The output is reshaped to rows one element longer: the model compiles, but every inference throws.
+    def edit(model: ov.Model) -> ov.Model:
+        original = model.output(output).get_node().input_value(0)
+        original.get_tensor().set_names(set())
+        failing = ov.opset13.reshape(original, [-1, *row_shape[:-1], row_shape[-1] + 1], special_zero=False)
+        failing.output(0).get_tensor().set_names({output})
+        return ov.Model([failing], model.get_parameters())
+
+    _write_model(source, target, name, edit)
+
+
+@pytest.mark.parametrize("backend", ["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+@pytest.mark.parametrize("failing_model", ["depth_decoder", "audio_out_embeddings"])
+def test_speech_model_failure_ends_only_its_call(
+    lfm3_omni_model_path: Path, tmp_path: Path, backend: str, failing_model: str
+) -> None:
+    # On PA the speech models run inside the batching step, so a failure there must not fail the whole pipeline.
+    config = json.loads((lfm3_omni_model_path / "config.json").read_text())
+    output, row_shape = {
+        "depth_decoder": ("logits", [config["num_codebooks"], config["codebook_size"]]),
+        "audio_out_embeddings": ("inputs_embeds", [config["text_config"]["hidden_size"]]),
+    }[failing_model]
+    _write_failing_speech_model(lfm3_omni_model_path, tmp_path, failing_model, output, row_shape)
+    pipe = ov_genai.OmniPipeline(tmp_path, "CPU", ATTENTION_BACKEND=backend, **F32)
+    speech_only = _speech_config(4, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
+    with pytest.raises(RuntimeError):
+        pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=speech_only)
+    collector = TokenCollector()
+    pipe.generate(
+        PROMPT,
+        text_config=_text_config(TEXT_TOKENS),
+        talker_speech_config=_speech_config(2, return_audio=False),
+        streamer=collector,
+    )
+    assert len(collector.tokens) == TEXT_TOKENS
+
+
+@pytest.mark.parametrize("backend", ["SDPA", pytest.param("PA", marks=SKIP_PA_ON_MACOS_ARM64)])
+@pytest.mark.parametrize("chat_history", [False, True], ids=["prompt", "chat_history"])
+def test_failed_speech_turn_leaves_chat_unchanged(
+    lfm3_omni_model_path: Path, tmp_path: Path, backend: str, chat_history: bool
+) -> None:
+    # A speech-model error must leave the chat as a cancelled turn would: no dangling user turn for the next answer.
+    # OmniPipeline has no start_chat, so VLMPipeline.
+    config = json.loads((lfm3_omni_model_path / "config.json").read_text())
+    row_shape = [config["num_codebooks"], config["codebook_size"]]
+    _write_failing_speech_model(lfm3_omni_model_path, tmp_path, "depth_decoder", "logits", row_shape)
+    pipe = ov_genai.VLMPipeline(tmp_path, "CPU", ATTENTION_BACKEND=backend, **F32)
+    speech_only = _speech_config(4, output_mode=ov_genai.SpeechOutputMode.SPEECH_ONLY)
+    # No text cap: the SPEECH_ONLY turn fails on its first frame, in the depth decoder's broken Reshape.
+    uncapped_text = _text_config(1000)
+
+    def new_history() -> ov_genai.ChatHistory:
+        history = ov_genai.ChatHistory()
+        history.append({"role": "user", "content": PROMPT})
+        return history
+
+    def text_turn(prompt: str | ov_genai.ChatHistory) -> str:
+        result = pipe.generate(
+            prompt,
+            generation_config=_text_config(TEXT_TOKENS),
+            talker_speech_config=_speech_config(2, return_audio=False),
+        )
+        return result.texts[0]
+
+    if chat_history:
+        expected = text_turn(new_history())
+        history = new_history()
+        with pytest.raises(RuntimeError, match="Reshape"):
+            pipe.generate(history, generation_config=uncapped_text, talker_speech_config=speech_only)
+        actual = text_turn(history)
+    else:
+        pipe.start_chat()
+        expected = text_turn(PROMPT)
+        pipe.finish_chat()
+        pipe.start_chat()
+        with pytest.raises(RuntimeError, match="Reshape"):
+            pipe.generate(PROMPT, generation_config=uncapped_text, talker_speech_config=speech_only)
+        actual = text_turn(PROMPT)
+        pipe.finish_chat()
+    assert expected
+    assert actual == expected
+
+
+def _add_scaled_last_hidden_state(model: ov.Model) -> ov.Model:
+    hidden_states = model.output("hidden_states").get_node().input_value(0)
+    scaled = ov.opset13.multiply(hidden_states, ov.opset13.constant(np.float32(2.0)))
+    scaled.output(0).get_tensor().set_names({"last_hidden_state"})
+    model.add_results([ov.opset13.result(scaled)])
+    return model
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_speech_reads_hidden_states_output(lfm3_omni_model_path: Path, tmp_path: Path) -> None:
+    # SDPA drives the depth decoder with hidden_states; PA must read the same output when last_hidden_state exists too.
+    _write_model(lfm3_omni_model_path, tmp_path, "language", _add_scaled_last_hidden_state)
+    config = _speech_config(14, rng_seed=2)
+    results = [
+        ov_genai.OmniPipeline(tmp_path, "CPU", ATTENTION_BACKEND=backend, **F32).generate(
+            PROMPT, text_config=_text_config(1000), talker_speech_config=config
+        )
+        for backend in ("SDPA", "PA")
+    ]
+    assert results[1].texts == results[0].texts
+    np.testing.assert_array_equal(_waveform(results[1]), _waveform(results[0]))
+
+
+def _remove_hidden_states(model: ov.Model) -> ov.Model:
+    model.remove_result(model.output("hidden_states").get_node())
+    return model
+
+
+@SKIP_PA_ON_MACOS_ARM64
+def test_paged_attention_needs_hidden_states_output(lfm3_omni_model_path: Path, tmp_path: Path) -> None:
+    _write_model(lfm3_omni_model_path, tmp_path, "language", _remove_hidden_states)
+    with pytest.raises(RuntimeError, match="no hidden_states output"):
+        ov_genai.OmniPipeline(tmp_path, "CPU", ATTENTION_BACKEND="PA")
+    # Without an explicit backend the pipeline falls back to SDPA, which answers in text.
+    collector = TokenCollector()
+    ov_genai.OmniPipeline(tmp_path, "CPU").generate(
+        PROMPT,
+        text_config=_text_config(TEXT_TOKENS),
+        talker_speech_config=_speech_config(2, return_audio=False),
+        streamer=collector,
+    )
+    assert len(collector.tokens) == TEXT_TOKENS
+
+
+def test_speech_decode_recovers_after_failed_call(speech_pipe: ov_genai.OmniPipeline) -> None:
     # The interleaved answer opens with text slots, so the streamer fails after the prompt is tokenized.
     config = _speech_config(2)
-    expected = _waveform(omni_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
+    expected = _waveform(speech_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
     with pytest.raises(Exception, match="streamer failure"):
-        omni_pipe.generate(
+        speech_pipe.generate(
             PROMPT, text_config=_text_config(1000), talker_speech_config=config, streamer=FailingStreamer()
         )
-    actual = _waveform(omni_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
+    actual = _waveform(speech_pipe.generate(PROMPT, text_config=_text_config(1000), talker_speech_config=config))
     np.testing.assert_array_equal(actual, expected)

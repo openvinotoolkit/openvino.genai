@@ -31,7 +31,7 @@ namespace ov::genai {
  * For Qwen3-Omni, OmniPipeline composes a VLM pipeline (text generation with hidden-state
  * collection) with a Qwen3-Omni speech pipeline (Talker + CodePredictor + Code2Wav). LFM3-Omni
  * has no separate talker: its language model emits text and speech frames in one stream, so
- * speech is decoded inside the VLM (SDPA backend) and `get_talker()` returns nullptr.
+ * speech is decoded inside the VLM, on the PA or SDPA backend, and `get_talker()` returns nullptr.
  * Each call to `generate` takes two configs:
  *
  *   - `GenerationConfig text_config`     — drives the thinker text decode
@@ -62,9 +62,7 @@ public:
     /// `models_path`, both compiled to `device` with the same `properties`. Equivalent to
     /// constructing a `VLMPipeline(models_path, device, properties)` plus a
     /// `Talker(models_path, device, properties)` and passing them to the DI ctor.
-    /// For LFM3-Omni it loads only the VLM. It selects ATTENTION_BACKEND=SDPA unless the property is set,
-    /// because speech output needs SDPA. With PA, generate() supports text output only and throws if
-    /// return_audio is true.
+    /// For LFM3-Omni it loads only the VLM, which decodes the speech itself.
     OmniPipeline(const std::filesystem::path& models_path,
                  const std::string& device,
                  const ov::AnyMap& properties = {});

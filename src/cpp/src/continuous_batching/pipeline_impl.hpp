@@ -8,6 +8,7 @@
 #include "openvino/genai/lora_adapter.hpp"
 #include "continuous_batching/cache/cache_eviction.hpp"
 #include "continuous_batching/cache/hidden_state_cache.hpp"
+#include "continuous_batching/step_hook.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
@@ -57,6 +58,9 @@ protected:
     std::vector<ov::Tensor> m_current_step_rotation_deltas;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
+
+    // Model-specific step work (LFM3-Omni speech frames); null for other models.
+    std::shared_ptr<IStepHook> m_step_hook;
 
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -140,6 +144,34 @@ protected:
 
     virtual void drop_requests();
 
+    /// Ends the step state of request once, if it has one.
+    void _end_step_state(const SequenceGroup::Ptr& request, GenerationStatus status);
+
+    /// Requests with step state that sample in this step, without a stopped or cancelled handle.
+    std::vector<SequenceGroup::Ptr> _collect_step_requests() const;
+
+    /// Checks the step hook's outcomes against its requests and applies their next inputs and endings.
+    /// @return Requests failed by an outcome with an error, kept until the end of the step.
+    std::vector<SequenceGroup::Ptr> _apply_request_outcomes(const std::vector<SequenceGroup::Ptr>& requests,
+                                                            std::vector<IStepHook::RequestOutcome> outcomes,
+                                                            SamplerOutput& sampler_output);
+
+    /// Frees and removes the requests a step hook failed in this step; the pipeline stays usable.
+    void _release_failed_requests(const std::vector<SequenceGroup::Ptr>& failed);
+
+    /// Applies a model's ending to request; finished sequences go to sampler_output.m_dropped_sequences.
+    void _apply_model_ending(const SequenceGroup::Ptr& request,
+                             const IStepHook::Ending& ending,
+                             SamplerOutput& sampler_output);
+
+    /// add_request() with the step hook payload of the request; a non-null payload must be taken by the step hook.
+    GenerationHandle _add_request(uint64_t request_id,
+                                  const ov::Tensor& input_ids,
+                                  const GenerationConfig& sampling_params,
+                                  std::optional<ov::Tensor> prompt_ids,
+                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs,
+                                  std::shared_ptr<StepRequestPayload> step_payload);
+
 public:
     ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
                            const Tokenizer& tokenizer,
@@ -198,6 +230,13 @@ public:
 
     void step() override;
 
+    /// @brief Installs model-specific step work. The "hidden_states" output is exported for the steps the hook needs.
+    /// @throws ov::Exception if the language model has no "hidden_states" output.
+    void set_step_hook(std::shared_ptr<IStepHook> hook);
+
+    /// @brief The token embedding of a model with embedding inputs, else null.
+    EmbeddingsModel::Ptr get_embedding_model() const;
+
     /**
      * input_ids is a batch of input ids for generation, which can be either raw prompts or already encoded token ids,
      * depending on the pipeline configuration. prompt_ids is an optional batch of prompt ids, which represents the
@@ -218,7 +257,8 @@ public:
         std::shared_ptr<OmniStreamerBase> omni_streamer,
         const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
         const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
-        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt,
+        const std::vector<std::shared_ptr<StepRequestPayload>>& step_payloads = {}) override;
 
     /**
      * Updates LoRA adapters for current generation call

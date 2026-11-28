@@ -941,7 +941,7 @@ Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t to
     return Logits{logits_data, vocab_size};
 }
 
-Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
+Token greedy_sample(const Logits& logits, size_t top_logprobs) {
     // For greedy sampling we do not expect sorting or shrinking considered tokens.
     // When logprobs > 0, m_vector is initialized (penalties wrote there, m_data is pristine);
     // scan m_vector so penalty effects influence token selection.
@@ -972,7 +972,7 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     if (top_logprobs) {
         OPENVINO_ASSERT(!std::isnan(logits.m_full_vocab_log_sum_exp),
             "Internal error: top_logprobs > 0 but m_full_vocab_log_sum_exp was not computed. "
-            "FullVocabLogSumExpTransform must run before _greedy_sample when logprobs > 0.");
+            "FullVocabLogSumExpTransform must run before greedy_sample when logprobs > 0.");
         // m_data is pristine (FullVocabLogSumExpTransform + CopyLogitsToVectorTransform ran first,
         // so penalties/grammar only wrote to m_vector). Return raw log-probability.
         max_value = logits.m_data[max_index] - logits.m_full_vocab_log_sum_exp;
@@ -1185,7 +1185,7 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, logit_idx);
         logit_processor.update_generated_len(generated_len - num_tokens_to_validate + accepted_steps - 1);
         logit_processor.apply(logit_vector);
-        Token sampled_token = _greedy_sample(logit_vector, 0);
+        Token sampled_token = greedy_sample(logit_vector, 0);
         int64_t pred_token = sampled_token.m_index;
 
         bool matched = false;
@@ -1273,7 +1273,7 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, logit_idx);
         logit_processor.update_generated_len(sequence->get_generated_len());
         logit_processor.apply(logit_vector);
-        bonus_token = _greedy_sample(logit_vector, 0);
+        bonus_token = greedy_sample(logit_vector, 0);
     }
 
     sequence->append_token(bonus_token->m_index, bonus_token->m_log_prob);
@@ -1346,7 +1346,7 @@ void Sampler::_sample_next_tokens(SequenceGroup::Ptr sequence_group,
             std::optional<SamplingDistribution> distribution;
             Token sampled_token;
             if (sampling_params.is_greedy_decoding()) {
-                sampled_token = _greedy_sample(logit_vector, sampling_params.logprobs);
+                sampled_token = greedy_sample(logit_vector, sampling_params.logprobs);
             } else {
                 distribution.emplace(logit_vector);
                 sampled_token = _multinomial_sample(sequence_group, *distribution, ctx, sg_sampling_info.sampler_output);
@@ -1381,7 +1381,7 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
     // prompt lookup candidates are verified by exact match.
     const bool is_speculative_sampling = sampling_params.do_sample && !sampling_params.is_prompt_lookup();
     const auto sample_token = [&](const Logits& logits) {
-        return sampling_params.is_greedy_decoding() ? _greedy_sample(logits, sampling_params.logprobs)
+        return sampling_params.is_greedy_decoding() ? greedy_sample(logits, sampling_params.logprobs)
                                                     : SamplingDistribution(logits).sample(ctx.rng_engine);
     };
     size_t num_sampled_rows = 0;
@@ -1415,7 +1415,7 @@ void Sampler::_validate_candidates(SequenceGroup::Ptr sequence_group,
             if (logit_token_offset == 0) {
                 const Token sampled_token =
                     sampling_params.is_greedy_decoding()
-                        ? _greedy_sample(logit_vector, sampling_params.logprobs)
+                        ? greedy_sample(logit_vector, sampling_params.logprobs)
                         : _multinomial_sample(sequence_group,
                                               SamplingDistribution(logit_vector),
                                               ctx,
@@ -1526,7 +1526,7 @@ int64_t Sampler::_sample_block_token(const Sequence::Ptr& sequence,
     context.logit_processor.apply(logits);
     BlockToken block_token;
     if (sampling_params.is_greedy_decoding()) {
-        const Token token = _greedy_sample(logits, sampling_params.logprobs);
+        const Token token = greedy_sample(logits, sampling_params.logprobs);
         block_token = {token.m_index, token.m_log_prob, nullptr};
     } else {
         const SamplingDistribution distribution(logits);
@@ -1787,7 +1787,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             Sequence::Ptr& sequence = running_sequences[0];
             auto logit_vector = _get_logit_vector(sequence_group_logits, 0, 0);
             logit_processor.apply(logit_vector);
-            const Token sampled_token = _greedy_sample(logit_vector, sampling_params.logprobs);
+            const Token sampled_token = greedy_sample(logit_vector, sampling_params.logprobs);
             sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
             logit_processor.register_new_generated_token(sampled_token.m_index);
             sg_sampling_info.sampler_output.num_generated_tokens++;
@@ -1881,10 +1881,14 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             if (m_tokenizer.m_pimpl != nullptr) {
                 structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller(vocab_size);
             }
+            auto overrides = sequence_group->get_sampling_overrides();
+            if (!overrides.suppressed_token_ids) {
+                overrides.suppressed_token_ids = m_suppressed_token_ids;
+            }
             LogitProcessor lp(sampling_params,
                               sequence_group->get_prompt_ids(),
                               structured_output_controller,
-                              m_suppressed_token_ids);
+                              overrides);
             m_request_contexts.emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(request_id),
@@ -2013,7 +2017,9 @@ void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig
     if (m_tokenizer.m_pimpl != nullptr) {
         structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller();
     }
-    LogitProcessor lp(sampling_params, prompt, structured_output_controller, m_suppressed_token_ids);
+    SamplingOverrides overrides;
+    overrides.suppressed_token_ids = m_suppressed_token_ids;
+    LogitProcessor lp(sampling_params, prompt, structured_output_controller, overrides);
     m_request_contexts.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(request_id),

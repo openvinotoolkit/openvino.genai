@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <numeric>
 
 #include "openvino/runtime/core.hpp"
@@ -378,6 +379,16 @@ std::shared_ptr<ov::Model> create_dummy_hidden_state_export_model() {
 
 }  // namespace
 
+TEST(TestModelRunnerHiddenStateExport, hidden_states_output_is_found_by_alias) {
+    auto model = create_dummy_hidden_state_export_model();
+    // "decoder_output" sorts first, so get_any_name() does not return "hidden_states".
+    model->outputs()[1].get_tensor().set_names({"decoder_output", "hidden_states"});
+    ov::Core core;
+    ModelRunner runner(core.compile_model(model, "CPU").create_infer_request(), /*block_size=*/4,
+                       /*num_decoder_layers=*/1);
+    EXPECT_NO_THROW(runner.use_hidden_states_output());
+}
+
 TEST(TestModelRunnerHiddenStateExport, unscheduled_sequence_keeps_its_rows) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(create_dummy_hidden_state_export_model(), "CPU").create_infer_request();
@@ -418,3 +429,79 @@ TEST(TestModelRunnerHiddenStateExport, unscheduled_sequence_keeps_its_rows) {
     EXPECT_EQ(tensor_values<float>(second_sequence->get_hidden_state()), (std::vector<float>{9}));
     EXPECT_EQ(second_sequence->get_hidden_state_first_position(), 3);
 }
+
+namespace {
+
+constexpr size_t GENERATED_EMBEDDING_HIDDEN_SIZE = 4;
+
+ov::Tensor make_position_ids(const ov::Shape& shape, int64_t value) {
+    ov::Tensor position_ids(ov::element::i64, shape);
+    std::fill_n(position_ids.data<int64_t>(), position_ids.get_size(), value);
+    return position_ids;
+}
+
+class TestModelRunnerGeneratedEmbedding : public testing::Test {
+protected:
+    // Explicit position ids bypass the inputs embedder, so the runner is left without one.
+    TestModelRunnerGeneratedEmbedding()
+        : m_runner(m_core.compile_model(create_dummy_hidden_state_export_model(), "CPU").create_infer_request(),
+                   /*block_size=*/4,
+                   /*num_decoder_layers=*/1) {
+        ov::Tensor prompt_embeds(ov::element::f32, {1, 2, GENERATED_EMBEDDING_HIDDEN_SIZE});
+        std::iota(prompt_embeds.data<float>(), prompt_embeds.data<float>() + prompt_embeds.get_size(), 0.0f);
+        m_group = std::make_shared<SequenceGroup>(0, prompt_embeds, utils::get_greedy_config());
+        m_sequence = m_group->get_running_sequences()[0];
+        m_sequence->append_token(5, 0.0f);
+    }
+
+    void append_with_position_ids(const ov::Tensor& position_ids) {
+        ov::Tensor embedding(ov::element::f32, {1, 1, GENERATED_EMBEDDING_HIDDEN_SIZE});
+        std::fill_n(embedding.data<float>(), embedding.get_size(), 0.5f);
+        m_runner.append_generated_embedding(m_group, m_sequence, embedding, position_ids);
+    }
+
+    ov::Core m_core;
+    ModelRunner m_runner;
+    SequenceGroup::Ptr m_group;
+    Sequence::Ptr m_sequence;
+};
+
+class TestModelRunnerGeneratedEmbeddingRejection : public TestModelRunnerGeneratedEmbedding,
+                                                   public testing::WithParamInterface<ov::Shape> {};
+
+}  // namespace
+
+TEST_F(TestModelRunnerGeneratedEmbedding, position_ids_override_is_copied) {
+    auto position_ids = make_position_ids({1, 1}, 42);
+
+    append_with_position_ids(position_ids);
+    position_ids.data<int64_t>()[0] = 7;
+
+    const auto& stored_position_ids = m_sequence->get_position_ids_list();
+    ASSERT_EQ(stored_position_ids.size(), 1);
+    EXPECT_EQ(stored_position_ids.back().get_shape(), ov::Shape({1, 1}));
+    EXPECT_EQ(stored_position_ids.back().data<const int64_t>()[0], 42);
+    EXPECT_EQ(m_sequence->get_generated_ids_embeds().size(), 1);
+}
+
+TEST_F(TestModelRunnerGeneratedEmbedding, mrope_position_ids_are_stored) {
+    append_with_position_ids(make_position_ids({3, 1, 1}, 42));
+
+    const auto& stored_position_ids = m_sequence->get_position_ids_list();
+    ASSERT_EQ(stored_position_ids.size(), 1);
+    EXPECT_EQ(stored_position_ids.back().get_shape(), ov::Shape({3, 1, 1}));
+    EXPECT_EQ(m_sequence->get_generated_ids_embeds().size(), 1);
+}
+
+TEST_P(TestModelRunnerGeneratedEmbeddingRejection, rejects_bad_position_ids) {
+    EXPECT_THROW(append_with_position_ids(make_position_ids(GetParam(), 42)), ov::Exception);
+
+    // A rejected token must leave the sequence as it was, so a retry can still append it.
+    EXPECT_TRUE(m_sequence->get_generated_ids_embeds().empty());
+    EXPECT_TRUE(m_sequence->get_position_ids_list().empty());
+}
+
+// [1, 2] covers two tokens; [1] has no token dimension.
+INSTANTIATE_TEST_SUITE_P(BadShapes,
+                         TestModelRunnerGeneratedEmbeddingRejection,
+                         testing::Values(ov::Shape{1, 2}, ov::Shape{1}));
