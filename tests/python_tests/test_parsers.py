@@ -20,7 +20,7 @@ from openvino_genai import (
     ReasoningParser,
 )
 from transformers import AutoTokenizer
-from huggingface_hub import snapshot_download
+from utils.network import snapshot_download_once
 import re
 from io import StringIO
 
@@ -44,7 +44,7 @@ def hf_ov_genai_models(request, tmp_path_factory):
     model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
     model_dir.mkdir(exist_ok=True, parents=True)
 
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    model_cached = snapshot_download_once(model_id)  # required to avoid HF rate limits
     hf_tokenizer = AutoTokenizer.from_pretrained(model_cached)
     convert_and_save_tokenizer(hf_tokenizer, model_dir)
 

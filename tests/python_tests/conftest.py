@@ -15,7 +15,7 @@ from utils.constants import (
     get_ov_cache_converted_models_dir,
 )
 from utils.atomic_download import AtomicDownloadManager
-from utils.network import retry_request
+from utils.network import snapshot_download_once, retry_request
 from utils.export import export_command
 
 # Configure logging
@@ -130,11 +130,10 @@ def _export_tiny_omni_model(target_dir: Path) -> None:
     import openvino as ov
     import openvino_tokenizers
     import transformers
-    from huggingface_hub import snapshot_download
     from optimum.intel.openvino import OVModelForVisualCausalLM
 
     # Only the download needs retrying; both from_pretrained() calls below read the local path it returns.
-    model_cached = retry_request(lambda: snapshot_download(OMNI_MODEL_ID))
+    model_cached = snapshot_download_once(OMNI_MODEL_ID)
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
     processor = transformers.AutoProcessor.from_pretrained(
         model_cached,

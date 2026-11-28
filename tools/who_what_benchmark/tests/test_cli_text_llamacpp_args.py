@@ -68,11 +68,11 @@ def test_text_non_llamacpp_run_not_blocked_by_n_ctx_default(tmp_path):
     assert "--llamacpp-n-ctx requires --llamacpp" not in output
 
 
-def test_cli_rejects_mutually_exclusive_backend_flags():
+def test_cli_rejects_mutually_exclusive_backend_flags(tmp_path):
     output = _assert_wwb_cli_error(
         [
             "--base-model",
-            "dummy_base_model",
+            str(tmp_path),
             "--model-type",
             "text",
             "--llamacpp",
