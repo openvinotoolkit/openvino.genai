@@ -91,6 +91,9 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
 }
 
 void ImageGenerationConfig::validate() const {
+    // schedulers and latent preparation divide by these, so 0 would crash with an integer division by zero
+    OPENVINO_ASSERT(num_inference_steps > 0, "'num_inference_steps' must be greater than 0");
+    OPENVINO_ASSERT(num_images_per_prompt > 0, "'num_images_per_prompt' must be greater than 0");
     OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt");
     OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 2");
     OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 3");

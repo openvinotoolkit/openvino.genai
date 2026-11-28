@@ -31,6 +31,28 @@ def test_zimage_transformer_config_python_api(tmp_path):
     assert config.sample_size == 64
 
 
+@pytest.mark.parametrize("field", ["num_inference_steps", "num_images_per_prompt"])
+def test_image_generation_config_rejects_zero(field):
+    config = ov_genai.ImageGenerationConfig()
+    setattr(config, field, 0)
+    with pytest.raises(RuntimeError, match=f"'{field}' must be greater than 0"):
+        config.validate()
+
+
+@pytest.mark.parametrize("field", ["num_inference_steps", "num_images_per_prompt"])
+def test_text2image_zero_raises_instead_of_crashing(image_generation_model, field):
+    # Euler, Euler Ancestral and DDIM schedulers divide by num_inference_steps, and latent
+    # preparation divides by the batch size, so 0 used to abort the process with SIGFPE
+    pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+    pipe.set_scheduler(
+        ov_genai.Scheduler.from_config(
+            f"{image_generation_model}/scheduler/scheduler_config.json", ov_genai.Scheduler.Type.EULER_DISCRETE
+        )
+    )
+    with pytest.raises(RuntimeError, match=f"'{field}' must be greater than 0"):
+        pipe.generate("test prompt", width=64, height=64, **{"num_inference_steps": 2, field: 0})
+
+
 def get_random_image(height: int = 64, width: int = 64) -> ov.Tensor:
     image_data = np.random.randint(0, 255, (1, height, width, 3), dtype=np.uint8)
     return ov.Tensor(image_data)

@@ -80,6 +80,8 @@ DDIMScheduler::DDIMScheduler(const Config& scheduler_config)
 void DDIMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     m_timesteps.clear();
 
+    OPENVINO_ASSERT(num_inference_steps > 0,
+                    "`num_inference_steps` must be greater than 0");
     OPENVINO_ASSERT(num_inference_steps <= m_config.num_train_timesteps,
                     "`num_inference_steps` cannot be larger than `m_config.num_train_timesteps`");
 

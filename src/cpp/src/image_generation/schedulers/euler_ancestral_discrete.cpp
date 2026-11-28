@@ -94,6 +94,9 @@ EulerAncestralDiscreteScheduler::EulerAncestralDiscreteScheduler(const Config& s
 }
 
 void EulerAncestralDiscreteScheduler::set_timesteps(size_t num_inference_steps, float strength) {
+    OPENVINO_ASSERT(num_inference_steps > 0,
+                    "`num_inference_steps` must be greater than 0");
+
     m_timesteps.clear();
     m_sigmas.clear();
     m_step_index = m_begin_index = -1;
