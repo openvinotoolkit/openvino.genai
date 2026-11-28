@@ -84,15 +84,19 @@ def output_comments(result, use_case, writer):
 
 
 def output_avg_min_median(iter_data_list, include_tts_metrics=False):
-    prompt_idxs = []
-    for iter_data in iter_data_list:
-        prompt_idxs.append(iter_data['prompt_idx'])
-    prompt_idxs = list(set(prompt_idxs))
+    # In chat mode prompt_idx is the turn inside a chat, so the same prompt_idx
+    # appears in every chat. Group by (chat_idx, prompt_idx) to keep chats apart.
+    input_keys = list(dict.fromkeys((data.get("chat_idx", ""), data["prompt_idx"]) for data in iter_data_list))
     result = {}
-    for prompt_idx in prompt_idxs:
+    for input_key in input_keys:
+        chat_idx, prompt_idx = input_key
         same_prompt_datas = []
         for iter_data in iter_data_list:
-            if iter_data['prompt_idx'] == prompt_idx and iter_data['iteration'] > 0:
+            if (
+                iter_data.get("chat_idx", "") == chat_idx
+                and iter_data["prompt_idx"] == prompt_idx
+                and iter_data["iteration"] > 0
+            ):
                 same_prompt_datas.append(iter_data)
         key_word = [
             "input_size",
@@ -112,31 +116,29 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
             key_word.extend(["tts_output_duration_s", "tts_sample_rate", "tts_rtf"])
         if len(same_prompt_datas) > 0:
             iters_idx = ['avg', 'mini', 'median']
-            result[prompt_idx] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]
+            result[input_key] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]
             for i in range(len(iters_idx)):
-                result[prompt_idx][i]['iteration'] = iters_idx[i]
+                result[input_key][i]["iteration"] = iters_idx[i]
             for key in key_word:
                 values = []
                 for prompt in same_prompt_datas:
                     if key in prompt and prompt[key] != "":
                         values.append(prompt[key])
                 if len(values) > 0:
-                    result[prompt_idx][0][key] = np.mean(values)
-                    result[prompt_idx][1][key] = np.min(values)
-                    result[prompt_idx][2][key] = np.median(values)
+                    result[input_key][0][key] = np.mean(values)
+                    result[input_key][1][key] = np.min(values)
+                    result[input_key][2][key] = np.median(values)
             rates = [
                 data["end_to_end_token_throughput"]
                 for data in same_prompt_datas
                 if "end_to_end_token_throughput" in data
             ]
-            for data in result[prompt_idx]:
+            for data in result[input_key]:
                 data.pop("end_to_end_token_throughput", None)
             if len(rates) > 0:
-                result[prompt_idx][0]["end_to_end_token_throughput"] = get_end_to_end_token_throughput(
-                    same_prompt_datas
-                )
-                result[prompt_idx][1]["end_to_end_token_throughput"] = np.min(rates)
-                result[prompt_idx][2]["end_to_end_token_throughput"] = np.median(rates)
+                result[input_key][0]["end_to_end_token_throughput"] = get_end_to_end_token_throughput(same_prompt_datas)
+                result[input_key][1]["end_to_end_token_throughput"] = np.min(rates)
+                result[input_key][2]["end_to_end_token_throughput"] = np.median(rates)
     return result
 
 
